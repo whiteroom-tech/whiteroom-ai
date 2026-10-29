@@ -23,7 +23,7 @@
 import { createContext, createElement, useCallback, useContext, useEffect, useState } from 'react';
 import { clearFleetCredentials, getFleetCredentials } from '@/lib/fleet-credentials';
 import { claimFleet, isAuthError, listFleets } from '@/lib/whiteroom/client';
-import { isApiKey, preferProductionFleet, resolveAuthKey } from '@/lib/fleet-helpers';
+import { isApiKey, loginFleet, resolveAuthKey } from '@/lib/fleet-helpers';
 import { safeSet } from '@/lib/safe-storage';
 import { clearSnapshots } from '@/lib/performance-snapshot';
 
@@ -251,12 +251,12 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
         // (both calls carry the typed key explicitly, so they go direct to
         // the engine — no cookie involved yet).
         const listData = await listFleets(token);
-        const fleets = preferProductionFleet(listData.fleets ?? []);
-        if (!fleets.length) {
-          setLoginError('No fleets found for this fleet key. Register an agent first.');
+        const fleet = loginFleet(listData.fleets ?? []);
+        if ('error' in fleet) {
+          setLoginError(fleet.error);
           return;
         }
-        const claim = await claimFleet(fleets[0].fleetId, token);
+        const claim = await claimFleet(fleet.fleetId, token);
         if (claim.error || !claim.fleetToken) {
           setLoginError(claim.error || 'Could not retrieve fleet token.');
           return;

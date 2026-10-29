@@ -53,6 +53,8 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
   const [agents, setAgents] = useState<string[]>(preview?.agents ?? []);
   const [loading, setLoading] = useState(!preview);
   const [error, setError] = useState(preview?.error ?? '');
+  // The error came from reading the rules (not an edit): offer Try again, even with older rules still shown.
+  const [loadFailed, setLoadFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<string | null>(preview?.editing ?? null);
   const [editError, setEditError] = useState<string | null>(null);
@@ -61,9 +63,11 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
   const [removing, setRemoving] = useState<GovernanceRule | null>(null);
   // The ready-made set is applied once per Sandbox, on its first rules load with none set up.
   const autoApplied = useRef<string | null>(null);
-  // Only the newest quiet re-read may land: an older one finishing last would undo a later edit.
+  // Only the newest rules read (load, replace or quiet re-read) may land: an older one finishing last would undo a later change.
   const refreshReq = useRef(0);
   const now = preview?.now ?? Date.now();
+  // Every rules read clears the skeleton when it is the newest one, so a read that overtakes a load never leaves it stuck.
+  const settle = useCallback((req: number) => { if (req === refreshReq.current) setLoading(false); }, []);
 
   const failed = useCallback((e: unknown) => {
     setError(message(e));
@@ -72,24 +76,34 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
 
   const load = useCallback(async () => {
     setLoading(true);
+    const req = ++refreshReq.current;
     try {
       // Production's rules are only counted (read-only, Controls' own read); a failed read hides Copy.
       const [listed, gov] = await Promise.all([listSandboxRules(fleet, sandboxFleetId), governanceList(fleet).catch(() => null)]);
+      let next = listed;
+      // Only a Sandbox with nothing set up gets the ready-made set: never over rules that are there.
+      if (listed.source === null && listed.rules.length === 0 && !listed.unshown && autoApplied.current !== sandboxFleetId) {
+        // Marked before the call so a second load can't apply it twice; cleared if it fails so Try again re-applies.
+        autoApplied.current = sandboxFleetId;
+        try {
+          next = await applyReadyMadeRules(fleet, sandboxFleetId);
+        } catch (e) {
+          autoApplied.current = null;
+          throw e;
+        }
+      }
+      // A load overtaken by a newer load or a replace sets nothing: its rules, Copy and agents would be out of date.
+      if (req !== refreshReq.current) return;
       setProductionRules(gov?.rules?.length ?? 0);
       setAgents(gov?.agents ?? []);
-      let next = listed;
-      if (listed.source === null && autoApplied.current !== sandboxFleetId) {
-        autoApplied.current = sandboxFleetId;
-        next = await applyReadyMadeRules(fleet, sandboxFleetId);
-      }
       setState(next);
-      setError('');
+      setError(''); setLoadFailed(false);
     } catch (e) {
-      failed(e);
+      if (req === refreshReq.current) { failed(e); setLoadFailed(true); }
     } finally {
-      setLoading(false);
+      settle(req);
     }
-  }, [fleet, sandboxFleetId, failed]);
+  }, [fleet, sandboxFleetId, failed, settle]);
 
   useEffect(() => {
     if (preview) return;
@@ -97,7 +111,7 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
   }, [load, preview]);
 
   async function run<T>(work: () => Promise<T>, done: (r: T) => void, onError: (e: unknown) => void = failed) {
-    setBusy(true); setError('');
+    setBusy(true); setError(''); setLoadFailed(false);
     try {
       done(await work());
     } catch (e) {
@@ -115,15 +129,26 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
         : { sandboxFleetId, rules: s?.rules ?? [], source: 'production_copy', copiedAt: new Date(now).toISOString(), productionChanged: 0 }));
       return;
     }
-    void run(() => (kind === 'ready-made' ? applyReadyMadeRules(fleet, sandboxFleetId) : copyProductionRules(fleet, sandboxFleetId)), setState);
+    // Newer than any quiet re-read still in flight: that older list mustn't overwrite this one.
+    const req = ++refreshReq.current;
+    void run(() => (kind === 'ready-made' ? applyReadyMadeRules(fleet, sandboxFleetId) : copyProductionRules(fleet, sandboxFleetId)), (next) => {
+      if (req === refreshReq.current) setState(next);
+      settle(req);
+    }, (e) => {
+      failed(e);
+      settle(req);
+    });
   }
 
-  // After an edit: the rules at once, then the engine's own source line (quietly; a failed read keeps the page as is).
-  const withRules = (rules: GovernanceRule[]) => {
-    setState((s) => (s ? { ...s, rules } : s));
+  // After an edit: the rules at once (from the newest on screen), then the engine's own source line
+  // (quietly; a failed read keeps the page as is).
+  const withRules = (change: (rules: GovernanceRule[]) => GovernanceRule[]) => {
+    setState((s) => (s ? { ...s, rules: change(s.rules) } : s));
     if (preview) { setState((s) => (s ? { ...s, source: 'custom', productionChanged: 0 } : s)); return; }
     const req = ++refreshReq.current;
-    listSandboxRules(fleet, sandboxFleetId).then((next) => { if (req === refreshReq.current) setState(next); }, () => {});
+    listSandboxRules(fleet, sandboxFleetId)
+      .then((next) => { if (req === refreshReq.current) setState(next); }, () => {})
+      .finally(() => settle(req));
   };
 
   function add(ruleType: GovernanceRuleType) {
@@ -132,25 +157,25 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
       const id = `gr_preview_new_${ruleType}`;
       const rule = previewReadyMade(sandboxFleetId).find((r) => r.ruleType === ruleType)
         ?? { id, fleetId: sandboxFleetId, ruleType, mode: 'watch' as const, appliesTo: 'all' as const, version: 1, changedBy: '', changedAt: '', params: { blockedTools: [] } };
-      withRules([...(state?.rules ?? []), { ...rule, id }]);
+      withRules((rs) => [...rs, { ...rule, id }]);
       setEditing(id);
       return;
     }
     void run(() => createSandboxRule(fleet, sandboxFleetId, { ruleType, mode: 'watch' }), (rule) => {
-      withRules([...(state?.rules ?? []), rule]);
+      withRules((rs) => [...rs, rule]);
       setEditing(rule.id); setEditError(null);
     });
   }
 
   function save(rule: GovernanceRule, changes: SandboxRuleFields) {
     if (preview) {
-      withRules((state?.rules ?? []).map((r) => (r.id === rule.id ? { ...r, ...changes, version: r.version + 1 } : r)));
+      withRules((rs) => rs.map((r) => (r.id === rule.id ? { ...r, ...changes, version: r.version + 1 } : r)));
       setEditing(null);
       return;
     }
     setEditError(null);
     void run(() => updateSandboxRule(fleet, sandboxFleetId, rule.id, { ...changes, ifVersion: rule.version }), (saved) => {
-      withRules((state?.rules ?? []).map((r) => (r.id === saved.id ? saved : r)));
+      withRules((rs) => rs.map((r) => (r.id === saved.id ? saved : r)));
       setEditing(null);
     }, (e) => {
       setEditError(message(e));
@@ -161,9 +186,9 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
 
   function remove(rule: GovernanceRule) {
     setRemoving(null);
-    if (preview) { withRules((state?.rules ?? []).filter((r) => r.id !== rule.id)); setEditing(null); return; }
+    if (preview) { withRules((rs) => rs.filter((r) => r.id !== rule.id)); setEditing(null); return; }
     void run(() => deleteSandboxRule(fleet, sandboxFleetId, rule.id), () => {
-      withRules((state?.rules ?? []).filter((r) => r.id !== rule.id));
+      withRules((rs) => rs.filter((r) => r.id !== rule.id));
       setEditing(null);
     });
   }
@@ -179,7 +204,7 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
       <div className={v.stack}>
         <p className={v.text}>{SANDBOX_RULES_ONLY}</p>
         {loading && <SkeletonCard label="Loading your Sandbox rules…" lines={['60%', '45%']} heights={[12, 12]} />}
-        {error && <Banner variant="error" actions={!state && !loading && !preview ? <Button size={28} onClick={() => void load()}>Try again</Button> : undefined}>{error}</Banner>}
+        {error && <Banner variant="error" actions={loadFailed && !loading && !preview ? <Button size={28} onClick={() => void load()} disabled={busy}>Try again</Button> : undefined}>{error}</Banner>}
 
         {line && (
           <div className={v.source}>
@@ -199,7 +224,8 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
           </div>
         )}
 
-        {state && rules.length === 0 && <p className={v.text}>No rules in your Sandbox. Add one, or use the ready-made set.</p>}
+        {!!state?.unshown && <p className={v.text}>{state.unshown} {state.unshown === 1 ? 'rule' : 'rules'} this page can’t show yet.</p>}
+        {state && rules.length === 0 && !state.unshown && <p className={v.text}>No rules in your Sandbox. Add one, or use the ready-made set.</p>}
         {rules.length > 0 && (
           <ul className={v.rules}>
             {rules.map((r) => (

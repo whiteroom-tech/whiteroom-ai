@@ -62,3 +62,18 @@ The CLI starts the adapter once per practice task and talks to it in JSON lines:
 - `model` is the model chosen for the practice test in the dashboard, or `null` when none was chosen: then use your agent's own model. The starters do this.
 - Write logs to stderr. Lines on stdout that aren't JSON are shown in your terminal and never sent to WhiteRoom.
 - Limits: lines up to 1 MiB, tool calls up to 64 KiB, 200 tool calls per practice task. The adapter is stopped (its whole process group) at the task's deadline.
+
+## Running your agent from the Sandbox page
+
+The Sandbox page's **Run agent** button sends a task to a helper on your computer, which runs your agent through your adapter. Point your agent at the Sandbox first (the Sandbox URL from the Sandbox page), then start the helper with the helper code that Run agent shows:
+
+```sh
+export ANTHROPIC_BASE_URL=<Sandbox URL>   # or the variable your agent reads its base URL from
+whiteroom sandbox listen --adapter "node wr-adapter.mjs"
+```
+
+- It asks for the helper code (or reads it from stdin with `--code-stdin`), prints `Helper connected · waiting for tasks from the Sandbox page (Ctrl+C to stop)`, and runs each task as it arrives. A code works once, for 30 minutes.
+- The adapter gets the same JSON lines as a practice task. `task` is the prompt typed on the Sandbox page, `tools` is empty, and `base_url` is your Sandbox URL (ending in `/v1` for OpenAI SDKs). Your adapter gets your own environment, with your provider key, minus any `WHITEROOM_` settings. Each task has 10 minutes.
+- The Sandbox page sends only the task's text. The command that runs is the one you typed here, and nothing from WhiteRoom is added to it.
+- One helper per Sandbox: starting another one stops this one. The Sandbox page can run up to 30 tasks an hour.
+- Exit codes: `0` stopped with Ctrl+C, `2` a setup or usage problem, `3` the session ended. If WhiteRoom restarts, the helper stops and asks you to get a new code from Run agent.

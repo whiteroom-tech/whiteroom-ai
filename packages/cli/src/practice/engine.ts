@@ -95,7 +95,12 @@ export class Engine {
    * (`keepResults`: with a result over the tasks done). Null if WhiteRoom didn't answer.
    */
   async cancel(keepResults = false): Promise<Reply | null> {
-    return this.send("/api/readiness/cancel", keepResults ? { keepResults } : {}, 5_000, null).then((r) => ({ status: r.status, body: r.json }), () => null);
+    return this.once("/api/readiness/cancel", keepResults ? { keepResults } : {});
+  }
+
+  /** One request, best effort: not paced, not retried, not stopped by the session's signal. Null if WhiteRoom didn't answer. */
+  async once(path: string, body: unknown, timeoutMs = 5_000): Promise<Reply | null> {
+    return this.send(path, body, timeoutMs, null).then((r) => ({ status: r.status, body: r.json }), () => null);
   }
 
   /**

@@ -160,3 +160,43 @@ describe('Sandbox checks and helper BFF: what comes back', () => {
     expect(await (await post('helper', 'code', { fleet: 'prod-eu' })).json()).toEqual({ error: 'Nope.' });
   });
 });
+
+describe('Sandbox checks and helper BFF: stale Sandbox vs state conflicts, and Retry-After bounds', () => {
+  it('names the engine’s pin refusal sandbox_changed; a state-conflict 409 gets no such reason', async () => {
+    engine.mockResolvedValueOnce(Response.json({ error: 'That Sandbox doesn\'t belong to this fleet.' }, { status: 409 }));
+    expect(await (await post('checks', 'status', { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID })).json())
+      .toEqual({ error: 'That Sandbox doesn\'t belong to this fleet.', reason: 'sandbox_changed' });
+    for (const error of ['A check is already running. Stop it first.', 'No check is running.', 'Nothing is stopped by the check right now.']) {
+      engine.mockResolvedValueOnce(Response.json({ error }, { status: 409 }));
+      expect(await (await post('checks', 'stop', { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID })).json()).toEqual({ error });
+    }
+    // The engine's own reason wins; the same words on a non-409 aren't the pin refusal.
+    engine.mockResolvedValueOnce(Response.json({ error: 'That Sandbox doesn\'t belong to this fleet.', reason: 'no_helper' }, { status: 409 }));
+    expect((await (await post('helper', 'run', { fleet: 'prod-eu', prompt: 'Go', requestId: REQUEST_ID })).json()).reason).toBe('no_helper');
+    engine.mockResolvedValueOnce(Response.json({ error: 'That Sandbox doesn\'t belong to this fleet.' }, { status: 400 }));
+    expect((await (await post('checks', 'status', { fleet: 'prod-eu' })).json()).reason).toBeUndefined();
+  });
+
+  it.each([['0'], ['-5'], ['1.5'], ['abc'], ['86401'], ['']])('a 429 with Retry-After %j carries no wait', async (value) => {
+    engine.mockResolvedValueOnce(Response.json({ error: 'Too many tasks this hour.', reason: 'tasks_per_hour' }, { status: 429, headers: { 'Retry-After': value } }));
+    const res = await post('helper', 'run', { fleet: 'prod-eu', prompt: 'Go', requestId: REQUEST_ID });
+    expect(res.status).toBe(429);
+    expect(res.headers.get('retry-after')).toBeNull();
+    expect(await res.json()).toEqual({ error: 'Too many tasks this hour.', reason: 'tasks_per_hour' });
+  });
+
+  it('a 429 with Retry-After at the 86400 bound passes it on', async () => {
+    engine.mockResolvedValueOnce(Response.json({ error: 'Limit.', reason: 'tasks_per_hour' }, { status: 429, headers: { 'Retry-After': '86400' } }));
+    const res = await post('helper', 'run', { fleet: 'prod-eu', prompt: 'Go', requestId: REQUEST_ID });
+    expect(res.headers.get('retry-after')).toBe('86400');
+    expect((await res.json()).retryAfter).toBe(86_400);
+  });
+
+  it('Retry-After on a refusal that isn’t a 429 is dropped', async () => {
+    engine.mockResolvedValueOnce(Response.json({ error: 'No helper connected.', reason: 'no_helper' }, { status: 409, headers: { 'Retry-After': '60' } }));
+    const res = await post('helper', 'run', { fleet: 'prod-eu', prompt: 'Go', requestId: REQUEST_ID });
+    expect(res.status).toBe(409);
+    expect(res.headers.get('retry-after')).toBeNull();
+    expect(await res.json()).toEqual({ error: 'No helper connected.', reason: 'no_helper' });
+  });
+});

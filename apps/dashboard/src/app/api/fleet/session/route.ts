@@ -9,6 +9,7 @@
 //   DELETE        -> clear the cookie (sign out)
 
 import { checkSameOrigin } from '@/lib/origin-check';
+import { isSandboxFleetId, SANDBOX_KEY_MESSAGE } from '@/lib/fleet-helpers';
 import {
   clearFleetAuthCookie,
   getFleetAuthCookie,
@@ -64,6 +65,10 @@ export async function POST(req: Request) {
 
   const resolved = await resolveFleetId(fleetToken);
   if ('error' in resolved) return resolved.error;
+  // A Sandbox fleet's token never opens the production pages: Sandbox data stays in Sandbox.
+  if (isSandboxFleetId(resolved.fleetId)) {
+    return Response.json({ error: SANDBOX_KEY_MESSAGE }, { status: 400 });
+  }
 
   await setFleetAuthCookie(fleetToken);
   // Never echo the token back — the whole point is that page script can't
@@ -75,33 +80,39 @@ export async function GET() {
   const cookieToken = await getFleetAuthCookie();
   if (cookieToken) {
     const resolved = await resolveFleetId(cookieToken);
-    if ('fleetId' in resolved) return Response.json({ fleetId: resolved.fleetId });
-    if (resolved.error.status === 502) return resolved.error;
-    // The cookie's token was rejected by the engine (revoked/rotated). Drop
-    // it and fall through: a signed-in user's linked fleets can self-heal.
+    if ('fleetId' in resolved && !isSandboxFleetId(resolved.fleetId)) return Response.json({ fleetId: resolved.fleetId });
+    if ('error' in resolved && resolved.error.status === 502) return resolved.error;
+    // The cookie's token was rejected by the engine (revoked/rotated), or is a
+    // Sandbox fleet's, which never opens the production pages. Drop it and fall
+    // through: a signed-in user's linked fleets can self-heal.
     await clearFleetAuthCookie();
   }
 
   // No (valid) cookie: a next-auth session user may still have fleets linked
   // in user_fleets — adopt the preferred one into the cookie.
-  const linked = await tokenFromUserFleets();
-  if (!linked) {
+  let linked = await tokenFromUserFleets();
+  // Rows that predate fleet ids being stored are resolved from the engine; one
+  // that turns out to be a Sandbox fleet's is skipped and the next tried (at most 5).
+  const skipped = new Set<string>();
+  while (linked && !linked.fleetId && skipped.size < 5) {
+    const resolved = await resolveFleetId(linked.token);
+    if ('error' in resolved) return resolved.error;
+    if (!isSandboxFleetId(resolved.fleetId)) {
+      await setFleetAuthCookie(linked.token);
+      return Response.json({ fleetId: resolved.fleetId });
+    }
+    skipped.add(linked.token);
+    linked = await tokenFromUserFleets(skipped);
+  }
+  if (!linked?.fleetId) {
     // signedIn tells the page where to send the visitor: sign-in when the
     // account session is gone, Fleet key (which provisions) when it isn't.
     const signedIn = !!(await auth())?.user;
     return Response.json({ error: 'No fleet session.', signedIn }, { status: 401 });
   }
 
-  if (linked.fleetId) {
-    await setFleetAuthCookie(linked.token);
-    return Response.json({ fleetId: linked.fleetId });
-  }
-
-  // Row predates fleet ids being stored: resolve it from the engine.
-  const resolved = await resolveFleetId(linked.token);
-  if ('error' in resolved) return resolved.error;
   await setFleetAuthCookie(linked.token);
-  return Response.json({ fleetId: resolved.fleetId });
+  return Response.json({ fleetId: linked.fleetId });
 }
 
 export async function DELETE() {

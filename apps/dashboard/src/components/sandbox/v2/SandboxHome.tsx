@@ -80,6 +80,9 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
     void load();
   }, [load, preview]);
 
+  // One callback for the steps below: a new one each render would re-run their reads.
+  const reload = useCallback(() => { void load(); }, [load]);
+
   async function connect(req: ConnectRequest): Promise<string | null> {
     if (preview) {
       setIssued({ proxyKey: 'sk-wr-<preview-key>', proxyUrl: 'https://proxy.whiteroom.tech/sk-wr-<preview-key>', provider: req.provider, keyHint: req.api_key.slice(-4) });
@@ -125,6 +128,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   }
 
   const connected = status?.exists === true && status.key !== null ? status : null;
+  const outside = connected ? outsideWindowText(connected) : null;
   const showForm = !loading && status !== null && (!connected || replacing);
 
   return <>
@@ -164,7 +168,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
             fleet={fleet}
             sandboxFleetId={connected.sandboxFleetId}
             preview={preview ? preview.rules ?? { state: null, productionRules: 0, now } : undefined}
-            onStale={() => void load()}
+            onStale={reload}
           />
         )}
 
@@ -174,14 +178,14 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
             fleet={fleet}
             sandboxFleetId={connected.sandboxFleetId}
             preview={preview ? preview.checks ?? { state: checkStateOf({ window: null, checks: [] }), now } : undefined}
-            onStale={() => void load()}
+            onStale={reload}
           />
           <SandboxHelper
             key={`helper-${connected.sandboxFleetId}`}
             fleet={fleet}
             sandboxFleetId={connected.sandboxFleetId}
             preview={preview ? preview.helper ?? { status: { ...NO_HELPER }, now } : undefined}
-            onStale={() => void load()}
+            onStale={reload}
           />
         </>}
 
@@ -200,7 +204,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
                 <dd>{lastCallText(connected.lastCallAt, now)}</dd>
               </dl>
               <p className={v.text}>{keptUntilText(connected.expiresAt, now)}</p>
-              {outsideWindowText(connected) && <Banner variant="warn">{outsideWindowText(connected)}</Banner>}
+              {outside && <Banner variant="warn">{outside}</Banner>}
               <div className={v.actions}>
                 <Button size={32} onClick={() => setConfirm('rotate')} disabled={busy}>Rotate key</Button>
                 <Button size={32} variant="danger" onClick={() => setConfirm('reset')} disabled={busy}>Reset Sandbox</Button>

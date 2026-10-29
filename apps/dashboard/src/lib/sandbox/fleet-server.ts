@@ -3,7 +3,7 @@ import { auth } from '@/auth';
 import { controlAccessError, CONTROL_SECRET_HEADER, CONTROL_USER_HEADER } from '@/lib/control-auth';
 import { getFleetAuthCookie, tokenFromUserFleets } from '@/lib/fleet-session';
 import { engineAuthHeaders, PROXY_URL } from '@/lib/whiteroom/client';
-import { connectCheck, issuedOf, SANDBOX_FLEET_UNAVAILABLE, statusOf, type SandboxFleetAction } from './fleet';
+import { connectCheck, isPinMismatch, issuedOf, SANDBOX_CHANGED, SANDBOX_FLEET_UNAVAILABLE, statusOf, type SandboxFleetAction } from './fleet';
 
 // The BFF side of Sandbox v2 (spec §7 S1–S3). The engine's sandbox_fleet_*
 // actions are dashboard-only: they take the dashboard's service secret and the
@@ -128,7 +128,8 @@ export async function postEngine(owner: SandboxFleetOwner, body: Record<string, 
     // The engine's own words: short refusals that never carry a key. Its
     // machine reason (no_helper, tasks_per_hour…) and a 429's wait go along.
     const raw = (data as { reason?: unknown }).reason;
-    const reason = typeof raw === 'string' && REASON_RE.test(raw) ? raw : undefined;
+    // The pin refusal has no reason of its own: named here so the page can tell it from a state conflict.
+    const reason = typeof raw === 'string' && REASON_RE.test(raw) ? raw : isPinMismatch(res.status, error) ? SANDBOX_CHANGED : undefined;
     const refused = fail(res.status, error.slice(0, 300), reason);
     const wait = Number(res.headers.get('retry-after'));
     if (res.status !== 429 || !Number.isInteger(wait) || wait <= 0 || wait > 86_400) return { error: refused };

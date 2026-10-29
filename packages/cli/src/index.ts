@@ -18,6 +18,7 @@ Usage:
   whiteroom login <fleet_token>
   whiteroom practice run [--adapter "<command>"] [--key-env <VAR>] [--code-stdin]
   whiteroom practice adapter --lang js|python
+  whiteroom sandbox listen --adapter "<command>" [--code-stdin]
 
 Options:
   --url <base_url>   Server URL (default: WHITEROOM_URL or http://localhost:3000)
@@ -30,6 +31,12 @@ async function main() {
   if (argv[0] === "practice" || argv[0] === "readiness") {
     const { practice } = await import("./practice/index.js");
     process.exitCode = await practice(argv.slice(1));
+    return;
+  }
+  // The Sandbox helper is plain fetch too.
+  if (argv[0] === "sandbox") {
+    const { sandbox } = await import("./sandbox/index.js");
+    process.exitCode = await sandbox(argv.slice(1));
     return;
   }
   const { args, flags } = parseArgs(argv);

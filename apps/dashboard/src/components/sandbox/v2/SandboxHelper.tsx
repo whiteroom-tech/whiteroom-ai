@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Banner, Button, Panel, SkeletonCard, Tag } from '@whiteroom/ui';
 import { CopyChip } from '@/components/citadel/CopyChip';
 import { fmtTime, timeAgo } from '@/lib/format';
-import { SandboxFleetError } from '@/lib/sandbox/fleet';
+import { isStaleSandbox, SandboxFleetError } from '@/lib/sandbox/fleet';
 import {
   disconnectHelper, getHelperCode, getHelperStatus, LISTEN_COMMAND, newRequestId, PROMPT_MAX, runHelperTask, runRefusal,
   type HelperCode, type HelperStatus,
@@ -44,26 +44,44 @@ export function SandboxHelper({ fleet, sandboxFleetId, preview, onStale }: {
   const [error, setError] = useState(preview?.error ?? '');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
-  // The request ID of the click not yet answered; a new prompt or an answer clears it.
+  // The request ID of the click not yet answered; a new prompt, an answer or a definite refusal clears it.
   const requestId = useRef<string | null>(null);
   const now = preview?.now ?? Date.now();
+  // The latest onStale, read when called: a new callback from the page never re-reads or restarts polling.
+  const staleRef = useRef(onStale);
+  useEffect(() => { staleRef.current = onStale; }, [onStale]);
+  // Only the newest status (read or action answer) may land: an older one finishing last would undo a later change.
+  const latest = useRef(0);
+  const loadReq = useRef(0);
+  // An action is on its way: polls wait (see below).
+  const busyRef = useRef(false);
+  // The Sandbox changed under the page: polling stops until the page reloads it.
+  const [gone, setGone] = useState(false);
 
+  /** An action's or a read's failure; a Sandbox that changed under the page reloads it. */
   const failed = useCallback((e: unknown) => {
     setError(message(e));
-    if (e instanceof SandboxFleetError && e.status === 404) onStale?.();
-  }, [onStale]);
+    if (isStaleSandbox(e)) { setGone(true); staleRef.current?.(); }
+  }, []);
 
   const read = useCallback(async (quiet = false) => {
+    const req = ++latest.current;
+    const mine = quiet ? 0 : ++loadReq.current;
     if (!quiet) setLoading(true);
     try {
       const next = await getHelperStatus(fleet, sandboxFleetId);
+      if (req !== latest.current) return;
       setStatus(next);
+      setGone(false);
       if (next.connected) setCode(null);
       if (!quiet) setError('');
     } catch (e) {
+      if (req !== latest.current) return;
+      // A quiet re-read keeps the page as it is, unless the Sandbox changed under it.
       if (!quiet) failed(e);
+      else if (isStaleSandbox(e)) { setGone(true); staleRef.current?.(); }
     } finally {
-      if (!quiet) setLoading(false);
+      if (!quiet && mine === loadReq.current) setLoading(false);
     }
   }, [fleet, sandboxFleetId, failed]);
 
@@ -75,22 +93,26 @@ export function SandboxHelper({ fleet, sandboxFleetId, preview, onStale }: {
   // Waiting for the helper to connect, or for tasks to finish: every 5 seconds. Connected and idle: every 30.
   const waiting = !!status && !status.connected && (!!code || !!status.code);
   const working = !!status?.connected && (status.running || status.queued > 0);
-  const every = waiting || working ? POLL_MS.busy : status?.connected ? POLL_MS.idle : null;
+  const every = gone ? null : waiting || working ? POLL_MS.busy : status?.connected ? POLL_MS.idle : null;
   useEffect(() => {
     if (preview || every === null) return;
-    const t = setInterval(() => { if (!document.hidden) void read(true); }, every);
+    // Not while an action is on its way: its answer is newer than any read sent before it lands.
+    const t = setInterval(() => { if (!document.hidden && !busyRef.current) void read(true); }, every);
     return () => clearInterval(t);
   }, [preview, every, read]);
 
+  const begin = () => { busyRef.current = true; setBusy(true); setError(''); setNotice(''); return ++latest.current; };
+  const end = () => { busyRef.current = false; setBusy(false); };
+
   async function getCode() {
     if (preview) { setCode({ code: 'PREVIEW-CODE', codeExpiresAt: new Date(now + 10 * 60_000).toISOString() }); return; }
-    setBusy(true); setError(''); setNotice('');
+    begin();
     try {
       setCode(await getHelperCode(fleet, sandboxFleetId));
     } catch (e) {
       failed(e);
     } finally {
-      setBusy(false);
+      end();
     }
   }
 
@@ -100,7 +122,7 @@ export function SandboxHelper({ fleet, sandboxFleetId, preview, onStale }: {
     if (text.length > PROMPT_MAX) { setError(`Keep it under ${PROMPT_MAX.toLocaleString('en-US')} characters.`); return; }
     if (preview) { setNotice('Sent to your helper.'); return; }
     requestId.current ??= newRequestId();
-    setBusy(true); setError(''); setNotice('');
+    begin();
     try {
       const sent = await runHelperTask(fleet, sandboxFleetId, text, requestId.current);
       requestId.current = null;
@@ -108,24 +130,27 @@ export function SandboxHelper({ fleet, sandboxFleetId, preview, onStale }: {
       void read(true);
     } catch (e) {
       setError(runRefusal(e));
-      if (e instanceof SandboxFleetError && e.status === 404) onStale?.();
-      // Refused for good: a new click gets a new ID. A dropped connection keeps it, so a retry can't run it twice.
-      if (e instanceof SandboxFleetError && e.status > 0) requestId.current = null;
-      if (e instanceof SandboxFleetError && e.status === 409) void read(true);
+      // Refused for good (4xx): it never ran, so a new click gets a new ID. No answer, a server error
+      // or an unreadable answer may have queued it: the ID is kept, so a retry can't run it twice.
+      if (e instanceof SandboxFleetError && e.status >= 400 && e.status < 500) requestId.current = null;
+      if (isStaleSandbox(e)) { setGone(true); staleRef.current?.(); }
+      else if (e instanceof SandboxFleetError && e.status === 409) void read(true);
     } finally {
-      setBusy(false);
+      end();
     }
   }
 
   async function disconnect() {
     if (preview) { setStatus((st) => (st ? { ...st, connected: false, host: null, code: null } : st)); return; }
-    setBusy(true); setError(''); setNotice('');
+    const req = begin();
     try {
-      setStatus(await disconnectHelper(fleet, sandboxFleetId));
+      const next = await disconnectHelper(fleet, sandboxFleetId);
+      if (req === latest.current) setStatus(next);
     } catch (e) {
       failed(e);
+      if (!isStaleSandbox(e)) void read(true);
     } finally {
-      setBusy(false);
+      end();
     }
   }
 
