@@ -137,3 +137,8 @@ export function keyFormRequest(tab: ProviderTab, form: Pick<KeyFormState, 'value
   const error = boundAgentError(boundAgent);
   return error ? { ok: false, error } : { ok: true, request: { ...check.request, boundAgent } };
 }
+
+/** The key list's note for a key made for one agent; null for a fleet-wide key. */
+export function keyScopeLabel(key: { agentId?: string }): string | null {
+  return key.agentId ? `only for ${key.agentId}` : null;
+}

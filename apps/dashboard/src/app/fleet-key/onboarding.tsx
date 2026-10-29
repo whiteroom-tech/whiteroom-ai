@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { setByok } from '@/lib/users';
-import { EMPTY_KEY_FORM, PROVIDER_LABELS, agentNamingFor, canSubmitKey, issuedEnvHint, keyFormReducer, keyFormRequest } from '@/lib/provider-key-form';
+import { EMPTY_KEY_FORM, PROVIDER_LABELS, agentNamingFor, canSubmitKey, issuedEnvHint, keyFormReducer, keyFormRequest, keyScopeLabel } from '@/lib/provider-key-form';
 import type { ProviderKeyRequest, ProviderTab } from '@/lib/provider-key-form';
 import { EMPTY_ROLE_FORM, bedrockRoleRequest, canSubmitRoleForm, generateExternalId, roleFormReducer } from '@/lib/bedrock-role-form';
 import type { BedrockRoleRequest } from '@/lib/bedrock-role-form';
@@ -151,7 +151,7 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
                 <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600 }}>{PROVIDER_LABELS[k.provider] ?? k.provider}</span>
                 <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>key ending {k.keyHint}</span>
                 <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>added {fmtDay(k.createdAt)}</span>
-                {k.agentId && <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>only for {k.agentId}</span>}
+                {keyScopeLabel(k) && <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{keyScopeLabel(k)}</span>}
                 <span className="wr-key-endpoint" style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }} title={k.endpoint}>{k.endpoint ?? ''}</span>
                 <Button variant="danger" size={28} className="wr-btn--outline-bad" disabled={removeBusy} onClick={() => setRemoving(k)} style={{ marginLeft: 'auto' }}>Remove&hellip;</Button>
               </li>
