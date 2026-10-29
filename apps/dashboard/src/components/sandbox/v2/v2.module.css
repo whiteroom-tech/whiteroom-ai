@@ -36,6 +36,10 @@
 .check { display:inline-flex; align-items:center; gap:10px; font-size:var(--fs-sm); cursor:pointer; justify-self:start; min-height:32px; }
 .check input { width:16px; height:16px; margin:0; accent-color:var(--brand); }
 /* Step 4: checks and the report. Rows reuse guided.module.css's check marks. */
+.live { display:flex; align-items:center; gap:8px; margin:0; font-size:var(--fs-sm); color:var(--tx2); }
+.live::before { content:''; width:8px; height:8px; border-radius:50%; background:var(--line2); flex:none; }
+.liveOn { color:var(--tx); font-weight:600; }
+.liveOn::before { background:var(--ok); }
 .stage { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:12px 14px; border:1px solid var(--line2); border-radius:8px; background:var(--sunk); min-width:0; }
 .stageText { margin:0; flex:1 1 240px; min-width:0; font-size:var(--fs-md); font-weight:600; color:var(--tx); }
 .checks { list-style:none; margin:0; padding:0; border-top:1px solid var(--line); }

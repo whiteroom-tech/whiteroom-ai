@@ -6,6 +6,7 @@
 // Pure parts (the request check and the answer parsing) are shared with the
 // BFF, so both agree on what a valid request and a valid answer look like.
 
+import { timeAgo } from '@/lib/format';
 import { sandboxPost, SandboxFleetError } from './fleet';
 
 export const SANDBOX_CHECKS_ACTIONS = ['status', 'start', 'stop', 'resume'] as const;
@@ -73,6 +74,8 @@ export interface CheckState {
   window: CheckWindow | null;
   checks: CheckResult[];
   rules: CheckRule[];
+  /** The agent, live: its last call to the Sandbox and its calls outside a check. Absent from an older engine. */
+  activity?: { lastCallAt: string | null; callsOutsideWindow24h: number };
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -125,7 +128,42 @@ export function checkStateOf(data: unknown): CheckState | null {
       detail: text(r.detail),
     }];
   });
-  return { window, checks, rules };
+  const a = isObj(data.activity) ? data.activity : null;
+  const activity = a ? {
+    lastCallAt: str(a.lastCallAt, 40) && Number.isFinite(Date.parse(a.lastCallAt)) ? a.lastCallAt : null,
+    callsOutsideWindow24h: Number.isSafeInteger(a.callsOutsideWindow24h) && (a.callsOutsideWindow24h as number) >= 0 ? a.callsOutsideWindow24h as number : 0,
+  } : undefined;
+  return activity ? { window, checks, rules, activity } : { window, checks, rules };
+}
+
+/** A call this recent means the agent is calling now. */
+export const CALLING_MS = 60_000;
+
+const ago = (ms: number, now: number) => {
+  const s = Math.floor(ms / 1000);
+  return s < 60 ? `${Math.max(1, s)} s ago` : timeAgo(now - ms, now);
+};
+
+/**
+ * Step 4's live line: is the agent calling, and is this run being checked? Null before the
+ * engine says (an older engine) or before any call while waiting for the first.
+ */
+export function activityLine(state: CheckState, now = Date.now()): { calling: boolean; text: string } | null {
+  const a = state.activity;
+  if (!a?.lastCallAt) return null;
+  const since = Math.max(0, now - Date.parse(a.lastCallAt));
+  const calling = since < CALLING_MS;
+  const w = state.window;
+  const last = `last call ${ago(since, now)}`;
+  if (w && !w.endedAt) {
+    const checked = `${w.calls} ${w.calls === 1 ? 'call' : 'calls'} checked`;
+    return calling
+      ? { calling, text: `Your agent is calling the Sandbox · ${last} · ${checked}` }
+      : { calling, text: `Your agent stopped calling · ${last} · ${checked}. The check carries on when it calls again.` };
+  }
+  return calling
+    ? { calling, text: `Your agent is calling the Sandbox · ${last}. This check has finished; its next run starts a new one.` }
+    : { calling, text: `Your agent’s ${last}. A new check starts on its next run.` };
 }
 
 export type StartCheck = { ok: true; request: { inject_errors?: boolean } } | { ok: false; error: string };
