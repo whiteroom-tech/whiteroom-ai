@@ -130,7 +130,8 @@ describe('practice test screens', () => {
     const t = text(html);
     const run = 'echo wrrt_PLACEHOLDERplaceholderPLACEHOLDERplace1 | npx @whiteroom-ai/cli@2.0.0 practice run --adapter "node wr-adapter.mjs" --code-stdin';
     expect(t.indexOf('read -s ANTHROPIC_API_KEY && export ANTHROPIC_API_KEY')).toBeLessThan(t.indexOf(run));
-    expect(t).toContain('Paste your key once and press Enter: nothing shows');
+    // The commands are bash/zsh, as the CLI runs on macOS and Linux (WSL on Windows).
+    expect(t).toContain('In a macOS or Linux terminal (on Windows, use WSL): paste your key once and press Enter. Nothing shows');
     expect(t).toContain('It includes your run code: expires in 29:48');
     expect(t).toContain('Get a new run code');
     expect(t).not.toContain('Paste this run code');

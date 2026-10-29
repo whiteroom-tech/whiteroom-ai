@@ -76,7 +76,7 @@ function TerminalSteps({ run, code, keyChoice, now, busy, onNewCode }: {
       <p className={p.stepTitle}>{++n}. Set your key in the terminal</p>
       <Command text={setKeyCommand(keyVar)} label="Copy the key command" />
       <p className={p.meta}>
-        Paste your key once and press Enter: nothing shows, and it isn’t kept in your shell history.{' '}
+        In a macOS or Linux terminal (on Windows, use WSL): paste your key once and press Enter. Nothing shows, and it isn’t kept in your shell history.{' '}
         {run.sample ? 'Any Anthropic or OpenAI key of yours works: it pays for the test’s calls.' : <>{key.before}<code>{key.keyVar}</code>{key.after}</>}
         {other && <> Using OpenAI? Put <code>{other}</code> in place of <code>{keyVar}</code>.</>} Skip this if it’s already set in this terminal.
       </p>
