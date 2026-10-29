@@ -172,29 +172,6 @@ export function sandboxSetting(provider: string, proxyUrl: string): { name: stri
   return { name: line.slice(0, at), value: line.slice(at + 1) };
 }
 
-/**
- * What to run in a terminal (macOS and Linux shells): with a start command, one
- * line that runs the agent against the Sandbox for that run only; without one,
- * the setting for this terminal, so what's copied always runs.
- */
-export function runLine(provider: string, proxyUrl: string, command: string): string {
-  const { name, value } = sandboxSetting(provider, proxyUrl);
-  const cmd = command.trim();
-  if (!cmd) return `export ${name}="${value}"`;
-  // A prefix reaches only the first command: a compound one (cd … && …) runs in a subshell that has the setting.
-  return /[;|&\n]/.test(cmd) ? `(export ${name}="${value}"; ${cmd})` : `${name}="${value}" ${cmd}`;
-}
-
-/** The same for Windows PowerShell: with a start command, the setting is cleared when it finishes; without one, it holds for that window. */
-export function runLinePowerShell(provider: string, proxyUrl: string, command: string): string {
-  const { name, value } = sandboxSetting(provider, proxyUrl);
-  const cmd = command.trim();
-  // finally puts back what was there (or nothing) however the agent ends, Ctrl+C included.
-  // A command that starts with a quoted path needs the call operator, or PowerShell just prints the string.
-  const run = /^["']/.test(cmd) ? `& ${cmd}` : cmd;
-  return cmd ? `$wrPrev=$env:${name}; try { $env:${name}="${value}"; ${run} } finally { $env:${name}=$wrPrev }` : `$env:${name}="${value}"`;
-}
-
 export function providerLabel(provider: string): string {
   return isSandboxProvider(provider) ? SANDBOX_PROVIDER_LABELS[provider] : provider;
 }

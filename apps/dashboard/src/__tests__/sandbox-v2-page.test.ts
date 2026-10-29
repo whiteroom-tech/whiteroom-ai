@@ -10,7 +10,7 @@ import { createRoot, type Root } from 'react-dom/client';
 
 const { SandboxHome, SANDBOX_SEPARATE } = await import('@/components/sandbox/v2/SandboxHome');
 const { SANDBOX_V2_STATES } = await import('@/app/dev/sandbox-v2/states');
-const { connectCheck, keptUntilText, lastCallText, pointLine, runLine, runLinePowerShell, sandboxSetting } = await import('@/lib/sandbox/fleet');
+const { connectCheck, keptUntilText, lastCallText, pointLine, sandboxSetting } = await import('@/lib/sandbox/fleet');
 
 const PROVIDER_KEY = 'sk-ant-placeholder-not-a-real-key-WXYZ';
 const SANDBOX_ID = 'sandbox-00000000-0000-4000-8000-000000000000';
@@ -75,21 +75,11 @@ describe('Sandbox v2 page', () => {
     await click('Connect');
     expect(calls()[1]).toEqual({ url: '/api/sandbox/fleet/connect', body: { fleet: 'prod-eu', provider: 'anthropic', api_key: PROVIDER_KEY } });
     expect(text()).toContain('We can’t show your Sandbox URL again after that.');
-    // This computer: one line that runs the agent against the Sandbox, built from how it starts.
-    // Nothing typed yet: a line that still runs as copied.
-    expect(text()).toContain(`export ANTHROPIC_BASE_URL="${ISSUED.proxyUrl}"`);
-    expect(text()).toContain('Then start your agent in this terminal.');
-    await type(document.getElementById('sandbox-start-command') as HTMLInputElement, 'python -m leadagent.cli run');
-    expect(text()).toContain(`ANTHROPIC_BASE_URL="${ISSUED.proxyUrl}" python -m leadagent.cli run`);
-    expect(document.querySelector('[aria-label="Copy the run line"]')).not.toBeNull();
-    expect(text()).toContain(`$wrPrev=$env:ANTHROPIC_BASE_URL; try { $env:ANTHROPIC_BASE_URL="${ISSUED.proxyUrl}"; python -m leadagent.cli run } finally { $env:ANTHROPIC_BASE_URL=$wrPrev }`);
-    // What was typed stays on this page only.
-    expect(JSON.stringify({ ...localStorage })).not.toContain('leadagent');
-    // A server: the one setting; another tool: the URL.
-    await click('A server');
+    // Like production: one setting for the agent's .env, then run it as normal.
     expect(text()).toContain(`ANTHROPIC_BASE_URL=${ISSUED.proxyUrl}`);
     expect(document.querySelector('[aria-label="Copy the setting"]')).not.toBeNull();
-    await click('Another tool');
+    expect(text()).toContain('Checks start on its first call.');
+    expect(document.getElementById('sandbox-start-command')).toBeNull();
     expect(document.querySelector('[aria-label="Copy the Sandbox URL"]')).not.toBeNull();
     expect(text()).toContain(ISSUED.proxyKey);
     expect(document.querySelector('[aria-label="Copy the Sandbox key"]')).not.toBeNull();
@@ -240,22 +230,15 @@ describe('Sandbox v2 page', () => {
 
   it('/dev/sandbox-v2 openai shows the /v1 line', async () => {
     await render({ fleet: 'prod-eu', preview: SANDBOX_V2_STATES.openai });
-    expect(text()).toMatch(/export OPENAI_BASE_URL="https:\/\/proxy\.whiteroom\.tech\/sk-wr-[\w-]+\/v1"/);
+    expect(text()).toMatch(/OPENAI_BASE_URL=https:\/\/proxy\.whiteroom\.tech\/sk-wr-[\w-]+\/v1/);
   });
 });
 
 describe('Sandbox v2 wording and checks', () => {
-  it('the run lines and setting for each provider', () => {
-    expect(runLine('anthropic', 'https://proxy.example/sk-wr-x/', ' node agent.js ')).toBe('ANTHROPIC_BASE_URL="https://proxy.example/sk-wr-x" node agent.js');
-    expect(runLine('openai', 'https://proxy.example/sk-wr-x', '  ')).toBe('export OPENAI_BASE_URL="https://proxy.example/sk-wr-x/v1"');
-    // A compound command: every part gets the setting, still only for that run.
-    expect(runLine('anthropic', 'https://proxy.example/sk-wr-x', 'cd ~/agent && python run.py')).toBe('(export ANTHROPIC_BASE_URL="https://proxy.example/sk-wr-x"; cd ~/agent && python run.py)');
-    expect(runLine('anthropic', 'https://proxy.example/sk-wr-x', 'source venv/bin/activate; python run.py')).toBe('(export ANTHROPIC_BASE_URL="https://proxy.example/sk-wr-x"; source venv/bin/activate; python run.py)');
-    expect(runLinePowerShell('openai', 'https://proxy.example/sk-wr-x', '')).toBe('$env:OPENAI_BASE_URL="https://proxy.example/sk-wr-x/v1"');
+  it('the setting for each provider', () => {
+    expect(sandboxSetting('anthropic', 'https://proxy.example/sk-wr-x/')).toEqual({ name: 'ANTHROPIC_BASE_URL', value: 'https://proxy.example/sk-wr-x' });
+    expect(sandboxSetting('openai', 'https://proxy.example/sk-wr-x')).toEqual({ name: 'OPENAI_BASE_URL', value: 'https://proxy.example/sk-wr-x/v1' });
     expect(sandboxSetting('azure-openai', 'https://proxy.example/sk-wr-x')).toEqual({ name: 'AZURE_OPENAI_ENDPOINT', value: 'https://proxy.example/sk-wr-x' });
-    expect(runLinePowerShell('anthropic', 'https://proxy.example/sk-wr-x', 'python a.py')).toBe('$wrPrev=$env:ANTHROPIC_BASE_URL; try { $env:ANTHROPIC_BASE_URL="https://proxy.example/sk-wr-x"; python a.py } finally { $env:ANTHROPIC_BASE_URL=$wrPrev }');
-    expect(runLinePowerShell('anthropic', 'https://proxy.example/sk-wr-x', '"C:\\Py\\python.exe" a.py')).toBe('$wrPrev=$env:ANTHROPIC_BASE_URL; try { $env:ANTHROPIC_BASE_URL="https://proxy.example/sk-wr-x"; & "C:\\Py\\python.exe" a.py } finally { $env:ANTHROPIC_BASE_URL=$wrPrev }');
-    expect(runLinePowerShell('anthropic', 'https://proxy.example/sk-wr-x', 'cd agent; python a.py')).toBe('$wrPrev=$env:ANTHROPIC_BASE_URL; try { $env:ANTHROPIC_BASE_URL="https://proxy.example/sk-wr-x"; cd agent; python a.py } finally { $env:ANTHROPIC_BASE_URL=$wrPrev }');
   });
 
   it('points the agent the way production does', () => {
