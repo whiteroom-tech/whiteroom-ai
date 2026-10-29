@@ -32,8 +32,10 @@ let productionRules: unknown[];
 /** Route suffix → a refusal status (e.g. '/rules/update' → 409); `once` clears it after the first. */
 let refuse: Record<string, { status: number; once?: boolean }>;
 let govFails: boolean;
-/** While set, /rules/list waits for it (an in-flight quiet re-read). */
-let listGate: Promise<void> | null;
+/** Each /rules/list call takes the next gate (if any) and waits for it: an in-flight read. */
+let listGates: Promise<void>[];
+/** Holds the next /rules/list call until the returned release is called. */
+const holdNextList = () => { let release!: () => void; listGates.push(new Promise<void>((r) => { release = r; })); return () => release(); };
 const bff = vi.fn();
 const calls = () => bff.mock.calls.map(([url, init]) => ({ url: String(url), body: JSON.parse(String((init as RequestInit).body)) }));
 
@@ -45,7 +47,7 @@ beforeEach(() => {
   productionRules = [];
   refuse = {};
   govFails = false;
-  listGate = null;
+  listGates = [];
   bff.mockReset().mockImplementation(async (url: string, init: RequestInit) => {
     const body = JSON.parse(String(init.body));
     if (!url.startsWith('/api/sandbox/')) {
@@ -61,7 +63,8 @@ beforeEach(() => {
     }
     if (url.endsWith('/rules/list')) {
       const answer = listAnswer;
-      if (listGate) await listGate;
+      const gate = listGates.shift();
+      if (gate) await gate;
       return Response.json(answer);
     }
     if (url.endsWith('/rules/ready-made')) return Response.json(state());
@@ -91,6 +94,21 @@ describe('Sandbox rules', () => {
     await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
     expect(calls().some((c) => c.url.endsWith('/rules/ready-made'))).toBe(false);
     expect(text()).toContain('No rules in your Sandbox');
+  });
+
+  it('never replaces rules whose source it doesn’t know, or rules that are there with no source', async () => {
+    listAnswer = state({ source: 'some_future_source' });
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    expect(calls().some((c) => c.url.endsWith('/rules/ready-made'))).toBe(false);
+    expect(text()).toContain('Your own Sandbox rules.');
+    expect(text()).toContain('Spend cap');
+
+    act(() => root.unmount());
+    root = createRoot(document.body.appendChild(document.createElement('div')));
+    listAnswer = state({ source: null });
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    expect(calls().some((c) => c.url.endsWith('/rules/ready-made'))).toBe(false);
+    expect(text()).toContain('Spend cap');
   });
 
   it('hides Copy my production rules when production has no rules, shows it when it has', async () => {
@@ -235,8 +253,7 @@ describe('Sandbox rules: failures and races', () => {
   it('doesn’t let an older quiet re-read overwrite a newer replace', async () => {
     await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
     // The save's quiet re-read is held; it would answer "custom, no rules".
-    let release!: () => void;
-    listGate = new Promise<void>((r) => { release = r; });
+    const release = holdNextList();
     listAnswer = state({ rules: [], source: 'custom' });
     await editSpendCap();
     await click('Save');
@@ -248,6 +265,102 @@ describe('Sandbox rules: failures and races', () => {
     await flush();
     expect(text()).toContain('Ready-made set — easy to trip on a short run.');
     expect(text()).not.toContain('No rules in your Sandbox');
+  });
+});
+
+describe('Sandbox rules: loading and retry', () => {
+  const LOADING = 'Loading your Sandbox rules…';
+  const count = (suffix: string) => calls().filter((c) => c.url.endsWith(suffix)).length;
+  /** Save Spend cap in Enforce; with update refused 409 this starts a rules load. */
+  const saveConflict = async () => {
+    if (!document.querySelector('select[aria-label="When enforced"]')) {
+      await act(async () => { (document.querySelector('button[aria-label="Edit Spend cap"]') as HTMLButtonElement).click(); });
+      await flush();
+      await act(async () => { ([...document.querySelectorAll('[role=radio]')].find((r) => r.textContent === 'Enforce') as HTMLElement).click(); });
+      await flush();
+    }
+    await click('Save');
+  };
+
+  it('keeps loading while a newer load runs, and stops when that one lands', async () => {
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    expect(text()).not.toContain(LOADING);
+    refuse = { '/rules/update': { status: 409 } };
+    const releaseOld = holdNextList();
+    const releaseNew = holdNextList();
+    const lists = count('/rules/list');
+    await saveConflict();
+    await saveConflict();
+    expect(count('/rules/list')).toBe(lists + 2);
+    expect(text()).toContain(LOADING);
+    // The older load finishes first: the newer one is still running.
+    await act(async () => { releaseOld(); });
+    await flush();
+    expect(text()).toContain(LOADING);
+    listAnswer = state({ source: 'custom' });
+    await act(async () => { releaseNew(); });
+    await flush();
+    expect(text()).not.toContain(LOADING);
+  });
+
+  it('offers Try again when a reload fails with rules still shown', async () => {
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    refuse = { '/rules/update': { status: 409 }, '/rules/list': { status: 500, once: true } };
+    await saveConflict();
+    expect(text()).toContain('Refused 500.');
+    expect(text()).toContain('Spend cap');
+    expect(button('Try again')).toBeDefined();
+    listAnswer = state({ source: 'custom' });
+    await click('Try again');
+    expect(text()).not.toContain('Refused 500.');
+    expect(button('Try again')).toBeUndefined();
+    expect(text()).toContain('Your own Sandbox rules.');
+  });
+
+  it('doesn’t offer Try again for a failed edit', async () => {
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    refuse = { '/rules/delete': { status: 500 } };
+    await act(async () => { (document.querySelector('button[aria-label="Edit Spend cap"]') as HTMLButtonElement).click(); });
+    await flush();
+    await click('Remove rule');
+    await click('Remove rule');
+    expect(text()).toContain('Refused 500.');
+    expect(button('Try again')).toBeUndefined();
+  });
+
+  it('is never stuck loading when a replace overtakes a load', async () => {
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    refuse = { '/rules/update': { status: 409 } };
+    const release = holdNextList();
+    listAnswer = state({ rules: [], source: 'custom' });
+    await saveConflict();
+    expect(text()).toContain(LOADING);
+    await click('Use the ready-made set');
+    await click('Use the ready-made set');
+    expect(count('/rules/ready-made')).toBe(1);
+    expect(text()).not.toContain(LOADING);
+    expect(text()).toContain('Ready-made set — easy to trip on a short run.');
+    // The overtaken load lands last and changes nothing.
+    await act(async () => { release(); });
+    await flush();
+    expect(text()).not.toContain(LOADING);
+    expect(text()).not.toContain('No rules in your Sandbox');
+  });
+
+  it('is never stuck loading when a quiet re-read overtakes a load, even if that read fails', async () => {
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    refuse = { '/rules/update': { status: 409 } };
+    const release = holdNextList();
+    await saveConflict();
+    expect(text()).toContain(LOADING);
+    // Remove a rule: its quiet re-read overtakes the held load, and fails.
+    refuse = { '/rules/list': { status: 500, once: true } };
+    await click('Remove rule');
+    await click('Remove rule');
+    expect(text()).not.toContain(LOADING);
+    await act(async () => { release(); });
+    await flush();
+    expect(text()).not.toContain(LOADING);
   });
 });
 

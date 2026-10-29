@@ -79,7 +79,8 @@ export function ruleOf(v: unknown): GovernanceRule | null {
 /** The rules answer (list, ready-made, copy), or null when it isn't one. */
 export function rulesStateOf(data: unknown): SandboxRulesState | null {
   if (!isObj(data) || !str(data.sandboxFleetId, 128) || !Array.isArray(data.rules)) return null;
-  const source = data.source === null || data.source === undefined ? null : SOURCES.includes(data.source as Exclude<SandboxRulesSource, null>) ? (data.source as SandboxRulesSource) : null;
+  // Only a missing source means "none set up yet"; one this page doesn't know is treated as the user's own, never replaced.
+  const source = data.source === null || data.source === undefined ? null : SOURCES.includes(data.source as Exclude<SandboxRulesSource, null>) ? (data.source as SandboxRulesSource) : 'custom';
   const changed = typeof data.productionChanged === 'number' && Number.isInteger(data.productionChanged) && data.productionChanged > 0 ? data.productionChanged : 0;
   return {
     sandboxFleetId: data.sandboxFleetId,
