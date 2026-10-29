@@ -63,7 +63,7 @@ const LIVE: AuditEntry[] = [
   { id: 'l2', type: 'task_complete', timestamp: t('14:16'), agentId: 'writer-agent', taskName: 'reply: Here is the Q3 claims summary.' },
 ];
 
-const tally = (blocks: number, wouldBlocks: number) => ({ blocks, wouldBlocks, pastopped: 0, toldYou: 0 });
+const tally = (blocks: number, wouldBlocks: number) => ({ blocks, wouldBlocks, paused: 0, stopped: 0, toldYou: 0 });
 const score = (agentId: string, s: number, speedScore: number | null) => ({ agentId, calls: 40, completeRate: 100, costDiligence: null, speedScore, score: s });
 const QUIET_WEEK = {
   calls: 1180, costUsd: 3.17, partial: false, rules: tally(0, 120),
