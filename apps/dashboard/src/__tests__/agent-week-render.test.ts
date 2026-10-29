@@ -37,6 +37,12 @@ describe('Last 7 days on the agent page', () => {
     expect(t).not.toContain('How is the score');
   });
 
+  it('still says what was saved when the input is unknown, with no %', () => {
+    const t = text(renderToStaticMarkup(h(AgentWeekCard, { fleetId: 'f', agentId: 'a', preview: { used: 81_800, saved: 1_876_009 } })));
+    expect(t).toContain('With WhiteRoom — 1.88M saved');
+    expect(t).not.toContain('%');
+  });
+
   it('works out the input figures from the input sent, or none when either read is unknown', () => {
     expect(weekTokens(undefined)).toBeNull();
     expect(weekTokens({ saved: 5 })).toBeNull();

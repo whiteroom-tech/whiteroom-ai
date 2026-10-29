@@ -60,6 +60,8 @@ export function AgentWeekCard({ fleetId, authKey, agentId, preview, hasTaskType 
           <span style={label}>With WhiteRoom</span><br />
           <strong style={figure}>{tokens ? fmtTokens(tokens.used) : dash}</strong>
           {tokens && tokens.saved > 0 && <span style={{ ...cap, color: 'var(--ok)' }}> {fmtTokens(tokens.saved)} less ({tokens.pct}%)</span>}
+          {/* Input unknown (an older engine, or its read failed): what was saved, without a % from a guessed base. */}
+          {!tokens && (week?.saved ?? 0) > 0 && <span style={{ ...cap, color: 'var(--ok)' }}> {fmtTokens(week!.saved!)} saved</span>}
         </span>
         <span>
           <span style={label}>{RULE_ACTIVITY}</span><br />
