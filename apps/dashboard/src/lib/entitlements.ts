@@ -13,6 +13,7 @@
 import 'server-only';
 
 import { auth } from '@/auth';
+import { SANDBOX_FLEET_PREFIX } from '@/lib/fleet-helpers';
 import { db, type Queryable } from '@/lib/db';
 import { fetchFleetUsage } from '@/lib/fleet-usage';
 import { PROXY_URL } from '@/lib/whiteroom/client';
@@ -148,9 +149,9 @@ export async function getEntitlement(): Promise<Entitlement> {
  */
 export function fleetCountSql(alias: string): string {
   return `(SELECT count(*)::int FROM (
-             SELECT fleet_id FROM user_fleets WHERE user_id = ${alias}.id AND fleet_id IS NOT NULL AND fleet_id NOT LIKE 'sandbox-%'
+             SELECT fleet_id FROM user_fleets WHERE user_id = ${alias}.id AND fleet_id IS NOT NULL AND fleet_id NOT LIKE '${SANDBOX_FLEET_PREFIX}%'
              UNION
-             SELECT ${alias}.fleet_id WHERE ${alias}.fleet_id IS NOT NULL AND ${alias}.fleet_id NOT LIKE 'sandbox-%'
+             SELECT ${alias}.fleet_id WHERE ${alias}.fleet_id IS NOT NULL AND ${alias}.fleet_id NOT LIKE '${SANDBOX_FLEET_PREFIX}%'
            ) AS distinct_fleets)`;
 }
 
@@ -178,9 +179,9 @@ async function countFleets(userId: string): Promise<number> {
 async function fleetIdsFor(userId: string): Promise<string[]> {
   const { rows } = await db().query(
     // Sandbox fleets (sandbox-…) never take the plan: they don't count toward it and its limits aren't pushed to them.
-    `SELECT fleet_id FROM users WHERE id = $1 AND fleet_id IS NOT NULL AND fleet_id NOT LIKE 'sandbox-%'
+    `SELECT fleet_id FROM users WHERE id = $1 AND fleet_id IS NOT NULL AND fleet_id NOT LIKE '${SANDBOX_FLEET_PREFIX}%'
      UNION
-     SELECT fleet_id FROM user_fleets WHERE user_id = $1 AND fleet_id IS NOT NULL AND fleet_id NOT LIKE 'sandbox-%'`,
+     SELECT fleet_id FROM user_fleets WHERE user_id = $1 AND fleet_id IS NOT NULL AND fleet_id NOT LIKE '${SANDBOX_FLEET_PREFIX}%'`,
     [userId],
   );
   const ids = rows.map((r) => r.fleet_id as string);

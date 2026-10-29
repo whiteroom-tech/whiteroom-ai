@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import { readCred } from '@/lib/cred-seal';
 import { db } from '@/lib/db';
 import { getUserFleets, type UserFleet } from '@/lib/user-fleets';
+import { isSandboxFleetId } from '@/lib/fleet-helpers';
 
 // Server-side custody of the fleet token. The token used to live in
 // localStorage (`wr_fleet_token`), where any XSS could exfiltrate a
@@ -109,7 +110,7 @@ export async function tokenFromUserFleets(skip: ReadonlySet<string> = new Set())
   }
   if (!fleets.length) return null;
   // Never a Sandbox fleet; rows without a known fleet_id only when nothing better exists.
-  const usable = fleets.filter((f) => !f.fleet_id?.startsWith('sandbox-') && !skip.has(f.fleet_token));
+  const usable = fleets.filter((f) => !(f.fleet_id && isSandboxFleetId(f.fleet_id)) && !skip.has(f.fleet_token));
   const known = usable.filter((f) => f.fleet_id);
   const pick = (known.length ? known : usable)[0];
   if (!pick) return null;
@@ -126,7 +127,7 @@ async function primaryFleet(): Promise<LinkedFleetCredential | null> {
     );
     const row = rows[0];
     // A Sandbox fleet is never the account's production fleet (an unknown id is resolved and checked by the caller).
-    if (typeof row?.fleet_id === 'string' && row.fleet_id.startsWith('sandbox-')) return null;
+    if (typeof row?.fleet_id === 'string' && isSandboxFleetId(row.fleet_id)) return null;
     const token = readCred('users.fleet_token', session.user.id, row?.fleet_token ?? null, row?.fleet_token_enc ?? null);
     return token ? { token, fleetId: row.fleet_id ?? null } : null;
   } catch {

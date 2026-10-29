@@ -91,33 +91,28 @@ export async function GET() {
   // No (valid) cookie: a next-auth session user may still have fleets linked
   // in user_fleets — adopt the preferred one into the cookie.
   let linked = await tokenFromUserFleets();
-  // A row of unknown fleet that turns out to be a Sandbox fleet's: try the next one.
+  // Rows that predate fleet ids being stored are resolved from the engine; one
+  // that turns out to be a Sandbox fleet's is skipped and the next tried (at most 5).
   const skipped = new Set<string>();
-  let resolved: Awaited<ReturnType<typeof resolveFleetId>> | null = null;
-  while (linked && !linked.fleetId) {
-    resolved = await resolveFleetId(linked.token);
-    if ('error' in resolved || !isSandboxFleetId(resolved.fleetId)) break;
+  while (linked && !linked.fleetId && skipped.size < 5) {
+    const resolved = await resolveFleetId(linked.token);
+    if ('error' in resolved) return resolved.error;
+    if (!isSandboxFleetId(resolved.fleetId)) {
+      await setFleetAuthCookie(linked.token);
+      return Response.json({ fleetId: resolved.fleetId });
+    }
     skipped.add(linked.token);
     linked = await tokenFromUserFleets(skipped);
-    resolved = null;
   }
-  if (!linked) {
+  if (!linked?.fleetId) {
     // signedIn tells the page where to send the visitor: sign-in when the
     // account session is gone, Fleet key (which provisions) when it isn't.
     const signedIn = !!(await auth())?.user;
     return Response.json({ error: 'No fleet session.', signedIn }, { status: 401 });
   }
 
-  if (linked.fleetId) {
-    await setFleetAuthCookie(linked.token);
-    return Response.json({ fleetId: linked.fleetId });
-  }
-
-  // Row predates fleet ids being stored: resolved from the engine above.
-  if (!resolved) return Response.json({ error: 'No fleet session.', signedIn: true }, { status: 401 });
-  if ('error' in resolved) return resolved.error;
   await setFleetAuthCookie(linked.token);
-  return Response.json({ fleetId: resolved.fleetId });
+  return Response.json({ fleetId: linked.fleetId });
 }
 
 export async function DELETE() {

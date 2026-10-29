@@ -25,8 +25,10 @@ export function buildCredentials(
   return { fleetId: resolvedFleetId, fleetToken: resolvedFleetToken };
 }
 
+/** Every Sandbox fleet's id starts with this; SQL filters use it as `NOT LIKE '${SANDBOX_FLEET_PREFIX}%'`. */
+export const SANDBOX_FLEET_PREFIX = 'sandbox-';
 /** A Sandbox fleet (sandbox-…): never a production page's fleet. */
-export const isSandboxFleetId = (fleetId: string) => fleetId.startsWith('sandbox-');
+export const isSandboxFleetId = (fleetId: string) => fleetId.startsWith(SANDBOX_FLEET_PREFIX);
 
 /** What a Sandbox fleet's key or token gets on the production side: Sandbox data stays in Sandbox. */
 export const SANDBOX_KEY_MESSAGE = 'That’s a Sandbox key. Open it from Sandbox, not here.';
