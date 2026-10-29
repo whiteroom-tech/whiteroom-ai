@@ -178,6 +178,23 @@ describe('Sandbox v2 page', () => {
     expect(text()).not.toContain('sk-wr-placeholder-rotated');
   });
 
+  it('a step that finds the Sandbox changed (onStale) also takes the key on screen with it', async () => {
+    // Connected here, but the rules read finds this Sandbox gone: it was reconnected in another tab.
+    let connected = false;
+    bff.mockImplementation(async (url: string) => {
+      if (url.endsWith('/connect')) { connected = true; return Response.json({ ...STATUS, created: true, ...ISSUED }); }
+      if (url.endsWith('/status')) return Response.json(connected ? { ...STATUS, sandboxFleetId: 'sandbox-11111111-1111-4111-8111-111111111111' } : { success: true, exists: false });
+      if (url.endsWith('/rules/list')) return Response.json({ error: 'Your Sandbox changed since this page loaded.' }, { status: 409 });
+      return Response.json(STATUS);
+    });
+    await render({ fleet: 'prod-eu' });
+    await type(document.getElementById('sandbox-v2-key') as HTMLInputElement, PROVIDER_KEY);
+    await click('Connect');
+    expect(calls().some((c) => c.url.endsWith('/rules/list'))).toBe(true);
+    expect(text()).not.toContain(ISSUED.proxyKey);
+    expect(button('Get a new Sandbox URL')).toBeDefined();
+  });
+
   it('an unreadable status answer is an error with Try again, not the older destination', async () => {
     bff.mockImplementation(async () => Response.json({ success: true, nonsense: 1 }));
     const onUnavailable = vi.fn();
