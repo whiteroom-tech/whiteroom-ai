@@ -6,7 +6,7 @@ import type { GovernanceRule } from '@/lib/whiteroom/types';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {} }), useSearchParams: () => new URLSearchParams() }));
 const { AgentWeekCard } = await import('@/components/agent/AgentWeekCard');
-const { RulesOnAgent } = await import('@/components/agent/RulesOnAgent');
+const { RulesOnAgent, restLine } = await import('@/components/agent/RulesOnAgent');
 const { weekTokens } = await import('@/lib/agent-detail');
 const { outOfTen, scoreParts, scoreSummary, scoreWorking } = await import('@/lib/agent-scores');
 
@@ -94,23 +94,40 @@ describe('Rules on this agent', () => {
     { ...base, id: 'r2', ruleType: 'call_rate', mode: 'watch', appliesTo: ['a'], params: { maxCalls: 60 } },
     { ...base, id: 'r3', ruleType: 'call_rate', mode: 'watch', appliesTo: ['other'], params: { maxCalls: 5 } },
     { ...base, id: 'r4', ruleType: 'tool_list', mode: 'off', appliesTo: 'all', params: { blockedTools: [] } },
+    { ...base, id: 'r5', ruleType: 'call_rate', mode: 'off', appliesTo: 'all', params: { maxCalls: 30 } },
+    // In Watch, but nothing picked: Controls puts it under "Off and not set up".
+    { ...base, id: 'r6', ruleType: 'tool_list', mode: 'watch', appliesTo: ['a'], params: { blockedTools: [] } },
   ];
 
-  it('lists the rules that are on for it, linked to Controls, and counts the Off ones', () => {
+  it('lists the rules that are on and set up, linked to Controls, and counts the rest as Controls does', () => {
     const html = renderToStaticMarkup(h(RulesOnAgent, { fleetId: 'f', agentId: 'a', preview: rules }));
     expect(html).toContain('href="/controls?rule=r1"');
     expect(html).toContain('href="/controls?rule=r2"');
     expect(html).not.toContain('rule=r3');
+    expect(html).not.toContain('rule=r6');
     expect(html).toContain('href="/controls?agent=a"');
     const t = text(html);
     expect(t).toContain('Enforce');
     expect(t).toContain('Over 60 calls a minute');
-    expect(t).toContain('1 more rule is Off.');
+    expect(t).toContain('Rules on this agent 2');
+    expect(t).toContain('Also 1 rule is Off. 2 aren’t set up yet.');
+  });
+
+  it('words the rules it doesn’t list, one or many of each', () => {
+    expect(restLine(0, 0)).toBe('');
+    expect(restLine(1, 0)).toBe('1 rule is Off.');
+    expect(restLine(3, 0)).toBe('3 rules are Off.');
+    expect(restLine(0, 1)).toBe('1 rule isn’t set up yet.');
+    expect(restLine(0, 7)).toBe('7 rules aren’t set up yet.');
+    expect(restLine(1, 1)).toBe('1 rule is Off. 1 isn’t set up yet.');
+    expect(restLine(2, 7)).toBe('2 rules are Off. 7 aren’t set up yet.');
   });
 
   it('says so when none are on', () => {
-    const t = text(renderToStaticMarkup(h(RulesOnAgent, { fleetId: 'f', agentId: 'a', preview: [rules[3]] })));
+    const t = text(renderToStaticMarkup(h(RulesOnAgent, { fleetId: 'f', agentId: 'a', preview: [rules[4]] })));
     expect(t).toContain('No rules are on for this agent. 1 rule is Off.');
+    const unset = text(renderToStaticMarkup(h(RulesOnAgent, { fleetId: 'f', agentId: 'a', preview: [rules[5]] })));
+    expect(unset).toContain('No rules are on for this agent. 1 rule isn’t set up yet.');
   });
 });
 

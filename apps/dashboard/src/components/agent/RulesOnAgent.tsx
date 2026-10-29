@@ -9,14 +9,15 @@ import { usePoll } from '@/hooks/usePoll';
 import { HELP } from '@/lib/metric-definitions';
 import { ROUTES } from '@/lib/routes';
 import { RULE_LABELS } from '@/lib/governance';
-import { ruleCondition, rulesFor } from '@/lib/controls-view';
+import { notSetUp, ruleCondition, rulesFor } from '@/lib/controls-view';
 import { RuleDoesTag } from '@/components/RuleDoesTag';
 import { plural } from '@/lib/format';
 
 /**
  * The rules from Controls that cover this agent: the ones
- * that are on, tagged the way Controls tags them, each linking to its rule.
- * Off rules are counted, not listed.
+ * that are on and set up, tagged the way Controls tags them, each linking to its rule.
+ * Off rules and ones with nothing picked yet are counted, not listed, as Controls
+ * puts them under "Off and not set up".
  */
 export function RulesOnAgent({ fleetId, authKey, agentId, preview }: {
   fleetId: string;
@@ -41,8 +42,8 @@ export function RulesOnAgent({ fleetId, authKey, agentId, preview }: {
   usePoll(load, { intervalMs: 60_000, enabled: !!fleetId && !preview });
 
   const covering = rules ? rulesFor(rules, agentId) : [];
-  const on = covering.filter((r) => r.mode !== 'off');
-  const off = covering.length - on.length;
+  const on = covering.filter((r) => r.mode !== 'off' && !notSetUp(r));
+  const rest = restLine(covering.filter((r) => r.mode === 'off' && !notSetUp(r)).length, covering.filter(notSetUp).length);
   const controlsLink = `${ROUTES.controls}?agent=${encodeURIComponent(agentId)}`;
   return (
     <Panel
@@ -57,7 +58,7 @@ export function RulesOnAgent({ fleetId, authKey, agentId, preview }: {
         </p>
       ) : on.length === 0 ? (
         <p style={{ margin: 0, padding: '14px 18px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-          No rules are on for this agent.{off > 0 ? ` ${off} ${plural(off, 'rule is', 'rules are')} Off.` : ''}
+          No rules are on for this agent.{rest ? ` ${rest}` : ''}
         </p>
       ) : (
         <>
@@ -78,13 +79,20 @@ export function RulesOnAgent({ fleetId, authKey, agentId, preview }: {
               );
             })}
           </ul>
-          {off > 0 && (
+          {rest && (
             <p style={{ margin: 0, padding: '10px 18px', borderTop: '1px solid var(--line)', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-              {off} more {plural(off, 'rule is', 'rules are')} Off.
+              Also {rest}
             </p>
           )}
         </>
       )}
     </Panel>
   );
+}
+
+/** "1 rule is Off. 7 aren't set up yet." for the rules not listed; '' when there are none. */
+export function restLine(off: number, unset: number): string {
+  const offText = off > 0 ? `${off} ${plural(off, 'rule is', 'rules are')} Off.` : '';
+  const unsetText = unset > 0 ? `${unset} ${off > 0 ? plural(unset, 'isn’t', 'aren’t') : plural(unset, 'rule isn’t', 'rules aren’t')} set up yet.` : '';
+  return [offText, unsetText].filter(Boolean).join(' ');
 }
