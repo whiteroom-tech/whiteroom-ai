@@ -49,11 +49,12 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   const [notice, setNotice] = useState('');
   const now = preview?.now ?? Date.now();
 
-  const load = useCallback(async () => {
+  /** Reads the Sandbox again; `keepError` keeps the message of the action that prompted it. */
+  const load = useCallback(async (keepError = false) => {
     setLoading(true);
     try {
       setStatus(await getSandboxFleetStatus(fleet));
-      setError('');
+      if (!keepError) setError('');
     } catch (e) {
       if (isUnavailable(e) && onUnavailable) { onUnavailable(); return; }
       setError(message(e));
@@ -105,7 +106,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
     } catch (e) {
       setError(message(e));
       // 404 / 409: the Sandbox changed under the page (expired, reconnected elsewhere).
-      if (e instanceof SandboxFleetError && (e.status === 404 || e.status === 409)) void load();
+      if (e instanceof SandboxFleetError && (e.status === 404 || e.status === 409)) void load(true);
     } finally {
       setBusy(false);
     }

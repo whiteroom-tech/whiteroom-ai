@@ -173,7 +173,8 @@ async function call(action: SandboxFleetAction, body: Record<string, unknown>): 
 
 function mustStatus(data: unknown): SandboxFleetStatus {
   const status = statusOf(data);
-  if (!status) throw new SandboxFleetError('WhiteRoom sent an answer the dashboard couldn’t read. Try again.', 502, SANDBOX_FLEET_UNAVAILABLE);
+  // An unreadable answer is an error with Try again, never "no Sandbox v2 here" (only the BFF's explicit answer is that).
+  if (!status) throw new SandboxFleetError('WhiteRoom sent an answer the dashboard couldn’t read. Try again.', 502);
   return status;
 }
 
