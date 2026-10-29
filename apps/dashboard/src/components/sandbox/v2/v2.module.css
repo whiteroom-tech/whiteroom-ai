@@ -34,3 +34,25 @@
 .segment { display:flex; max-width:100%; justify-self:start; }
 .check { display:inline-flex; align-items:center; gap:10px; font-size:var(--fs-sm); cursor:pointer; justify-self:start; min-height:32px; }
 .check input { width:16px; height:16px; margin:0; accent-color:var(--brand); }
+/* Step 4: checks and the report. Rows reuse guided.module.css's check marks. */
+.stage { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:12px 14px; border:1px solid var(--line2); border-radius:8px; background:var(--sunk); min-width:0; }
+.stageText { margin:0; flex:1 1 240px; min-width:0; font-size:var(--fs-md); font-weight:600; color:var(--tx); }
+.checks { list-style:none; margin:0; padding:0; border-top:1px solid var(--line); }
+.checkBody { flex:1; min-width:0; }
+.checkMuted { background:var(--sunk); color:var(--tx3); }
+.members { margin-top:6px; font-size:var(--fs-sm); }
+.members > summary { cursor:pointer; color:var(--tx2); min-height:24px; }
+.member { padding:6px 0 0 12px; border-left:2px solid var(--line); margin:6px 0 0; display:grid; gap:2px; }
+.memberName { color:var(--tx); font-weight:600; }
+.report { display:grid; gap:4px; }
+.reportHead { margin:0; font-size:var(--fs-xl); font-weight:700; line-height:1.2; color:var(--tx); }
+/* Run agent (the helper). */
+.steps { display:grid; gap:16px; min-width:0; }
+.step { display:grid; gap:8px; min-width:0; }
+.connected { margin:0; display:flex; align-items:baseline; gap:8px; font-size:var(--fs-md); font-weight:600; color:var(--tx); min-width:0; overflow-wrap:anywhere; }
+.dot { width:8px; height:8px; border-radius:50%; background:var(--ok); flex:none; }
+.prompt { width:100%; min-width:0; padding:8px 12px; line-height:1.5; resize:vertical; font-family:inherit; box-sizing:border-box; }
+.runRow { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
+.tasks { list-style:none; margin:0; padding:0; border-top:1px solid var(--line); }
+.task { display:grid; gap:4px; padding:10px 0; border-bottom:1px solid var(--line); min-width:0; }
+.taskPrompt { font-size:var(--fs-sm); color:var(--tx); min-width:0; overflow-wrap:anywhere; flex:1 1 160px; }

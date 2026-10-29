@@ -37,6 +37,9 @@ export type SandboxFleetStatus =
     lastCallAt: string | null;
     expiresAt: string | null;
     key: SandboxFleetKey | null;
+    /** Calls in the last day that came outside a check (spec §8.3): a forgotten agent. */
+    callsOutsideWindow24h?: number;
+    lastCallOutsideWindowAt?: string | null;
   };
 
 /** A Sandbox key handed out by connect or rotate. Shown once; never stored. */
@@ -51,13 +54,31 @@ export interface IssuedSandboxKey {
 export const SANDBOX_FLEET_UNAVAILABLE = 'sandbox_fleet_unavailable';
 
 export class SandboxFleetError extends Error {
-  constructor(message: string, readonly status: number, readonly reason?: string) {
+  /** `retryAfter`: seconds to wait, from a 429. */
+  constructor(message: string, readonly status: number, readonly reason?: string, readonly retryAfter?: number) {
     super(message);
     this.name = 'SandboxFleetError';
   }
 }
 
 export const isUnavailable = (e: unknown) => e instanceof SandboxFleetError && e.reason === SANDBOX_FLEET_UNAVAILABLE;
+
+/**
+ * The reason the BFF gives the engine's pin refusal (the page's
+ * `sandboxFleetId` isn't the fleet's Sandbox any more). The engine sends it as
+ * reason sandbox_changed (older engines sent only its fixed text); every other
+ * 409 is a state conflict (a check already running, none running, nothing stopped…).
+ */
+export const SANDBOX_CHANGED = 'sandbox_changed';
+/** The engine's pin refusal by its text: a fallback for engines that sent it without reason sandbox_changed. */
+export const isPinMismatch = (status: number, error: string) => status === 409 && /^That Sandbox doesn['’]t belong to this fleet\.?$/.test(error);
+
+/**
+ * The Sandbox changed under the page: gone (404), or not the one the page
+ * pinned (409 sandbox_changed). A state-conflict 409 is not stale.
+ */
+export const isStaleSandbox = (e: unknown) =>
+  e instanceof SandboxFleetError && (e.status === 404 || (e.status === 409 && e.reason === SANDBOX_CHANGED));
 
 const str = (v: unknown, max = 512): v is string => typeof v === 'string' && v.length > 0 && v.length <= max;
 const strOrNull = (v: unknown): string | null => (str(v) ? v : null);
@@ -86,7 +107,18 @@ export function statusOf(data: unknown): SandboxFleetStatus | null {
     lastCallAt: strOrNull(d.lastCallAt),
     expiresAt: strOrNull(d.expiresAt),
     key,
+    ...(typeof d.callsOutsideWindow24h === 'number' && Number.isInteger(d.callsOutsideWindow24h) && d.callsOutsideWindow24h >= 0 && {
+      callsOutsideWindow24h: d.callsOutsideWindow24h,
+      lastCallOutsideWindowAt: strOrNull(d.lastCallOutsideWindowAt),
+    }),
   };
+}
+
+/** The Sandbox card's notice when an agent called outside a check (spec §8.3), or null. */
+export function outsideWindowText(status: SandboxFleetStatus): string | null {
+  const n = status.exists ? status.callsOutsideWindow24h ?? 0 : 0;
+  if (n <= 0) return null;
+  return `Your agent called the Sandbox ${n === 1 ? 'once' : `${n.toLocaleString('en-US')} times`} outside a check in the last day. Sandbox rules only watch then, so nothing was blocked.`;
 }
 
 /** The once-shown key of a connect or rotate answer, or null when there isn't one. */
@@ -167,7 +199,8 @@ export async function sandboxPost(path: string, body: Record<string, unknown>): 
   const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
   if (!res.ok || !data) {
     const message = data && typeof data.error === 'string' ? data.error : 'That didn’t work. Try again.';
-    throw new SandboxFleetError(message, res.status, data && typeof data.reason === 'string' ? data.reason : undefined);
+    const wait = data && typeof data.retryAfter === 'number' ? data.retryAfter : undefined;
+    throw new SandboxFleetError(message, res.status, data && typeof data.reason === 'string' ? data.reason : undefined, wait);
   }
   return data;
 }

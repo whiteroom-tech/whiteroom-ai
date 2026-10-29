@@ -10,10 +10,13 @@ import { AgentNaming } from '@/components/citadel/AgentNaming';
 import { agentNamingFor } from '@/lib/provider-key-form';
 import { ROUTES } from '@/lib/routes';
 import {
-  connectSandboxFleet, getSandboxFleetStatus, isUnavailable, keptUntilText, lastCallText, pointLine, providerLabel,
+  connectSandboxFleet, getSandboxFleetStatus, isUnavailable, keptUntilText, lastCallText, outsideWindowText, pointLine, providerLabel,
   resetSandboxFleet, rotateSandboxFleetKey, SandboxFleetError, type IssuedSandboxKey, type SandboxFleetStatus,
 } from '@/lib/sandbox/fleet';
 import { ConnectForm, type ConnectRequest } from './ConnectForm';
+import { checkStateOf } from '@/lib/sandbox/checks';
+import { SandboxChecks, type SandboxChecksPreview } from './SandboxChecks';
+import { SandboxHelper, type SandboxHelperPreview } from './SandboxHelper';
 import { SandboxRules, type SandboxRulesPreview } from './SandboxRules';
 import s from '../guided.module.css';
 import v from './v2.module.css';
@@ -28,9 +31,15 @@ export interface SandboxHomePreview {
   now?: number;
   /** Step 3, once connected. */
   rules?: SandboxRulesPreview;
+  /** Step 4 and Run agent, once connected. */
+  checks?: SandboxChecksPreview;
+  helper?: SandboxHelperPreview;
 }
 
 type Confirm = 'rotate' | 'reset' | null;
+
+/** /dev/sandbox-v2: a helper that isn't connected. */
+const NO_HELPER = { connected: false, host: null, connectedAt: null, lastSeenAt: null, queued: 0, running: false, recent: [], code: null, tasksThisHour: 0, tasksPerHour: 30 };
 
 const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : 'That didn’t work. Check your connection and try again.');
 
@@ -70,6 +79,9 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
     if (preview) return;
     void load();
   }, [load, preview]);
+
+  // One callback for the steps below: a new one each render would re-run their reads.
+  const reload = useCallback(() => { void load(); }, [load]);
 
   async function connect(req: ConnectRequest): Promise<string | null> {
     if (preview) {
@@ -116,6 +128,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   }
 
   const connected = status?.exists === true && status.key !== null ? status : null;
+  const outside = connected ? outsideWindowText(connected) : null;
   const showForm = !loading && status !== null && (!connected || replacing);
 
   return <>
@@ -155,9 +168,26 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
             fleet={fleet}
             sandboxFleetId={connected.sandboxFleetId}
             preview={preview ? preview.rules ?? { state: null, productionRules: 0, now } : undefined}
-            onStale={() => void load()}
+            onStale={reload}
           />
         )}
+
+        {connected && !replacing && <>
+          <SandboxChecks
+            key={`checks-${connected.sandboxFleetId}`}
+            fleet={fleet}
+            sandboxFleetId={connected.sandboxFleetId}
+            preview={preview ? preview.checks ?? { state: checkStateOf({ window: null, checks: [] }), now } : undefined}
+            onStale={reload}
+          />
+          <SandboxHelper
+            key={`helper-${connected.sandboxFleetId}`}
+            fleet={fleet}
+            sandboxFleetId={connected.sandboxFleetId}
+            preview={preview ? preview.helper ?? { status: { ...NO_HELPER }, now } : undefined}
+            onStale={reload}
+          />
+        </>}
 
         {connected && (
           <Panel
@@ -174,6 +204,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
                 <dd>{lastCallText(connected.lastCallAt, now)}</dd>
               </dl>
               <p className={v.text}>{keptUntilText(connected.expiresAt, now)}</p>
+              {outside && <Banner variant="warn">{outside}</Banner>}
               <div className={v.actions}>
                 <Button size={32} onClick={() => setConfirm('rotate')} disabled={busy}>Rotate key</Button>
                 <Button size={32} variant="danger" onClick={() => setConfirm('reset')} disabled={busy}>Reset Sandbox</Button>
