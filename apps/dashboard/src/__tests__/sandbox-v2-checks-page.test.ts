@@ -14,7 +14,7 @@ const { SandboxChecks, RUN_NOW } = await import('@/components/sandbox/v2/Sandbox
 const { SandboxHelper } = await import('@/components/sandbox/v2/SandboxHelper');
 const { SandboxHome } = await import('@/components/sandbox/v2/SandboxHome');
 const { SANDBOX_V2_STATES } = await import('@/app/dev/sandbox-v2/states');
-const { CHECK_IDS, stageLine, checkStateOf } = await import('@/lib/sandbox/checks');
+const { CHECK_IDS, activityLine, stageLine, checkStateOf } = await import('@/lib/sandbox/checks');
 const { LISTEN_COMMAND } = await import('@/lib/sandbox/helper');
 const { CLI_VERSION } = await import('@/lib/sandbox/practice/model');
 const { outsideWindowText } = await import('@/lib/sandbox/fleet');
@@ -81,6 +81,22 @@ describe('Check your agent', () => {
     await flush();
     expect(text()).toContain('Watching your agent’s calls…');
     expect(calls().some((c) => c.url.endsWith('/checks/start'))).toBe(false);
+  });
+
+  it('a live line says whether the agent is calling and whether this run is checked', () => {
+    const now = Date.parse('2026-10-29T20:30:00.000Z');
+    const at = (msAgo: number) => new Date(now - msAgo).toISOString();
+    const st = (stage: string | null, ended: boolean, lastCallAt: string | null) => ({
+      ...checkStateOf(checkAnswer(stage ? { stage, calls: 12, ...(ended && { endedAt: at(60_000) }) } : null))!,
+      activity: { lastCallAt, callsOutsideWindow24h: 0 },
+    });
+    expect(activityLine(st(null, false, null), now)).toBeNull();
+    expect(activityLine(st('observe', false, at(4_000)), now)).toEqual({ calling: true, text: 'Your agent is calling the Sandbox · last call 4 s ago · 12 calls checked' });
+    expect(activityLine(st('enforce', false, at(5 * 60_000)), now)).toEqual({ calling: false, text: 'Your agent stopped calling · last call 5 min ago · 12 calls checked. The check carries on when it calls again.' });
+    expect(activityLine(st('done', true, at(3_000)), now)?.text).toBe('Your agent is calling the Sandbox · last call 3 s ago. This check has finished; its next run starts a new one.');
+    expect(activityLine(st('done', true, at(10 * 60_000)), now)?.text).toBe('Your agent’s last call 10 min ago. A new check starts on its next run.');
+    // An older engine sends no activity: no line.
+    expect(checkStateOf(checkAnswer({ stage: 'observe' }))!.activity).toBeUndefined();
   });
 
   it('renders each check with its status and detail, and the rules under it', async () => {

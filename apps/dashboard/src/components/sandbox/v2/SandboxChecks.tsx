@@ -8,7 +8,7 @@ import { RULE_LABELS } from '@/lib/governance';
 import { fmtWhen } from '@/lib/format';
 import { isStaleSandbox, SandboxFleetError } from '@/lib/sandbox/fleet';
 import {
-  checkAction, getCheckState, isOpen, stageLine, STATUS_WORDS,
+  activityLine, checkAction, getCheckState, isOpen, stageLine, STATUS_WORDS,
   type CheckResult, type CheckRule, type CheckState, type CheckStatus,
 } from '@/lib/sandbox/checks';
 import { reportOf, reportSummary, RUN_PRACTICE, type ReportCard } from '@/lib/sandbox/check-report';
@@ -150,6 +150,10 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale }: {
       actions={open ? <Button size={28} variant="ghost" onClick={() => void act('stop')} disabled={busy}>Stop checking</Button> : undefined}
     >
       <div className={v.stack}>
+        {state && (() => {
+          const live = activityLine(state, now);
+          return live && <p className={`${v.live} ${live.calling ? v.liveOn : ''}`} role="status" aria-live="polite">{live.text}</p>;
+        })()}
         {loading && !state && <SkeletonCard label="Loading your checks…" lines={['60%', '45%']} heights={[12, 12]} />}
         {error && <Banner variant="error" actions={!state && !loading && !preview ? <Button size={28} onClick={() => void load()}>Try again</Button> : undefined}>{error}</Banner>}
 
