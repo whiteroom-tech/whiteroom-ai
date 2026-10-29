@@ -386,6 +386,9 @@ describe('Sandbox rules: source line', () => {
     expect(copy.text).toMatch(/^Copy of your production rules from Oct 2[67]$/);
     expect(copy.changed).toBe('Production has 2 newer changes');
     expect(sourceLine({ source: 'production_copy', productionChanged: 1 }).changed).toBe('Production has 1 newer change');
+    // No source but rules there: never "No Sandbox rules yet."
+    expect(sourceLine({ source: null, productionChanged: 0, rules: [], unshown: 1 }).text).toBe('Your Sandbox rules.');
+    expect(sourceLine({ source: null, productionChanged: 0, rules: [], unshown: 0 }).text).toBe('No Sandbox rules yet.');
   });
 });
 

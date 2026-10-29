@@ -99,7 +99,7 @@ export function rulesStateOf(data: unknown): SandboxRulesState | null {
 }
 
 /** What the source line says, and whether to offer Copy again. */
-export function sourceLine(state: Pick<SandboxRulesState, 'source' | 'copiedAt' | 'productionChanged'>, now = Date.now()): { text: string; changed: string | null } {
+export function sourceLine(state: Pick<SandboxRulesState, 'source' | 'copiedAt' | 'productionChanged'> & Partial<Pick<SandboxRulesState, 'rules' | 'unshown'>>, now = Date.now()): { text: string; changed: string | null } {
   if (state.source === 'ready_made') return { text: 'Ready-made set — easy to trip on a short run. All start in Watch.', changed: null };
   if (state.source === 'production_copy') {
     const day = state.copiedAt ? fmtDay(state.copiedAt, now) : '';
@@ -110,6 +110,8 @@ export function sourceLine(state: Pick<SandboxRulesState, 'source' | 'copiedAt' 
     };
   }
   if (state.source === 'custom') return { text: 'Your own Sandbox rules.', changed: null };
+  // No known source, but rules are there (e.g. the source couldn't be stored): never "no rules".
+  if ((state.rules?.length ?? 0) + (state.unshown ?? 0) > 0) return { text: 'Your Sandbox rules.', changed: null };
   return { text: 'No Sandbox rules yet.', changed: null };
 }
 
