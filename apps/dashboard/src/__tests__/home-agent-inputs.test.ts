@@ -1,0 +1,43 @@
+// Home › each agent's input for the week: read a few at a time, ids that differ only in
+// case added together, and any failed read flagged so the last figures stay.
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const api = vi.hoisted(() => ({ agent: vi.fn() }));
+vi.mock('@/lib/whiteroom/client', async (orig) => ({ ...(await orig<typeof import('@/lib/whiteroom/client')>()), performanceAgent: api.agent }));
+const { agentInputs } = await import('@/lib/home-agents');
+
+const calls = (inputTokens: number, cached = 0) => ({ fleetId: 'f', agentId: 'a', period: { start: '', end: '' }, hourly: [], totals: { calls: 1, costMicros: 0, inputTokens, cacheReadTokens: cached, cacheWriteTokens: 0 } });
+
+afterEach(() => api.agent.mockReset());
+
+describe('agentInputs', () => {
+  it('reads every agent over the hours given, at most 6 at a time, cached input included', async () => {
+    let open = 0;
+    let most = 0;
+    api.agent.mockImplementation(async () => { open++; most = Math.max(most, open); await Promise.resolve(); open--; return calls(100, 50); });
+    const ids = Array.from({ length: 14 }, (_, i) => `agent-${i}`);
+    const out = await agentInputs('f', ids, 170, 'k');
+    expect(api.agent).toHaveBeenCalledTimes(14);
+    expect(api.agent.mock.calls[0]).toEqual(['f', 'agent-0', 170, 'k']);
+    expect(most).toBe(6);
+    expect(out.failed).toBe(false);
+    expect(Object.keys(out.byAgent)).toHaveLength(14);
+    expect(out.byAgent['agent-13']).toBe(150);
+  });
+
+  it('adds up ids that differ only in case, and flags a failed or refused read', async () => {
+    api.agent.mockImplementation(async (_f: string, id: string) => {
+      if (id === 'down') throw new Error('down');
+      if (id === 'refused') return { error: 'no' };
+      return calls(id === 'Lead-Agent' ? 300 : 200);
+    });
+    const out = await agentInputs('f', ['lead-agent', 'Lead-Agent', 'down', 'refused'], 24);
+    expect(out.byAgent).toEqual({ 'lead-agent': 500 });
+    expect(out.failed).toBe(true);
+  });
+
+  it('leaves an agent out when the engine sends no input totals', async () => {
+    api.agent.mockResolvedValue({ ...calls(0), totals: { calls: 1, costMicros: 0 } });
+    expect(await agentInputs('f', ['a'], 24)).toEqual({ byAgent: {}, failed: false });
+  });
+});

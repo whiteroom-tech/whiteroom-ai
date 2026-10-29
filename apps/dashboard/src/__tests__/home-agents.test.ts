@@ -27,7 +27,7 @@ describe('Home agents: one list', () => {
     const agents = [agent('lead-agent', 'working'), agent('writer', 'idle'), agent('code-reviewer', 'idle')];
     const weeks = { 'lead-agent': { used: 900, input: 100, saved: 5 }, writer: { used: 100, input: 900, saved: 1 }, 'code-reviewer': { used: 500, input: 500, saved: 50 } };
     expect(shownAgents(agents, weeks, 'WRI', 'attention').map((a) => a.agentId)).toEqual(['writer']);
-    expect(shownAgents(agents, weeks, '', 'used').map((a) => a.agentId)).toEqual(['writer', 'code-reviewer', 'lead-agent']);
+    expect(shownAgents(agents, weeks, '', 'input').map((a) => a.agentId)).toEqual(['writer', 'code-reviewer', 'lead-agent']);
     expect(shownAgents(agents, weeks, '', 'saved').map((a) => a.agentId)).toEqual(['code-reviewer', 'lead-agent', 'writer']);
     expect(shownAgents(agents, weeks, '', 'name').map((a) => a.agentId)).toEqual(['code-reviewer', 'lead-agent', 'writer']);
   });
@@ -73,8 +73,10 @@ describe('Home agents: input', () => {
     expect(keepLastGood(prev, next, ok).agents.a).toMatchObject({ saved: 20, input: 200 });
     expect(keepLastGood(prev, noInput, { ...ok, inputs: true }).agents.a).toMatchObject({ saved: 10, input: 100 });
     expect(keepLastGood(prev, next, { ...ok, audit: true }).agents.a).toMatchObject({ saved: 10, input: 100 });
-    // No input yet to pair with: saved still moves on.
+    // No pair yet: each moves on alone, so a failed audit read doesn't hide fresh input.
     expect(keepLastGood(week({ a: { saved: 10 } }), noInput, { ...ok, inputs: true }).agents.a).toMatchObject({ saved: 20 });
+    expect(keepLastGood(week({ a: { saved: 10 } }), week({ a: { input: 200 } }), { ...ok, audit: true }).agents.a).toEqual({ saved: 10, input: 200 });
+    expect(keepLastGood(week({}), week({ b: { input: 50 } }), { ...ok, audit: true }).agents.b).toEqual({ input: 50 });
   });
 });
 
