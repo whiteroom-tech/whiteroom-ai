@@ -8,7 +8,7 @@
 import { HistoryLine } from "./_components/HistoryLine";
 import { undoFor, type Undo } from "@/lib/rule-history";
 import { MODE_LABEL, modeTagText, NOTIFY } from '@/lib/vocab';
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Banner, Button, FONT_MONO, Toast } from "@whiteroom/ui";
@@ -26,7 +26,7 @@ import {
 import type {
   GovernanceHistoryEntry, GovernanceResponse, GovernanceRule, GovernanceRuleType, KeywordParams, ModelAllowlistParams, RuleActionCounts, RuleActionsResult, RuleWouldActResult, SpendCapParams,
 } from "@/lib/whiteroom/types";
-import { computeSuggestions, RESPONSE_EFFECT, RESPONSE_LABEL, RULE_LABELS, tallyFromRuleActions, type GovernanceSuggestions } from "@/lib/governance";
+import { computeSuggestions, RESPONSE_EFFECT, RESPONSE_LABEL, RULE_LABELS, tallyFromRuleActions, tallyTotal, type GovernanceSuggestions } from "@/lib/governance";
 import { FleetLogin } from "@/components/citadel/FleetLogin";
 import { ConfirmDialog } from "@/components/citadel/ConfirmDialog";
 import { fetchControlActors, oldestTime, type ControlActor } from "@/lib/control-actors";
@@ -815,8 +815,11 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   );
 
   const lead = leadCounts(shown);
-  const blocked = counts ? counts.blocks + (counts.paused ?? 0) + (counts.stopped ?? 0) : 0;
-  const caught = counts ? blocked + counts.wouldBlocks + (counts.toldYou ?? 0) : 0;
+  // As Performance and Home count them: "blocked" is blocked calls only; pauses and stops are named apart.
+  const caught = counts ? tallyTotal(counts) : 0;
+  const acted: Array<[number, string]> = counts
+    ? [[counts.blocks, "blocked"], ...([[counts.paused ?? 0, "paused"], [counts.stopped ?? 0, "stopped"]] as Array<[number, string]>).filter(([n]) => n > 0)]
+    : [];
   const warnIcon = <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" style={{ flex: "none", color: "var(--warn)" }}><path d="M9 2l7.5 13h-15z" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M9 7v4M9 13v.5" stroke="currentColor" strokeWidth="1.6" /></svg>;
   const infoIcon = <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" style={{ flex: "none", color: "var(--tx2)" }}><circle cx="9" cy="9" r="7.5" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M9 8v5M9 5.5v.5" stroke="currentColor" strokeWidth="1.6" /></svg>;
   const mono = (t: string) => <span style={{ fontFamily: FONT_MONO }}>{t}</span>;
@@ -860,7 +863,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                     <p className="ctl-lead">
                       {lead.total} {lead.total === 1 ? "rule" : "rules"} · <strong>{lead.enforce}</strong> {MODE_LABEL.enforce}{lead.alert > 0 && <> · <strong>{lead.alert}</strong> {NOTIFY.tag}</>} · <strong>{lead.watch}</strong> {MODE_LABEL.watch}
                       {lead.off > 0 && <> · <strong>{lead.off}</strong> {MODE_LABEL.off}</>}
-                      {counts && <> · <strong>{caught.toLocaleString("en-US")}</strong> caught, <strong>{blocked.toLocaleString("en-US")}</strong> blocked this week</>}
+                      {counts && <> · <strong>{caught.toLocaleString("en-US")}</strong> caught, {acted.map(([n, word], i) => <Fragment key={word}>{i > 0 && ", "}<strong>{n.toLocaleString("en-US")}</strong> {word}</Fragment>)} this week</>}
                     </p>
                     {/* Only when some active rule doesn't stop calls: a fleet whose one rule stops calls is fine. */}
                     {canStop.length <= 1 && shown.some((r) => r.mode !== "off" && !canStop.includes(r)) && (
