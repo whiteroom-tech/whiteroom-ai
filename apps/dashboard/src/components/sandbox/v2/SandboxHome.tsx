@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Banner, Button, Panel, SegmentedControl, SkeletonCard } from '@whiteroom/ui';
 import { PageHeader, PageLead } from '@/components/citadel/PageChrome';
@@ -41,6 +41,9 @@ type Confirm = 'rotate' | 'reset' | null;
 /** /dev/sandbox-v2: a helper that isn't connected. */
 const NO_HELPER = { connected: false, host: null, connectedAt: null, lastSeenAt: null, queued: 0, running: false, recent: [], code: null, tasksThisHour: 0, tasksPerHour: 30 };
 
+/** Which Sandbox and key a status names; null when there's no key. */
+const keyOf = (st: SandboxFleetStatus | null) => (st?.exists && st.key ? `${st.sandboxFleetId}:${st.key.prefix}` : null);
+
 const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : 'That didn’t work. Check your connection and try again.');
 
 /**
@@ -51,7 +54,8 @@ const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : 'T
  */
 export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; preview?: SandboxHomePreview; onUnavailable?: () => void }) {
   const [status, setStatus] = useState<SandboxFleetStatus | null>(preview ? preview.status : null);
-  // The Sandbox key, shown once: page state only, gone on reload.
+  // The Sandbox key: page state only. It stays on screen for this visit and is
+  // gone on reload, since the engine keeps only its hash.
   const [issued, setIssued] = useState<IssuedSandboxKey | null>(preview?.issued ?? null);
   const [loading, setLoading] = useState(!preview);
   const [error, setError] = useState(preview?.error ?? '');
@@ -60,12 +64,19 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   const [replacing, setReplacing] = useState(false);
   const [notice, setNotice] = useState('');
   const now = preview?.now ?? Date.now();
+  const statusRef = useRef(status);
+  useEffect(() => { statusRef.current = status; }, [status]);
 
   /** Reads the Sandbox again; `keepError` keeps the message of the action that prompted it. */
   const load = useCallback(async (keepError = false) => {
     setLoading(true);
     try {
-      setStatus(await getSandboxFleetStatus(fleet));
+      const next = await getSandboxFleetStatus(fleet);
+      // A different Sandbox or key than before (expired, reconnected elsewhere):
+      // the key on screen no longer works, so it goes.
+      const before = statusRef.current;
+      if (before && keyOf(before) !== keyOf(next)) setIssued(null);
+      setStatus(next);
       if (!keepError) setError('');
     } catch (e) {
       if (isUnavailable(e) && onUnavailable) { onUnavailable(); return; }
@@ -151,16 +162,17 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
           </Panel>
         )}
 
-        {issued && <PointPanel issued={issued} onDone={() => setIssued(null)} />}
+        {issued && <PointPanel issued={issued} />}
 
         {connected && !issued && !replacing && (
           <Panel title="2. Point your agent">
             <div className={v.stack}>
               <p className={v.text}>
-                Your agent uses the Sandbox URL shown when you connected. It holds your Sandbox key, so we can’t show it again.
+                Your agent uses the Sandbox URL that starts with <span className={v.mono}>{connected.key!.prefix}</span>.
+                It holds your Sandbox key, so we can’t show it again after you leave this page.
               </p>
               <div className={v.actions}>
-                <Button size={32} variant="primary" onClick={() => setConfirm('rotate')} disabled={busy}>Get a new Sandbox URL</Button>
+                <Button size={32} onClick={() => setConfirm('rotate')} disabled={busy}>Get a new Sandbox URL</Button>
               </div>
             </div>
           </Panel>
@@ -251,15 +263,15 @@ const RUNS_ON: Array<{ value: RunsOn; label: string }> = [
   { value: 'server', label: 'A server' },
   { value: 'tool', label: 'Another tool' },
 ];
-/** Step 2 right after connect or rotate: one line to copy for where the agent runs, shown this once. */
-export function PointPanel({ issued, onDone }: { issued: IssuedSandboxKey; onDone: () => void }) {
+/** Step 2 right after connect or rotate: one line to copy for where the agent runs, on screen until the page is left. */
+export function PointPanel({ issued }: { issued: IssuedSandboxKey }) {
   const [runsOn, setRunsOn] = useState<RunsOn>('computer');
   const [command, setCommand] = useState('');
   const setting = sandboxSetting(issued.provider, issued.proxyUrl);
   return (
     <Panel title="2. Point your agent">
       <div className={v.stack}>
-        <Banner variant="warn">Copy this now. Your Sandbox URL is shown only once.</Banner>
+        <Banner variant="warn">Copy this before you leave this page. We can’t show your Sandbox URL again after that.</Banner>
         <p className={v.label} aria-hidden>Where does your agent run?</p>
         <div className={v.segment}>
           <SegmentedControl<RunsOn> label="Where does your agent run?" value={runsOn} onChange={setRunsOn} options={RUNS_ON} />
@@ -314,9 +326,6 @@ export function PointPanel({ issued, onDone }: { issued: IssuedSandboxKey; onDon
           <div className={v.reveal}><CopyChip text={issued.proxyKey} label="Copy the Sandbox key" /></div>
         </details>
         <AgentNaming {...agentNamingFor(issued.provider)} />
-        <div className={v.actions}>
-          <Button size={32} onClick={onDone}>I’ve copied it</Button>
-        </div>
       </div>
     </Panel>
   );
