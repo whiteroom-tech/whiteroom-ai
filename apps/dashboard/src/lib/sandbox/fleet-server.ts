@@ -20,9 +20,9 @@ import { connectCheck, issuedOf, SANDBOX_FLEET_UNAVAILABLE, statusOf, type Sandb
 const FLEET_RE = /^[A-Za-z0-9._:-]{1,128}$/;
 const SANDBOX_ID_RE = /^sandbox-[A-Za-z0-9-]{1,120}$/;
 
-const json = (status: number, body: Record<string, unknown>) =>
+export const json = (status: number, body: Record<string, unknown>) =>
   Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
-const fail = (status: number, error: string, reason?: string) => json(status, reason ? { error, reason } : { error });
+export const fail = (status: number, error: string, reason?: string) => json(status, reason ? { error, reason } : { error });
 const unavailable = () => fail(404, 'Sandbox isn’t available yet.', SANDBOX_FLEET_UNAVAILABLE);
 
 export interface SandboxFleetOwner {
@@ -58,20 +58,52 @@ export function engineBody(action: SandboxFleetAction, fleet: string, body: Reco
     if (!check.ok) return { error: fail(400, check.error) };
     return { ...base, ...check.request };
   }
-  const named = body.sandboxFleetId;
-  if (named === undefined) return base;
+  const pin = sandboxPin(body.sandboxFleetId);
+  return 'error' in pin ? pin : { ...base, ...pin };
+}
+
+/**
+ * The page's Sandbox, as the engine's `sandbox_fleet_id` pin (the engine
+ * refuses with 409 when it isn't the fleet's current one): none when absent.
+ */
+export function sandboxPin(named: unknown): { sandbox_fleet_id?: string } | { error: Response } {
+  if (named === undefined) return {};
   if (typeof named !== 'string' || !SANDBOX_ID_RE.test(named)) return { error: fail(400, 'Invalid request.') };
-  return { ...base, sandbox_fleet_id: named };
+  return { sandbox_fleet_id: named };
 }
 
 /** The engine's refusal of an action it doesn't know: an engine from before Sandbox v2. */
 const unknownAction = (status: number, data: unknown) =>
   status === 400 && !!data && typeof data === 'object' && /^Unknown action\b/i.test(String((data as { error?: unknown }).error ?? ''));
 
-/** One sandbox_fleet_* call, its answer cut down to what the page may see. */
-export async function sandboxFleetEngine(action: SandboxFleetAction, owner: SandboxFleetOwner, body: Record<string, unknown>): Promise<Response> {
+/**
+ * A JSON object request body of at most `max` bytes, or the refusal. Counted
+ * again after reading: content-length can be absent (chunked).
+ */
+export async function readJsonBody(req: Request, max: number): Promise<{ body: Record<string, unknown> } | { error: Response }> {
+  const tooLarge = () => ({ error: fail(413, 'Request too large.') });
+  if (Number(req.headers.get('content-length') ?? 0) > max) return tooLarge();
+  const raw = await req.arrayBuffer().catch(() => null);
+  if (!raw) return { error: fail(400, 'Invalid request.') };
+  if (raw.byteLength > max) return tooLarge();
+  let body: unknown;
+  try {
+    body = JSON.parse(new TextDecoder().decode(raw));
+  } catch {
+    return { error: fail(400, 'Invalid request.') };
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return { error: fail(400, 'Invalid request.') };
+  return { body: body as Record<string, unknown> };
+}
+
+/**
+ * One dashboard-only engine call for `owner`, with the service secret and
+ * the user: the engine's answer, or the refusal to send back as it is (no
+ * secret, unreachable, an engine without the action, an error).
+ */
+export async function postEngine(owner: SandboxFleetOwner, body: Record<string, unknown>): Promise<{ data: unknown } | { error: Response }> {
   const secret = process.env.WR_DASHBOARD_SERVICE_SECRET;
-  if (!secret) return unavailable();
+  if (!secret) return { error: unavailable() };
   let res: Response;
   try {
     res = await fetch(`${PROXY_URL}/api/white-room`, {
@@ -83,18 +115,26 @@ export async function sandboxFleetEngine(action: SandboxFleetAction, owner: Sand
       signal: AbortSignal.timeout(15_000),
     });
   } catch {
-    return fail(502, 'Couldn’t reach WhiteRoom. Check your connection and try again.');
+    return { error: fail(502, 'Couldn’t reach WhiteRoom. Check your connection and try again.') };
   }
   const data: unknown = await res.json().catch(() => null);
-  if (unknownAction(res.status, data)) return unavailable();
+  if (unknownAction(res.status, data)) return { error: unavailable() };
   if (!res.ok) {
     const error = data && typeof data === 'object' ? (data as { error?: unknown }).error : null;
     if (res.status >= 500 || typeof error !== 'string' || !error) {
-      return fail(res.status >= 500 ? res.status : 502, 'The Sandbox couldn’t do that right now. Try again in a moment.');
+      return { error: fail(res.status >= 500 ? res.status : 502, 'The Sandbox couldn’t do that right now. Try again in a moment.') };
     }
     // The engine's own words: short refusals that never carry a key.
-    return fail(res.status, error.slice(0, 300));
+    return { error: fail(res.status, error.slice(0, 300)) };
   }
+  return { data };
+}
+
+/** One sandbox_fleet_* call, its answer cut down to what the page may see. */
+export async function sandboxFleetEngine(action: SandboxFleetAction, owner: SandboxFleetOwner, body: Record<string, unknown>): Promise<Response> {
+  const answer = await postEngine(owner, body);
+  if ('error' in answer) return answer.error;
+  const { data } = answer;
   const status = statusOf(data);
   if (!status) return fail(502, 'WhiteRoom sent an answer the dashboard couldn’t read. Try again.');
   if (action === 'connect' || action === 'rotate') {
