@@ -181,10 +181,10 @@ export function runLine(provider: string, proxyUrl: string, command: string): st
   return `${name}="${value}" ${command.trim() || START_COMMAND_HINT}`;
 }
 
-/** A start command worth remembering in this browser: never one that looks like it holds a key or password. */
-export function rememberableCommand(command: string): boolean {
-  const c = command.trim();
-  return c.length > 0 && c.length <= 300 && !/sk-|wr_|key|token|secret|passw/i.test(c);
+/** The same for Windows PowerShell: the setting holds for that PowerShell window. */
+export function runLinePowerShell(provider: string, proxyUrl: string, command: string): string {
+  const { name, value } = sandboxSetting(provider, proxyUrl);
+  return `$env:${name}="${value}"; ${command.trim() || START_COMMAND_HINT}`;
 }
 
 export function providerLabel(provider: string): string {

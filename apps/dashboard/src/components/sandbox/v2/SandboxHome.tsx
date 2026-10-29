@@ -10,7 +10,7 @@ import { AgentNaming } from '@/components/citadel/AgentNaming';
 import { agentNamingFor } from '@/lib/provider-key-form';
 import { ROUTES } from '@/lib/routes';
 import {
-  connectSandboxFleet, getSandboxFleetStatus, isUnavailable, keptUntilText, lastCallText, outsideWindowText, providerLabel, rememberableCommand, runLine, sandboxSetting,
+  connectSandboxFleet, getSandboxFleetStatus, isUnavailable, keptUntilText, lastCallText, outsideWindowText, providerLabel, runLine, runLinePowerShell, sandboxSetting,
   resetSandboxFleet, rotateSandboxFleetKey, SandboxFleetError, type IssuedSandboxKey, type SandboxFleetStatus,
 } from '@/lib/sandbox/fleet';
 import { ConnectForm, type ConnectRequest } from './ConnectForm';
@@ -251,30 +251,16 @@ const RUNS_ON: Array<{ value: RunsOn; label: string }> = [
   { value: 'server', label: 'A server' },
   { value: 'tool', label: 'Another tool' },
 ];
-const COMMAND_STORE = 'wr.sandbox.startCommand';
-
-function storedCommand(): string {
-  try { return localStorage.getItem(COMMAND_STORE) ?? ''; } catch { return ''; }
-}
-
 /** Step 2 right after connect or rotate: one line to copy for where the agent runs, shown this once. */
 export function PointPanel({ issued, onDone }: { issued: IssuedSandboxKey; onDone: () => void }) {
   const [runsOn, setRunsOn] = useState<RunsOn>('computer');
   const [command, setCommand] = useState('');
-  useEffect(() => { setCommand(storedCommand()); }, []);
   const setting = sandboxSetting(issued.provider, issued.proxyUrl);
-  function edit(next: string) {
-    setCommand(next);
-    try {
-      if (rememberableCommand(next)) localStorage.setItem(COMMAND_STORE, next.trim());
-      else localStorage.removeItem(COMMAND_STORE);
-    } catch { /* storage blocked: nothing to remember */ }
-  }
   return (
     <Panel title="2. Point your agent">
       <div className={v.stack}>
         <Banner variant="warn">Copy this now. Your Sandbox URL is shown only once.</Banner>
-        <p className={v.label}>Where does your agent run?</p>
+        <p className={v.label} aria-hidden>Where does your agent run?</p>
         <div className={v.segment}>
           <SegmentedControl<RunsOn> label="Where does your agent run?" value={runsOn} onChange={setRunsOn} options={RUNS_ON} />
         </div>
@@ -288,12 +274,16 @@ export function PointPanel({ issued, onDone }: { issued: IssuedSandboxKey; onDon
             spellCheck={false}
             autoCapitalize="none"
             value={command}
-            onChange={(e) => edit(e.target.value)}
+            onChange={(e) => setCommand(e.target.value)}
             placeholder="python my_agent.py"
           />
           <p className={v.label}>Run this in your terminal</p>
           <CopyChip text={runLine(issued.provider, issued.proxyUrl, command)} label="Copy the run line" />
           <p className={v.text}>Your agent uses the Sandbox for this run only. Nothing in its settings changes.</p>
+          <details>
+            <summary className={v.label}>On Windows (PowerShell)</summary>
+            <div className={v.reveal}><CopyChip text={runLinePowerShell(issued.provider, issued.proxyUrl, command)} label="Copy the PowerShell line" /></div>
+          </details>
         </>}
         {runsOn === 'server' && <>
           <p className={v.label}>Set this in a test or staging deploy of your agent</p>
@@ -310,7 +300,7 @@ export function PointPanel({ issued, onDone }: { issued: IssuedSandboxKey; onDon
         </p>
         <details>
           <summary className={v.label}>Sandbox key, if a tool asks for it</summary>
-          <div style={{ marginTop: 8 }}><CopyChip text={issued.proxyKey} label="Copy the Sandbox key" /></div>
+          <div className={v.reveal}><CopyChip text={issued.proxyKey} label="Copy the Sandbox key" /></div>
         </details>
         <AgentNaming {...agentNamingFor(issued.provider)} />
         <div className={v.actions}>

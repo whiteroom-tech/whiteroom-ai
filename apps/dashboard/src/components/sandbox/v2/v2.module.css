@@ -10,6 +10,7 @@
 .mono { font-family:var(--font-mono); }
 .actions { display:flex; flex-wrap:wrap; gap:8px; }
 .formRow { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.reveal { margin-top:8px; }
 .secondary { margin:0; font-size:var(--fs-sm); color:var(--tx2); }
 @media(max-width:560px) {
   .facts { grid-template-columns:minmax(0,1fr); gap:2px; }

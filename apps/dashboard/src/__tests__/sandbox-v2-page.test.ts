@@ -10,7 +10,7 @@ import { createRoot, type Root } from 'react-dom/client';
 
 const { SandboxHome, SANDBOX_SEPARATE } = await import('@/components/sandbox/v2/SandboxHome');
 const { SANDBOX_V2_STATES } = await import('@/app/dev/sandbox-v2/states');
-const { connectCheck, keptUntilText, lastCallText, pointLine, rememberableCommand, runLine, sandboxSetting } = await import('@/lib/sandbox/fleet');
+const { connectCheck, keptUntilText, lastCallText, pointLine, runLine, runLinePowerShell, sandboxSetting } = await import('@/lib/sandbox/fleet');
 
 const PROVIDER_KEY = 'sk-ant-placeholder-not-a-real-key-WXYZ';
 const SANDBOX_ID = 'sandbox-00000000-0000-4000-8000-000000000000';
@@ -80,7 +80,9 @@ describe('Sandbox v2 page', () => {
     await type(document.getElementById('sandbox-start-command') as HTMLInputElement, 'python -m leadagent.cli run');
     expect(text()).toContain(`ANTHROPIC_BASE_URL="${ISSUED.proxyUrl}" python -m leadagent.cli run`);
     expect(document.querySelector('[aria-label="Copy the run line"]')).not.toBeNull();
-    expect(localStorage.getItem('wr.sandbox.startCommand')).toBe('python -m leadagent.cli run');
+    expect(text()).toContain(`$env:ANTHROPIC_BASE_URL="${ISSUED.proxyUrl}"; python -m leadagent.cli run`);
+    // What was typed stays on this page only.
+    expect(JSON.stringify({ ...localStorage })).not.toContain('leadagent');
     // A server: the one setting; another tool: the URL.
     await click('A server');
     expect(text()).toContain(`ANTHROPIC_BASE_URL=${ISSUED.proxyUrl}`);
@@ -189,19 +191,17 @@ describe('Sandbox v2 page', () => {
   });
 
   it('/dev/sandbox-v2 openai shows the /v1 line', async () => {
-    localStorage.clear();
     await render({ fleet: 'prod-eu', preview: SANDBOX_V2_STATES.openai });
     expect(text()).toMatch(/OPENAI_BASE_URL="https:\/\/proxy\.whiteroom\.tech\/sk-wr-[\w-]+\/v1" <how you start your agent>/);
   });
 });
 
 describe('Sandbox v2 wording and checks', () => {
-  it('the run line and setting for each provider; only a start command without a key is remembered', () => {
+  it('the run lines and setting for each provider', () => {
     expect(runLine('anthropic', 'https://proxy.example/sk-wr-x/', ' node agent.js ')).toBe('ANTHROPIC_BASE_URL="https://proxy.example/sk-wr-x" node agent.js');
     expect(runLine('openai', 'https://proxy.example/sk-wr-x', '')).toBe('OPENAI_BASE_URL="https://proxy.example/sk-wr-x/v1" <how you start your agent>');
     expect(sandboxSetting('azure-openai', 'https://proxy.example/sk-wr-x')).toEqual({ name: 'AZURE_OPENAI_ENDPOINT', value: 'https://proxy.example/sk-wr-x' });
-    expect(rememberableCommand('python -m leadagent.cli run --metro "Miami FL"')).toBe(true);
-    for (const c of ['', '   ', 'OPENAI_API_KEY=sk-abc python a.py', 'TOKEN=x node a.js', 'x'.repeat(301)]) expect(rememberableCommand(c)).toBe(false);
+    expect(runLinePowerShell('anthropic', 'https://proxy.example/sk-wr-x', 'python a.py')).toBe('$env:ANTHROPIC_BASE_URL="https://proxy.example/sk-wr-x"; python a.py');
   });
 
   it('points the agent the way production does', () => {
