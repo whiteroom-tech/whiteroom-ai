@@ -169,14 +169,14 @@ describe('practice test commands (§10 CLI)', () => {
   });
 
   it('never puts the run code in a command and names the starter for your agent', () => {
-    expect(cliCommands(true, 'js')).toEqual({ starter: null, run: 'npx @whiteroom-ai/cli@2.0.0 practice run' });
-    expect(cliCommands(false, 'python')).toEqual({ starter: 'npx @whiteroom-ai/cli@2.0.0 practice adapter --lang python > wr_adapter.py', run: 'npx @whiteroom-ai/cli@2.0.0 practice run --adapter "python3 wr_adapter.py"' });
+    expect(cliCommands(true, 'js')).toEqual({ starter: null, run: 'npx @whiteroom-ai/cli@2.0.1 practice run' });
+    expect(cliCommands(false, 'python')).toEqual({ starter: 'npx @whiteroom-ai/cli@2.0.1 practice adapter --lang python > wr_adapter.py', run: 'npx @whiteroom-ai/cli@2.0.1 practice run --adapter "python3 wr_adapter.py"' });
     // With a live run code: carried on stdin, so the test is one paste.
-    expect(cliCommands(true, 'js', null, 'wrrt_X').run).toBe('echo wrrt_X | npx @whiteroom-ai/cli@2.0.0 practice run --code-stdin');
-    expect(cliCommands(false, 'js', 'anthropic', 'wrrt_X').run).toBe('echo wrrt_X | npx @whiteroom-ai/cli@2.0.0 practice run --adapter "node wr-adapter.mjs" --code-stdin --key-env ANTHROPIC_API_KEY');
+    expect(cliCommands(true, 'js', null, 'wrrt_X').run).toBe('echo wrrt_X | npx @whiteroom-ai/cli@2.0.1 practice run --code-stdin');
+    expect(cliCommands(false, 'js', 'anthropic', 'wrrt_X').run).toBe('echo wrrt_X | npx @whiteroom-ai/cli@2.0.1 practice run --adapter "node wr-adapter.mjs" --code-stdin --key-env ANTHROPIC_API_KEY');
     // With the run's provider known, the command names its key's variable: a computer with several keys set isn't refused.
-    expect(cliCommands(true, 'js', 'azure-openai').run).toBe('npx @whiteroom-ai/cli@2.0.0 practice run --key-env AZURE_OPENAI_API_KEY');
-    expect(cliCommands(false, 'js', 'anthropic').run).toBe('npx @whiteroom-ai/cli@2.0.0 practice run --adapter "node wr-adapter.mjs" --key-env ANTHROPIC_API_KEY');
+    expect(cliCommands(true, 'js', 'azure-openai').run).toBe('npx @whiteroom-ai/cli@2.0.1 practice run --key-env AZURE_OPENAI_API_KEY');
+    expect(cliCommands(false, 'js', 'anthropic').run).toBe('npx @whiteroom-ai/cli@2.0.1 practice run --adapter "node wr-adapter.mjs" --key-env ANTHROPIC_API_KEY');
   });
 });
 

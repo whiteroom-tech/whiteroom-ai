@@ -59,7 +59,7 @@ export function planOf(scope: string[] | null): (Scenario | 'controls')[] {
 // ── The CLI ──────────────────────────────────────────────────────────────
 
 /** The exact CLI release the dashboard names (D12). Bumped with the CLI at publish. */
-export const CLI_VERSION = '2.0.0';
+export const CLI_VERSION = '2.0.1';
 /** The CLI is on npm (D2): commands run it with npx at CLI_VERSION. False only for a packed beta build. */
 export const CLI_ON_NPM = true;
 export const BETA_TGZ = `whiteroom-ai-cli-${CLI_VERSION}.tgz`;
