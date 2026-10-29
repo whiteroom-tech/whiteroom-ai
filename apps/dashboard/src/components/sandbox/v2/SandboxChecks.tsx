@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Banner, Button, Icon, Panel, SkeletonCard, type IconName } from '@whiteroom/ui';
 import { RULE_LABELS } from '@/lib/governance';
 import { fmtWhen } from '@/lib/format';
-import { SandboxFleetError } from '@/lib/sandbox/fleet';
+import { isStaleSandbox, SandboxFleetError } from '@/lib/sandbox/fleet';
 import {
   checkAction, getCheckState, isOpen, passedLine, stageLine, STATUS_WORDS,
   type CheckResult, type CheckRule, type CheckState, type CheckStatus,
@@ -23,8 +23,6 @@ const POLL_MS = { visible: 5_000, hidden: 30_000 };
 export const RUN_NOW = 'Run your agent now — through the Sandbox URL — or use Run agent below.';
 
 const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : 'That didn’t work. Check your connection and try again.');
-/** The Sandbox changed under the page (gone, reset or reconnected elsewhere). */
-const stale = (e: unknown) => e instanceof SandboxFleetError && (e.status === 404 || e.status === 409);
 
 /**
  * "4. Check your agent" (spec sandbox-v2 §2 steps 4–5, §5): start a checking
@@ -45,23 +43,33 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale }: {
   const [busy, setBusy] = useState(false);
   const [injectErrors, setInjectErrors] = useState(true);
   const now = preview?.now ?? Date.now();
-  // The latest onStale, so a new callback from the page doesn't restart polling.
+  // The latest onStale, read when called: a new callback from the page never re-reads or restarts polling.
   const staleRef = useRef(onStale);
   useEffect(() => { staleRef.current = onStale; }, [onStale]);
+  // Only the newest read or action may land: an older answer finishing last would undo a later change.
+  const latest = useRef(0);
+  const loadReq = useRef(0);
+  // An action is on its way: polls wait, so a read sent before it can't show the state it replaced.
+  const acting = useRef(false);
 
   /** Reads the checks again; `keepError` keeps the message of the action that prompted it. */
   const load = useCallback(async (keepError = false) => {
+    const req = ++latest.current;
+    const mine = ++loadReq.current;
     setLoading(true);
     try {
-      setState(await getCheckState(fleet, sandboxFleetId));
+      const next = await getCheckState(fleet, sandboxFleetId);
+      if (req !== latest.current) return;
+      setState(next);
       if (!keepError) setError('');
     } catch (e) {
+      if (req !== latest.current) return;
       setError(message(e));
-      if (stale(e)) onStale?.();
+      if (isStaleSandbox(e)) staleRef.current?.();
     } finally {
-      setLoading(false);
+      if (mine === loadReq.current) setLoading(false);
     }
-  }, [fleet, sandboxFleetId, onStale]);
+  }, [fleet, sandboxFleetId]);
 
   useEffect(() => {
     if (preview) return;
@@ -69,6 +77,7 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale }: {
   }, [load, preview]);
 
   // While a window is open: read it every 5 seconds (30 when the tab is hidden), one read at a time.
+  // A state conflict or a failed read keeps polling; only a Sandbox that changed under the page stops it.
   const open = isOpen(state);
   const windowId = state?.window?.id;
   useEffect(() => {
@@ -77,19 +86,23 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale }: {
     let pending = false;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
+    const next = () => { clearTimeout(timer); if (live && !stopped) timer = setTimeout(poll, document.hidden ? POLL_MS.hidden : POLL_MS.visible); };
     const poll = async () => {
-      if (pending || stopped) return;
+      if (pending || stopped || !live) return;
+      if (acting.current) { next(); return; }
       pending = true;
+      const req = ++latest.current;
       try {
-        const next = await getCheckState(fleet, sandboxFleetId);
-        if (live) { setState(next); setError(''); }
+        const read = await getCheckState(fleet, sandboxFleetId);
+        if (live && req === latest.current) { setState(read); setError(''); }
       } catch (e) {
-        if (live) setError(message(e));
-        if (stale(e)) { stopped = true; if (live) staleRef.current?.(); }
+        if (live && req === latest.current) {
+          setError(message(e));
+          if (isStaleSandbox(e)) { stopped = true; staleRef.current?.(); }
+        }
       } finally {
         pending = false;
-        clearTimeout(timer);
-        if (live && !stopped) timer = setTimeout(poll, document.hidden ? POLL_MS.hidden : POLL_MS.visible);
+        next();
       }
     };
     timer = setTimeout(poll, POLL_MS.visible);
@@ -100,15 +113,20 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale }: {
 
   async function act(action: 'start' | 'stop' | 'resume') {
     if (preview) { setState((st) => previewStep(action, st, injectErrors, now)); return; }
+    const req = ++latest.current;
+    acting.current = true;
     setBusy(true); setError('');
     try {
-      setState(await checkAction(action, fleet, sandboxFleetId, action === 'start' ? injectErrors : undefined));
+      const next = await checkAction(action, fleet, sandboxFleetId, action === 'start' ? injectErrors : undefined);
+      if (req === latest.current) setState(next);
     } catch (e) {
       setError(message(e));
-      // 404: the Sandbox is gone. 409: a check was already open, or already over — show where it is now.
-      if (e instanceof SandboxFleetError && e.status === 404) onStale?.();
-      else if (e instanceof SandboxFleetError && e.status === 409) void load(true);
+      // The Sandbox changed under the page: reload it. Anything else (a check already running, none
+      // running, nothing stopped, or no answer at all): show where the check is now.
+      if (isStaleSandbox(e)) staleRef.current?.();
+      else void load(true);
     } finally {
+      acting.current = false;
       setBusy(false);
     }
   }

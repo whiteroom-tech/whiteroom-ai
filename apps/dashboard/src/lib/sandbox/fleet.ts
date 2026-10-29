@@ -63,6 +63,23 @@ export class SandboxFleetError extends Error {
 
 export const isUnavailable = (e: unknown) => e instanceof SandboxFleetError && e.reason === SANDBOX_FLEET_UNAVAILABLE;
 
+/**
+ * The reason the BFF gives the engine's pin refusal (the page's
+ * `sandboxFleetId` isn't the fleet's Sandbox any more). The engine sends that
+ * 409 without a reason, so the BFF names it from its fixed text; every other
+ * 409 is a state conflict (a check already running, none running, nothing stopped…).
+ */
+export const SANDBOX_CHANGED = 'sandbox_changed';
+/** The engine's pin refusal (routes/white-room.ts sandboxFleetAction), the only 409 that means "a different Sandbox". */
+export const isPinMismatch = (status: number, error: string) => status === 409 && /^That Sandbox doesn['’]t belong to this fleet\.?$/.test(error);
+
+/**
+ * The Sandbox changed under the page: gone (404), or not the one the page
+ * pinned (409 sandbox_changed). A state-conflict 409 is not stale.
+ */
+export const isStaleSandbox = (e: unknown) =>
+  e instanceof SandboxFleetError && (e.status === 404 || (e.status === 409 && e.reason === SANDBOX_CHANGED));
+
 const str = (v: unknown, max = 512): v is string => typeof v === 'string' && v.length > 0 && v.length <= max;
 const strOrNull = (v: unknown): string | null => (str(v) ? v : null);
 /** The display prefix only: a full key here would be a leak, so anything longer is dropped. */

@@ -80,6 +80,9 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
     void load();
   }, [load, preview]);
 
+  // One callback for the steps below: a new one each render would re-run their reads.
+  const reload = useCallback(() => { void load(); }, [load]);
+
   async function connect(req: ConnectRequest): Promise<string | null> {
     if (preview) {
       setIssued({ proxyKey: 'sk-wr-<preview-key>', proxyUrl: 'https://proxy.whiteroom.tech/sk-wr-<preview-key>', provider: req.provider, keyHint: req.api_key.slice(-4) });
@@ -164,7 +167,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
             fleet={fleet}
             sandboxFleetId={connected.sandboxFleetId}
             preview={preview ? preview.rules ?? { state: null, productionRules: 0, now } : undefined}
-            onStale={() => void load()}
+            onStale={reload}
           />
         )}
 
@@ -174,14 +177,14 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
             fleet={fleet}
             sandboxFleetId={connected.sandboxFleetId}
             preview={preview ? preview.checks ?? { state: checkStateOf({ window: null, checks: [] }), now } : undefined}
-            onStale={() => void load()}
+            onStale={reload}
           />
           <SandboxHelper
             key={`helper-${connected.sandboxFleetId}`}
             fleet={fleet}
             sandboxFleetId={connected.sandboxFleetId}
             preview={preview ? preview.helper ?? { status: { ...NO_HELPER }, now } : undefined}
-            onStale={() => void load()}
+            onStale={reload}
           />
         </>}
 

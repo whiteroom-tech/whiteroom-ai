@@ -5,7 +5,7 @@
 // once, Run agent's request ID, the hourly limit, the forgotten-agent notice,
 // the preview states, and no link to Controls. Placeholder keys only.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, createElement as h } from 'react';
+import { act, createElement as h, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -240,6 +240,202 @@ describe('Run agent', () => {
     await click('Disconnect');
     expect(calls().some((c) => c.url === '/api/sandbox/helper/disconnect')).toBe(true);
     expect(text()).toContain('Get a helper code');
+  });
+});
+
+describe('Stale Sandbox vs state conflicts, overtaken answers, and parent re-renders', () => {
+  const STALE = { error: 'That Sandbox doesn\'t belong to this fleet.', reason: 'sandbox_changed' };
+  const statusReads = () => calls().filter((c) => c.url.endsWith('/checks/status')).length;
+  const helperEl = (onStale: () => void) => h(SandboxHelper, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, onStale });
+  const once = (url: string, res: () => Response | Promise<Response>) => {
+    const base = bff.getMockImplementation()!;
+    bff.mockImplementation(async (u: string, init: RequestInit) => {
+      if (u === url) { bff.mockImplementation(base); return res(); }
+      return base(u, init);
+    });
+  };
+
+  it('checks load: onStale on 404 and on sandbox_changed, never on a state-conflict 409', async () => {
+    for (const [res, isStale] of [
+      [() => Response.json({ error: 'No check is running.' }, { status: 409 }), false],
+      [() => Response.json({ error: 'Server error' }, { status: 500 }), false],
+      [() => Response.json({ error: 'This fleet has no Sandbox.' }, { status: 404 }), true],
+      [() => Response.json(STALE, { status: 409 }), true],
+    ] as const) {
+      const onStale = vi.fn();
+      once('/api/sandbox/checks/status', res);
+      await render(h(SandboxChecks, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, onStale }));
+      expect(onStale).toHaveBeenCalledTimes(isStale ? 1 : 0);
+      act(() => root.unmount());
+      root = createRoot(document.body.appendChild(document.createElement('div')));
+    }
+  });
+
+  it('checks poll: keeps going after a state-conflict 409 or a 5xx, stops on a stale answer', async () => {
+    vi.useFakeTimers();
+    const onStale = vi.fn();
+    checks = checkAnswer({ stage: 'observe' });
+    await render(h(SandboxChecks, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, onStale }));
+    const tick = async () => { await act(async () => { await vi.advanceTimersByTimeAsync(5_000); }); await flush(); };
+    once('/api/sandbox/checks/status', () => Response.json({ error: 'A check is already running.' }, { status: 409 }));
+    await tick();
+    expect(statusReads()).toBe(2);
+    expect(text()).toContain('A check is already running.');
+    once('/api/sandbox/checks/status', () => Response.json({ error: 'Server error' }, { status: 503 }));
+    await tick();
+    expect(statusReads()).toBe(3);
+    await tick();
+    expect(statusReads()).toBe(4);
+    expect(onStale).not.toHaveBeenCalled();
+    expect(text()).not.toContain('A check is already running.');
+    once('/api/sandbox/checks/status', () => Response.json(STALE, { status: 409 }));
+    await tick();
+    expect(statusReads()).toBe(5);
+    expect(onStale).toHaveBeenCalledTimes(1);
+    await tick(); await tick();
+    expect(statusReads()).toBe(5);
+  });
+
+  it('checks act: a state-conflict 409 reads again without onStale; sandbox_changed and 404 call onStale', async () => {
+    const onStale = vi.fn();
+    checks = checkAnswer({ stage: 'observe' });
+    await render(h(SandboxChecks, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, onStale }));
+    once('/api/sandbox/checks/stop', () => Response.json({ error: 'No check is running.' }, { status: 409 }));
+    await click('Stop checking');
+    expect(onStale).not.toHaveBeenCalled();
+    expect(statusReads()).toBe(2);
+    expect(text()).toContain('No check is running.');
+    once('/api/sandbox/checks/stop', () => Response.json(STALE, { status: 409 }));
+    await click('Stop checking');
+    expect(onStale).toHaveBeenCalledTimes(1);
+    expect(statusReads()).toBe(2);
+    once('/api/sandbox/checks/stop', () => Response.json({ error: 'This fleet has no Sandbox.' }, { status: 404 }));
+    await click('Stop checking');
+    expect(onStale).toHaveBeenCalledTimes(2);
+  });
+
+  it('checks: a poll never lands over an action on its way', async () => {
+    vi.useFakeTimers();
+    checks = checkAnswer({ stage: 'observe' });
+    await render(checksEl());
+    let answer!: () => void;
+    once('/api/sandbox/checks/stop', () => new Promise<Response>((resolve) => {
+      answer = () => resolve(Response.json(checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z' }, { long_task: 'passed' })));
+    }));
+    await act(async () => { button('Stop checking')!.click(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    await flush();
+    expect(statusReads()).toBe(1);
+    await act(async () => { answer(); });
+    await flush();
+    expect(text()).toContain('1 of 7 passed');
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    await flush();
+    expect(statusReads()).toBe(1);
+    expect(text()).toContain('1 of 7 passed');
+  });
+
+  it('no refetch loop: a new onStale on every parent render reads once, even when the read is stale', async () => {
+    let reads = 0;
+    const base = bff.getMockImplementation()!;
+    bff.mockImplementation(async (u: string, init: RequestInit) => {
+      if (u === '/api/sandbox/checks/status' || u === '/api/sandbox/helper/status') { reads++; return Response.json(STALE, { status: 409 }); }
+      return base(u, init);
+    });
+    let staleCalls = 0;
+    function Parent() {
+      const [n, setN] = useState(0);
+      // A new inline callback each render, which re-renders the parent: the old loop.
+      const onStale = () => { staleCalls++; setN(n + 1); };
+      return h('div', null,
+        h(SandboxChecks, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, onStale }),
+        h(SandboxHelper, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, onStale }));
+    }
+    await render(h(Parent));
+    await flush();
+    expect(reads).toBe(2);
+    expect(staleCalls).toBe(2);
+    await render(h(Parent));
+    expect(reads).toBe(2);
+  });
+
+  it('SandboxHome hands the steps one stable onStale: re-rendering it reads nothing again', async () => {
+    const STATUS = { success: true, exists: true, sandboxFleetId: SANDBOX_ID, createdAt: '2026-10-29T10:00:00.000Z', lastCallAt: null, expiresAt: null, key: { prefix: 'sk-wr-0123456789abcdef...', provider: 'anthropic', keyHint: 'WXYZ' } };
+    bff.mockImplementation(async (url: string) => {
+      if (url === '/api/sandbox/fleet/status') return Response.json(STATUS);
+      if (url.startsWith('/api/sandbox/checks/')) return Response.json(checkAnswer(null));
+      if (url.startsWith('/api/sandbox/helper/')) return Response.json(HELPER_OFF);
+      if (url.startsWith('/api/sandbox/rules/')) return Response.json({ success: true, sandboxFleetId: SANDBOX_ID, rules: [], source: 'custom', productionChanged: 0 });
+      return Response.json({ fleetId: 'prod-eu', rules: [], history: [], agents: [] });
+    });
+    const onUnavailable = () => {};
+    await render(h(SandboxHome, { fleet: 'prod-eu', onUnavailable }));
+    const before = bff.mock.calls.length;
+    await render(h(SandboxHome, { fleet: 'prod-eu', onUnavailable }));
+    await render(h(SandboxHome, { fleet: 'prod-eu', onUnavailable }));
+    expect(bff.mock.calls.length).toBe(before);
+  });
+
+  it('Run agent: the request ID is kept on 5xx, an unreadable answer and no answer; cleared on a 4xx refusal', async () => {
+    helper = HELPER_ON;
+    const onStale = vi.fn();
+    await render(helperEl(onStale));
+    await typeIn(document.getElementById('sandbox-v2-prompt') as HTMLTextAreaElement, 'Summarize tickets');
+    const ids = () => calls().filter((c) => c.url === '/api/sandbox/helper/run').map((c) => c.body.requestId as string);
+    once('/api/sandbox/helper/run', () => Response.json({ error: 'The Sandbox couldn’t do that right now.' }, { status: 502 }));
+    await click('Run agent');
+    once('/api/sandbox/helper/run', () => Response.json({ error: 'Server error' }, { status: 500 }));
+    await click('Run agent');
+    once('/api/sandbox/helper/run', () => Response.json({ success: true, nope: 1 }));
+    await click('Run agent');
+    once('/api/sandbox/helper/run', () => { throw new TypeError('network'); });
+    await click('Run agent');
+    expect(new Set(ids()).size).toBe(1);
+    // A definite refusal (no helper): it never ran, so the next click is new. Not a stale Sandbox.
+    once('/api/sandbox/helper/run', () => Response.json({ error: 'No helper is connected.', reason: 'no_helper' }, { status: 409 }));
+    await click('Run agent');
+    expect(text()).toContain('Your helper isn’t connected.');
+    expect(onStale).not.toHaveBeenCalled();
+    await click('Run agent');
+    const all = ids();
+    expect(all).toHaveLength(6);
+    expect(all[5]).not.toBe(all[4]);
+    expect(all[4]).toBe(all[0]);
+  });
+
+  it('Run agent: onStale only on a stale Sandbox (404, sandbox_changed)', async () => {
+    helper = HELPER_ON;
+    const onStale = vi.fn();
+    await render(helperEl(onStale));
+    await typeIn(document.getElementById('sandbox-v2-prompt') as HTMLTextAreaElement, 'Go');
+    once('/api/sandbox/helper/run', () => Response.json({ error: 'Too many.', reason: 'queue_full', retryAfter: 30 }, { status: 429 }));
+    await click('Run agent');
+    expect(onStale).not.toHaveBeenCalled();
+    once('/api/sandbox/helper/run', () => Response.json(STALE, { status: 409 }));
+    await click('Run agent');
+    expect(onStale).toHaveBeenCalledTimes(1);
+    once('/api/sandbox/helper/run', () => Response.json({ error: 'This fleet has no Sandbox.' }, { status: 404 }));
+    await click('Run agent');
+    expect(onStale).toHaveBeenCalledTimes(2);
+  });
+
+  it('helper poll: a stale answer calls onStale once and stops polling; other failures keep it', async () => {
+    vi.useFakeTimers();
+    helper = { ...HELPER_ON, running: true };
+    const onStale = vi.fn();
+    await render(helperEl(onStale));
+    const reads = () => calls().filter((c) => c.url === '/api/sandbox/helper/status').length;
+    const tick = async () => { await act(async () => { await vi.advanceTimersByTimeAsync(5_000); }); await flush(); };
+    once('/api/sandbox/helper/status', () => Response.json({ error: 'Server error' }, { status: 500 }));
+    await tick();
+    await tick();
+    expect(reads()).toBe(3);
+    expect(onStale).not.toHaveBeenCalled();
+    once('/api/sandbox/helper/status', () => Response.json(STALE, { status: 409 }));
+    await tick();
+    expect(onStale).toHaveBeenCalledTimes(1);
+    await tick(); await tick();
+    expect(reads()).toBe(4);
   });
 });
 
