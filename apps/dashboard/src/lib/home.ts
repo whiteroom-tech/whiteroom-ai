@@ -5,7 +5,7 @@
 import type { AgentState, TagTone } from '@whiteroom/ui';
 import type { AgentHold, AgentInfo, AuditEntry, FleetHourlyDataPoint, FleetReport, ShiftMeasures } from '@/lib/whiteroom/types';
 import { deriveDisplayStatus } from '@/lib/fleet-helpers';
-import { fmtTime, fmtWhen, plural, HOUR_MS } from '@/lib/format';
+import { fmtDay, fmtTime, fmtWhen, plural, HOUR_MS } from '@/lib/format';
 import { dayKey, startOfDay } from '@/lib/zone-time';
 import { classifyAction, eventModel, prettyToolName, shortArg } from '@/lib/activity';
 import { MODE_LABEL } from '@/lib/vocab';
@@ -208,6 +208,14 @@ export function clock(ts: unknown): string {
   return fmtTime(typeof ts === 'number' ? ts : String(ts ?? ''));
 }
 
+/** "2:15 pm" today, else "Oct 27, 2:15 pm": a feed reaching back days never reads as today. */
+export function feedClock(ts: unknown, now: number = Date.now()): string {
+  const t = typeof ts === 'number' ? ts : String(ts ?? '');
+  const time = fmtTime(t);
+  if (!time || dayKey(new Date(t).getTime()) === dayKey(now)) return time;
+  return `${fmtDay(t, now)}, ${time}`;
+}
+
 /** Epoch ms of an ISO string or epoch-ms timestamp; NaN when unreadable. */
 function epochMs(ts: unknown): number {
   return typeof ts === 'number' ? ts : Date.parse(String(ts ?? ''));
@@ -344,13 +352,13 @@ function step(d: { name?: unknown; args?: unknown }): LiveStep {
  * "reply: <text>" and tool work as details [{ name, args }]; earlier results
  * come first, then this step's calls; the first call decides the row's kind.
  */
-export function liveRow(e: AuditEntry): LiveRow {
+export function liveRow(e: AuditEntry, now: number = Date.now()): LiveRow {
   const name = String(e.taskName ?? '');
   const details = Array.isArray(e.details) ? e.details : [];
   // null and '' would read as 0 through Number(); treat them as unknown.
   const rawTokens: unknown = e.tokensUsed;
   const tokens = rawTokens == null || rawTokens === '' || !Number.isFinite(Number(rawTokens)) ? null : Number(rawTokens);
-  const base = { key: String(e.id ?? `${e.timestamp}-${name}`), time: clock(e.timestamp), agent: eventAgent(e), tokens, reply: '' };
+  const base = { key: String(e.id ?? `${e.timestamp}-${name}`), time: feedClock(e.timestamp, now), agent: eventAgent(e), tokens, reply: '' };
   if (/^reply:/i.test(name) && details.length === 0) {
     const reply = decodeEntities(name.replace(/^reply:\s*/i, ''));
     return { ...base, kind: 'reply', summary: `“${reply}”`, calls: [], results: [], reply };

@@ -84,7 +84,7 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview, previe
     if (next.load) load();
   }, [refreshSignal, open, load]);
 
-  const rows = useMemo(() => entries.map(liveRow), [entries]);
+  const rows = useMemo(() => entries.map((e) => liveRow(e)), [entries]);
   const agents = useMemo(() => [...new Set(rows.map((r) => r.agent).filter(Boolean))].sort(), [rows]);
   // A picked agent that's gone from the loaded rows (after a reload or Hide)
   // falls back to All instead of filtering everything out.

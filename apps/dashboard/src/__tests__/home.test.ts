@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  activityRow, afterFanOut, agentState, fanOutDue, FANOUT_START, onRefreshSignal, clock, hasUnknownAgents, mergeFanOut, hoursSinceLocalMidnight, kindOf, latestActivity, decodeEntities, liveExpandable, liveRow, readableArgs, removedHeld, matchesFilter,
+  activityRow, feedClock, afterFanOut, agentState, fanOutDue, FANOUT_START, onRefreshSignal, clock, hasUnknownAgents, mergeFanOut, hoursSinceLocalMidnight, kindOf, latestActivity, decodeEntities, liveExpandable, liveRow, readableArgs, removedHeld, matchesFilter,
   overlayStatuses, pageWindow, parseUsd, savedByWhiteRoom, savedByWhiteRoomHint, runLine, runRest, sortAgents, stateSummary, todayTotals, usd,
 } from '@/lib/home';
 import type { AgentInfo, AuditEntry, FleetHourlyDataPoint } from '@/lib/whiteroom/types';
@@ -395,5 +395,15 @@ describe('removed agents still held', () => {
 
   it('is empty without holds', () => {
     expect(removedHeld(undefined, [])).toEqual([]);
+  });
+});
+
+describe('live feed times', () => {
+  it('says the day for an entry from an earlier day, never just a time that reads as today', () => {
+    const now = new Date(2026, 9, 29, 9, 0).getTime();
+    expect(feedClock(new Date(2026, 9, 29, 8, 15).toISOString(), now)).toBe('8:15 am');
+    expect(feedClock(new Date(2026, 9, 27, 13, 37).toISOString(), now)).toBe('Oct 27, 1:37 pm');
+    expect(feedClock('nonsense', now)).toBe('');
+    expect(liveRow({ id: 1, type: 'task_complete', timestamp: new Date(2026, 9, 27, 13, 37).toISOString(), agentId: 'a' } as never, now).time).toBe('Oct 27, 1:37 pm');
   });
 });
