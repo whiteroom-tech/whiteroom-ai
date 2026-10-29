@@ -25,6 +25,19 @@ describe('agentInputs', () => {
     expect(out.byAgent['agent-13']).toBe(150);
   });
 
+  it('keeps 6 reads going: a slow read doesn’t hold up the rest, and a repeated id is read once', async () => {
+    let release!: () => void;
+    const slow = new Promise<void>((r) => { release = r; });
+    api.agent.mockImplementation(async (_f: string, id: string) => { if (id === 'slow') await slow; return calls(1); });
+    const ids = ['slow', ...Array.from({ length: 9 }, (_, i) => `a${i}`), 'a0'];
+    const done = agentInputs('f', ids, 24);
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    // All but the slow one are read while it's still out.
+    expect(api.agent).toHaveBeenCalledTimes(10);
+    release();
+    expect(Object.keys((await done).byAgent)).toHaveLength(10);
+  });
+
   it('adds up ids that differ only in case, and names each agent whose read failed or was refused', async () => {
     api.agent.mockImplementation(async (_f: string, id: string) => {
       if (id === 'Down' || id === 'writer') throw new Error('down');

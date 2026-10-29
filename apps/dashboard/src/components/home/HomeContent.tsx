@@ -109,7 +109,7 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
     setToday({ day: localDay(at), ...todayTotals(res.hourly, at) });
   }, [fleetId, authKey]);
 
-  // The last 7 days (each agent's tokens, savings, rule activity and score) and today's rule
+  // The last 7 days (each agent's input sent and saved, rule activity and score) and today's rule
   // activity are extra: a failure hides them rather than failing the page. The week changes
   // slowly, so it's reread every 5 minutes; today's rule activity once a minute.
   // Each agent's input needs the agent list, so the week waits for the first report and

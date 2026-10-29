@@ -101,21 +101,26 @@ function callsInput(r: AgentPerformanceResult | null): number | undefined {
 }
 
 /**
- * Each agent's input over the week's hours, by lower-case id. `failed`: the agents whose read
- * failed, so Home keeps their last figures while the others move on.
+ * Each agent's input over the week's hours, by lower-case id, read at most
+ * INPUT_READS_AT_ONCE at a time (a new read starts as each one ends). The engine matches
+ * agent_id exactly, so ids that differ only in case are separate calls: their input adds up,
+ * as their savings do. `failed`: the agents whose read failed, so Home keeps their last
+ * figures while the others move on.
  */
 export async function agentInputs(fleetId: string, ids: string[], hours: number, authKey?: string): Promise<{ byAgent: Record<string, number>; failed: string[] }> {
+  const queue = [...new Set(ids)];
   const byAgent: Record<string, number> = {};
   const failed = new Set<string>();
-  for (let i = 0; i < ids.length; i += INPUT_READS_AT_ONCE) {
-    const batch = ids.slice(i, i + INPUT_READS_AT_ONCE);
-    const reads = await Promise.all(batch.map((id) => performanceAgent(fleetId, id, hours, authKey).catch(() => null)));
-    reads.forEach((r, j) => {
-      if (!r || r.error) { failed.add(batch[j].toLowerCase()); return; }
+  const worker = async () => {
+    for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
+      const r = await performanceAgent(fleetId, id, hours, authKey).catch(() => null);
+      const key = id.toLowerCase();
+      if (!r || r.error) { failed.add(key); continue; }
       const n = callsInput(r);
-      if (n !== undefined) byAgent[batch[j].toLowerCase()] = (byAgent[batch[j].toLowerCase()] ?? 0) + n;
-    });
-  }
+      if (n !== undefined) byAgent[key] = (byAgent[key] ?? 0) + n;
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(INPUT_READS_AT_ONCE, queue.length) }, worker));
   // An id that differs only in case and failed leaves that agent's sum short: none of it is new.
   for (const id of failed) delete byAgent[id];
   return { byAgent, failed: [...failed] };
