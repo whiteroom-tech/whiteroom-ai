@@ -161,6 +161,21 @@ describe('Sandbox v2 page', () => {
     expect(calls().filter((c) => c.url.endsWith('/status')).length).toBeGreaterThan(before);
   });
 
+  it('a Sandbox changed elsewhere takes the key on screen with it', async () => {
+    bff.mockImplementation(async (url: string) => url.endsWith('/rotate')
+      ? Response.json({ ...STATUS, ...ISSUED, proxyKey: 'sk-wr-placeholder-rotated', proxyUrl: 'https://proxy.whiteroom.tech/sk-wr-placeholder-rotated' })
+      : url.endsWith('/reset') ? Response.json({ error: 'Your Sandbox changed since this page loaded.' }, { status: 409 })
+      : Response.json(STATUS));
+    await render({ fleet: 'prod-eu' });
+    await click('Get a new Sandbox URL');
+    await click('Rotate key');
+    expect(text()).toContain('sk-wr-placeholder-rotated');
+    await click('Reset Sandbox');
+    await click('Reset Sandbox');
+    expect(text()).toContain('Your Sandbox changed since this page loaded.');
+    expect(text()).not.toContain('sk-wr-placeholder-rotated');
+  });
+
   it('an unreadable status answer is an error with Try again, not the older destination', async () => {
     bff.mockImplementation(async () => Response.json({ success: true, nonsense: 1 }));
     const onUnavailable = vi.fn();

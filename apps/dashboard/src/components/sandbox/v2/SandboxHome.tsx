@@ -122,7 +122,8 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
     } catch (e) {
       setError(message(e));
       // 404 / 409: the Sandbox changed under the page (expired, reconnected elsewhere).
-      if (e instanceof SandboxFleetError && (e.status === 404 || e.status === 409)) void load(true);
+      // The key on screen belongs to that old Sandbox, so it goes too.
+      if (e instanceof SandboxFleetError && (e.status === 404 || e.status === 409)) { setIssued(null); void load(true); }
     } finally {
       setBusy(false);
     }
