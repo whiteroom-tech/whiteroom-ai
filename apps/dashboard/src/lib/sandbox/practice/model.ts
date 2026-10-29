@@ -348,8 +348,8 @@ export interface RowResult {
   members: PracticeCheck[];
   /** Not checked, but some of its rules passed: shown as "Partly checked". */
   partial: boolean;
-  /** What its members are: a guardrail's are rules, the agent's and Pause/Stop's are checks. */
-  noun: 'rule' | 'check';
+  /** What its members are: a guardrail's are rules, the agent's and Pause/Stop's are tests (a row is a check). */
+  noun: 'rule' | 'test';
 }
 
 /**
@@ -363,7 +363,7 @@ export interface RowResult {
 export function groupRows(r: Pick<PracticeReport, 'checks' | 'scope'>): RowResult[] {
   return ROWS.map((row) => {
     const members = membersOf(row, r.checks);
-    const noun = isGuardrail(row) && row.id !== PAUSE_STOP ? 'rule' : 'check';
+    const noun = isGuardrail(row) && row.id !== PAUSE_STOP ? 'rule' : 'test';
     const out = (status: RowStatus, reason: string, addInControls = false, partial = false): RowResult => ({ row, status, reason, addInControls, members, partial, noun });
     if (!members.length) {
       if (r.scope) return out('not_checked', 'Not part of this rerun.');
@@ -382,8 +382,9 @@ export function groupRows(r: Pick<PracticeReport, 'checks' | 'scope'>): RowResul
       return out('passed', `${mode ? `${mode}.` : 'Your rules worked.'}${tested}`);
     }
     // Some rules passed and some weren't checked: say how many, each rule says why below.
+    // Only when the rest couldn't be checked: a test problem keeps its own reason and "(not your agent)".
     const passed = live.filter((c) => c.status === 'passed').length;
-    if (noun === 'rule' && passed) return out('not_checked', `${passed} of ${counted(live.length, 'rule')} passed · ${live.length - passed} not checked`, false, true);
+    if (noun === 'rule' && passed && live.every((c) => c.status === 'passed' || c.status === 'unsupported')) return out('not_checked', `${passed} of ${counted(live.length, 'rule')} passed · ${live.length - passed} not checked`, false, true);
     const open = live.find((c) => c.status !== 'passed')!;
     const why = open.status === 'unsupported' ? plainSkip(open.summary, open.id) : open.summary || STATUS_LABEL[open.status];
     return out('not_checked', `${why}${open.testProblem ? ' (not your agent)' : ''}`);

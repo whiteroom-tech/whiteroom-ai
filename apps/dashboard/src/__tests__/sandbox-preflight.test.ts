@@ -101,6 +101,10 @@ describe('a report’s rows, from structured fields only (D1, §3b)', () => {
     const mixed = groupRows(report([check('ctl.spend_cap.s1'), check('ctl.spend_cap.s2', { required: false, status: 'unsupported', summary: 'Not checked: too many calls to test cheaply.' })]));
     expect(row(mixed, 'spend_cap')).toMatchObject({ status: 'not_checked', reason: '1 of 2 rules passed · 1 not checked' });
     expect(mixed.find((x) => x.row.id === 'spend_cap')).toMatchObject({ partial: true, noun: 'rule' });
+    // A rule that hit a test problem isn't folded into "not checked": it keeps "(not your agent)".
+    const problem = groupRows(report([check('ctl.spend_cap.s1'), check('ctl.spend_cap.s2', { status: 'error', testProblem: true, summary: 'The provider refused the call.' })]));
+    expect(row(problem, 'spend_cap')).toMatchObject({ status: 'not_checked', reason: 'The provider refused the call. (not your agent)' });
+    expect(problem.find((x) => x.row.id === 'spend_cap')!.partial).toBe(false);
     // None checked: the first rule's reason, said plainly.
     const none = groupRows(report([check('ctl.loop_breaker.l1', { required: false, status: 'unsupported', summary: 'Not checked: too many calls to test cheaply.' })]));
     expect(row(none, 'loop_breaker')).toMatchObject({ status: 'not_checked', reason: 'It acts after more than 10 calls, too many to test cheaply. Rules that act within 10 are tested.' });
