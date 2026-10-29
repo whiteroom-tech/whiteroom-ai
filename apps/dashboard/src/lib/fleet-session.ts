@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import { readCred } from '@/lib/cred-seal';
 import { db } from '@/lib/db';
 import { getUserFleets, type UserFleet } from '@/lib/user-fleets';
+import { isSandboxFleetId } from '@/lib/fleet-helpers';
 
 // Server-side custody of the fleet token. The token used to live in
 // localStorage (`wr_fleet_token`), where any XSS could exfiltrate a
@@ -91,14 +92,15 @@ export interface LinkedFleetCredential {
  * The account's own provisioned fleet (users.fleet_token) wins: it has no
  * user_fleets row, so a fresh browser deep-linking into a fleet page used to
  * be asked for a token it already owned (audit F10). After that, the
- * preferred fleet linked in user_fleets, mirroring the login-page preference
- * (see preferProductionFleet / commit 30ddc00): production fleets win over
- * sandbox-* ones; rows without a known fleet_id only when nothing better
- * exists. Returns null when there is no session or no fleet at all.
+ * preferred fleet linked in user_fleets, as the login page picks it
+ * (preferProductionFleet): a sandbox-* fleet is never picked, even when it's
+ * the only one; rows without a known fleet_id only when no known production
+ * fleet exists. Returns null when there is no session or no usable fleet.
+ * `skip`: tokens already found to be a Sandbox fleet's, so the next row is tried.
  */
-export async function tokenFromUserFleets(): Promise<LinkedFleetCredential | null> {
+export async function tokenFromUserFleets(skip: ReadonlySet<string> = new Set()): Promise<LinkedFleetCredential | null> {
   const primary = await primaryFleet();
-  if (primary) return primary;
+  if (primary && !skip.has(primary.token)) return primary;
 
   let fleets: UserFleet[];
   try {
@@ -107,10 +109,11 @@ export async function tokenFromUserFleets(): Promise<LinkedFleetCredential | nul
     return null;
   }
   if (!fleets.length) return null;
-  const production = fleets.filter(
-    (f) => f.fleet_id && !f.fleet_id.startsWith('sandbox-'),
-  );
-  const pick = (production.length ? production : fleets)[0];
+  // Never a Sandbox fleet; rows without a known fleet_id only when nothing better exists.
+  const usable = fleets.filter((f) => !(f.fleet_id && isSandboxFleetId(f.fleet_id)) && !skip.has(f.fleet_token));
+  const known = usable.filter((f) => f.fleet_id);
+  const pick = (known.length ? known : usable)[0];
+  if (!pick) return null;
   return { token: pick.fleet_token, fleetId: pick.fleet_id };
 }
 
@@ -123,6 +126,8 @@ async function primaryFleet(): Promise<LinkedFleetCredential | null> {
       [session.user.id],
     );
     const row = rows[0];
+    // A Sandbox fleet is never the account's production fleet (an unknown id is resolved and checked by the caller).
+    if (typeof row?.fleet_id === 'string' && isSandboxFleetId(row.fleet_id)) return null;
     const token = readCred('users.fleet_token', session.user.id, row?.fleet_token ?? null, row?.fleet_token_enc ?? null);
     return token ? { token, fleetId: row.fleet_id ?? null } : null;
   } catch {
