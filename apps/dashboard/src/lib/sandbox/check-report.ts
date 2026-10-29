@@ -136,13 +136,28 @@ export function reportOf(state: Pick<CheckState, 'checks' | 'rules'> & { window:
   };
 }
 
-/** Anything shaped like a key or token, in text the engine sent. */
-const SECRET = /\b(?:sk|wr|whk|rk|pk|key|tok)[-_][A-Za-z0-9_-]{6,}|\bsandbox-[0-9a-f-]{8,}|\bAKIA[0-9A-Z]{12,}|\beyJ[A-Za-z0-9_-]{10,}(?:\.[A-Za-z0-9_-]+)*/g;
-const scrub = (t: string) => t.replace(SECRET, '[hidden]');
+/**
+ * Anything in engine-sent text that could point at a person's setup, each
+ * replaced with "[hidden]": web addresses, UUIDs, key-style prefixes
+ * (sk-, wr_, AKIA…, JWTs), sandbox-/fleet-style ids that carry a digit, and
+ * long bare tokens (16+ hex characters, or 24+ letters and digits mixed).
+ */
+const SECRETS: RegExp[] = [
+  /\bhttps?:\/\/[^\s<>"'`]+/gi,
+  /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,
+  /\b(?:sk|wr|whk|rk|pk|key|tok)[-_][A-Za-z0-9_-]{6,}/g,
+  /\bAKIA[0-9A-Z]{12,}/g,
+  /\beyJ[A-Za-z0-9_-]{10,}(?:\.[A-Za-z0-9_-]+)*/g,
+  /\b(?:sandbox|fleet|sbx|agent|run)[-_](?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{4,}/gi,
+  /\b[0-9a-f]{16,}\b/gi,
+  /(?<![A-Za-z0-9+/_-])(?=[A-Za-z0-9+/_-]*\d)(?=[A-Za-z0-9+/_-]*[A-Za-z])[A-Za-z0-9+/_-]{24,}={0,2}/g,
+];
+export const scrub = (t: string) => SECRETS.reduce((out, re) => out.replace(re, '[hidden]'), t);
 
 /**
  * The report as plain text for the clipboard: the headline, when, and each
- * card. No keys, URLs or fleet IDs: it names checks and rules only.
+ * card. Keys, URLs, IDs and long tokens in the engine's text are hidden
+ * (see scrub).
  */
 export function reportSummary(report: Report, when: { checked: string; calls: number }): string {
   const lines = [

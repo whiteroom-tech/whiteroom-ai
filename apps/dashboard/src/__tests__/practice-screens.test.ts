@@ -322,9 +322,9 @@ describe('the Sandbox screens practice tests are added to', () => {
     expect(t).toMatch(/Didn't pass · Fails gracefully 18\/18 Practice tasks/);
     expect(t).toMatch(/Rerun · passed \(1 check\) 3\/3 Practice tasks/);
     expect(t).toMatch(/Didn't finish 2\/6 Practice tasks \(sample\)/);
-    // A connection test keeps no task total: "—".
-    expect(t).toMatch(/Oct 11, \d{1,2}:00 [ap]m Passed — Connection test/);
-    expect(t).toMatch(/Passed — Connection test \(demo\)/);
+    // A connection test shows its task count, as its detail does.
+    expect(t).toMatch(/Oct 11, \d{1,2}:00 [ap]m Passed 4 Connection test/);
+    expect(t).toMatch(/Passed 6 Connection test \(demo\)/);
     expect(t).toContain('Past tests 6');
     expect(t).toContain('Show fewer');
     const open = renderToStaticMarkup(createElement(PastTests, { preview: sandboxOnly, practice: rows, previewOpen: PRACTICE_ROWS[0].id }));

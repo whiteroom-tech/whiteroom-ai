@@ -110,7 +110,7 @@ export function PastTestDetail({ test, onClose, onDownload = downloadPastReport 
       </div>
       <dl className={s.pastDetailList}>
         <dt>Result</dt><dd><Tag tone={result?.tone ?? 'muted'}>{result?.label ?? test.overall}</Tag></dd>
-        <dt>Tasks</dt><dd>{test.totalTasks} <span className={s.small}>(calls that came back OK)</span></dd>
+        <dt>Tasks</dt><dd>{testTasks(test)} <span className={s.small}>(calls that came back OK)</span></dd>
         <dt>Kind</dt><dd>{testKind(test)}</dd>
         <dt>Test ID</dt><dd style={{ fontFamily: FONT_MONO, overflowWrap: 'anywhere' }}>{test.sandboxId}</dd>
       </dl>
@@ -126,8 +126,11 @@ type Row = { key: string; at: string; test: PastTest; practice?: undefined } | {
 export const testKind = (t: Pick<PastTest, 'isTrial'>) => (t.isTrial ? 'Connection test (demo)' : 'Connection test');
 export const rowKind = (r: Row) => (r.test ? testKind(r.test) : practiceKind(r.practice));
 
-/** The Tasks column: "done/total" when both are known, else "—". A connection test keeps no total. */
-export const rowTasks = (r: Row) => (r.practice ? pastTasks(r.practice) : '—');
+/** A connection test's task count (calls that came back OK), or "—" when the record has none. */
+export const testTasks = (t: Pick<PastTest, 'totalTasks'>) => (Number.isFinite(t.totalTasks) ? String(t.totalTasks) : '—');
+
+/** The Tasks column: a connection test's count, or a practice test's "done/total"; "—" when unknown. Matches the detail. */
+export const rowTasks = (r: Row) => (r.practice ? pastTasks(r.practice) : testTasks(r.test));
 
 /**
  * Rows Past tests hides until Show all: the older connection-test demos, and

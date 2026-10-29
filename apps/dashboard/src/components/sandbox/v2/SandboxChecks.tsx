@@ -182,20 +182,42 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale }: {
   );
 }
 
+type CopyState = 'idle' | 'copied' | 'failed';
+/** How long "Copied" or the copy error stays before the button resets. */
+export const COPY_RESET_MS = 2000;
+
+/** Puts text on the clipboard. Resolves false, never throws, when the browser has no clipboard or refuses. */
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) return false;
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The report once the window has ended (spec §2 step 5): "N of 7 passed",
  * then one card per check — what we did, what your agent did, what to do
  * next — with the rules it was judged on. Copy summary puts it on the
- * clipboard as plain text (no keys or IDs).
+ * clipboard as plain text, with keys, URLs and IDs hidden.
  */
 export function ReportView({ state, checked, calls, again }: { state: CheckState; checked: string; calls: number; again: React.ReactNode }) {
   const report = reportOf(state);
-  const [copied, setCopied] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const [copied, setCopied] = useState<CopyState>('idle');
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const attempt = useRef(0);
+  useEffect(() => () => { attempt.current += 1; clearTimeout(timer.current); }, []);
   const copy = () => {
-    const text = reportSummary(report, { checked, calls });
-    const done = navigator.clipboard?.writeText(text);
-    if (!done) { setCopied('failed'); return; }
-    done.then(() => { setCopied('copied'); setTimeout(() => setCopied('idle'), 2000); }, () => setCopied('failed'));
+    clearTimeout(timer.current);
+    const mine = ++attempt.current;
+    const show = (to: CopyState) => {
+      if (mine !== attempt.current) return; // a newer click, or unmounted
+      setCopied(to);
+      timer.current = setTimeout(() => setCopied('idle'), COPY_RESET_MS);
+    };
+    void copyText(reportSummary(report, { checked, calls })).then((ok) => show(ok ? 'copied' : 'failed'));
   };
   return <>
     <div className={v.report}>

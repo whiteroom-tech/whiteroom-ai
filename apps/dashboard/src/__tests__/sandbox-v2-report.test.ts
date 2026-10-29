@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // Sandbox v2 phases 6–7: the report once a checking window ends (status
-// mapping, next steps, rule lines, Copy summary without keys), Past tests
+// mapping, next steps, rule lines, Copy summary without keys, URLs or IDs), Past tests
 // hiding demos and tests that never started behind Show all, and the practice
 // page framed as secondary with its way back to Sandbox. Placeholder values only.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -14,10 +14,10 @@ vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'un
 vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 
 const { CHECK_IDS, CHECK_NAMES } = await import('@/lib/sandbox/checks');
-const { reportOf, reportSummary, FIX, RUN_PRACTICE, TRIP_TIP } = await import('@/lib/sandbox/check-report');
-const { ReportView, SandboxChecks } = await import('@/components/sandbox/v2/SandboxChecks');
+const { reportOf, reportSummary, scrub, FIX, RUN_PRACTICE, TRIP_TIP } = await import('@/lib/sandbox/check-report');
+const { COPY_RESET_MS, copyText, ReportView, SandboxChecks } = await import('@/components/sandbox/v2/SandboxChecks');
 const { SandboxHome } = await import('@/components/sandbox/v2/SandboxHome');
-const { PastTests, hiddenByDefault, pastRows } = await import('@/components/sandbox/PastTests');
+const { PastTestDetail, PastTests, hiddenByDefault, pastRows, rowTasks } = await import('@/components/sandbox/PastTests');
 const { PracticeTest, PRACTICE_INTRO } = await import('@/components/sandbox/practice/PracticeTest');
 const { PRACTICE_ROWS, PRACTICE_STATES } = await import('@/app/dev/practice/states');
 const { SANDBOX_V2_STATES } = await import('@/app/dev/sandbox-v2/states');
@@ -99,6 +99,23 @@ describe('Copy summary', () => {
     expect(text).not.toMatch(/sk-wr|wr_placeholder|sandbox-0000|chk_1|https?:/);
     expect(text).toContain('[hidden]');
   });
+
+  it('hides URLs, UUIDs and bare tokens in free-text details, and keeps plain words', () => {
+    const uuid = '00000000-0000-4000-8000-000000000000';
+    const hex = '0123456789abcdef0123';
+    const bare = 'PLACEHOLDERtoken0000placeholder0000';
+    const st = stateOf({
+      spend_cap: ['failed', 'Posted to https://example.invalid/hooks/placeholder?id=1 and stopped.'],
+      loop_rate: ['failed', `Retried run ${uuid} with fleet-0000placeholder.`],
+      pause_stop: ['failed', `Sent header ${bare} and trace ${hex}.`],
+    });
+    const text = reportSummary(reportOf(st), { checked: '6 min ago', calls: 12 });
+    expect(text).not.toMatch(/https?:|example\.invalid|00000000-0000|fleet-0000|PLACEHOLDERtoken|0123456789abcdef/);
+    expect(text).toContain('Posted to [hidden] and stopped.');
+    expect(text).toContain('Retried run [hidden] with [hidden].');
+    expect(text).toContain('Sent header [hidden] and trace [hidden].');
+    expect(scrub('Blocked at $0.02 after 1,234 calls on allowlists_keywords (529).')).toBe('Blocked at $0.02 after 1,234 calls on allowlists_keywords (529).');
+  });
 });
 
 describe('the report on the page', () => {
@@ -127,6 +144,44 @@ describe('the report on the page', () => {
     expect(writeText).toHaveBeenCalledTimes(1);
     expect(String((writeText.mock.calls[0] as unknown[])[0])).not.toMatch(/sk-wr|sandbox-|https?:/);
     expect(copy.textContent).toBe('Copied');
+  });
+
+  it('says when copying fails, and resets after a while; a second click restarts the timer', async () => {
+    vi.useFakeTimers();
+    try {
+      const writeText = vi.fn(async (): Promise<void> => { throw new Error('denied'); });
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+      await act(async () => { root.render(h(ReportView, { state: stateOf({ spend_cap: ['passed'] }), checked: 'just now', calls: 1, again: null })); });
+      const copy = [...document.querySelectorAll('button')].find((b) => b.textContent === 'Copy summary')!;
+      await act(async () => { copy.click(); });
+      expect(document.body.textContent).toContain('Couldn’t copy. Try again.');
+      await act(async () => { vi.advanceTimersByTime(COPY_RESET_MS - 500); });
+      writeText.mockImplementation(async () => {});
+      await act(async () => { copy.click(); });
+      expect(copy.textContent).toBe('Copied');
+      expect(document.body.textContent).not.toContain('Couldn’t copy');
+      // The first click's timer was cleared: still Copied past its deadline.
+      await act(async () => { vi.advanceTimersByTime(600); });
+      expect(copy.textContent).toBe('Copied');
+      await act(async () => { vi.advanceTimersByTime(COPY_RESET_MS); });
+      expect(copy.textContent).toBe('Copy summary');
+      // Unmounting with a reset pending is quiet.
+      await act(async () => { copy.click(); });
+      act(() => root.unmount());
+      await act(async () => { vi.advanceTimersByTime(COPY_RESET_MS * 2); });
+      root = createRoot(document.body.appendChild(document.createElement('div')));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('copyText never throws: no clipboard, or writeText throwing synchronously', async () => {
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+    await expect(copyText('x')).resolves.toBe(false);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: () => { throw new Error('sync'); } }, configurable: true });
+    await expect(copyText('x')).resolves.toBe(false);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: async () => {} }, configurable: true });
+    await expect(copyText('x')).resolves.toBe(true);
   });
 
   it('renders on its own from a state', () => {
@@ -171,12 +226,43 @@ describe('Past tests: hide demos and tests that never started', () => {
     act(() => root.unmount());
   });
 
-  it('one Kind label per kind, and Tasks as done/total or —', () => {
+  it('a hidden row opened under Show all stays shown after Show fewer', async () => {
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const root = createRoot(el);
+    await act(async () => { root.render(h(PastTests, { preview: tests, practice: [PRACTICE_ROWS[0]] })); });
+    const dataRows = () => [...el.querySelectorAll<HTMLElement>('[role="row"][tabindex]')];
+    await act(async () => { [...el.querySelectorAll('button')].find((b) => b.textContent === 'Show all (3)')!.click(); });
+    const demo = dataRows().find((r) => r.textContent?.includes('Connection test (demo)'))!;
+    await act(async () => { demo.click(); });
+    await act(async () => { [...el.querySelectorAll('button')].find((b) => b.textContent === 'Show fewer')!.click(); });
+    expect(dataRows()).toHaveLength(3);
+    expect(el.textContent).toContain('Connection test (demo)');
+    expect(el.textContent).toContain('Test ID');
+    act(() => root.unmount());
+  });
+
+  it('one Kind label per kind, and Tasks as the count, done/total, or — when unknown', () => {
     const html = renderToStaticMarkup(h(PastTests, { preview: tests, practice: [PRACTICE_ROWS[0]], previewShowAll: true }));
     for (const k of ['>Connection test<', '>Connection test (demo)<', '>Practice tasks<']) expect(html).toContain(k);
     expect(html).not.toMatch(/>Your agent<|>Demo</);
-    expect(html).toContain('>—<');
+    expect(html).toContain('>4<');
+    expect(html).toContain('>6<');
     expect(html).toContain('>18/18<');
+    const [row] = pastRows([tests[0]], []);
+    expect(rowTasks(row)).toBe('4');
+    expect(rowTasks(pastRows([{ ...tests[0], totalTasks: undefined as unknown as number }], [])[0])).toBe('—');
+    expect(rowTasks(pastRows([], [{ ...PRACTICE_ROWS[0], tasks: { finished: 0, total: 0 } }])[0])).toBe('—');
+  });
+
+  it('a connection test row and its detail show the same task count', () => {
+    const t = { ...tests[0], totalTasks: 9 };
+    const detail = renderToStaticMarkup(h(PastTestDetail, { test: t, onClose: () => {} }));
+    expect(detail).toMatch(/<dt>Tasks<\/dt><dd>9 /);
+    expect(rowTasks(pastRows([t], [])[0])).toBe('9');
+    const list = renderToStaticMarkup(h(PastTests, { preview: [t], previewOpen: 's2' }));
+    expect(list).toContain('>9<');
+    expect(list).toMatch(/<dt>Tasks<\/dt><dd>9 /);
   });
 
   it('says so when only hidden tests exist', () => {
