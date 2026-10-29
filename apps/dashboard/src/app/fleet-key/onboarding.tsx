@@ -81,7 +81,7 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
   async function connect(req: ProviderKeyRequest): Promise<string | null> {
     if (previewKeys) return 'Keys can’t be connected in the preview.';
     try {
-      const result = await storeProviderKey(auth, req.key, req.endpoint, req.provider);
+      const result = await storeProviderKey(auth, req.key, req.endpoint, req.provider, req.boundAgent);
       if (!result.success || !result.proxyUrl) return result.error || 'Could not connect that key.';
       const provider = result.provider ?? req.provider ?? (req.key.startsWith('sk-ant-') ? 'anthropic' : 'openai');
       setIssued({ proxyUrl: result.proxyUrl, keyHint: result.keyHint ?? req.key.slice(-4), provider });
@@ -151,6 +151,7 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
                 <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600 }}>{PROVIDER_LABELS[k.provider] ?? k.provider}</span>
                 <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>key ending {k.keyHint}</span>
                 <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>added {fmtDay(k.createdAt)}</span>
+                {k.agentId && <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>only for {k.agentId}</span>}
                 <span className="wr-key-endpoint" style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }} title={k.endpoint}>{k.endpoint ?? ''}</span>
                 <Button variant="danger" size={28} className="wr-btn--outline-bad" disabled={removeBusy} onClick={() => setRemoving(k)} style={{ marginLeft: 'auto' }}>Remove&hellip;</Button>
               </li>
@@ -191,7 +192,7 @@ function KeyForm({ tab, onConnect, onCancel }: {
   onCancel?: () => void;
 }) {
   const [form, dispatch] = useReducer(keyFormReducer, EMPTY_KEY_FORM);
-  const { value, endpoint, status, msg } = form;
+  const { value, endpoint, agent, status, msg } = form;
   // Set synchronously, so a double click can't start two store_key calls
   // before the 'saving' render lands.
   const inFlight = useRef(false);
@@ -206,7 +207,8 @@ function KeyForm({ tab, onConnect, onCancel }: {
     inFlight.current = true;
     dispatch({ type: 'saving' });
     try {
-      const error = await onConnect(check.request);
+      const boundAgent = agent.trim();
+      const error = await onConnect(boundAgent ? { ...check.request, boundAgent } : check.request);
       dispatch(error ? { type: 'error', msg: error } : { type: 'connected' });
     } finally {
       inFlight.current = false;
@@ -243,6 +245,18 @@ function KeyForm({ tab, onConnect, onCancel }: {
         <Button variant="primary" onClick={() => void submit()} busy={saving} busyLabel="Connecting…">Connect</Button>
         {onCancel && <Button variant="ghost" onClick={onCancel}>Cancel</Button>}
       </div>
+      <input
+        type="text"
+        aria-label="Only for agent (optional)"
+        value={agent}
+        onChange={(e) => dispatch({ type: 'edit', field: 'agent', text: e.target.value })}
+        placeholder="Only for agent (optional)"
+        autoCapitalize="none"
+        spellCheck={false}
+        readOnly={saving}
+        maxLength={128}
+        className="wr-input"
+      />
       {status === 'error' && <p role="alert" style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--bad)' }}>{msg}</p>}
     </div>
   );

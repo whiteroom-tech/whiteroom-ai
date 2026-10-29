@@ -14,7 +14,13 @@ const run = (actions: KeyFormAction[], from: KeyFormState = EMPTY_KEY_FORM) => a
 describe('add-key form state', () => {
   // Switching provider tab remounts the form (key={tab}), so it starts here.
   it('starts empty', () => {
-    expect(EMPTY_KEY_FORM).toEqual({ value: '', endpoint: '', status: 'idle', msg: '' });
+    expect(EMPTY_KEY_FORM).toEqual({ value: '', endpoint: '', agent: '', status: 'idle', msg: '' });
+  });
+
+  it('keeps an "Only for agent" name while editing, and clears it once connected', () => {
+    const typed = run([{ type: 'edit', field: 'value', text: 'sk-ant-x' }, { type: 'edit', field: 'agent', text: 'billing agent' }]);
+    expect(typed).toMatchObject({ agent: 'billing agent', status: 'idle' });
+    expect(run([{ type: 'saving' }, { type: 'connected' }], typed).agent).toBe('');
   });
 
   it('keeps what was typed while editing, and clears it once connected', () => {

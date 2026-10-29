@@ -13,7 +13,7 @@ import { formatInZone } from '@/lib/zone-time';
 import { ROUTES } from '@/lib/routes';
 import { LiveStatus, PageHeader } from '@/components/citadel/PageChrome';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
-import { UNNAMED_CALLS_REFUSED } from '@/lib/setup';
+import { SHARED_KEY_STOP_NOTE, UNNAMED_CALLS_REFUSED } from '@/lib/setup';
 import { ActivityRows } from '@/components/home/ActivityRows';
 import { RecentRuns, type RecentRunsState } from '@/components/agent/RecentRuns';
 import { AgentWeekCard } from '@/components/agent/AgentWeekCard';
@@ -495,7 +495,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
       <ConfirmDialog
         open={confirmStop}
         title={`Stop ${agentId}?`}
-        body={<>The agent refuses every call until someone resumes it, even after a restart. Stop overrides a pause.<span style={{ display: 'block', marginTop: 8 }}>{UNNAMED_CALLS_REFUSED}</span></>}
+        body={<>The agent refuses every call until someone resumes it, even after a restart. Stop overrides a pause.<span style={{ display: 'block', marginTop: 8 }}>{UNNAMED_CALLS_REFUSED}</span><span style={{ display: 'block', marginTop: 8 }}>{SHARED_KEY_STOP_NOTE}</span></>}
         confirmLabel="Stop agent"
         confirmPhrase={agentId}
         onConfirm={stop}

@@ -12,6 +12,8 @@ export interface ProviderKeyRequest {
   key: string;
   endpoint?: string;
   provider?: 'azure-openai' | 'bedrock-mantle';
+  /** Optional: the one agent this key is for. */
+  boundAgent?: string;
 }
 
 export type ProviderKeyCheck = { ok: true; request: ProviderKeyRequest } | { ok: false; error: string };
@@ -74,18 +76,20 @@ export function issuedEnvHint(provider: string, url: string): string {
 export interface KeyFormState {
   value: string;
   endpoint: string;
+  /** "Only for agent": empty for a key every agent in the fleet can use. */
+  agent: string;
   status: 'idle' | 'saving' | 'error';
   msg: string;
 }
 
 export type KeyFormAction =
-  | { type: 'edit'; field: 'value' | 'endpoint'; text: string }
+  | { type: 'edit'; field: 'value' | 'endpoint' | 'agent'; text: string }
   | { type: 'saving' }
   /** A key was connected: clear what was typed. */
   | { type: 'connected' }
   | { type: 'error'; msg: string };
 
-export const EMPTY_KEY_FORM: KeyFormState = { value: '', endpoint: '', status: 'idle', msg: '' };
+export const EMPTY_KEY_FORM: KeyFormState = { value: '', endpoint: '', agent: '', status: 'idle', msg: '' };
 
 export function keyFormReducer(state: KeyFormState, action: KeyFormAction): KeyFormState {
   switch (action.type) {
@@ -93,7 +97,7 @@ export function keyFormReducer(state: KeyFormState, action: KeyFormAction): KeyF
     // would send a duplicate store_key and issue a second proxy URL.
     case 'edit': return { ...state, [action.field]: action.text, status: state.status === 'saving' ? 'saving' : 'idle' };
     case 'saving': return state.status === 'saving' ? state : { ...state, status: 'saving', msg: '' };
-    case 'connected': return { ...state, value: '', endpoint: '', status: 'idle' };
+    case 'connected': return { ...state, value: '', endpoint: '', agent: '', status: 'idle' };
     case 'error': return { ...state, status: 'error', msg: action.msg };
   }
 }

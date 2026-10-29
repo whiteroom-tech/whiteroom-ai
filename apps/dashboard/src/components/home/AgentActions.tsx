@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Toast } from '@whiteroom/ui';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
-import { UNNAMED_CALLS_REFUSED } from '@/lib/setup';
+import { SHARED_KEY_STOP_NOTE, UNNAMED_CALLS_REFUSED } from '@/lib/setup';
 import { checkWatch, controlFailure, pauseAgent, resumeAgent, stopAgent } from '@/lib/whiteroom/client';
 import type { AgentHold, AgentInfo } from '@/lib/whiteroom/types';
 
@@ -229,7 +229,7 @@ export function AgentActions({ agent, fleetId, authKey, onChanged, onAuthError, 
       <ConfirmDialog
         open={confirmStop}
         title={`Stop ${agent.agentId}?`}
-        body={<>It refuses every call until someone resumes it, even after a restart. Its current run ends.<span style={{ display: 'block', marginTop: 8 }}>{UNNAMED_CALLS_REFUSED}</span></>}
+        body={<>It refuses every call until someone resumes it, even after a restart. Its current run ends.<span style={{ display: 'block', marginTop: 8 }}>{UNNAMED_CALLS_REFUSED}</span><span style={{ display: 'block', marginTop: 8 }}>{SHARED_KEY_STOP_NOTE}</span></>}
         confirmLabel="Stop agent"
         confirmPhrase={agent.agentId}
         busy={busy}
