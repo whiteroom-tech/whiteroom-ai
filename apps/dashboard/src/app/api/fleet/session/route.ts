@@ -90,7 +90,17 @@ export async function GET() {
 
   // No (valid) cookie: a next-auth session user may still have fleets linked
   // in user_fleets — adopt the preferred one into the cookie.
-  const linked = await tokenFromUserFleets();
+  let linked = await tokenFromUserFleets();
+  // A row of unknown fleet that turns out to be a Sandbox fleet's: try the next one.
+  const skipped = new Set<string>();
+  let resolved: Awaited<ReturnType<typeof resolveFleetId>> | null = null;
+  while (linked && !linked.fleetId) {
+    resolved = await resolveFleetId(linked.token);
+    if ('error' in resolved || !isSandboxFleetId(resolved.fleetId)) break;
+    skipped.add(linked.token);
+    linked = await tokenFromUserFleets(skipped);
+    resolved = null;
+  }
   if (!linked) {
     // signedIn tells the page where to send the visitor: sign-in when the
     // account session is gone, Fleet key (which provisions) when it isn't.
@@ -103,12 +113,9 @@ export async function GET() {
     return Response.json({ fleetId: linked.fleetId });
   }
 
-  // Row predates fleet ids being stored: resolve it from the engine.
-  const resolved = await resolveFleetId(linked.token);
+  // Row predates fleet ids being stored: resolved from the engine above.
+  if (!resolved) return Response.json({ error: 'No fleet session.', signedIn: true }, { status: 401 });
   if ('error' in resolved) return resolved.error;
-  if (isSandboxFleetId(resolved.fleetId)) {
-    return Response.json({ error: SANDBOX_KEY_MESSAGE, signedIn: true }, { status: 401 });
-  }
   await setFleetAuthCookie(linked.token);
   return Response.json({ fleetId: resolved.fleetId });
 }

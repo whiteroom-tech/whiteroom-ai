@@ -95,10 +95,11 @@ export interface LinkedFleetCredential {
  * (preferProductionFleet): a sandbox-* fleet is never picked, even when it's
  * the only one; rows without a known fleet_id only when no known production
  * fleet exists. Returns null when there is no session or no usable fleet.
+ * `skip`: tokens already found to be a Sandbox fleet's, so the next row is tried.
  */
-export async function tokenFromUserFleets(): Promise<LinkedFleetCredential | null> {
+export async function tokenFromUserFleets(skip: ReadonlySet<string> = new Set()): Promise<LinkedFleetCredential | null> {
   const primary = await primaryFleet();
-  if (primary) return primary;
+  if (primary && !skip.has(primary.token)) return primary;
 
   let fleets: UserFleet[];
   try {
@@ -108,7 +109,7 @@ export async function tokenFromUserFleets(): Promise<LinkedFleetCredential | nul
   }
   if (!fleets.length) return null;
   // Never a Sandbox fleet; rows without a known fleet_id only when nothing better exists.
-  const usable = fleets.filter((f) => !f.fleet_id?.startsWith('sandbox-'));
+  const usable = fleets.filter((f) => !f.fleet_id?.startsWith('sandbox-') && !skip.has(f.fleet_token));
   const known = usable.filter((f) => f.fleet_id);
   const pick = (known.length ? known : usable)[0];
   if (!pick) return null;

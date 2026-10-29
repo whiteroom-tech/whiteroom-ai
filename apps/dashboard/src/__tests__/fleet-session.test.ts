@@ -196,6 +196,18 @@ describe('GET /api/fleet/session', () => {
     expect(setCalls[0]).toMatchObject({ name: 'wr_fleet_auth', value: 'ft-unknown' });
   });
 
+  it('skips an unknown row that is a Sandbox fleet\'s and adopts the next usable one', async () => {
+    mockGetUserFleets.mockResolvedValue([
+      { id: '1', fleet_token: 'ft-unknown-sbx', fleet_id: null, label: 'u', created_at: '' },
+      { id: '2', fleet_token: 'ft-unknown-prod', fleet_id: null, label: 'v', created_at: '' },
+    ]);
+    mockTokenLogin.mockImplementation(async (t: string) => ({ success: true, fleetId: t === 'ft-unknown-sbx' ? 'sandbox-1' : 'prod-2' }));
+    const res = await GET();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ fleetId: 'prod-2' });
+    expect(jar.get('wr_fleet_auth')).toBe('ft-unknown-prod');
+  });
+
   it('an unknown linked row whose token turns out to be a Sandbox fleet\'s is never adopted', async () => {
     mockGetUserFleets.mockResolvedValue([
       { id: '2', fleet_token: 'ft-unknown', fleet_id: null, label: 'u', created_at: '' },
