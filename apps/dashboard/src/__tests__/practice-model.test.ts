@@ -243,7 +243,8 @@ describe('practice test progress and Past tests', () => {
     expect(pastResult({ ...row, verdict: 'not_passed', failed: ['ctl.loop_breaker.gr_2'] }).label).toBe('Rerun · didn’t pass · Loop breaker + call rate');
     expect(failedRowNames(['ctl.call_rate.x', 'ctl.loop_breaker.y', 'unknown.id'])).toBe('Loop breaker + call rate');
     expect(pastResult({ ...row, lifecycle: 'interrupted', verdict: null }).label).toBe('Rerun · didn’t finish');
-    expect(pastKind({ sample: true })).toBe('Practice (sample)');
+    expect(pastKind({ sample: true })).toBe('Practice tasks (sample)');
+    expect(pastKind({ sample: false })).toBe('Practice tasks');
     expect(practiceAgent(true, 'readiness-sample')).toBe('WhiteRoom’s sample agent');
     expect(practiceAgent(true, 'support-bot')).toBe('WhiteRoom’s sample agent, as support-bot');
   });

@@ -72,7 +72,7 @@ describe("Past tests", () => {
 
   it("shows only what history keeps, and says the rest isn't kept", () => {
     const html = renderToStaticMarkup(createElement(PastTestDetail, { test: { sandboxId: "abc-123", destroyedAt: "2026-10-12T10:00:00Z", overall: "pass", totalTasks: 4, isTrial: true }, onClose: () => {} }));
-    for (const text of [">Passed<", ">4 <", "Demo", "abc-123", "aren’t kept after a test ends"]) expect(html).toContain(text);
+    for (const text of [">Passed<", ">4 <", "Connection test (demo)", "abc-123", "aren’t kept after a test ends"]) expect(html).toContain(text);
     expect(html).not.toMatch(/Your agent connects|memory fills up/);
   });
 });

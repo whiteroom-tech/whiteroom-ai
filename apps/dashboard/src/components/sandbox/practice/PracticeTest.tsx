@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { SkeletonCard } from '@whiteroom/ui';
-import { PageHeader } from '@/components/citadel/PageChrome';
+import { PageHeader, PageLead } from '@/components/citadel/PageChrome';
 import { analytics } from '@/lib/analytics';
 import { governanceList } from '@/lib/whiteroom/client';
 import { endPractice, getPracticeResult, getPracticeRun, keyGone, listPracticeRuns, newRunCode, PracticeError, retryable, sourceModel, startPractice, unavailable } from '@/lib/sandbox/practice/api';
@@ -329,9 +329,10 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
   };
 
   return <>
-    <PageHeader title="Sandbox" />
+    <PageHeader title="Practice tasks" />
     <main className={s.content}>
       <p className={s.srOnly} role="status" aria-live="polite">{said}</p>
+      {view !== 'unavailable' && <PracticeIntro />}
       {refusal && view !== 'unavailable' && view !== 'demo' && (
         <PracticeRefusal refusal={fleet ? refusal : { ...refusal, run: undefined }} busy={busy} onView={(id) => act(() => showRun(fleet!, id))}
           onCancel={(id) => act(async () => { if (!(await endRun(fleet!, id))) await showRun(fleet!, id); })} onEnd={(id) => setConfirm({ kind: 'end', id })} />
@@ -402,6 +403,18 @@ function PracticeRefusal({ refusal, busy, onView, onCancel, onEnd }: {
         <button type="button" className={`${s.btn} ${s.btnSecondary}`} disabled={busy} onClick={() => onView(id)}>View it</button>
         <button type="button" className={`${s.btn} ${s.btnGhost}`} disabled={busy} onClick={() => onEnd(id)}>End it…</button>
       </>)}
+    </div>
+  );
+}
+
+export const PRACTICE_INTRO = 'Scripted tasks with known answers. Your agent’s checks live on Sandbox.';
+
+/** What this page is now (Sandbox v2 phase 7): secondary to Sandbox, with the way back. */
+export function PracticeIntro() {
+  return (
+    <div className={p.intro}>
+      <PageLead>{PRACTICE_INTRO}</PageLead>
+      <Link href={ROUTES.sandbox} className="wr-link">← Back to Sandbox</Link>
     </div>
   );
 }
