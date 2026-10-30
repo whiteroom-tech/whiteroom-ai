@@ -12,7 +12,7 @@ import { createRoot, type Root } from 'react-dom/client';
 const { SandboxRules } = await import('@/components/sandbox/v2/SandboxRules');
 const { SandboxHome } = await import('@/components/sandbox/v2/SandboxHome');
 const { SANDBOX_V2_STATES } = await import('@/app/dev/sandbox-v2/states');
-const { RULES_DURING_CHECK, SANDBOX_RULES_ONLY, sourceLine, previewReadyMade, rulesStateOf } = await import('@/lib/sandbox/rules');
+const { RULES_DURING_CHECK, rulesSummary, SANDBOX_RULES_ONLY, sourceLine, previewReadyMade, rulesStateOf } = await import('@/lib/sandbox/rules');
 
 const SANDBOX_ID = 'sandbox-00000000-0000-4000-8000-000000000000';
 const READY = previewReadyMade(SANDBOX_ID);
@@ -253,6 +253,8 @@ describe('Sandbox rules: failures and races', () => {
     await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
     expect(text()).toContain('Refused 500.');
     expect(text()).not.toContain('No rules in your Sandbox');
+    // The section is closed by default: its summary says it failed, not "Loading…".
+    expect(document.querySelector('#sandbox-rules summary')?.textContent).toBe('Sandbox rulesCouldn’t load. Open to try again.');
     await click('Try again');
     expect(count('/rules/ready-made')).toBe(2);
     expect(text()).toContain('Ready-made set — easy to trip on a short run.');
@@ -401,7 +403,10 @@ describe('Sandbox rules: preview states', () => {
     for (const name of ['rules-ready-made', 'rules-copy', 'rules-custom', 'rules-empty', 'rules-editing', 'rules-error'] as const) {
       await renderState(name);
       expect(bff).not.toHaveBeenCalled();
-      expect(text()).toContain('3. Sandbox rules');
+      const section = document.getElementById('sandbox-rules') as HTMLDetailsElement;
+      expect(section.tagName).toBe('DETAILS');
+      expect(section.open).toBe(false);
+      expect(section.querySelector('summary')?.textContent).toMatch(/^Sandbox rules/);
       expect([...document.querySelectorAll('a')].some((a) => a.getAttribute('href')?.includes('/controls'))).toBe(false);
       if (name === 'rules-ready-made') expect(text()).toContain('Ready-made set');
       if (name === 'rules-copy') { expect(text()).toContain('Production has 2 newer changes'); expect(button('Copy again')).toBeDefined(); }
@@ -414,6 +419,17 @@ describe('Sandbox rules: preview states', () => {
 
   it('isn’t shown before a key is connected', async () => {
     await renderState('not-connected');
-    expect(text()).not.toContain('3. Sandbox rules');
+    expect(document.getElementById('sandbox-rules')).toBeNull();
+  });
+});
+
+describe('Sandbox rules: the closed section’s summary', () => {
+  const rule = (mode: 'watch' | 'enforce' | 'off') => ({ ...previewReadyMade('sandbox-x')[0], mode });
+  it('counts the rules, says where they came from and their modes', () => {
+    expect(rulesSummary(null)).toBe('Loading…');
+    expect(rulesSummary({ rules: [], source: 'ready_made' })).toBe('No rules');
+    expect(rulesSummary({ rules: [rule('watch'), rule('watch')], source: 'ready_made' })).toBe('2 ready-made rules · all Watch');
+    expect(rulesSummary({ rules: [rule('enforce'), rule('watch'), rule('enforce')], source: 'production_copy' })).toBe('3 rules copied from production · 2 in Enforce');
+    expect(rulesSummary({ rules: [rule('off')], source: 'custom' })).toBe('1 rule');
   });
 });

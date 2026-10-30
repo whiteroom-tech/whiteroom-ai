@@ -170,7 +170,14 @@ describe('the report on the page', () => {
     // Finishes the job correctly isn't scored; practice tasks is the next step (and the footer link stays).
     expect(document.querySelector('li[data-check="finishes_correctly"]')).toBeNull();
     expect(body).toContain('Next: check its answers too.');
-    expect([...document.querySelectorAll('a[href="/sandbox/practice"]')].length).toBe(2);
+    // The Connect step's footer link isn't on Results: just the next step.
+    expect([...document.querySelectorAll('a[href="/sandbox/practice"]')].length).toBe(1);
+    // "Checked against N Sandbox rules · Change rules" opens the closed rules section.
+    expect(body).toMatch(/Checked against \d+ Sandbox rules · Change rules/);
+    const rules = document.getElementById('sandbox-rules') as HTMLDetailsElement;
+    expect(rules.open).toBe(false);
+    await act(async () => { [...document.querySelectorAll('button')].find((b) => b.textContent === 'Change rules')!.click(); });
+    expect(rules.open).toBe(true);
     expect(document.querySelector('a[href^="/controls"]')).toBeNull();
     const again = [...document.querySelectorAll('button')].find((b) => b.textContent === 'Check again')!;
     expect(again.className).toContain('wr-btn--primary');

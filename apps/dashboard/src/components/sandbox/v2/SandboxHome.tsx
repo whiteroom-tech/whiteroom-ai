@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Banner, Button, Panel, SkeletonCard } from '@whiteroom/ui';
+import { Banner, Button, Icon, Panel, SkeletonCard } from '@whiteroom/ui';
 import { PageHeader, PageLead } from '@/components/citadel/PageChrome';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { CopyChip } from '@/components/citadel/CopyChip';
@@ -14,8 +14,9 @@ import {
   resetSandboxFleet, rotateSandboxFleetKey, SandboxFleetError, type IssuedSandboxKey, type SandboxFleetStatus,
 } from '@/lib/sandbox/fleet';
 import { ConnectForm, type ConnectRequest } from './ConnectForm';
-import { checkStateOf } from '@/lib/sandbox/checks';
-import { SandboxChecks, type SandboxChecksPreview } from './SandboxChecks';
+import { SandboxChecks, STEP_CARD_ID, type SandboxChecksPreview } from './SandboxChecks';
+import { SANDBOX_STEPS, sandboxStepOf, type SandboxStep } from '@/lib/sandbox/steps';
+import { checkStateOf, type CheckState } from '@/lib/sandbox/checks';
 import { SandboxRules, type SandboxRulesPreview } from './SandboxRules';
 import s from '../guided.module.css';
 import v from './v2.module.css';
@@ -23,7 +24,8 @@ import v from './v2.module.css';
 /** After Reset: what it cleared. Rules and the key stay (the engine's reset keeps them). */
 export const RESET_NOTICE = 'Sandbox reset. Its calls and check results are cleared.';
 
-export const SANDBOX_SEPARATE = 'Sandbox is separate from your live agents. Nothing here changes them.';
+/** The one line under the title, on the Connect step. */
+export const SANDBOX_LEAD = 'Test your agent before it goes live. It runs on your own API key, and nothing here touches your live agents.';
 
 /** /dev/sandbox-v2: a fixed state instead of the engine. Actions change only the page. */
 export interface SandboxHomePreview {
@@ -31,13 +33,16 @@ export interface SandboxHomePreview {
   issued?: IssuedSandboxKey | null;
   error?: string;
   now?: number;
-  /** Step 3, once connected. */
+  /** Sandbox rules, once connected. */
   rules?: SandboxRulesPreview;
-  /** Step 4, once connected. */
+  /** The checks card, once connected. */
   checks?: SandboxChecksPreview;
 }
 
 type Confirm = 'rotate' | 'reset' | null;
+
+/** The Connect card: the page focuses its heading when the step changes to it. */
+const CONNECT_CARD_ID = 'sandbox-connect';
 
 /** Which Sandbox and key a status names; null when there's no key. */
 const keyOf = (st: SandboxFleetStatus | null) => (st?.exists && st.key ? `${st.sandboxFleetId}:${st.key.prefix}` : null);
@@ -61,6 +66,8 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [replacing, setReplacing] = useState(false);
   const [notice, setNotice] = useState('');
+  // The latest check state, from the checks card's own reads: decides Run your agent or Results.
+  const [checks, setChecks] = useState<CheckState | null>(null);
   const now = preview?.now ?? Date.now();
   const statusRef = useRef(status);
   useEffect(() => { statusRef.current = status; }, [status]);
@@ -101,6 +108,8 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
     setBusy(true); setNotice('');
     try {
       const done = await connectSandboxFleet(fleet, req);
+      // A new key: the old Sandbox's results don't apply to it.
+      setChecks(null);
       setStatus(done.status);
       setIssued(done.issued);
       setReplacing(false);
@@ -127,7 +136,9 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
         setIssued(done.issued);
       } else {
         setStatus(await resetSandboxFleet(fleet, id));
-        // Step 4 starts over: its old report is gone too.
+        // The old results are gone: the steps bar goes back to Run your agent now, not on the next read.
+        setChecks(null);
+        // The checks card starts over: its old report is gone too.
         setResets((n) => n + 1);
         setNotice(RESET_NOTICE);
       }
@@ -143,42 +154,67 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   const connected = status?.exists === true && status.key !== null ? status : null;
   const outside = connected ? outsideWindowText(connected) : null;
   const showForm = !loading && status !== null && (!connected || replacing);
+  const step = sandboxStepOf({ connected: !!connected, replacing, checks });
+
+  // A new step: focus its card's heading (not on the first render).
+  const shownStep = useRef<SandboxStep | null>(null);
+  useEffect(() => {
+    if (loading || status === null) return;
+    // Results: the report moves focus to its verdict itself.
+    if (shownStep.current !== null && shownStep.current !== step && step !== 'results') {
+      const head = document.querySelector<HTMLElement>(`#${step === 'connect' ? CONNECT_CARD_ID : STEP_CARD_ID} h2`);
+      if (head) { head.tabIndex = -1; head.focus(); }
+    }
+    shownStep.current = step;
+  }, [step, loading, status]);
 
   return <>
     <PageHeader title="Sandbox" />
     <main className={s.content}>
       <div className={v.page}>
-        <PageLead>Test your agent the way it runs in production. Connect its key, point it at the Sandbox and run it as normal.</PageLead>
-        <Banner variant="info" icon="lock">{SANDBOX_SEPARATE}</Banner>
+        {step === 'connect' && <PageLead>{SANDBOX_LEAD}</PageLead>}
         {error && <Banner variant="error" actions={status === null && !loading && !preview ? <Button size={28} onClick={() => void load()}>Try again</Button> : undefined}>{error}</Banner>}
         {notice && <Banner variant="info" icon="check">{notice}</Banner>}
 
         {loading && <SkeletonCard label="Opening your Sandbox…" style={{ maxWidth: 480 }} />}
 
+        {status !== null && <SandboxSteps current={step} />}
+
+        {connected && !replacing && (
+          <p className={v.done}>
+            <span className={v.doneMark} aria-hidden="true"><Icon name="check" size={13} /></span>
+            <span>Connected · {providerLabel(connected.key!.provider)} key ending <span className={v.mono}>{connected.key!.keyHint}</span></span>
+            <button type="button" className={`${v.linkButton} ${v.push}`} onClick={() => setReplacing(true)} disabled={busy}>Change key</button>
+          </p>
+        )}
+
         {showForm && (
-          <Panel title={connected ? 'Connect a different key' : '1. Connect your provider key'}>
+          <Panel id={CONNECT_CARD_ID} title={connected ? 'Connect a different key' : 'Connect your provider key'}>
             <div className={v.stack}>
-              {connected && <p className={v.text}>Your Sandbox key changes when you connect a new provider key. Update your agent after.</p>}
+              {connected && <p className={v.text}>Your Sandbox URL changes when you connect a new provider key. Update your agent after.</p>}
               <ConnectForm busy={busy} onConnect={connect} onCancel={connected ? () => setReplacing(false) : undefined} />
             </div>
           </Panel>
         )}
 
-        {issued && <PointPanel issued={issued} />}
-
-        {connected && !issued && !replacing && (
-          <Panel title="2. Point your agent">
-            <div className={v.stack}>
-              <p className={v.text}>
-                Your agent uses the Sandbox URL that starts with <span className={v.mono}>{connected.key!.prefix}</span>.
-                It holds your Sandbox key, so we can’t show it again after you leave this page.
-              </p>
-              <div className={v.actions}>
-                <Button size={32} onClick={() => setConfirm('rotate')} disabled={busy}>Get a new Sandbox URL</Button>
-              </div>
-            </div>
-          </Panel>
+        {connected && !replacing && (
+          <SandboxChecks
+            key={`checks-${connected.sandboxFleetId}-${resets}`}
+            fleet={fleet}
+            sandboxFleetId={connected.sandboxFleetId}
+            preview={preview ? preview.checks ?? { state: checkStateOf({ window: null, checks: [] }), now } : undefined}
+            onStale={reload}
+            onState={setChecks}
+            // A URL issued on this page (connect, or Get a new Sandbox URL on Results) shows even above a report.
+            setupAlways={!!issued}
+            setup={issued
+              ? <RunSetup issued={issued} />
+              : <ReturnSetup prefix={connected.key!.prefix} busy={busy} onNewUrl={() => setConfirm('rotate')} />}
+          />
         )}
+
+        {/* In the open, not in settings: it says the agent ran with nothing checked or blocked. */}
+        {connected && !replacing && outside && <Banner variant="warn">{outside}</Banner>}
 
         {connected && !replacing && (
           <SandboxRules
@@ -190,43 +226,36 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
           />
         )}
 
-        {connected && !replacing && <>
-          <SandboxChecks
-            key={`checks-${connected.sandboxFleetId}-${resets}`}
-            fleet={fleet}
-            sandboxFleetId={connected.sandboxFleetId}
-            preview={preview ? preview.checks ?? { state: checkStateOf({ window: null, checks: [] }), now } : undefined}
-            onStale={reload}
-          />
-        </>}
-
-        {connected && (
-          <Panel
-            title="Your Sandbox"
-            actions={!replacing ? <Button size={28} variant="ghost" onClick={() => setReplacing(true)} disabled={busy}>Use a different key</Button> : undefined}
-          >
-            <div className={v.stack}>
+        {connected && !replacing && (
+          <details className={v.fold}>
+            <summary className={v.foldHead}>
+              <span className={v.foldTitle}>Sandbox settings</span>
+              <span className={v.foldSub}>{providerLabel(connected.key!.provider)} · {connected.lastCallAt ? `last call ${lastCallText(connected.lastCallAt, now)}` : 'no calls yet'}</span>
+            </summary>
+            <div className={`${v.stack} ${v.foldBody}`}>
               <dl className={v.facts}>
                 <dt>Provider</dt>
                 <dd>{providerLabel(connected.key!.provider)} · key ending <span className={v.mono}>{connected.key!.keyHint}</span></dd>
-                <dt>Sandbox key</dt>
-                <dd className={v.mono}>{connected.key!.prefix}</dd>
+                <dt>Sandbox URL</dt>
+                <dd className={v.mono}>…/{connected.key!.prefix.replace(/\.+$/, '')}…</dd>
                 <dt>Last call</dt>
                 <dd>{lastCallText(connected.lastCallAt, now)}</dd>
               </dl>
               <p className={v.text}>{keptUntilText(connected.expiresAt, now)}</p>
-              {outside && <Banner variant="warn">{outside}</Banner>}
               <div className={v.actions}>
-                <Button size={32} onClick={() => setConfirm('rotate')} disabled={busy}>Rotate key</Button>
+                <Button size={32} onClick={() => setConfirm('rotate')} disabled={busy}>Get a new Sandbox URL</Button>
+                <Button size={32} onClick={() => setReplacing(true)} disabled={busy}>Change API key</Button>
                 <Button size={32} variant="danger" onClick={() => setConfirm('reset')} disabled={busy}>Reset Sandbox</Button>
               </div>
             </div>
-          </Panel>
+          </details>
         )}
 
-        <p className={v.secondary}>
-          Want scripted tasks with known answers? <Link href={ROUTES.practiceTest} className="wr-link">Run practice tasks</Link>
-        </p>
+        {step === 'connect' && (
+          <p className={v.secondary}>
+            Want scripted tasks with known answers? <Link href={ROUTES.practiceTest} className="wr-link">Run practice tasks</Link>
+          </p>
+        )}
       </div>
     </main>
 
@@ -252,28 +281,50 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   </>;
 }
 
-/** Step 2 right after connect or rotate: the line for the agent's settings, on screen until the page is left. */
-export function PointPanel({ issued }: { issued: IssuedSandboxKey }) {
-  const setting = sandboxSetting(issued.provider, issued.proxyUrl);
+/** The steps bar: Connect, Run your agent, Results. Done steps are ticked; the current one is marked for screen readers. */
+export function SandboxSteps({ current }: { current: SandboxStep }) {
+  const at = SANDBOX_STEPS.findIndex((x) => x.id === current);
   return (
-    <Panel title="2. Point your agent">
-      <div className={v.stack}>
-        <Banner variant="warn">Copy this before you leave this page. We can’t show your Sandbox URL again after that.</Banner>
-        <p className={v.label}>Put this in your agent’s .env (or wherever it reads its settings)</p>
-        <CopyChip text={`${setting.name}=${setting.value}`} label="Copy the setting" />
-        <p className={v.text}>
-          {issued.keyHint ? <>Your agent keeps using its own key (ending {issued.keyHint}). </> : <>Your agent keeps using its own key. </>}
-          Then run your agent as normal. Checks start on its first call.
-        </p>
-        <details>
-          <summary className={v.label}>Sandbox URL and key, if a tool asks for them</summary>
-          <div className={`${v.stack} ${v.reveal}`}>
-            <CopyChip text={setting.value} label="Copy the Sandbox URL" />
-            <CopyChip text={issued.proxyKey} label="Copy the Sandbox key" />
-          </div>
-        </details>
-        <AgentNaming {...agentNamingFor(issued.provider)} />
-      </div>
-    </Panel>
+    <ol className={v.steps3} aria-label="Sandbox steps">
+      {SANDBOX_STEPS.map((x, i) => (
+        <li key={x.id} className={i < at ? v.stepDone : i === at ? v.stepNow : undefined} aria-current={i === at ? 'step' : undefined}>
+          <span className={v.stepNum} aria-hidden="true">{i < at ? <Icon name="check" size={12} /> : i + 1}</span>
+          <span>{x.title}</span>
+          {i < at && <span className={s.srOnly}> (done)</span>}
+        </li>
+      ))}
+    </ol>
   );
+}
+
+/** Run your agent, right after connect or rotate: the line for the agent's settings, on screen until the page is left. */
+export function RunSetup({ issued }: { issued: IssuedSandboxKey }) {
+  const setting = sandboxSetting(issued.provider, issued.proxyUrl);
+  return <>
+    <Banner variant="warn">Copy this before you leave this page. We can’t show your Sandbox URL again after that.</Banner>
+    <p className={v.label}>Put this in your agent’s .env (or wherever it reads its settings)</p>
+    <CopyChip text={`${setting.name}=${setting.value}`} label="Copy the setting" />
+    <p className={v.text}>
+      {issued.keyHint ? <>Your agent keeps using its own key (ending {issued.keyHint}). </> : <>Your agent keeps using its own key. </>}
+      Then run your agent as normal. Checks start on its first call.
+    </p>
+    <details>
+      <summary className={v.label}>Sandbox URL and key, if a tool asks for them</summary>
+      <div className={`${v.stack} ${v.reveal}`}>
+        <CopyChip text={setting.value} label="Copy the Sandbox URL" />
+        <CopyChip text={issued.proxyKey} label="Copy the Sandbox key" />
+      </div>
+    </details>
+    <AgentNaming {...agentNamingFor(issued.provider)} />
+  </>;
+}
+
+/** Run your agent on a later visit: the URL can't be shown again (only its hash is kept), so say which one and offer a new one. */
+export function ReturnSetup({ prefix, busy, onNewUrl }: { prefix: string; busy: boolean; onNewUrl: () => void }) {
+  return <>
+    <p className={v.text}>
+      Your agent uses the Sandbox URL that starts with <span className={v.mono}>{prefix}</span>. Run it as you normally do and checks start by themselves.
+    </p>
+    <button type="button" className={v.linkButton} onClick={onNewUrl} disabled={busy}>Lost the URL? Get a new one</button>
+  </>;
 }

@@ -13,6 +13,7 @@ import {
 } from '@/lib/sandbox/checks';
 import { reportOf, reportSummary, SCORED_CHECKS, TOO_FEW_HELP, type ReportCard } from '@/lib/sandbox/check-report';
 import { analytics } from '@/lib/analytics';
+import { SANDBOX_RULES_ID } from '@/lib/sandbox/rules';
 import s from '../guided.module.css';
 import v from './v2.module.css';
 
@@ -25,6 +26,8 @@ export interface SandboxChecksPreview {
 
 const POLL_MS = { visible: 5_000, hidden: 30_000 };
 export const RUN_NOW = 'Run your agent as you normally do. Checks start on its first call.';
+/** The current step's card: the page moves focus to its heading when the step changes. */
+export const STEP_CARD_ID = 'sandbox-step';
 
 const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : 'That didn’t work. Check your connection and try again.');
 
@@ -35,12 +38,18 @@ const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : 'T
  * window ends. A check's stop lifts itself after 5 seconds, so there's no
  * Resume here.
  */
-export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale }: {
+export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState, setup, setupAlways = false }: {
   fleet: string;
   sandboxFleetId: string;
   preview?: SandboxChecksPreview;
   /** The Sandbox changed under the page: reload its status. */
   onStale?: () => void;
+  /** Every new check state, so the page can tell Run from Results. */
+  onState?: (state: CheckState | null) => void;
+  /** How to point the agent at the Sandbox: shown above the checks until there's a report. */
+  setup?: React.ReactNode;
+  /** Show `setup` above the report too: a URL just issued must be seen before the page is left. */
+  setupAlways?: boolean;
 }) {
   const [state, setState] = useState<CheckState | null>(preview ? preview.state : null);
   const [loading, setLoading] = useState(!preview);
@@ -140,6 +149,13 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale }: {
   const w = state?.window ?? null;
   const ended = !!w?.endedAt;
 
+  // The page's steps follow the checks: the latest onState, read when called.
+  const onStateRef = useRef(onState);
+  useEffect(() => { onStateRef.current = onState; }, [onState]);
+  // Only once a read has landed: a card that just (re)mounted has no state yet, and reporting that
+  // would flip the page to Run your agent and back.
+  useEffect(() => { if (state) onStateRef.current?.(state); }, [state]);
+
   // The report already ended when the page first loaded (null: none, or a check still open then).
   // Any other ended window is a new report, even one that opened and ended between two reads:
   // it gets focus and the report event. Unset until the first read lands.
@@ -160,10 +176,12 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale }: {
 
   return (
     <Panel
-      title="4. Check your agent"
+      id={STEP_CARD_ID}
+      title={ended ? 'Results' : 'Run your agent'}
       actions={open ? <Button size={28} variant="ghost" onClick={() => void act('stop')} disabled={busy}>Finish now</Button> : undefined}
     >
       <div className={v.stack}>
+        {setup && (!ended || setupAlways) && <div className={`${v.stack} ${v.setup}`}>{setup}</div>}
         {state && (() => {
           const live = activityLine(state, now);
           // Not a live region: it changes on every read, and the stage box below announces what matters.
@@ -246,6 +264,7 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
   };
   // Too few calls: no score, just what the checks need. Nothing checked despite enough calls: the list says why per check.
   const few = report.verdict === 'too_few';
+  const judgedOn = new Set(state.rules.map((r) => r.ruleId)).size;
   const callsText = calls === 1 ? '1 call' : `${calls.toLocaleString('en-US')} calls`;
   return <>
     <div className={v.report}>
@@ -273,7 +292,22 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
       <span className={v.text} aria-live="polite">{copied === 'failed' ? 'Couldn’t copy. Try again.' : ''}</span>
     </div>
     {!few && <p className={v.next}>Next: check its answers too. <Link href={ROUTES.practiceTest} className="wr-link">Run practice tasks</Link></p>}
+    <p className={v.text}>
+      {judgedOn > 0 && <>Checked against {judgedOn === 1 ? '1 Sandbox rule' : `${judgedOn} Sandbox rules`} · </>}
+      <button type="button" className={v.linkButton} onClick={openRules}>{judgedOn > 0 ? 'Change rules' : 'Sandbox rules'}</button>
+    </p>
   </>;
+}
+
+/** Opens the closed Sandbox rules section below and brings it into view. */
+export function openRules() {
+  const el = document.getElementById(SANDBOX_RULES_ID);
+  if (!(el instanceof HTMLDetailsElement)) return;
+  el.open = true;
+  // Focus first without scrolling: a focus that scrolls would cut the smooth scroll short.
+  el.querySelector('summary')?.focus({ preventScroll: true });
+  const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  el.scrollIntoView({ block: 'start', behavior: still ? 'auto' : 'smooth' });
 }
 
 /** A failed check: what happened, how to fix it, and the rules it was judged on. */

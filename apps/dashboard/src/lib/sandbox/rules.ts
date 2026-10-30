@@ -45,6 +45,26 @@ export interface SandboxRulesState {
 
 /** The one line on Sandbox and in the confirm dialogs. */
 export const SANDBOX_RULES_ONLY = 'These rules apply only to your Sandbox. Your live rules don’t change.';
+/** The Sandbox rules section's id: Results' "Change rules" opens and scrolls to it. */
+export const SANDBOX_RULES_ID = 'sandbox-rules';
+
+/**
+ * The closed Sandbox rules section's summary: how many rules, where they came
+ * from, and their modes. "5 ready-made rules · all Watch", "3 rules copied from
+ * production · 2 in Enforce", "No rules".
+ */
+export function rulesSummary(state: Pick<SandboxRulesState, 'rules' | 'source'> | null): string {
+  if (!state) return 'Loading…';
+  const n = state.rules.length;
+  if (n === 0) return 'No rules';
+  const count = state.source === 'ready_made' ? `${n} ready-made ${n === 1 ? 'rule' : 'rules'}`
+    : state.source === 'production_copy' ? `${n} ${n === 1 ? 'rule' : 'rules'} copied from production`
+    : `${n} ${n === 1 ? 'rule' : 'rules'}`;
+  const enforced = state.rules.filter((r) => r.mode === 'enforce').length;
+  const mode = state.rules.every((r) => r.mode === 'watch') ? 'all Watch' : enforced ? `${enforced} in Enforce` : null;
+  return mode ? `${count} · ${mode}` : count;
+}
+
 /** Why a rule in Watch can still block during a check: each one is enforced for a moment, one at a time. */
 export const RULES_DURING_CHECK = 'During a check, each rule is switched on for a moment to see how your agent reacts.';
 
