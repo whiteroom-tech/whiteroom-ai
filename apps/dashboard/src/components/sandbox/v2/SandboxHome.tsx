@@ -124,7 +124,9 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
       setError('');
       return null;
     } catch (e) {
-      if (!preview) analytics.capture('sandbox_v2_connect_refused', { reason: 'engine', status: e instanceof SandboxFleetError ? e.status : 0 });
+      // Refused by the engine (with its status), or no answer at all (network: sandboxPost's status 0).
+      const status = e instanceof SandboxFleetError ? e.status : 0;
+      if (!preview) analytics.capture('sandbox_v2_connect_refused', status > 0 ? { reason: 'engine', status } : { reason: 'network' });
       return message(e);
     } finally {
       setBusy(false);

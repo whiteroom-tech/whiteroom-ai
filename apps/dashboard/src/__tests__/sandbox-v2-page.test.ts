@@ -244,6 +244,12 @@ describe('Sandbox v2 page', () => {
     await click('Connect');
     expect(capture).toHaveBeenCalledWith('sandbox_v2_connect_refused', { reason: 'engine', status: 400 });
     expect(JSON.stringify(capture.mock.calls)).not.toContain(PROVIDER_KEY);
+    // No answer at all is a network failure, not an engine refusal.
+    capture.mockClear();
+    bff.mockImplementation(async (url: string) => { if (url.endsWith('/status')) return Response.json({ success: true, exists: false }); throw new TypeError('Failed to fetch'); });
+    await type(document.getElementById('sandbox-v2-key') as HTMLInputElement, PROVIDER_KEY);
+    await click('Connect');
+    expect(capture).toHaveBeenCalledWith('sandbox_v2_connect_refused', { reason: 'network' });
   });
 
   it('a WhiteRoom key is named as one as soon as it is pasted', async () => {
