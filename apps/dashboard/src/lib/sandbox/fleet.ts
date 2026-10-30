@@ -184,6 +184,7 @@ export function lastCallText(lastCallAt: string | null, now = Date.now()): strin
 /** "Kept until Nov 12 — renewed each time your agent calls". */
 export function keptUntilText(expiresAt: string | null, now = Date.now()): string {
   const day = expiresAt ? fmtDay(expiresAt, now) : '';
+  // 7 days: the engine keeps a Sandbox 7 days after its last call (engine #317).
   return day ? `Kept until ${day} — renewed each time your agent calls` : 'Kept for 7 days after your agent’s last call';
 }
 

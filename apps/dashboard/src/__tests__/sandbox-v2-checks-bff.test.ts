@@ -67,8 +67,6 @@ describe('Sandbox checks and helper BFF: who may ask', () => {
     expect(access).toHaveBeenCalledWith('prod-eu', FLEET_TOKEN);
     expect((await post(route, 'status', { fleet: SANDBOX_ID })).status).toBe(400);
     expect((await post(route, 'governance_pause', { fleet: 'prod-eu' })).status).toBe(404);
-    // The page no longer sends resume (a check lifts its own stop), so the route doesn't take it.
-    if (route === 'checks') expect((await post(route, 'resume', { fleet: 'prod-eu' })).status).toBe(404);
     expect((await post(route, 'status', 'not json')).status).toBe(400);
     expect((await post(route, 'status', { fleet: 'prod-eu', sandboxFleetId: 'prod-eu' })).status).toBe(400);
     expect(engine).not.toHaveBeenCalled();
@@ -88,6 +86,11 @@ describe('Sandbox checks and helper BFF: who may ask', () => {
 });
 
 describe('Sandbox checks and helper BFF: a fixed action map', () => {
+  it('refuses resume without asking the engine: the page never sends it, since a check lifts its own stop', async () => {
+    expect((await post('checks', 'resume', { fleet: 'prod-eu' })).status).toBe(404);
+    expect(engine).not.toHaveBeenCalled();
+  });
+
   it('maps every action to a sandbox_check_ / sandbox_helper_ engine action', () => {
     for (const a of SANDBOX_CHECKS_ACTIONS) expect(SANDBOX_CHECKS_ENGINE_ACTION[a]).toBe(`sandbox_check_${a}`);
     for (const a of SANDBOX_HELPER_ACTIONS) expect(SANDBOX_HELPER_ENGINE_ACTION[a]).toBe(`sandbox_helper_${a}`);
