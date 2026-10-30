@@ -194,6 +194,27 @@ describe('Sandbox v2 page', () => {
     expect(text()).toContain('Pick where your agent’s model runs.');
   });
 
+  it('a pick keeps the choices open when the key changes, and still decides what is sent', async () => {
+    await render({ fleet: 'prod-eu' });
+    const key = document.getElementById('sandbox-v2-key') as HTMLInputElement;
+    await type(key, 'placeholder-unknown-key-0000');
+    await act(async () => { document.querySelector<HTMLInputElement>('input[name="sandbox-provider"][value="azure-openai"]')!.click(); });
+    // Now an sk- key: the Azure pick is still on screen, not hidden behind the link.
+    await type(key, 'sk-placeholder-openai-key-0000');
+    expect(document.querySelector<HTMLInputElement>('input[name="sandbox-provider"][value="azure-openai"]')?.checked).toBe(true);
+    expect(document.getElementById('sandbox-endpoint')).not.toBeNull();
+  });
+
+  it('Anthropic picked by hand: where to find the key, and an sk-ant key connects as Anthropic', async () => {
+    await render({ fleet: 'prod-eu' });
+    await click('Using Azure, Foundry or Bedrock?');
+    await act(async () => { document.querySelector<HTMLInputElement>('input[name="sandbox-provider"][value="anthropic"]')!.click(); });
+    expect(text()).toContain('Find it in Claude Console');
+    await type(document.getElementById('sandbox-v2-key') as HTMLInputElement, PROVIDER_KEY);
+    await click('Connect');
+    expect(calls()[1]).toEqual({ url: '/api/sandbox/fleet/connect', body: { fleet: 'prod-eu', provider: 'anthropic', api_key: PROVIDER_KEY } });
+  });
+
   it('a WhiteRoom key is named as one as soon as it is pasted', async () => {
     await render({ fleet: 'prod-eu' });
     await type(document.getElementById('sandbox-v2-key') as HTMLInputElement, 'wr_placeholder0000');

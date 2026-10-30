@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import { Button } from '@whiteroom/ui';
 import { connectCheck } from '@/lib/sandbox/fleet';
-import { detectKey, isCloudProvider, type SandboxProvider } from '@/lib/sandbox/providers';
+import { detectKey, isCloudProvider, KEY_HELP, type SandboxProvider } from '@/lib/sandbox/providers';
 import { CloudEndpointField, ProviderChoices } from '../CloudProviderParts';
 import s from '../guided.module.css';
 import v from './v2.module.css';
@@ -32,7 +32,8 @@ export function ConnectForm({ busy, onConnect, onCancel }: {
 }) {
   // Picked from the choices; null while the key decides.
   const [picked, setPicked] = useState<SandboxProvider | null>(null);
-  // The choices are open: by the cloud link, or a key that isn't Anthropic's or OpenAI's. Once open they stay.
+  // The choices are open: by the cloud link, or a key that isn't Anthropic's or OpenAI's. Once open, or
+  // once something is picked, they stay: a pick must never drive Connect while hidden.
   const [choosing, setChoosing] = useState(false);
   const [key, setKey] = useState('');
   const [endpoint, setEndpoint] = useState('');
@@ -67,7 +68,7 @@ export function ConnectForm({ busy, onConnect, onCancel }: {
     : kind === 'fleet' || kind === 'account' ? <span style={{ color: 'var(--bad)' }}>That’s a WhiteRoom key. Paste the key your agent uses with its provider.</span>
     : picked === null && fromKey ? <span style={{ color: 'var(--ok)' }}>{fromKey === 'anthropic' ? 'Anthropic' : 'OpenAI'} key. We keep only the last 4 characters.</span>
     : kind === 'unknown' && !picked ? <>Pick where your agent’s model runs, below. We keep only the last 4 characters.</>
-    : <>The key your agent already uses. We keep only the last 4 characters.</>;
+    : <>The key your agent already uses. We keep only the last 4 characters.{picked && !isCloudProvider(picked) && <> {KEY_HELP[picked]}</>}</>;
   return (
     <form className={v.stack} onSubmit={(e) => { e.preventDefault(); void submit(); }} aria-label="Connect your provider key">
       <div className={s.formGroup} style={{ marginBottom: 0 }}>
@@ -94,7 +95,7 @@ export function ConnectForm({ busy, onConnect, onCancel }: {
         </p>
       </div>
       {showChoices ? <>
-        <ProviderChoices value={provider} unsupported={[]} disabled={busy} onPick={(p) => { setPicked(p); setError(''); }} />
+        <ProviderChoices value={provider} unsupported={[]} disabled={busy} onPick={(p) => { setPicked(p); setChoosing(true); setError(''); }} />
         {cloud && provider && (
           <CloudEndpointField provider={provider} value={endpoint} error="" keyNote="" onChange={setEndpoint} onSubmit={() => void submit()} />
         )}
