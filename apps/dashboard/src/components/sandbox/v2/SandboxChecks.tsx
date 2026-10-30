@@ -11,7 +11,7 @@ import {
   activityLine, checkAction, getCheckState, isOpen, stageLine, STATUS_WORDS,
   type CheckResult, type CheckRule, type CheckState, type CheckStatus,
 } from '@/lib/sandbox/checks';
-import { ENOUGH_CALLS, reportOf, reportSummary, SCORED_CHECKS, type ReportCard } from '@/lib/sandbox/check-report';
+import { reportOf, reportSummary, SCORED_CHECKS, TOO_FEW_HELP, type ReportCard } from '@/lib/sandbox/check-report';
 import { analytics } from '@/lib/analytics';
 import s from '../guided.module.css';
 import v from './v2.module.css';
@@ -252,7 +252,7 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
       <h3 ref={heading} tabIndex={-1} className={`${v.reportHead} ${report.tone === 'pass' ? v.reportPass : report.tone === 'warn' ? v.reportWarn : ''}`} data-tone={report.tone}>{report.headline}</h3>
       <p className={v.text}>{few ? `${callsText} · checked ${checked}` : `${SCORED_CHECKS.length} checks · ${callsText} · checked ${checked}`}</p>
     </div>
-    {few && <p className={v.text}>The checks need about {ENOUGH_CALLS} calls from one run. Run a longer task, or run your agent again. Checks start by themselves.</p>}
+    {few && <p className={v.text}>{TOO_FEW_HELP}</p>}
     {report.fix.length > 0 && <>
       <p className={v.sect}>To fix</p>
       <ul className={v.cards}>{report.fix.map((c) => <FixCard key={c.id} card={c} />)}</ul>

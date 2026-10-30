@@ -14,7 +14,7 @@ vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'un
 vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 
 const { CHECK_IDS, CHECK_NAMES } = await import('@/lib/sandbox/checks');
-const { ENOUGH_CALLS, KEEP_RUNNING, NOT_REACHED, reportOf, reportSummary, scrub, FIX, SCORED_CHECKS, TRIP_TIP, verdictOf } = await import('@/lib/sandbox/check-report');
+const { ENOUGH_CALLS, KEEP_RUNNING, TOO_FEW_HELP, NOT_REACHED, reportOf, reportSummary, scrub, FIX, SCORED_CHECKS, TRIP_TIP, verdictOf } = await import('@/lib/sandbox/check-report');
 const { COPY_RESET_MS, copyText, ReportView, SandboxChecks } = await import('@/components/sandbox/v2/SandboxChecks');
 const { SandboxHome } = await import('@/components/sandbox/v2/SandboxHome');
 const { PastTestDetail, PastTests, hiddenByDefault, pastRows, rowTasks } = await import('@/components/sandbox/PastTests');
@@ -189,7 +189,9 @@ describe('the report on the page', () => {
     expect(html).not.toMatch(/6 checks|Next: check its answers/);
     // Copy summary agrees: no practice-tasks line either.
     const st = { ...stateOf({}), window: { ...stateOf({}).window!, calls: 3 } };
-    expect(reportSummary(reportOf(st), { checked: 'just now', calls: 3 })).not.toContain('practice tasks');
+    const few = reportSummary(reportOf(st), { checked: 'just now', calls: 3 });
+    expect(few).not.toMatch(/practice tasks|Didn’t run/);
+    expect(few).toContain(TOO_FEW_HELP);
     expect(reportSummary(reportOf(stateOf({ spend_cap: ['passed'] })), { checked: 'just now', calls: 12 })).toContain('Finishes the job correctly (run practice tasks)');
   });
 

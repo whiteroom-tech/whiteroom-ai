@@ -17,6 +17,9 @@ const isScored = (c: CheckResult): c is CheckResult & { id: ScoredCheckId } => (
 /** About how many calls from one run the checks need (the engine observes 4, then moves on). */
 export const ENOUGH_CALLS = 5;
 
+/** What a too-few-calls report says to do, on the page and in Copy summary. */
+export const TOO_FEW_HELP = `The checks need about ${ENOUGH_CALLS} calls from one run. Run a longer task, or run your agent again. Checks start by themselves.`;
+
 /** The fix when a check failed. */
 export const FIX: Record<ScoredCheckId, string> = {
   spend_cap: 'Make your agent stop or back off when WhiteRoom blocks a call (it got a 4xx with a reason).',
@@ -154,7 +157,12 @@ export function reportSummary(report: Report, when: { checked: string; calls: nu
   };
   group('To fix', report.fix, (c) => [`- ${c.label}: ${c.happened}`, `    How to fix: ${c.next}`]);
   group('Passed', report.ok, (c) => [`- ${c.label}: ${c.happened}`]);
-  group('Didn’t run', report.skipped, (c) => [`- ${c.label}: ${c.happened} ${c.next ?? ''}`.trimEnd()]);
-  if (report.verdict !== 'too_few') lines.push('', 'Not checked here: Finishes the job correctly (run practice tasks).');
+  // Too few calls: like the page, what the checks need instead of six checks that didn't run.
+  if (report.verdict === 'too_few') {
+    lines.push('', TOO_FEW_HELP);
+  } else {
+    group('Didn’t run', report.skipped, (c) => [`- ${c.label}: ${c.happened} ${c.next ?? ''}`.trimEnd()]);
+    lines.push('', 'Not checked here: Finishes the job correctly (run practice tasks).');
+  }
   return scrub(lines.join('\n'));
 }
