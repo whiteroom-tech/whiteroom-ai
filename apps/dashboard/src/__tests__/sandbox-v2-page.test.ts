@@ -216,6 +216,42 @@ describe('Sandbox v2 page', () => {
     expect(calls()[1]).toEqual({ url: '/api/sandbox/fleet/connect', body: { fleet: 'prod-eu', provider: 'anthropic', api_key: PROVIDER_KEY } });
   });
 
+  it('counts where people stop: opened (once, with the step), and Connect refusals by category only', async () => {
+    capture.mockClear();
+    await render({ fleet: 'prod-eu' });
+    expect(capture.mock.calls.filter(([n]) => n === 'sandbox_v2_opened')).toEqual([['sandbox_v2_opened', { step: 'connect', connected: false }]]);
+    const key = document.getElementById('sandbox-v2-key') as HTMLInputElement;
+    await click('Connect');
+    await type(key, 'wr_placeholder0000');
+    await click('Connect');
+    await type(key, 'placeholder-unknown-key-0000');
+    await click('Connect');
+    expect(capture.mock.calls.filter(([n]) => n === 'sandbox_v2_connect_refused').map(([, p]) => p)).toEqual([
+      { reason: 'empty' }, { reason: 'whiteroom_key' }, { reason: 'no_provider' },
+    ]);
+    // Never the key in an event.
+    expect(JSON.stringify(capture.mock.calls)).not.toMatch(/wr_placeholder|placeholder-unknown/);
+    expect(calls()).toHaveLength(1);
+  });
+
+  it('an engine refusal on Connect is counted with its status', async () => {
+    capture.mockClear();
+    bff.mockImplementation(async (url: string) => url.endsWith('/status')
+      ? Response.json({ success: true, exists: false })
+      : Response.json({ error: 'That key was refused.' }, { status: 400 }));
+    await render({ fleet: 'prod-eu' });
+    await type(document.getElementById('sandbox-v2-key') as HTMLInputElement, PROVIDER_KEY);
+    await click('Connect');
+    expect(capture).toHaveBeenCalledWith('sandbox_v2_connect_refused', { reason: 'engine', status: 400 });
+    expect(JSON.stringify(capture.mock.calls)).not.toContain(PROVIDER_KEY);
+    // No answer at all is a network failure, not an engine refusal.
+    capture.mockClear();
+    bff.mockImplementation(async (url: string) => { if (url.endsWith('/status')) return Response.json({ success: true, exists: false }); throw new TypeError('Failed to fetch'); });
+    await type(document.getElementById('sandbox-v2-key') as HTMLInputElement, PROVIDER_KEY);
+    await click('Connect');
+    expect(capture).toHaveBeenCalledWith('sandbox_v2_connect_refused', { reason: 'network' });
+  });
+
   it('a WhiteRoom key is named as one as soon as it is pasted', async () => {
     await render({ fleet: 'prod-eu' });
     await type(document.getElementById('sandbox-v2-key') as HTMLInputElement, 'wr_placeholder0000');
@@ -473,6 +509,15 @@ describe('Sandbox v2 wording and checks', () => {
     expect(connectCheck('anthropic', PROVIDER_KEY)).toEqual({ ok: true, request: { api_key: PROVIDER_KEY, provider: 'anthropic' } });
     expect(connectCheck('openai', 'sk-proj-placeholder').ok).toBe(true);
     expect(connectCheck('bedrock-mantle', 'placeholder-bedrock-key', 'us-east-1').ok).toBe(true);
+    // Each refusal carries its category for the refusal event.
+    const reason = (...a: Parameters<typeof connectCheck>) => { const c = connectCheck(...a); return c.ok ? null : c.reason; };
+    expect(reason('nope' as never, 'sk-ant-placeholder')).toBe('no_provider');
+    expect(reason('anthropic', '')).toBe('empty');
+    expect(reason('anthropic', 'sk-wr-placeholder-0000')).toBe('whiteroom_key');
+    expect(reason('anthropic', 'short')).toBe('format');
+    expect(reason('anthropic', 'sk-placeholder-openai-0000')).toBe('wrong_provider');
+    expect(reason('openai', 'sk-ant-placeholder-0000')).toBe('wrong_provider');
+    expect(reason('bedrock-mantle', 'placeholder-bedrock-key', 'not a region')).toBe('endpoint');
     expect(connectCheck('anthropic', 'has space in it').ok).toBe(false);
     expect(connectCheck('nope', PROVIDER_KEY).ok).toBe(false);
   });
