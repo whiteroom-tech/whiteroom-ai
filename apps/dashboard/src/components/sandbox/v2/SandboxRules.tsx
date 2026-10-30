@@ -252,37 +252,36 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
         </div>
       </details>
 
-
-        <ConfirmDialog
-          open={replace === 'ready-made'}
-          tone="neutral"
-          title="Use the ready-made set?"
-          body={<>This replaces your Sandbox rules. All start in Watch. Your live rules don’t change.</>}
-          confirmLabel="Use the ready-made set"
-          busy={busy}
-          onConfirm={() => replaceAll('ready-made')}
-          onCancel={() => setReplace(null)}
-        />
-        <ConfirmDialog
-          open={replace === 'copy'}
-          tone="neutral"
-          title="Copy your production rules?"
-          body={<>This replaces your Sandbox rules with a copy of your production rules. Your live rules don’t change.</>}
-          confirmLabel="Copy my production rules"
-          busy={busy}
-          onConfirm={() => replaceAll('copy')}
-          onCancel={() => setReplace(null)}
-        />
-        <ConfirmDialog
-          open={removing !== null}
-          title="Remove this Sandbox rule?"
-          body={<>It’s removed from your Sandbox only. Your live rules don’t change.</>}
-          confirmLabel="Remove rule"
-          busy={busy}
-          onConfirm={() => { if (removing) remove(removing); }}
-          onCancel={() => setRemoving(null)}
-        />
-        <AddRuleDialog open={adding} busy={busy} onPick={add} onCancel={() => setAdding(false)} />
+      <ConfirmDialog
+        open={replace === 'ready-made'}
+        tone="neutral"
+        title="Use the ready-made set?"
+        body={<>This replaces your Sandbox rules. All start in Watch. Your live rules don’t change.</>}
+        confirmLabel="Use the ready-made set"
+        busy={busy}
+        onConfirm={() => replaceAll('ready-made')}
+        onCancel={() => setReplace(null)}
+      />
+      <ConfirmDialog
+        open={replace === 'copy'}
+        tone="neutral"
+        title="Copy your production rules?"
+        body={<>This replaces your Sandbox rules with a copy of your production rules. Your live rules don’t change.</>}
+        confirmLabel="Copy my production rules"
+        busy={busy}
+        onConfirm={() => replaceAll('copy')}
+        onCancel={() => setReplace(null)}
+      />
+      <ConfirmDialog
+        open={removing !== null}
+        title="Remove this Sandbox rule?"
+        body={<>It’s removed from your Sandbox only. Your live rules don’t change.</>}
+        confirmLabel="Remove rule"
+        busy={busy}
+        onConfirm={() => { if (removing) remove(removing); }}
+        onCancel={() => setRemoving(null)}
+      />
+      <AddRuleDialog open={adding} busy={busy} onPick={add} onCancel={() => setAdding(false)} />
     </>
   );
 }

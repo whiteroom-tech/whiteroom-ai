@@ -229,6 +229,33 @@ describe('Sandbox v2 page', () => {
     }
   });
 
+  it('on Results, Get a new Sandbox URL shows the new URL above the report', async () => {
+    const ENDED = { success: true, window: { id: 'chk_1', startedAt: '2026-10-29T10:00:00.000Z', endedAt: '2026-10-29T10:06:00.000Z', stage: 'done', injectErrors: true, calls: 12 }, checks: [], rules: [] };
+    bff.mockImplementation(async (url: string) => {
+      if (url.endsWith('/rotate')) return Response.json({ ...STATUS, ...ISSUED, proxyKey: 'sk-wr-placeholder-rotated', proxyUrl: 'https://proxy.whiteroom.tech/sk-wr-placeholder-rotated' });
+      if (url.startsWith('/api/sandbox/checks/')) return Response.json(ENDED);
+      return Response.json(STATUS);
+    });
+    await render({ fleet: 'prod-eu' });
+    expect(document.querySelector('#sandbox-step h2')?.textContent).toBe('Results');
+    await click('Get a new Sandbox URL');
+    await click('Get a new URL');
+    expect(document.querySelector('#sandbox-step h2')?.textContent).toBe('Results');
+    expect(text()).toContain('https://proxy.whiteroom.tech/sk-wr-placeholder-rotated');
+  });
+
+  it('focus follows the step: Change key focuses Connect, Cancel focuses the step card again', async () => {
+    bff.mockImplementation(async () => Response.json(STATUS));
+    await render({ fleet: 'prod-eu' });
+    // Not on first load.
+    expect(document.activeElement?.tagName).not.toBe('H2');
+    await click('Change key');
+    expect(document.activeElement?.textContent).toBe('Connect a different key');
+    const cancel = [...document.querySelectorAll<HTMLButtonElement>('#sandbox-connect button')].find((b) => b.textContent === 'Cancel')!;
+    await act(async () => { cancel.click(); });
+    expect(document.activeElement?.textContent).toBe('Run your agent');
+  });
+
   it('Results is the step once the check has ended; the practice footer shows on Connect only', async () => {
     await render({ fleet: 'prod-eu', preview: SANDBOX_V2_STATES['checks-report'] });
     expect(document.querySelector('[aria-current="step"]')?.textContent).toBe('3Results');

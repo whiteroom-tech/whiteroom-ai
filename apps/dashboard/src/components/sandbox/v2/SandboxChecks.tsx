@@ -38,7 +38,7 @@ const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : 'T
  * window ends. A check's stop lifts itself after 5 seconds, so there's no
  * Resume here.
  */
-export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState, setup }: {
+export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState, setup, setupAlways = false }: {
   fleet: string;
   sandboxFleetId: string;
   preview?: SandboxChecksPreview;
@@ -48,6 +48,8 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   onState?: (state: CheckState | null) => void;
   /** How to point the agent at the Sandbox: shown above the checks until there's a report. */
   setup?: React.ReactNode;
+  /** Show `setup` above the report too: a URL just issued must be seen before the page is left. */
+  setupAlways?: boolean;
 }) {
   const [state, setState] = useState<CheckState | null>(preview ? preview.state : null);
   const [loading, setLoading] = useState(!preview);
@@ -177,7 +179,7 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
       actions={open ? <Button size={28} variant="ghost" onClick={() => void act('stop')} disabled={busy}>Finish now</Button> : undefined}
     >
       <div className={v.stack}>
-        {setup && !ended && <div className={`${v.stack} ${v.setup}`}>{setup}</div>}
+        {setup && (!ended || setupAlways) && <div className={`${v.stack} ${v.setup}`}>{setup}</div>}
         {state && (() => {
           const live = activityLine(state, now);
           // Not a live region: it changes on every read, and the stage box below announces what matters.

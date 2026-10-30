@@ -14,10 +14,9 @@ import {
   resetSandboxFleet, rotateSandboxFleetKey, SandboxFleetError, type IssuedSandboxKey, type SandboxFleetStatus,
 } from '@/lib/sandbox/fleet';
 import { ConnectForm, type ConnectRequest } from './ConnectForm';
-import { checkStateOf } from '@/lib/sandbox/checks';
 import { SandboxChecks, STEP_CARD_ID, type SandboxChecksPreview } from './SandboxChecks';
 import { SANDBOX_STEPS, sandboxStepOf, type SandboxStep } from '@/lib/sandbox/steps';
-import type { CheckState } from '@/lib/sandbox/checks';
+import { checkStateOf, type CheckState } from '@/lib/sandbox/checks';
 import { SandboxRules, type SandboxRulesPreview } from './SandboxRules';
 import s from '../guided.module.css';
 import v from './v2.module.css';
@@ -67,7 +66,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [replacing, setReplacing] = useState(false);
   const [notice, setNotice] = useState('');
-  // The latest check state, from step 4's own reads: decides Run your agent or Results.
+  // The latest check state, from the checks card's own reads: decides Run your agent or Results.
   const [checks, setChecks] = useState<CheckState | null>(null);
   const now = preview?.now ?? Date.now();
   const statusRef = useRef(status);
@@ -201,6 +200,8 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
             preview={preview ? preview.checks ?? { state: checkStateOf({ window: null, checks: [] }), now } : undefined}
             onStale={reload}
             onState={setChecks}
+            // A URL issued on this page (connect, or Get a new Sandbox URL on Results) shows even above a report.
+            setupAlways={!!issued}
             setup={issued
               ? <RunSetup issued={issued} />
               : <ReturnSetup prefix={connected.key!.prefix} busy={busy} onNewUrl={() => setConfirm('rotate')} />}
