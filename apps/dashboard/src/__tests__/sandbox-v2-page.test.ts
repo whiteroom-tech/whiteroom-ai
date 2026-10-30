@@ -260,20 +260,15 @@ describe('Sandbox v2 page', () => {
   });
 
   it('Reset on Results goes back to Run your agent once the checks are read again', async () => {
-    let reset = false;
-    bff.mockImplementation(async (url: string) => {
-      if (url.endsWith('/reset')) { reset = true; return Response.json(STATUS); }
-      if (url.startsWith('/api/sandbox/checks/')) return Response.json(reset
-        ? { success: true, window: null, checks: [], rules: [] }
-        : { success: true, window: { id: 'chk_1', startedAt: '2026-10-29T10:00:00.000Z', endedAt: '2026-10-29T10:06:00.000Z', stage: 'done', injectErrors: true, calls: 12 }, checks: [], rules: [] });
-      return Response.json(STATUS);
-    });
+    // First the Sandbox with an ended check (Results).
+    bff.mockImplementation(async (url: string) => (url.startsWith('/api/sandbox/checks/')
+      ? Response.json({ success: true, window: { id: 'chk_1', startedAt: '2026-10-29T10:00:00.000Z', endedAt: '2026-10-29T10:06:00.000Z', stage: 'done', injectErrors: true, calls: 12 }, checks: [], rules: [] })
+      : Response.json(STATUS)));
     await render({ fleet: 'prod-eu' });
     expect(document.querySelector('[aria-current="step"]')?.textContent).toBe('3Results');
     // Answer the reset, but hold the next checks read: the steps bar moves at once anyway.
     let release = () => {};
     bff.mockImplementation(async (url: string) => {
-      if (url.endsWith('/reset')) { reset = true; return Response.json(STATUS); }
       if (url.startsWith('/api/sandbox/checks/')) { await new Promise<void>((r) => { release = r; }); return Response.json({ success: true, window: null, checks: [], rules: [] }); }
       return Response.json(STATUS);
     });
