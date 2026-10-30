@@ -189,6 +189,14 @@ describe('the report on the page', () => {
     expect(html).not.toMatch(/6 checks|Next: check its answers/);
   });
 
+  it('enough calls but nothing checked: no "need 5 calls" line; the checks that didn’t run say why', () => {
+    const html = renderToStaticMarkup(h(ReportView, { state: stateOf({ long_task: ['not_checked', 'Your agent stopped calling.'] }), checked: 'just now', calls: 12, onAgain: () => {} }));
+    expect(html).toContain('Nothing was checked this time');
+    expect(html).not.toContain('The checks need about 5 calls');
+    expect(html).toContain('6 checks didn’t run this time');
+    expect(html).toContain('Your agent stopped calling.');
+  });
+
   it('focuses the verdict when asked (a report that appears while the page is open)', async () => {
     await act(async () => { root.render(h(ReportView, { state: stateOf({ spend_cap: ['failed'] }), checked: 'just now', calls: 8, focus: true })); });
     expect(document.activeElement?.tagName).toBe('H3');

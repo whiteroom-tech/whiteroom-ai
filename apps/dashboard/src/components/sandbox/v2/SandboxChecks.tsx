@@ -240,7 +240,8 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
     };
     void copyText(reportSummary(report, { checked, calls })).then((ok) => show(ok ? 'copied' : 'failed'));
   };
-  const few = report.verdict === 'too_few' || report.verdict === 'none';
+  // Too few calls: no score, just what the checks need. Nothing checked despite enough calls: the list says why per check.
+  const few = report.verdict === 'too_few';
   const callsText = calls === 1 ? '1 call' : `${calls.toLocaleString('en-US')} calls`;
   return <>
     <div className={v.report}>
