@@ -159,6 +159,10 @@ describe('Check your agent', () => {
     expect(isQuiet(at(QUIET_MS - 1000), now)).toBe(false);
     expect(isQuiet(at(QUIET_MS), now)).toBe(true);
     expect(isQuiet({ ...at(QUIET_MS), activity: undefined }, now)).toBe(false);
+    // A check that just started (Check again with an idle agent) isn't quiet at once.
+    const fresh = at(10 * QUIET_MS);
+    expect(isQuiet({ ...fresh, window: { ...fresh.window!, startedAt: new Date(now - 1000).toISOString() } }, now)).toBe(false);
+    expect(isQuiet({ ...fresh, window: { ...fresh.window!, startedAt: new Date(now - QUIET_MS).toISOString() } }, now)).toBe(true);
     capture.mockClear();
     await render(h(SandboxHome, { fleet: 'prod-eu', preview: SANDBOX_V2_STATES['checks-quiet'] }));
     expect(text()).toContain('Your agent stopped calling');

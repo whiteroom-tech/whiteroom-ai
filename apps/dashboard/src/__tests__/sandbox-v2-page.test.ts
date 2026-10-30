@@ -6,6 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement as h } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
+const capture = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/analytics', () => ({ analytics: { capture } }));
+
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const { SandboxHome, SANDBOX_LEAD } = await import('@/components/sandbox/v2/SandboxHome');
@@ -113,6 +116,42 @@ describe('Sandbox v2 page', () => {
     expect(calls().find((c) => c.url.endsWith('/rotate'))?.body).toEqual({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID });
     expect(text()).toContain('https://proxy.whiteroom.tech/sk-wr-placeholder-rotated');
     expect(button('Lost the URL? Get a new one')).toBeUndefined();
+  });
+
+  it('Copy puts the line on the clipboard, says what to do next, and counts it; the first call after connect is timed', async () => {
+    capture.mockClear();
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    let connectedYet = false;
+    bff.mockImplementation(async (url: string) => {
+      if (url === '/api/sandbox/fleet/status') return Response.json(connectedYet ? STATUS : { success: true, exists: false });
+      if (url.endsWith('/connect')) { connectedYet = true; return Response.json({ ...STATUS, created: true, ...ISSUED }); }
+      if (url.startsWith('/api/sandbox/checks/')) {
+        return Response.json({ success: true, window: null, checks: [], rules: [], activity: { lastCallAt: connectedYet ? new Date(Date.now() + 2_000).toISOString() : null, callsOutsideWindow24h: 0 } });
+      }
+      return Response.json(STATUS);
+    });
+    await render({ fleet: 'prod-eu' });
+    await type(document.getElementById('sandbox-v2-key') as HTMLInputElement, PROVIDER_KEY);
+    await click('Connect');
+    expect(capture).toHaveBeenCalledWith('sandbox_v2_first_call', { seconds_since_connect: expect.any(Number) });
+    const copy = document.querySelector<HTMLButtonElement>('button[aria-label="Copy the setting"]')!;
+    expect(copy.className).toContain('wr-btn--primary');
+    await act(async () => { copy.click(); });
+    await flush();
+    expect(writeText).toHaveBeenCalledWith(`ANTHROPIC_BASE_URL=${ISSUED.proxyUrl}`);
+    expect(text()).toContain('Copied. Now run your agent as you normally do.');
+    expect(capture).toHaveBeenCalledWith('sandbox_v2_setting_copied');
+    // Never a key or URL in an event.
+    expect(JSON.stringify(capture.mock.calls)).not.toMatch(/sk-|https?:/);
+  });
+
+  it('Change key in Nothing happening? opens Connect for a different key', async () => {
+    await render({ fleet: 'prod-eu', preview: SANDBOX_V2_STATES['run-help'] });
+    const help = [...document.querySelectorAll('details')].find((d) => d.querySelector('summary')?.textContent === 'Nothing happening?')!;
+    expect(help.open).toBe(true);
+    await act(async () => { [...help.querySelectorAll('button')].find((b) => b.textContent === 'Change key')!.click(); });
+    expect(text()).toContain('Connect a different key');
   });
 
   it('refuses a mismatched key in the browser, before anything is sent', async () => {

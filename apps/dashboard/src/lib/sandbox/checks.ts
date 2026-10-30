@@ -201,10 +201,15 @@ export function currentCheckOf(state: CheckState): CheckId | null {
 /** No call for this long during a check: the agent has stopped, so the page offers Finish now. */
 export const QUIET_MS = 2 * 60_000;
 
-/** A check is open and the agent's last call was QUIET_MS or more ago. */
+/**
+ * A check is open and nothing has happened for QUIET_MS: no call, counted from the later of the
+ * agent's last call and the check's start (a check started by Check again isn't quiet at once).
+ */
 export function isQuiet(state: CheckState, now = Date.now()): boolean {
+  const w = state.window;
   const last = state.activity?.lastCallAt;
-  return !!state.window && !state.window.endedAt && !!last && now - Date.parse(last) >= QUIET_MS;
+  if (!w || w.endedAt || !last) return false;
+  return now - Math.max(Date.parse(last), Date.parse(w.startedAt) || 0) >= QUIET_MS;
 }
 
 /** The live stage line in plain words. */

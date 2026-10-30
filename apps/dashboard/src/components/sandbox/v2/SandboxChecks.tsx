@@ -27,7 +27,7 @@ export interface SandboxChecksPreview {
 }
 
 const POLL_MS = { visible: 5_000, hidden: 30_000 };
-export const RUN_NOW = 'Run your agent as you normally do. Checks start on its first call.';
+export const RUN_NOW = 'Run your agent as you normally do. Checks start by themselves.';
 /** The current step's card: the page moves focus to its heading when the step changes. */
 export const STEP_CARD_ID = 'sandbox-step';
 /** "Nothing happening?" opens itself after this long with no call. */
@@ -228,7 +228,7 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
 
         {state && !w && <>
           <p className={v.status} role="status" aria-live="polite"><span className={v.pulse} aria-hidden="true" />Waiting for your agent’s first call</p>
-          <p className={v.text}>Run your agent as you normally do. Checks start by themselves.</p>
+          <p className={v.text}>{RUN_NOW}</p>
         </>}
 
         {state && w && !ended && <>
@@ -429,26 +429,26 @@ export function LiveChecks({ state }: { state: CheckState }) {
     </div>
     <ul className={v.checks}>
       {ordered.map((c) => {
-        const now = c.id === current;
+        const isCurrent = c.id === current;
         const status: CheckStatus = c.status;
-        const upNext = status === 'pending' && !now;
-        const mark = now ? { icon: 'clock' as IconName, tone: 'now' } : MARK[status];
+        const upNext = status === 'pending' && !isCurrent;
+        const mark = isCurrent ? { icon: 'clock' as IconName, tone: 'now' } : MARK[status];
         const tone = upNext ? v.checkMuted : mark.tone === 'pass' ? s.checkPass : mark.tone === 'fail' ? s.checkFail : mark.tone === 'now' ? s.checkWait : v.checkMuted;
-        const own = state.rules.filter((r) => r.check === c.id);
+        const judgedBy = state.rules.filter((r) => r.check === c.id);
         return (
-          <li key={c.id} className={`${s.check} ${upNext ? v.upNext : ''}`} data-check={c.id} data-status={now ? 'now' : status}>
+          <li key={c.id} className={`${s.check} ${upNext ? v.upNext : ''}`} data-check={c.id} data-status={isCurrent ? 'now' : status}>
             <div className={`${s.checkIcon} ${tone}`} aria-hidden="true"><Icon name={upNext ? 'dash' : mark.icon} size={13} /></div>
             <div className={v.checkBody}>
               <div className={s.checkName}>{c.label}</div>
               <div className={`${s.checkDetail} ${status === 'passed' ? s.checkDetailPass : ''}`}>
-                <strong>{now ? 'Now' : status === 'pending' ? 'Up next' : STATUS_WORDS[status]}</strong>{c.detail && (now || status !== 'pending') ? ` · ${c.detail}` : ''}
+                <strong>{isCurrent ? 'Now' : upNext ? 'Up next' : STATUS_WORDS[status]}</strong>{c.detail && !upNext ? ` · ${c.detail}` : ''}
               </div>
-              {own.length > 0 && (
+              {judgedBy.length > 0 && (
                 <details className={v.members}>
-                  <summary>{own.length === 1 ? '1 rule' : `${own.length} rules`}</summary>
-                  {own.map((r) => (
+                  <summary>{judgedBy.length === 1 ? '1 rule' : `${judgedBy.length} rules`}</summary>
+                  {judgedBy.map((r) => (
                     <div key={r.ruleId} className={v.member}>
-                      <div className={v.memberName}>{(RULE_LABELS as Record<string, string>)[r.ruleType] ?? r.ruleType} · {ruleWords(r, true)}</div>
+                      <div className={v.memberName}>{(RULE_LABELS as Record<string, string>)[r.ruleType] ?? r.ruleType} · {ruleWords(r)}</div>
                       {r.detail && <div className={v.text}>{r.detail}</div>}
                     </div>
                   ))}
@@ -486,9 +486,9 @@ export function NothingHappening({ provider, open, onToggle, onChangeKey }: {
   );
 }
 
-function ruleWords(r: CheckRule, live: boolean): string {
-  if (r.status === 'pending' && live) return r.acted ? 'Acted' : r.wouldAct ? 'Would have acted' : 'Checking…';
-  if (r.status === 'pending') return 'Not checked';
+/** A rule's line during a check: what it did so far, or its result. */
+function ruleWords(r: CheckRule): string {
+  if (r.status === 'pending') return r.acted ? 'Acted' : r.wouldAct ? 'Would have acted' : 'Checking…';
   return STATUS_WORDS[r.status];
 }
 
