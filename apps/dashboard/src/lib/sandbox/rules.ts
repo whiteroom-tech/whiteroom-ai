@@ -44,9 +44,10 @@ export interface SandboxRulesState {
 }
 
 /** The one line on Sandbox and in the confirm dialogs. */
+export const SANDBOX_RULES_ONLY = 'These rules apply only to your Sandbox. Your live rules don’t change.';
 /** The Sandbox rules section's id: Results' "Change rules" opens and scrolls to it. */
 export const SANDBOX_RULES_ID = 'sandbox-rules';
-export const SANDBOX_RULES_ONLY = 'These rules apply only to your Sandbox. Your live rules don’t change.';
+
 /**
  * The closed Sandbox rules section's summary: how many rules, where they came
  * from, and their modes. "5 ready-made rules · all Watch", "3 rules copied from

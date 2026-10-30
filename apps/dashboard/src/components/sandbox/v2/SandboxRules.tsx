@@ -202,87 +202,87 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
 
   return (
     <>
-    <details id={SANDBOX_RULES_ID} className={v.fold}>
-      <summary className={v.foldHead}><span className={v.foldTitle}>Sandbox rules</span><span className={v.foldSub}>{loadFailed && !state ? 'Couldn’t load. Open to try again.' : rulesSummary(state)}</span></summary>
-      <div className={`${v.stack} ${v.foldBody}`}>
-        <p className={v.text}>{SANDBOX_RULES_ONLY} {RULES_DURING_CHECK}</p>
-        {loading && <SkeletonCard label="Loading your Sandbox rules…" lines={['60%', '45%']} heights={[12, 12]} />}
-        {error && <Banner variant="error" actions={loadFailed && !loading && !preview ? <Button size={28} onClick={() => void load()} disabled={busy}>Try again</Button> : undefined}>{error}</Banner>}
+      <details id={SANDBOX_RULES_ID} className={v.fold}>
+        <summary className={v.foldHead}><span className={v.foldTitle}>Sandbox rules</span><span className={v.foldSub}>{loadFailed && !state ? 'Couldn’t load. Open to try again.' : rulesSummary(state)}</span></summary>
+        <div className={`${v.stack} ${v.foldBody}`}>
+          <p className={v.text}>{SANDBOX_RULES_ONLY} {RULES_DURING_CHECK}</p>
+          {loading && <SkeletonCard label="Loading your Sandbox rules…" lines={['60%', '45%']} heights={[12, 12]} />}
+          {error && <Banner variant="error" actions={loadFailed && !loading && !preview ? <Button size={28} onClick={() => void load()} disabled={busy}>Try again</Button> : undefined}>{error}</Banner>}
 
-        {line && (
-          <div className={v.source}>
-            <p className={v.sourceText}>{line.text}</p>
-            {line.changed && (
-              <p className={v.text}>
-                {line.changed} · <button type="button" className={v.linkButton} onClick={() => setReplace('copy')} disabled={busy}>Copy again</button>
-              </p>
-            )}
-          </div>
-        )}
+          {line && (
+            <div className={v.source}>
+              <p className={v.sourceText}>{line.text}</p>
+              {line.changed && (
+                <p className={v.text}>
+                  {line.changed} · <button type="button" className={v.linkButton} onClick={() => setReplace('copy')} disabled={busy}>Copy again</button>
+                </p>
+              )}
+            </div>
+          )}
 
-        {state && (
-          <div className={v.actions}>
-            <Button size={32} onClick={() => setReplace('ready-made')} disabled={busy}>Use the ready-made set</Button>
-            {canCopy && <Button size={32} onClick={() => setReplace('copy')} disabled={busy}>Copy my production rules</Button>}
-            <Button size={32} onClick={() => setAdding(true)} disabled={busy}>Add a rule</Button>
-          </div>
-        )}
+          {state && (
+            <div className={v.actions}>
+              <Button size={32} onClick={() => setReplace('ready-made')} disabled={busy}>Use the ready-made set</Button>
+              {canCopy && <Button size={32} onClick={() => setReplace('copy')} disabled={busy}>Copy my production rules</Button>}
+              <Button size={32} onClick={() => setAdding(true)} disabled={busy}>Add a rule</Button>
+            </div>
+          )}
 
-        {!!state?.unshown && <p className={v.text}>{state.unshown} {state.unshown === 1 ? 'rule' : 'rules'} this page can’t show yet.</p>}
-        {state && rules.length === 0 && !state.unshown && <p className={v.text}>No rules in your Sandbox. Add one, or use the ready-made set.</p>}
-        {rules.length > 0 && (
-          <ul className={v.rules}>
-            {rules.map((r) => (
-              <li key={r.id} className={v.rule}>
-                <div className={v.ruleHead}>
-                  <span className={v.ruleName}>{RULE_LABELS[r.ruleType]}</span>
-                  <Tag tone={r.mode === 'enforce' && r.response !== 'notify' ? 'block' : r.mode === 'off' ? 'muted' : 'warn'}>{modeTagText({ mode: r.mode, response: r.response })}</Tag>
-                  {editing !== r.id && <Button size={28} variant="ghost" className={v.push} onClick={() => { setEditing(r.id); setEditError(null); }} disabled={busy} aria-label={`Edit ${RULE_LABELS[r.ruleType]}`}>Edit</Button>}
-                </div>
-                {editing === r.id ? (
-                  <SandboxRuleEditor key={`${r.id}@${r.version}`} rule={r} agents={agentNames} busy={busy} error={editError}
-                    onSave={(changes) => save(r, changes)} onCancel={() => setEditing(null)} onRemove={() => setRemoving(r)} />
-                ) : (
-                  <p className={v.text}>{ruleSentenceText(r)}{r.appliesTo !== 'all' && ` For ${r.appliesTo.join(', ')}.`}</p>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </details>
+          {!!state?.unshown && <p className={v.text}>{state.unshown} {state.unshown === 1 ? 'rule' : 'rules'} this page can’t show yet.</p>}
+          {state && rules.length === 0 && !state.unshown && <p className={v.text}>No rules in your Sandbox. Add one, or use the ready-made set.</p>}
+          {rules.length > 0 && (
+            <ul className={v.rules}>
+              {rules.map((r) => (
+                <li key={r.id} className={v.rule}>
+                  <div className={v.ruleHead}>
+                    <span className={v.ruleName}>{RULE_LABELS[r.ruleType]}</span>
+                    <Tag tone={r.mode === 'enforce' && r.response !== 'notify' ? 'block' : r.mode === 'off' ? 'muted' : 'warn'}>{modeTagText({ mode: r.mode, response: r.response })}</Tag>
+                    {editing !== r.id && <Button size={28} variant="ghost" className={v.push} onClick={() => { setEditing(r.id); setEditError(null); }} disabled={busy} aria-label={`Edit ${RULE_LABELS[r.ruleType]}`}>Edit</Button>}
+                  </div>
+                  {editing === r.id ? (
+                    <SandboxRuleEditor key={`${r.id}@${r.version}`} rule={r} agents={agentNames} busy={busy} error={editError}
+                      onSave={(changes) => save(r, changes)} onCancel={() => setEditing(null)} onRemove={() => setRemoving(r)} />
+                  ) : (
+                    <p className={v.text}>{ruleSentenceText(r)}{r.appliesTo !== 'all' && ` For ${r.appliesTo.join(', ')}.`}</p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </details>
 
 
-      <ConfirmDialog
-        open={replace === 'ready-made'}
-        tone="neutral"
-        title="Use the ready-made set?"
-        body={<>This replaces your Sandbox rules. All start in Watch. Your live rules don’t change.</>}
-        confirmLabel="Use the ready-made set"
-        busy={busy}
-        onConfirm={() => replaceAll('ready-made')}
-        onCancel={() => setReplace(null)}
-      />
-      <ConfirmDialog
-        open={replace === 'copy'}
-        tone="neutral"
-        title="Copy your production rules?"
-        body={<>This replaces your Sandbox rules with a copy of your production rules. Your live rules don’t change.</>}
-        confirmLabel="Copy my production rules"
-        busy={busy}
-        onConfirm={() => replaceAll('copy')}
-        onCancel={() => setReplace(null)}
-      />
-      <ConfirmDialog
-        open={removing !== null}
-        title="Remove this Sandbox rule?"
-        body={<>It’s removed from your Sandbox only. Your live rules don’t change.</>}
-        confirmLabel="Remove rule"
-        busy={busy}
-        onConfirm={() => { if (removing) remove(removing); }}
-        onCancel={() => setRemoving(null)}
-      />
-      <AddRuleDialog open={adding} busy={busy} onPick={add} onCancel={() => setAdding(false)} />
+        <ConfirmDialog
+          open={replace === 'ready-made'}
+          tone="neutral"
+          title="Use the ready-made set?"
+          body={<>This replaces your Sandbox rules. All start in Watch. Your live rules don’t change.</>}
+          confirmLabel="Use the ready-made set"
+          busy={busy}
+          onConfirm={() => replaceAll('ready-made')}
+          onCancel={() => setReplace(null)}
+        />
+        <ConfirmDialog
+          open={replace === 'copy'}
+          tone="neutral"
+          title="Copy your production rules?"
+          body={<>This replaces your Sandbox rules with a copy of your production rules. Your live rules don’t change.</>}
+          confirmLabel="Copy my production rules"
+          busy={busy}
+          onConfirm={() => replaceAll('copy')}
+          onCancel={() => setReplace(null)}
+        />
+        <ConfirmDialog
+          open={removing !== null}
+          title="Remove this Sandbox rule?"
+          body={<>It’s removed from your Sandbox only. Your live rules don’t change.</>}
+          confirmLabel="Remove rule"
+          busy={busy}
+          onConfirm={() => { if (removing) remove(removing); }}
+          onCancel={() => setRemoving(null)}
+        />
+        <AddRuleDialog open={adding} busy={busy} onPick={add} onCancel={() => setAdding(false)} />
     </>
   );
 }

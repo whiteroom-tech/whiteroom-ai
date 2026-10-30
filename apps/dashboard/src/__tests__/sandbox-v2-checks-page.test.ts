@@ -566,6 +566,9 @@ describe('Sandbox page', () => {
     });
     await render(h(SandboxHome, { fleet: 'prod-eu' }));
     expect(text()).toContain('Your agent called the Sandbox 42 times outside a check in the last day. Sandbox rules only watch then, so nothing was blocked.');
+    // In the open, not inside the closed Sandbox settings.
+    const warn = [...document.querySelectorAll('.wr-banner, [role="alert"], [class*="banner"]')].find((e) => e.textContent?.includes('42 times outside'));
+    expect(warn?.closest('details')).toBeNull();
     expect(document.querySelector('#sandbox-step h2')?.textContent).toBe('Run your agent');
     // Like production: no Run agent helper on the page.
     expect(text()).not.toContain('Run agent');

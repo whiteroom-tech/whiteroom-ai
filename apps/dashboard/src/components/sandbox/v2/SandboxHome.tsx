@@ -207,6 +207,9 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
           />
         )}
 
+        {/* In the open, not in settings: it says the agent ran with nothing checked or blocked. */}
+        {connected && !replacing && outside && <Banner variant="warn">{outside}</Banner>}
+
         {connected && !replacing && (
           <SandboxRules
             key={connected.sandboxFleetId}
@@ -233,7 +236,6 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
                 <dd>{lastCallText(connected.lastCallAt, now)}</dd>
               </dl>
               <p className={v.text}>{keptUntilText(connected.expiresAt, now)}</p>
-              {outside && <Banner variant="warn">{outside}</Banner>}
               <div className={v.actions}>
                 <Button size={32} onClick={() => setConfirm('rotate')} disabled={busy}>Get a new Sandbox URL</Button>
                 <Button size={32} onClick={() => setReplacing(true)} disabled={busy}>Change API key</Button>
