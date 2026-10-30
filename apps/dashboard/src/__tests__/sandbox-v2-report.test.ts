@@ -187,6 +187,10 @@ describe('the report on the page', () => {
     expect(html).toContain('3 calls · checked just now');
     expect(html).toContain('The checks need about 5 calls from one run.');
     expect(html).not.toMatch(/6 checks|Next: check its answers/);
+    // Copy summary agrees: no practice-tasks line either.
+    const st = { ...stateOf({}), window: { ...stateOf({}).window!, calls: 3 } };
+    expect(reportSummary(reportOf(st), { checked: 'just now', calls: 3 })).not.toContain('practice tasks');
+    expect(reportSummary(reportOf(stateOf({ spend_cap: ['passed'] })), { checked: 'just now', calls: 12 })).toContain('Finishes the job correctly (run practice tasks)');
   });
 
   it('enough calls but nothing checked: no "need 5 calls" line; the checks that didn’t run say why', () => {

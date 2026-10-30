@@ -11,7 +11,7 @@ import {
   activityLine, checkAction, getCheckState, isOpen, stageLine, STATUS_WORDS,
   type CheckResult, type CheckRule, type CheckState, type CheckStatus,
 } from '@/lib/sandbox/checks';
-import { reportOf, reportSummary, RUN_PRACTICE, type ReportCard } from '@/lib/sandbox/check-report';
+import { reportOf, reportSummary, SCORED_CHECKS, type ReportCard } from '@/lib/sandbox/check-report';
 import { analytics } from '@/lib/analytics';
 import s from '../guided.module.css';
 import v from './v2.module.css';
@@ -145,14 +145,14 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale }: {
   if (w && !ended) seenOpen.current = true;
   const focusReport = ended && seenOpen.current;
 
-  // One report event per window this page shows. Never ids, keys or names.
+  // One report event per check that finishes while the page is open (not an old report on load). Never ids, keys or names.
   const reported = useRef<string | null>(null);
   useEffect(() => {
-    if (preview || !state || !w?.endedAt || reported.current === w.id) return;
+    if (preview || !focusReport || !state || !w?.endedAt || reported.current === w.id) return;
     reported.current = w.id;
     const r = reportOf(state);
     analytics.capture('sandbox_v2_report', { verdict: r.verdict, passed: r.passed, failed: r.failed, calls: w.calls });
-  }, [preview, state, w]);
+  }, [preview, focusReport, state, w]);
 
   return (
     <Panel
@@ -246,7 +246,7 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
   return <>
     <div className={v.report}>
       <h3 ref={heading} tabIndex={-1} className={`${v.reportHead} ${report.tone === 'pass' ? v.reportPass : report.tone === 'warn' ? v.reportWarn : ''}`} data-tone={report.tone}>{report.headline}</h3>
-      <p className={v.text}>{few ? `${callsText} · checked ${checked}` : `6 checks · ${callsText} · checked ${checked}`}</p>
+      <p className={v.text}>{few ? `${callsText} · checked ${checked}` : `${SCORED_CHECKS.length} checks · ${callsText} · checked ${checked}`}</p>
     </div>
     {few && <p className={v.text}>The checks need about 5 calls from one run. Run a longer task, or run your agent again. Checks start by themselves.</p>}
     {report.fix.length > 0 && <>
@@ -299,7 +299,7 @@ function ReportLine({ card }: { card: ReportCard }) {
       <span className={mark.tone === 'pass' ? v.lineOk : v.lineSkip} aria-hidden="true"><Icon name={mark.icon} size={13} /></span>
       <span>
         <strong>{card.label}.</strong> {card.happened}
-        {card.next && <> {card.next === RUN_PRACTICE ? <><Link href={ROUTES.practiceTest} className="wr-link">Run practice tasks</Link> to check this.</> : card.next}</>}
+        {card.next && <> {card.next}</>}
         {card.status !== 'passed' && <RuleLines rules={card.rules} />}
       </span>
     </li>

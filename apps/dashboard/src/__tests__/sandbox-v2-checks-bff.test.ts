@@ -67,6 +67,8 @@ describe('Sandbox checks and helper BFF: who may ask', () => {
     expect(access).toHaveBeenCalledWith('prod-eu', FLEET_TOKEN);
     expect((await post(route, 'status', { fleet: SANDBOX_ID })).status).toBe(400);
     expect((await post(route, 'governance_pause', { fleet: 'prod-eu' })).status).toBe(404);
+    // The page no longer sends resume (a check lifts its own stop), so the route doesn't take it.
+    if (route === 'checks') expect((await post(route, 'resume', { fleet: 'prod-eu' })).status).toBe(404);
     expect((await post(route, 'status', 'not json')).status).toBe(400);
     expect((await post(route, 'status', { fleet: 'prod-eu', sandboxFleetId: 'prod-eu' })).status).toBe(400);
     expect(engine).not.toHaveBeenCalled();
@@ -79,7 +81,7 @@ describe('Sandbox checks and helper BFF: who may ask', () => {
     expect(headers['x-wr-dashboard-secret']).toBe('dash-secret');
     expect(headers['x-wr-dashboard-user']).toBe('u1');
     engine.mockResolvedValueOnce(Response.json({ error: 'Your Sandbox changed. Reload the page.' }, { status: 409 }));
-    expect((await post('checks', 'resume', { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID })).status).toBe(409);
+    expect((await post('checks', 'stop', { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID })).status).toBe(409);
     engine.mockResolvedValueOnce(Response.json({ error: 'No Sandbox for this fleet.' }, { status: 404 }));
     expect((await post('helper', 'status', { fleet: 'prod-eu' })).status).toBe(404);
   });
@@ -97,7 +99,6 @@ describe('Sandbox checks and helper BFF: a fixed action map', () => {
     await post('checks', 'start', { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, injectErrors: false, ...extra });
     await post('checks', 'start', { fleet: 'prod-eu' });
     await post('checks', 'stop', { fleet: 'prod-eu', injectErrors: true, ...extra });
-    await post('checks', 'resume', { fleet: 'prod-eu', ...extra });
     await post('helper', 'status', { fleet: 'prod-eu', ...extra });
     await post('helper', 'code', { fleet: 'prod-eu', ...extra });
     await post('helper', 'run', { fleet: 'prod-eu', prompt: '  Summarize tickets  ', requestId: REQUEST_ID, ...extra });
@@ -107,7 +108,6 @@ describe('Sandbox checks and helper BFF: a fixed action map', () => {
       { action: 'sandbox_check_start', fleet_id: 'prod-eu', sandbox_fleet_id: SANDBOX_ID, inject_errors: false },
       { action: 'sandbox_check_start', fleet_id: 'prod-eu' },
       { action: 'sandbox_check_stop', fleet_id: 'prod-eu' },
-      { action: 'sandbox_check_resume', fleet_id: 'prod-eu' },
       { action: 'sandbox_helper_status', fleet_id: 'prod-eu' },
       { action: 'sandbox_helper_code', fleet_id: 'prod-eu' },
       { action: 'sandbox_helper_run', fleet_id: 'prod-eu', task: { kind: 'prompt', prompt: 'Summarize tickets' }, request_id: REQUEST_ID },

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // Sandbox checks and Run agent on /sandbox (components/sandbox/v2): the live
-// checklist per status, Resume only while the check has the agent stopped,
+// checklist per status, no Resume (the check lifts its own stop), the report event,
 // polling that stops when the window ends, the report, the helper code shown
 // once, Run agent's request ID, the hourly limit, the forgotten-agent notice,
 // the preview states, and no link to Controls. Placeholder keys only.
@@ -9,12 +9,14 @@ import { act, createElement as h, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+const capture = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/analytics', () => ({ analytics: { capture } }));
 
 const { SandboxChecks, RUN_NOW } = await import('@/components/sandbox/v2/SandboxChecks');
 const { SandboxHelper } = await import('@/components/sandbox/v2/SandboxHelper');
 const { SandboxHome } = await import('@/components/sandbox/v2/SandboxHome');
 const { SANDBOX_V2_STATES } = await import('@/app/dev/sandbox-v2/states');
-const { CHECK_IDS, activityLine, stageLine, checkStateOf } = await import('@/lib/sandbox/checks');
+const { CHECK_IDS, SANDBOX_CHECKS_ACTIONS, activityLine, stageLine, checkStateOf } = await import('@/lib/sandbox/checks');
 const { LISTEN_COMMAND } = await import('@/lib/sandbox/helper');
 const { CLI_VERSION } = await import('@/lib/sandbox/practice/model');
 const { outsideWindowText } = await import('@/lib/sandbox/fleet');
@@ -145,6 +147,7 @@ describe('Check your agent', () => {
     expect(text()).toContain('Stopped your agent for 5 seconds…');
     expect(button('Resume')).toBeUndefined();
     expect(calls().some((c) => c.url.endsWith('/checks/resume'))).toBe(false);
+    expect(SANDBOX_CHECKS_ACTIONS).not.toContain('resume');
   });
 
   it('polls every 30 seconds in a hidden tab, and reads at once when the tab comes back', async () => {
@@ -200,6 +203,24 @@ describe('Check your agent', () => {
     expect(calls().some((c) => c.url.endsWith('/checks/stop'))).toBe(true);
     expect(text()).toContain('No problems found · 5 checks didn’t run');
     expect(document.activeElement?.textContent).toBe('No problems found · 5 checks didn’t run');
+  });
+
+  it('sends one sandbox_v2_report for a check that finishes while the page is open, and none for an old report on load', async () => {
+    capture.mockClear();
+    checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z' }, { long_task: 'passed' });
+    await render(checksEl());
+    expect(capture).not.toHaveBeenCalledWith('sandbox_v2_report', expect.anything());
+    act(() => root.unmount());
+    root = createRoot(document.body.appendChild(document.createElement('div')));
+    checks = checkAnswer({ stage: 'observe' });
+    await render(checksEl());
+    checks = checkAnswer({ stage: 'observe', endedAt: '2026-10-29T10:06:00.000Z' }, { long_task: 'passed', provider_errors: 'failed' });
+    await click('Finish now');
+    await flush();
+    const sent = capture.mock.calls.filter(([name]) => name === 'sandbox_v2_report');
+    expect(sent).toEqual([['sandbox_v2_report', { verdict: 'fix', passed: 1, failed: 1, calls: expect.any(Number) }]]);
+    // Only the verdict and counts: no ids, keys or names.
+    expect(JSON.stringify(sent)).not.toMatch(/sandbox-|chk_|prod-eu|sk-/);
   });
 
   it('Check again after a report starts a new check and shows it live', async () => {

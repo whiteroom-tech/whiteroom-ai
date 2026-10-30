@@ -37,9 +37,6 @@ export const TRIP_TIP: Record<CheckId, string> = {
   finishes_correctly: 'Run practice tasks to check this.',
 };
 
-/** The practice-tasks next step: the page makes "Run practice tasks" a link. */
-export const RUN_PRACTICE = 'Run practice tasks to check this.';
-
 /** A check that didn't run because the agent never got to it. */
 export const NOT_REACHED = 'Your agent didn’t reach this step.';
 export const KEEP_RUNNING = 'Keep your agent running until this step, then check again.';
@@ -158,6 +155,6 @@ export function reportSummary(report: Report, when: { checked: string; calls: nu
   group('To fix', report.fix, (c) => [`- ${c.label}: ${c.happened}`, `    How to fix: ${c.next}`]);
   group('Passed', report.ok, (c) => [`- ${c.label}: ${c.happened}`]);
   group('Didn’t run', report.skipped, (c) => [`- ${c.label}: ${c.happened} ${c.next ?? ''}`.trimEnd()]);
-  lines.push('', 'Not checked here: Finishes the job correctly (run practice tasks).');
+  if (report.verdict !== 'too_few') lines.push('', 'Not checked here: Finishes the job correctly (run practice tasks).');
   return scrub(lines.join('\n'));
 }

@@ -9,7 +9,8 @@
 import { timeAgo } from '@/lib/format';
 import { sandboxPost, SandboxFleetError } from './fleet';
 
-export const SANDBOX_CHECKS_ACTIONS = ['status', 'start', 'stop', 'resume'] as const;
+// No resume: a check lifts its own stop after 5 seconds, so the page never sends one.
+export const SANDBOX_CHECKS_ACTIONS = ['status', 'start', 'stop'] as const;
 export type SandboxChecksAction = (typeof SANDBOX_CHECKS_ACTIONS)[number];
 
 /** Each BFF action's engine action: Sandbox-only, all of them. */
@@ -17,7 +18,6 @@ export const SANDBOX_CHECKS_ENGINE_ACTION: Record<SandboxChecksAction, string> =
   status: 'sandbox_check_status',
   start: 'sandbox_check_start',
   stop: 'sandbox_check_stop',
-  resume: 'sandbox_check_resume',
 };
 
 export function isSandboxChecksAction(v: unknown): v is SandboxChecksAction {
