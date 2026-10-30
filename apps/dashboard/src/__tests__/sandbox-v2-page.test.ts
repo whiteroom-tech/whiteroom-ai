@@ -63,13 +63,16 @@ describe('Sandbox v2 page', () => {
   it('not connected: the steps bar on Connect, one lead line, practice tasks, and no link to Controls', async () => {
     await render({ fleet: 'prod-eu' });
     expect(calls()).toEqual([{ url: '/api/sandbox/fleet/status', body: { fleet: 'prod-eu' } }]);
-    expect(text()).toContain('Connect your provider key');
+    expect(text()).toContain('Paste your agent’s API key');
     expect(text()).toContain(SANDBOX_LEAD);
+    // Key first: no provider cards until asked for.
+    expect(document.querySelector('input[name="sandbox-provider"]')).toBeNull();
+    expect(button('Using Azure, Foundry or Bedrock?')).toBeDefined();
     expect(document.querySelector('[aria-current="step"]')?.textContent).toBe('1Connect');
     // No numbered panels and no separate lock banner any more.
     expect(text()).not.toMatch(/\d\. (Connect|Point|Sandbox rules|Check)/);
     expect(text()).not.toContain('Sandbox is separate from your live agents');
-    expect(text()).toContain('Paste the key your agent uses. We keep only its last 4 characters.');
+    expect(text()).toContain('The key your agent already uses. We keep only the last 4 characters.');
     const links = [...document.querySelectorAll('a')].map((a) => a.getAttribute('href'));
     expect(links).toContain('/sandbox/practice');
     expect(links.some((href) => href?.startsWith('/controls'))).toBe(false);
@@ -152,6 +155,71 @@ describe('Sandbox v2 page', () => {
     expect(help.open).toBe(true);
     await act(async () => { [...help.querySelectorAll('button')].find((b) => b.textContent === 'Change key')!.click(); });
     expect(text()).toContain('Connect a different key');
+  });
+
+  it('key first: an Anthropic or OpenAI key connects with no provider click, and says which it is', async () => {
+    capture.mockClear();
+    await render({ fleet: 'prod-eu' });
+    const input = document.getElementById('sandbox-v2-key') as HTMLInputElement;
+    await type(input, 'sk-placeholder-openai-key-0000');
+    expect(text()).toContain('OpenAI key. We keep only the last 4 characters.');
+    expect(document.querySelector('input[name="sandbox-provider"]')).toBeNull();
+    await click('Connect');
+    expect(calls()[1]).toEqual({ url: '/api/sandbox/fleet/connect', body: { fleet: 'prod-eu', provider: 'openai', api_key: 'sk-placeholder-openai-key-0000' } });
+    expect(capture).toHaveBeenCalledWith('sandbox_v2_connected', { provider: 'openai', detected: true });
+  });
+
+  it('Using Azure, Foundry or Bedrock? opens the choices; a cloud provider sends its endpoint', async () => {
+    capture.mockClear();
+    await render({ fleet: 'prod-eu' });
+    await click('Using Azure, Foundry or Bedrock?');
+    expect(document.querySelectorAll('input[name="sandbox-provider"]')).toHaveLength(5);
+    expect(button('Using Azure, Foundry or Bedrock?')).toBeUndefined();
+    const azure = document.querySelector<HTMLInputElement>('input[name="sandbox-provider"][value="azure-openai"]')!;
+    await act(async () => { azure.click(); });
+    await type(document.getElementById('sandbox-endpoint') as HTMLInputElement, 'https://placeholder.openai.azure.com');
+    await type(document.getElementById('sandbox-v2-key') as HTMLInputElement, 'placeholder-azure-key-0000');
+    await click('Connect');
+    expect(calls()[1]).toEqual({ url: '/api/sandbox/fleet/connect', body: { fleet: 'prod-eu', provider: 'azure-openai', api_key: 'placeholder-azure-key-0000', endpoint: 'https://placeholder.openai.azure.com' } });
+    expect(capture).toHaveBeenCalledWith('sandbox_v2_connected', { provider: 'azure-openai', detected: false });
+  });
+
+  it('a key that is neither Anthropic’s nor OpenAI’s opens the choices and asks to pick one; nothing is sent', async () => {
+    await render({ fleet: 'prod-eu' });
+    await type(document.getElementById('sandbox-v2-key') as HTMLInputElement, 'placeholder-unknown-key-0000');
+    expect(document.querySelectorAll('input[name="sandbox-provider"]')).toHaveLength(5);
+    expect(text()).toContain('Pick where your agent’s model runs, below.');
+    await click('Connect');
+    expect(calls()).toHaveLength(1);
+    expect(text()).toContain('Pick where your agent’s model runs.');
+  });
+
+  it('a pick keeps the choices open when the key changes, and still decides what is sent', async () => {
+    await render({ fleet: 'prod-eu' });
+    const key = document.getElementById('sandbox-v2-key') as HTMLInputElement;
+    await type(key, 'placeholder-unknown-key-0000');
+    await act(async () => { document.querySelector<HTMLInputElement>('input[name="sandbox-provider"][value="azure-openai"]')!.click(); });
+    // Now an sk- key: the Azure pick is still on screen, not hidden behind the link.
+    await type(key, 'sk-placeholder-openai-key-0000');
+    expect(document.querySelector<HTMLInputElement>('input[name="sandbox-provider"][value="azure-openai"]')?.checked).toBe(true);
+    expect(document.getElementById('sandbox-endpoint')).not.toBeNull();
+  });
+
+  it('Anthropic picked by hand: where to find the key, and an sk-ant key connects as Anthropic', async () => {
+    await render({ fleet: 'prod-eu' });
+    await click('Using Azure, Foundry or Bedrock?');
+    await act(async () => { document.querySelector<HTMLInputElement>('input[name="sandbox-provider"][value="anthropic"]')!.click(); });
+    expect(text()).toContain('Find it in Claude Console');
+    expect((document.getElementById('sandbox-v2-key') as HTMLInputElement).placeholder).toBe('sk-ant-…');
+    await type(document.getElementById('sandbox-v2-key') as HTMLInputElement, PROVIDER_KEY);
+    await click('Connect');
+    expect(calls()[1]).toEqual({ url: '/api/sandbox/fleet/connect', body: { fleet: 'prod-eu', provider: 'anthropic', api_key: PROVIDER_KEY } });
+  });
+
+  it('a WhiteRoom key is named as one as soon as it is pasted', async () => {
+    await render({ fleet: 'prod-eu' });
+    await type(document.getElementById('sandbox-v2-key') as HTMLInputElement, 'wr_placeholder0000');
+    expect(text()).toContain('That’s a WhiteRoom key.');
   });
 
   it('refuses a mismatched key in the browser, before anything is sent', async () => {

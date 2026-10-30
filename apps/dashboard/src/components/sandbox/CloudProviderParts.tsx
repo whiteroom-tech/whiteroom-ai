@@ -19,7 +19,8 @@ export const PROVIDER_CHOICES: { value: SandboxProvider; sub: string }[] = [
 
 /** Native radios in a fieldset: arrow keys, focus and the group name come from the browser. */
 export function ProviderChoices({ value, unsupported, disabled, followsKey, lastUsed, onPick }: {
-  value: SandboxProvider;
+  /** Null: nothing picked yet (Sandbox v2 reads Anthropic and OpenAI from the key). */
+  value: SandboxProvider | null;
   /** Choices the engine refused: shown, but disabled. */
   unsupported: readonly CloudProvider[];
   disabled?: boolean;

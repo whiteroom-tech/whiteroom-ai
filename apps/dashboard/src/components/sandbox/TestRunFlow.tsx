@@ -8,7 +8,7 @@ import { FONT_DISPLAY, FONT_MONO, CopyButton, SkeletonCard } from '@whiteroom/ui
 import { analytics } from '@/lib/analytics';
 import { PROXY_URL } from '@/lib/whiteroom/client';
 import { announceProxyKeyRotation, type PastTest, claimSandboxChoices, clearSandboxToken, createRun, forgetProxyKey, forgetSandboxChoices, PROVIDER_STORAGE, getStatus, destroyRun, loadProxyKey, newProxyKey, proxyKeyAfterStorageEvent, saveProxyKey, type ShownProxyKey, SandboxRequestError, withRunMode, type RunStatusResult } from '@/lib/sandbox/api';
-import { type CloudProvider, cloudRecipe, cloudStart, type CloudEndpoints, type DirectProvider, headersLiteral, isCloudProvider, isSandboxProvider, KEY_HELP, noCodeSetup, offersNoCode, PROVIDER_UNSUPPORTED, providerSummary, proxyKeyBase, restorableProvider, saveEndpoints, savedEndpoints, type SandboxProvider, withEndpoint, withUnsupported } from '@/lib/sandbox/providers';
+import { type CloudProvider, cloudRecipe, detectKey, cloudStart, type CloudEndpoints, type DirectProvider, headersLiteral, isCloudProvider, isSandboxProvider, KEY_HELP, noCodeSetup, offersNoCode, PROVIDER_UNSUPPORTED, providerSummary, proxyKeyBase, restorableProvider, saveEndpoints, savedEndpoints, type SandboxProvider, withEndpoint, withUnsupported } from '@/lib/sandbox/providers';
 import { SETUP_LINES } from '@/lib/setup';
 import { callCount, failedCallNotice, failedCallReason, failedCallsCheckDetail, failedCallsOf } from '@/lib/sandbox/failed-calls';
 import { CloudEndpointField, CloudGoLive, CloudTroubleshooting, ProviderChoices, ProxyKeyNotice } from './CloudProviderParts';
@@ -100,18 +100,8 @@ function formatCountdown(seconds: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-type KeyKind = 'anthropic' | 'openai' | 'fleet' | 'account' | 'unknown' | 'empty';
-
-/** What the pasted value is, from its prefix. */
-export function detectKey(value: string): KeyKind {
-  const v = value.trim();
-  if (!v) return 'empty';
-  if (v.startsWith('wr_')) return 'fleet';
-  if (v.startsWith('sk-wr-')) return 'account';
-  if (v.startsWith('sk-ant-')) return 'anthropic';
-  if (v.startsWith('sk-')) return 'openai';
-  return 'unknown';
-}
+// detectKey lives in lib/sandbox/providers (Sandbox v2's Connect uses it too); exported here as before.
+export { detectKey };
 
 /** What a new test sends: a cloud test only its endpoint, a pasted key or fleet token as itself, and a live Anthropic or OpenAI test names its provider so status reports it back. */
 export function runOptions(provider: SandboxProvider, credential: string, target?: { provider: CloudProvider; endpoint: string }) {
