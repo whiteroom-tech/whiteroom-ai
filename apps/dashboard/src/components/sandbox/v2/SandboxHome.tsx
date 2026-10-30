@@ -20,6 +20,9 @@ import { SandboxRules, type SandboxRulesPreview } from './SandboxRules';
 import s from '../guided.module.css';
 import v from './v2.module.css';
 
+/** After Reset: what it cleared. Rules and the key stay (the engine's reset keeps them). */
+export const RESET_NOTICE = 'Sandbox reset. Its calls and check results are cleared.';
+
 export const SANDBOX_SEPARATE = 'Sandbox is separate from your live agents. Nothing here changes them.';
 
 /** /dev/sandbox-v2: a fixed state instead of the engine. Actions change only the page. */
@@ -114,7 +117,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
 
   async function act(kind: 'rotate' | 'reset') {
     setConfirm(null);
-    if (preview) { setNotice(kind === 'reset' ? 'Sandbox reset. Its calls, rules and check results are cleared.' : ''); return; }
+    if (preview) { setNotice(kind === 'reset' ? RESET_NOTICE : ''); return; }
     const id = status?.exists ? status.sandboxFleetId : undefined;
     setBusy(true); setNotice(''); setError('');
     try {
@@ -126,7 +129,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
         setStatus(await resetSandboxFleet(fleet, id));
         // Step 4 starts over: its old report is gone too.
         setResets((n) => n + 1);
-        setNotice('Sandbox reset. Its calls, rules and check results are cleared.');
+        setNotice(RESET_NOTICE);
       }
     } catch (e) {
       setError(message(e));
@@ -240,7 +243,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
     <ConfirmDialog
       open={confirm === 'reset'}
       title="Reset your Sandbox?"
-      body="This clears its calls, rules and check results. Your key stays the same, so your agent keeps working."
+      body="This clears its calls and check results. Your rules and key stay, so your agent keeps working."
       confirmLabel="Reset Sandbox"
       busy={busy}
       onConfirm={() => void act('reset')}

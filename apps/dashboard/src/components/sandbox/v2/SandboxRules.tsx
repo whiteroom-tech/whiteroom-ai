@@ -11,7 +11,7 @@ import { governanceList } from '@/lib/whiteroom/client';
 import type { GovernanceRule, GovernanceRuleType } from '@/lib/whiteroom/types';
 import { SandboxFleetError } from '@/lib/sandbox/fleet';
 import {
-  applyReadyMadeRules, copyProductionRules, previewReadyMade, createSandboxRule, deleteSandboxRule, listSandboxRules, SANDBOX_RULES_ONLY, sourceLine,
+  applyReadyMadeRules, copyProductionRules, previewReadyMade, createSandboxRule, deleteSandboxRule, listSandboxRules, RULES_DURING_CHECK, SANDBOX_RULES_ONLY, sourceLine,
   updateSandboxRule, type SandboxRuleFields, type SandboxRulesState,
 } from '@/lib/sandbox/rules';
 import { SandboxRuleEditor } from './SandboxRuleEditor';
@@ -202,7 +202,7 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
   return (
     <Panel title="3. Sandbox rules" actions={state ? <Button size={28} onClick={() => setAdding(true)} disabled={busy}>Add a rule</Button> : undefined}>
       <div className={v.stack}>
-        <p className={v.text}>{SANDBOX_RULES_ONLY}</p>
+        <p className={v.text}>{SANDBOX_RULES_ONLY} {RULES_DURING_CHECK}</p>
         {loading && <SkeletonCard label="Loading your Sandbox rules…" lines={['60%', '45%']} heights={[12, 12]} />}
         {error && <Banner variant="error" actions={loadFailed && !loading && !preview ? <Button size={28} onClick={() => void load()} disabled={busy}>Try again</Button> : undefined}>{error}</Banner>}
 

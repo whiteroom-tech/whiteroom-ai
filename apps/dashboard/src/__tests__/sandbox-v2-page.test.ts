@@ -143,16 +143,17 @@ describe('Sandbox v2 page', () => {
     expect(text()).toContain('sk-wr-placeholder-rotated');
   });
 
-  it('connected: Reset confirms, clears calls, rules and check results, and keeps the key', async () => {
+  it('connected: Reset confirms, clears calls and check results, and keeps the rules and key', async () => {
     bff.mockImplementation(async () => Response.json(STATUS));
     await render({ fleet: 'prod-eu' });
     const checkReads = () => calls().filter((c) => c.url.endsWith('/checks/status')).length;
     const before = checkReads();
     await click('Reset Sandbox');
-    expect(text()).toContain('This clears its calls, rules and check results. Your key stays the same');
+    expect(text()).toContain('This clears its calls and check results. Your rules and key stay, so your agent keeps working.');
     await click('Reset Sandbox');
     expect(calls().find((c) => c.url.endsWith('/reset'))?.body).toEqual({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID });
-    expect(text()).toContain('Sandbox reset. Its calls, rules and check results are cleared.');
+    expect(text()).toContain('Sandbox reset. Its calls and check results are cleared.');
+    expect(text()).not.toMatch(/clears? its calls, rules/);
     // Step 4 starts over at once: its checks are read again, not left showing the old report.
     expect(checkReads()).toBeGreaterThan(before);
   });
@@ -256,7 +257,7 @@ describe('Sandbox v2 wording and checks', () => {
     expect(lastCallText(null, now)).toBe('No calls yet');
     expect(lastCallText('2026-10-29T14:55:00Z', now)).toBe('5 min ago');
     expect(keptUntilText('2026-11-12T15:00:00Z', now)).toMatch(/^Kept until Nov 1[23] — renewed each time your agent calls$/);
-    expect(keptUntilText(null, now)).toBe('Kept for 14 days after your agent’s last call');
+    expect(keptUntilText(null, now)).toBe('Kept for 7 days after your agent’s last call');
   });
 
   it('checks a key against its provider', () => {

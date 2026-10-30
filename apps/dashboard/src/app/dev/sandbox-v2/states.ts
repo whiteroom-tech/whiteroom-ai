@@ -72,7 +72,7 @@ const ENFORCED: Results = {
   loop_rate: ['not_triggered', 'Your agent didn’t repeat a call. The loop breaker needs the same call 3 times.'],
 };
 const PAUSED: Results = { ...ENFORCED };
-const RESUMED: Results = { ...ENFORCED, pause_stop: ['passed', 'Carried on after a 10-second pause, and came back when you pressed Resume.'] };
+const RESUMED: Results = { ...ENFORCED, pause_stop: ['passed', 'We paused your agent for 5 seconds → it carried on. We stopped it → its calls were refused until it was let go.'] };
 const FINISHED: Results = { ...RESUMED, provider_errors: ['failed', 'Your agent retried 6 times in 4 seconds after a provider error. Add a back-off.'] };
 
 const live = (extra: Partial<SandboxHomePreview>): SandboxHomePreview => ({ status: connected(new Date(NOW - 60_000).toISOString()), rules: rules({}), now: NOW, ...extra });
@@ -114,7 +114,7 @@ export const SANDBOX_V2_STATES = {
   'checks-enforce': live({ checks: checkState('enforce', { ...OBSERVED, spend_cap: ENFORCED.spend_cap }, { rules: RULES.slice(0, 1) }) }),
   /** Step 4: the 10-second pause. */
   'checks-pause': live({ checks: checkState('pause', PAUSED, { rules: RULES }) }),
-  /** Step 4: stopped, waiting for Resume. */
+  /** Step 4: stopped for 5 seconds; the check lifts the stop itself. */
   'checks-stopped': live({ checks: checkState('stop', PAUSED, { rules: RULES }) }),
   /** Step 4: the provider error. */
   'checks-errors': live({ checks: checkState('errors', RESUMED, { rules: RULES }) }),
@@ -122,6 +122,8 @@ export const SANDBOX_V2_STATES = {
   'checks-done': live({ checks: checkState('done', FINISHED, { rules: RULES }) }),
   /** The report: the window ended. */
   'checks-report': live({ checks: checkState('done', FINISHED, { ended: true, rules: RULES, calls: 31 }) }),
+  'checks-report-pass': live({ checks: checkState('done', { ...FINISHED, loop_rate: ['passed', 'Blocked a repeated call, and your agent changed course.'], provider_errors: ['passed', 'Backed off after a 529 and tried again later.'] }, { ended: true, calls: 42 }) }),
+  'checks-report-few': live({ checks: checkState('done', {}, { ended: true, calls: 3 }) }),
   /** Step 4: the checks couldn't be read. */
   'checks-error': live({ checks: { state: null, error: 'The Sandbox couldn’t do that right now. Try again in a moment.', now: NOW } }),
   /** The Sandbox card: an agent called outside a check. */

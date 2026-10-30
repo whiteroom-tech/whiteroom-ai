@@ -12,7 +12,7 @@ import { createRoot, type Root } from 'react-dom/client';
 const { SandboxRules } = await import('@/components/sandbox/v2/SandboxRules');
 const { SandboxHome } = await import('@/components/sandbox/v2/SandboxHome');
 const { SANDBOX_V2_STATES } = await import('@/app/dev/sandbox-v2/states');
-const { SANDBOX_RULES_ONLY, sourceLine, previewReadyMade, rulesStateOf } = await import('@/lib/sandbox/rules');
+const { RULES_DURING_CHECK, SANDBOX_RULES_ONLY, sourceLine, previewReadyMade, rulesStateOf } = await import('@/lib/sandbox/rules');
 
 const SANDBOX_ID = 'sandbox-00000000-0000-4000-8000-000000000000';
 const READY = previewReadyMade(SANDBOX_ID);
@@ -177,6 +177,8 @@ describe('Sandbox rules', () => {
     productionRules = [READY[0]];
     await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
     expect(text()).toContain(SANDBOX_RULES_ONLY);
+    // A rule in Watch can still block during a check: the page says so once.
+    expect(text()).toContain(RULES_DURING_CHECK);
     expect([...document.querySelectorAll('a')].some((a) => a.getAttribute('href')?.includes('/controls'))).toBe(false);
   });
 });

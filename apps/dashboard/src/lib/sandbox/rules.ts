@@ -45,6 +45,8 @@ export interface SandboxRulesState {
 
 /** The one line on Sandbox and in the confirm dialogs. */
 export const SANDBOX_RULES_ONLY = 'These rules apply only to your Sandbox. Your live rules don’t change.';
+/** Why a rule in Watch can still block during a check: each one is enforced for a moment, one at a time. */
+export const RULES_DURING_CHECK = 'During a check, each rule is switched on for a moment to see how your agent reacts.';
 
 const RULE_TYPES: readonly GovernanceRuleType[] = ['spend_cap', 'loop_breaker', 'model_allowlist', 'tool_list', 'call_rate', 'keyword'];
 const MODES: readonly GovernanceMode[] = ['off', 'watch', 'enforce'];

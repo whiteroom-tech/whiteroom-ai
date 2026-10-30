@@ -3,7 +3,6 @@
 //   POST /api/sandbox/checks/status  {fleet, sandboxFleetId?}
 //   POST /api/sandbox/checks/start   {fleet, sandboxFleetId?, injectErrors?}
 //   POST /api/sandbox/checks/stop    {fleet, sandboxFleetId?}
-//   POST /api/sandbox/checks/resume  {fleet, sandboxFleetId?}
 //
 // `fleet` is the user's production fleet: same-origin, signed-in owner only
 // (lib/sandbox/fleet-server.ts). Only the engine's sandbox_check_* actions are called.

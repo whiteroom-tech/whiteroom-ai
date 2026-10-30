@@ -63,12 +63,20 @@
 .taskPrompt { font-size:var(--fs-sm); color:var(--tx); min-width:0; overflow-wrap:anywhere; flex:1 1 160px; }
 /* The report: one card per check. */
 .reportPass { color:var(--ok); }
+.reportWarn { color:var(--warn-tx); }
+.reportHead:focus { outline:none; }
+.reportHead:focus-visible { outline:2px solid var(--brand); outline-offset:2px; }
+.sect { margin:4px 0 -4px; font-size:var(--fs-sm); font-weight:600; color:var(--tx2); }
+.lines { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+.line { display:grid; grid-template-columns:16px minmax(0,1fr); gap:8px; font-size:var(--fs-sm); line-height:1.5; color:var(--tx2); overflow-wrap:anywhere; }
+.line strong { color:var(--tx); font-weight:600; }
+.lineOk, .lineSkip { display:inline-flex; padding-top:3px; }
+.lineOk { color:var(--ok); }
+.lineSkip { color:var(--tx3); }
+.next { margin:0; padding:10px 12px; border:1px dashed var(--line2); border-radius:8px; font-size:var(--fs-sm); color:var(--tx2); }
 .cards { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
 .card { display:grid; gap:10px; padding:12px 14px; border:1px solid var(--line); border-radius:8px; min-width:0; }
 .cardHead { display:flex; align-items:center; gap:10px; min-width:0; flex-wrap:wrap; }
-.cardStatus { margin-left:auto; font-size:var(--fs-sm); font-weight:600; color:var(--tx2); }
-.card[data-status="passed"] .cardStatus { color:var(--ok); }
-.card[data-status="failed"] .cardStatus { color:var(--bad); }
 .cardFacts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:0; font-size:var(--fs-sm); line-height:1.5; }
 .cardFacts dt { color:var(--tx2); font-weight:600; }
 .cardFacts dd { margin:0; color:var(--tx); min-width:0; overflow-wrap:anywhere; }

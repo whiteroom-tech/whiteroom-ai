@@ -11,7 +11,8 @@ import {
   activityLine, checkAction, getCheckState, isOpen, stageLine, STATUS_WORDS,
   type CheckResult, type CheckRule, type CheckState, type CheckStatus,
 } from '@/lib/sandbox/checks';
-import { reportOf, reportSummary, RUN_PRACTICE, type ReportCard } from '@/lib/sandbox/check-report';
+import { reportOf, reportSummary, SCORED_CHECKS, TOO_FEW_HELP, type ReportCard } from '@/lib/sandbox/check-report';
+import { analytics } from '@/lib/analytics';
 import s from '../guided.module.css';
 import v from './v2.module.css';
 
@@ -28,10 +29,11 @@ export const RUN_NOW = 'Run your agent as you normally do. Checks start on its f
 const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : 'That didn’t work. Check your connection and try again.');
 
 /**
- * "4. Check your agent" (spec sandbox-v2 §2 steps 4–5, §5): start a checking
- * window, watch the seven checks fill stage by stage (polled every 5 seconds
- * while it's open), Resume when the check has stopped the agent, then the
- * report once the window ends.
+ * "4. Check your agent" (spec sandbox-v2 §2 steps 4–5, §5): a checking window
+ * starts on the agent's first call; the checks fill stage by stage (polled
+ * every 5 seconds), Finish now ends it early, and the report shows once the
+ * window ends. A check's stop lifts itself after 5 seconds, so there's no
+ * Resume here.
  */
 export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale }: {
   fleet: string;
@@ -115,7 +117,7 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale }: {
     return () => { live = false; clearTimeout(timer); document.removeEventListener('visibilitychange', onVisible); };
   }, [preview, loaded, windowId, fleet, sandboxFleetId]);
 
-  async function act(action: 'start' | 'stop' | 'resume') {
+  async function act(action: 'start' | 'stop') {
     if (preview) { setState((st) => previewStep(action, st, now)); return; }
     const req = ++latest.current;
     acting.current = true;
@@ -138,16 +140,28 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale }: {
   const w = state?.window ?? null;
   const ended = !!w?.endedAt;
 
-  const again = (
-    <div className={v.actions}>
-      <Button size={32} onClick={() => void act('start')} busy={busy} busyLabel="Starting…">Check again</Button>
-    </div>
-  );
+  // The report already ended when the page first loaded (null: none, or a check still open then).
+  // Any other ended window is a new report, even one that opened and ended between two reads:
+  // it gets focus and the report event. Unset until the first read lands.
+  const loadedReport = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (state && loadedReport.current === undefined) loadedReport.current = state.window?.endedAt ? state.window.id : null;
+  }, [state]);
+  const focusReport = ended && !!w && loadedReport.current !== undefined && w.id !== loadedReport.current;
+
+  // One report event per check that finishes while the page is open (not an old report on load). Never ids, keys or names.
+  const reported = useRef<string | null>(null);
+  useEffect(() => {
+    if (preview || !focusReport || !state || !w?.endedAt || reported.current === w.id) return;
+    reported.current = w.id;
+    const r = reportOf(state);
+    analytics.capture('sandbox_v2_report', { verdict: r.verdict, passed: r.passed, failed: r.failed, calls: w.calls });
+  }, [preview, focusReport, state, w]);
 
   return (
     <Panel
       title="4. Check your agent"
-      actions={open ? <Button size={28} variant="ghost" onClick={() => void act('stop')} disabled={busy}>Stop checking</Button> : undefined}
+      actions={open ? <Button size={28} variant="ghost" onClick={() => void act('stop')} disabled={busy}>Finish now</Button> : undefined}
     >
       <div className={v.stack}>
         {state && (() => {
@@ -170,15 +184,15 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale }: {
         {state && w && !ended && <>
           <div className={v.stage} role="status" aria-live="polite">
             <p className={v.stageText}>{stageLine(state)}</p>
-            {w.stage === 'stop' && (
-              <Button size={36} variant="primary" onClick={() => void act('resume')} busy={busy} busyLabel="Resuming…">Resume</Button>
-            )}
           </div>
           {w.calls === 0 && w.stage === 'observe' && <p className={v.text}>{RUN_NOW}</p>}
           <CheckList checks={state.checks} rules={state.rules} live />
         </>}
 
-        {state && w && ended && <ReportView state={state} checked={fmtWhen(w.startedAt, now)} calls={w.calls} again={again} />}
+        {state && w && ended && (
+          <ReportView state={state} checked={fmtWhen(w.startedAt, now)} calls={w.calls} focus={focusReport}
+            onAgain={() => void act('start')} busy={busy} />
+        )}
       </div>
     </Panel>
   );
@@ -200,17 +214,26 @@ export async function copyText(text: string): Promise<boolean> {
 }
 
 /**
- * The report once the window has ended (spec §2 step 5): "N of 7 passed",
- * then one card per check — what we did, what your agent did, what to do
- * next — with the rules it was judged on. Copy summary puts it on the
- * clipboard as plain text, with keys, URLs and IDs hidden.
+ * The report once the window has ended (first-run UX spec §7.4): the verdict,
+ * then what to fix (open), what passed (one line each) and what didn't run
+ * (closed). Copy summary puts it on the clipboard as plain text, with keys,
+ * URLs and IDs hidden.
  */
-export function ReportView({ state, checked, calls, again }: { state: CheckState; checked: string; calls: number; again: React.ReactNode }) {
+export function ReportView({ state, checked, calls, onAgain, busy = false, focus = false }: {
+  state: CheckState; checked: string; calls: number;
+  /** Check again; none hides the button. */
+  onAgain?: () => void;
+  busy?: boolean;
+  /** Move focus to the verdict when it appears. */
+  focus?: boolean;
+}) {
   const report = reportOf(state);
   const [copied, setCopied] = useState<CopyState>('idle');
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const attempt = useRef(0);
+  const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => () => { attempt.current += 1; clearTimeout(timer.current); }, []);
+  useEffect(() => { if (focus) heading.current?.focus(); }, [focus]);
   const copy = () => {
     clearTimeout(timer.current);
     const mine = ++attempt.current;
@@ -221,48 +244,79 @@ export function ReportView({ state, checked, calls, again }: { state: CheckState
     };
     void copyText(reportSummary(report, { checked, calls })).then((ok) => show(ok ? 'copied' : 'failed'));
   };
+  // Too few calls: no score, just what the checks need. Nothing checked despite enough calls: the list says why per check.
+  const few = report.verdict === 'too_few';
+  const callsText = calls === 1 ? '1 call' : `${calls.toLocaleString('en-US')} calls`;
   return <>
     <div className={v.report}>
-      <p className={`${v.reportHead} ${report.tone === 'pass' ? v.reportPass : ''}`} data-tone={report.tone}>{report.headline}</p>
-      <p className={v.text}>Checked {checked} · {calls === 1 ? '1 call' : `${calls.toLocaleString('en-US')} calls`}</p>
+      <h3 ref={heading} tabIndex={-1} className={`${v.reportHead} ${report.tone === 'pass' ? v.reportPass : report.tone === 'warn' ? v.reportWarn : ''}`} data-tone={report.tone}>{report.headline}</h3>
+      <p className={v.text}>{few ? `${callsText} · checked ${checked}` : `${SCORED_CHECKS.length} checks · ${callsText} · checked ${checked}`}</p>
     </div>
-    <ul className={v.cards}>
-      {report.cards.map((c) => <ReportCardView key={c.id} card={c} />)}
-    </ul>
-    {again}
+    {few && <p className={v.text}>{TOO_FEW_HELP}</p>}
+    {report.fix.length > 0 && <>
+      <p className={v.sect}>To fix</p>
+      <ul className={v.cards}>{report.fix.map((c) => <FixCard key={c.id} card={c} />)}</ul>
+    </>}
+    {report.ok.length > 0 && <>
+      {report.fix.length > 0 && <p className={v.sect}>Passed</p>}
+      <ul className={v.lines}>{report.ok.map((c) => <ReportLine key={c.id} card={c} />)}</ul>
+    </>}
+    {!few && report.skipped.length > 0 && (
+      <details className={v.members}>
+        <summary>{report.skipped.length === 1 ? '1 check' : `${report.skipped.length} checks`} didn’t run this time</summary>
+        <ul className={`${v.lines} ${v.reveal}`}>{report.skipped.map((c) => <ReportLine key={c.id} card={c} />)}</ul>
+      </details>
+    )}
     <div className={v.actions}>
+      {onAgain && <Button size={32} variant={report.verdict === 'pass' ? 'secondary' : 'primary'} onClick={onAgain} busy={busy} busyLabel="Starting…">Check again</Button>}
       <Button size={32} variant="ghost" onClick={copy}>{copied === 'copied' ? 'Copied' : 'Copy summary'}</Button>
       <span className={v.text} aria-live="polite">{copied === 'failed' ? 'Couldn’t copy. Try again.' : ''}</span>
     </div>
+    {!few && <p className={v.next}>Next: check its answers too. <Link href={ROUTES.practiceTest} className="wr-link">Run practice tasks</Link></p>}
   </>;
 }
 
-function ReportCardView({ card }: { card: ReportCard }) {
-  const mark = MARK[card.status];
-  const tone = mark.tone === 'pass' ? s.checkPass : mark.tone === 'fail' ? s.checkFail : v.checkMuted;
+/** A failed check: what happened, how to fix it, and the rules it was judged on. */
+function FixCard({ card }: { card: ReportCard }) {
   return (
     <li className={v.card} data-check={card.id} data-status={card.status}>
       <div className={v.cardHead}>
-        <div className={`${s.checkIcon} ${tone}`} aria-hidden="true"><Icon name={mark.icon} size={13} /></div>
+        <div className={`${s.checkIcon} ${s.checkFail}`} aria-hidden="true"><Icon name="x" size={13} /></div>
         <span className={s.checkName}>{card.label}</span>
-        <span className={v.cardStatus}>{STATUS_WORDS[card.status]}</span>
       </div>
       <dl className={v.cardFacts}>
-        <dt>What we did</dt>
-        <dd>{card.weDid}</dd>
-        <dt>What your agent did</dt>
-        <dd>{card.agentDid}</dd>
-        <dt>What to do next</dt>
-        <dd data-next>{card.next === RUN_PRACTICE
-          ? <><Link href={ROUTES.practiceTest} className="wr-link">Run practice tasks</Link> to check this.</>
-          : card.next}</dd>
+        <dt>What happened</dt>
+        <dd>{card.happened}</dd>
+        <dt>How to fix</dt>
+        <dd data-next>{card.next}</dd>
       </dl>
-      {card.rules.length > 0 && (
-        <ul className={v.cardRules}>
-          {card.rules.map((r, i) => <li key={i}>{r}</li>)}
-        </ul>
-      )}
+      <RuleLines rules={card.rules} />
     </li>
+  );
+}
+
+/** A passed check, or one that didn't run, in one line: its name, what happened, and how to get it checked. */
+function ReportLine({ card }: { card: ReportCard }) {
+  const mark = MARK[card.status];
+  return (
+    <li className={v.line} data-check={card.id} data-status={card.status}>
+      <span className={mark.tone === 'pass' ? v.lineOk : v.lineSkip} aria-hidden="true"><Icon name={mark.icon} size={13} /></span>
+      <div>
+        <strong>{card.label}.</strong> {card.happened}
+        {card.next && <> {card.next}</>}
+        {card.status !== 'passed' && <RuleLines rules={card.rules} />}
+      </div>
+    </li>
+  );
+}
+
+function RuleLines({ rules }: { rules: string[] }) {
+  if (!rules.length) return null;
+  return (
+    <details className={v.members}>
+      <summary>{rules.length === 1 ? '1 rule' : `${rules.length} rules`}</summary>
+      <ul className={v.cardRules}>{rules.map((r, i) => <li key={i}>{r}</li>)}</ul>
+    </details>
   );
 }
 
@@ -317,8 +371,8 @@ function ruleWords(r: CheckRule, live: boolean): string {
   return STATUS_WORDS[r.status];
 }
 
-/** /dev/sandbox-v2 only: what Start, Stop and Resume would show next. */
-function previewStep(action: 'start' | 'stop' | 'resume', st: CheckState | null, now: number): CheckState | null {
+/** /dev/sandbox-v2 only: what Check again and Finish now would show next. */
+function previewStep(action: 'start' | 'stop', st: CheckState | null, now: number): CheckState | null {
   if (!st) return st;
   if (action === 'start') {
     return {
@@ -328,8 +382,5 @@ function previewStep(action: 'start' | 'stop' | 'resume', st: CheckState | null,
     };
   }
   if (!st.window) return st;
-  if (action === 'resume') {
-    return { ...st, window: { ...st.window, stage: 'errors' }, checks: st.checks.map((c) => (c.id === 'pause_stop' ? { ...c, status: 'passed', detail: 'Paused, stopped and resumed by a person.' } : c)) };
-  }
   return { ...st, window: { ...st.window, endedAt: new Date(now).toISOString(), stage: 'done' } };
 }

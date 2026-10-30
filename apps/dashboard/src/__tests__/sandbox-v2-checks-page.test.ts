@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // Sandbox checks and Run agent on /sandbox (components/sandbox/v2): the live
-// checklist per status, Resume only while the check has the agent stopped,
+// checklist per status, no Resume (the check lifts its own stop), the report event,
 // polling that stops when the window ends, the report, the helper code shown
 // once, Run agent's request ID, the hourly limit, the forgotten-agent notice,
 // the preview states, and no link to Controls. Placeholder keys only.
@@ -9,18 +9,20 @@ import { act, createElement as h, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+const capture = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/analytics', () => ({ analytics: { capture } }));
 
 const { SandboxChecks, RUN_NOW } = await import('@/components/sandbox/v2/SandboxChecks');
 const { SandboxHelper } = await import('@/components/sandbox/v2/SandboxHelper');
 const { SandboxHome } = await import('@/components/sandbox/v2/SandboxHome');
 const { SANDBOX_V2_STATES } = await import('@/app/dev/sandbox-v2/states');
-const { CHECK_IDS, activityLine, stageLine, checkStateOf } = await import('@/lib/sandbox/checks');
+const { CHECK_IDS, SANDBOX_CHECKS_ACTIONS, activityLine, stageLine, checkStateOf } = await import('@/lib/sandbox/checks');
 const { LISTEN_COMMAND } = await import('@/lib/sandbox/helper');
 const { CLI_VERSION } = await import('@/lib/sandbox/practice/model');
 const { outsideWindowText } = await import('@/lib/sandbox/fleet');
 
 const SANDBOX_ID = 'sandbox-00000000-0000-4000-8000-000000000000';
-type Win = { stage: string; endedAt?: string | null; calls?: number } | null;
+type Win = { id?: string; stage: string; endedAt?: string | null; calls?: number } | null;
 const checkAnswer = (win: Win, statuses: Record<string, string> = {}, rules: unknown[] = []) => ({
   success: true,
   window: win && { id: 'chk_1', startedAt: '2026-10-29T10:00:00.000Z', endedAt: null, injectErrors: true, calls: 4, ...win },
@@ -126,13 +128,14 @@ describe('Check your agent', () => {
     // The enforce stage names the first rule still to test, in order: spend cap, then allowlists and keywords.
     expect(text()).toContain('Testing Label allowlists_keywords…');
     expect(button('Resume')).toBeUndefined();
-    expect(button('Stop checking')).toBeDefined();
+    expect(button('Finish now')).toBeDefined();
   });
 
-  it('Resume shows only while the check has the agent stopped, and sends resume', async () => {
-    for (const stage of ['observe', 'enforce', 'pause', 'errors', 'done']) {
-      expect(stageLine(checkStateOf(checkAnswer({ stage }))!)).not.toContain('Press Resume');
+  it('no Resume at any stage: the check lifts its own stop after 5 seconds', async () => {
+    for (const stage of ['observe', 'enforce', 'pause', 'stop', 'errors', 'done']) {
+      expect(stageLine(checkStateOf(checkAnswer({ stage }))!)).not.toMatch(/Resume|Stop checking/);
     }
+    expect(stageLine(checkStateOf(checkAnswer({ stage: 'done' }))!)).toBe('Getting your results…');
     checks = checkAnswer({ stage: 'pause' });
     await render(checksEl());
     expect(text()).toContain('Paused your agent for 5 seconds…');
@@ -141,12 +144,10 @@ describe('Check your agent', () => {
     root = createRoot(document.body.appendChild(document.createElement('div')));
     checks = checkAnswer({ stage: 'stop' });
     await render(checksEl());
-    expect(text()).toContain('Your agent is stopped for 5 seconds, then it can call again. Resume lets it go now.');
-    checks = checkAnswer({ stage: 'errors' }, { pause_stop: 'passed' });
-    await click('Resume');
-    expect(calls().find((c) => c.url.endsWith('/checks/resume'))?.body).toEqual({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID });
-    expect(text()).toContain('Sending a provider error…');
+    expect(text()).toContain('Stopped your agent for 5 seconds…');
     expect(button('Resume')).toBeUndefined();
+    expect(calls().some((c) => c.url.endsWith('/checks/resume'))).toBe(false);
+    expect(SANDBOX_CHECKS_ACTIONS).not.toContain('resume');
   });
 
   it('polls every 30 seconds in a hidden tab, and reads at once when the tab comes back', async () => {
@@ -187,31 +188,81 @@ describe('Check your agent', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     await flush();
     expect(reads()).toBe(4);
-    // The report: N of 7 passed, a check never reached reads Not checked, and Check again.
-    expect(text()).toContain('2 of 7 passed');
-    expect(row('long_task')?.textContent).toContain('Not checked');
+    // The report: a verdict, a check never reached is among the ones that didn't run, and Check again.
+    expect(text()).toContain('No problems found · 4 checks didn’t run');
+    expect(row('long_task')?.textContent).toContain('Your agent didn’t reach this step.');
     expect(button('Check again')).toBeDefined();
-    expect(button('Stop checking')).toBeUndefined();
+    expect(button('Finish now')).toBeUndefined();
   });
 
-  it('Stop checking ends the window and shows the report', async () => {
+  it('Finish now ends the window and shows the report, with focus on the verdict', async () => {
     checks = checkAnswer({ stage: 'observe' });
     await render(checksEl());
     checks = checkAnswer({ stage: 'observe', endedAt: '2026-10-29T10:06:00.000Z' }, { long_task: 'passed' });
-    await click('Stop checking');
+    await click('Finish now');
     expect(calls().some((c) => c.url.endsWith('/checks/stop'))).toBe(true);
-    expect(text()).toContain('1 of 7 passed');
+    expect(text()).toContain('No problems found · 5 checks didn’t run');
+    expect(document.activeElement?.textContent).toBe('No problems found · 5 checks didn’t run');
+  });
+
+  it('sends one sandbox_v2_report for a check that finishes while the page is open, and none for an old report on load', async () => {
+    capture.mockClear();
+    checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z' }, { long_task: 'passed' });
+    await render(checksEl());
+    expect(capture).not.toHaveBeenCalledWith('sandbox_v2_report', expect.anything());
+    act(() => root.unmount());
+    root = createRoot(document.body.appendChild(document.createElement('div')));
+    checks = checkAnswer({ stage: 'observe' });
+    await render(checksEl());
+    checks = checkAnswer({ stage: 'observe', endedAt: '2026-10-29T10:06:00.000Z' }, { long_task: 'passed', provider_errors: 'failed' });
+    await click('Finish now');
+    await flush();
+    const sent = capture.mock.calls.filter(([name]) => name === 'sandbox_v2_report');
+    expect(sent).toEqual([['sandbox_v2_report', { verdict: 'fix', passed: 1, failed: 1, calls: expect.any(Number) }]]);
+    // Only the verdict and counts: no ids, keys or names.
+    expect(JSON.stringify(sent)).not.toMatch(/sandbox-|chk_|prod-eu|sk-/);
+  });
+
+  it.each([
+    ['pass', { spend_cap: 'passed', loop_rate: 'passed', allowlists_keywords: 'passed', pause_stop: 'passed', long_task: 'passed', provider_errors: 'passed' }, 14, { passed: 6, failed: 0 }],
+    ['clear', { long_task: 'passed' }, 14, { passed: 1, failed: 0 }],
+    ['none', {}, 14, { passed: 0, failed: 0 }],
+    ['too_few', {}, 3, { passed: 0, failed: 0 }],
+  ] as const)('the report event carries the %s verdict, its counts and the calls', async (verdict, statuses, calls, counts) => {
+    capture.mockClear();
+    checks = checkAnswer({ stage: 'observe' });
+    await render(checksEl());
+    checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z', calls }, statuses);
+    await click('Finish now');
+    await flush();
+    expect(capture.mock.calls.filter(([name]) => name === 'sandbox_v2_report')).toEqual([['sandbox_v2_report', { verdict, ...counts, calls }]]);
+  });
+
+  it('a check that opens and ends between two reads still counts as new: focus and one report event', async () => {
+    vi.useFakeTimers();
+    capture.mockClear();
+    checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z' }, { long_task: 'passed' });
+    await render(checksEl());
+    expect(capture).not.toHaveBeenCalledWith('sandbox_v2_report', expect.anything());
+    // The next read already has a different, ended window: the page never saw it open.
+    checks = checkAnswer({ id: 'chk_2', stage: 'done', endedAt: '2026-10-29T10:20:00.000Z' }, { spend_cap: 'failed' });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    await flush();
+    expect(document.activeElement?.textContent).toBe('1 thing to fix before going live');
+    expect(capture.mock.calls.filter(([name]) => name === 'sandbox_v2_report')).toHaveLength(1);
   });
 
   it('Check again after a report starts a new check and shows it live', async () => {
     checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z' }, { long_task: 'passed' });
     await render(checksEl());
-    expect(text()).toContain('1 of 7 passed');
+    expect(text()).toContain('No problems found · 5 checks didn’t run');
+    // Already there on load: the page doesn't take focus.
+    expect(document.activeElement?.tagName).not.toBe('H3');
     checks = checkAnswer({ stage: 'observe', calls: 0 });
     await click('Check again');
     expect(calls().find((c) => c.url.endsWith('/checks/start'))?.body).toEqual({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID });
     expect(text()).toContain('Watching your agent’s calls…');
-    expect(button('Stop checking')).toBeDefined();
+    expect(button('Finish now')).toBeDefined();
   });
 
   it('a refused Check again shows why and reads the checks again', async () => {
@@ -357,16 +408,16 @@ describe('Stale Sandbox vs state conflicts, overtaken answers, and parent re-ren
     checks = checkAnswer({ stage: 'observe' });
     await render(h(SandboxChecks, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, onStale }));
     once('/api/sandbox/checks/stop', () => Response.json({ error: 'No check is running.' }, { status: 409 }));
-    await click('Stop checking');
+    await click('Finish now');
     expect(onStale).not.toHaveBeenCalled();
     expect(statusReads()).toBe(2);
     expect(text()).toContain('No check is running.');
     once('/api/sandbox/checks/stop', () => Response.json(STALE, { status: 409 }));
-    await click('Stop checking');
+    await click('Finish now');
     expect(onStale).toHaveBeenCalledTimes(1);
     expect(statusReads()).toBe(2);
     once('/api/sandbox/checks/stop', () => Response.json({ error: 'This fleet has no Sandbox.' }, { status: 404 }));
-    await click('Stop checking');
+    await click('Finish now');
     expect(onStale).toHaveBeenCalledTimes(2);
   });
 
@@ -378,19 +429,19 @@ describe('Stale Sandbox vs state conflicts, overtaken answers, and parent re-ren
     once('/api/sandbox/checks/stop', () => new Promise<Response>((resolve) => {
       answer = () => resolve(Response.json(checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z' }, { long_task: 'passed' })));
     }));
-    await act(async () => { button('Stop checking')!.click(); });
+    await act(async () => { button('Finish now')!.click(); });
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     await flush();
     expect(statusReads()).toBe(1);
     checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z' }, { long_task: 'passed' });
     await act(async () => { answer(); });
     await flush();
-    expect(text()).toContain('1 of 7 passed');
+    expect(text()).toContain('No problems found · 5 checks didn’t run');
     // Polling carries on after the action, and the report stays.
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     await flush();
     expect(statusReads()).toBe(2);
-    expect(text()).toContain('1 of 7 passed');
+    expect(text()).toContain('No problems found · 5 checks didn’t run');
   });
 
   it('no refetch loop: a new onStale on every parent render reads once, even when the read is stale', async () => {
@@ -528,8 +579,7 @@ describe('Sandbox page', () => {
       expect(bff).not.toHaveBeenCalled();
       expect(text()).toContain('4. Check your agent');
       expect(document.body.innerHTML).not.toContain('href="/controls');
-      if (state === 'checks-stopped') expect(button('Resume')).toBeDefined();
-      else expect(button('Resume')).toBeUndefined();
+      expect(button('Resume')).toBeUndefined();
     },
   );
 });

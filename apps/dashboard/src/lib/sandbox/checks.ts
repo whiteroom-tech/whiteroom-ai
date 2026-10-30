@@ -9,7 +9,8 @@
 import { timeAgo } from '@/lib/format';
 import { sandboxPost, SandboxFleetError } from './fleet';
 
-export const SANDBOX_CHECKS_ACTIONS = ['status', 'start', 'stop', 'resume'] as const;
+// No resume: a check lifts its own stop after 5 seconds, so the page never sends one.
+export const SANDBOX_CHECKS_ACTIONS = ['status', 'start', 'stop'] as const;
 export type SandboxChecksAction = (typeof SANDBOX_CHECKS_ACTIONS)[number];
 
 /** Each BFF action's engine action: Sandbox-only, all of them. */
@@ -17,7 +18,6 @@ export const SANDBOX_CHECKS_ENGINE_ACTION: Record<SandboxChecksAction, string> =
   status: 'sandbox_check_status',
   start: 'sandbox_check_start',
   stop: 'sandbox_check_stop',
-  resume: 'sandbox_check_resume',
 };
 
 export function isSandboxChecksAction(v: unknown): v is SandboxChecksAction {
@@ -192,9 +192,10 @@ export function stageLine(state: CheckState): string {
       return now ? `Testing ${now.label}…` : 'Testing your rules…';
     }
     case 'pause': return 'Paused your agent for 5 seconds…';
-    case 'stop': return 'Your agent is stopped for 5 seconds, then it can call again. Resume lets it go now.';
+    case 'stop': return 'Stopped your agent for 5 seconds…';
     case 'errors': return 'Sending a provider error…';
-    case 'done': return 'Done. Stop checking to see your report.';
+    // The engine ends the window itself at done; this shows for at most one read.
+    case 'done': return 'Getting your results…';
   }
 }
 
@@ -223,8 +224,7 @@ export async function getCheckState(fleet: string, sandboxFleetId: string): Prom
   return mustState(await call('status', { fleet, sandboxFleetId }));
 }
 
-/** Start, Stop or Resume; then the current state (the answer's own, or a fresh read). */
-/** Start (Check again, provider-error test on), Stop or Resume. */
+/** Start (Check again) or Stop (Finish now); then the current state (the answer's own, or a fresh read). */
 export async function checkAction(action: Exclude<SandboxChecksAction, 'status'>, fleet: string, sandboxFleetId: string): Promise<CheckState> {
   const data = await call(action, { fleet, sandboxFleetId });
   return checkStateOf(data) ?? getCheckState(fleet, sandboxFleetId);
