@@ -6,7 +6,7 @@ import { SANDBOX_V2_STATES, type SandboxV2State } from './states';
 // ?state= not-connected (default), just-connected, connected, rotated, openai, error, refused,
 // step 3: rules-ready-made, rules-copy, rules-custom, rules-empty, rules-editing, rules-error,
 // step 4: checks-ready, checks-waiting, checks-observe, checks-enforce, checks-pause, checks-stopped,
-// checks-errors, checks-done, checks-report, checks-error,
+// checks-errors, checks-done, checks-report, checks-report-pass, checks-report-few, checks-error,
 // and outside-window.
 export const metadata = { title: 'Sandbox v2 preview' };
 

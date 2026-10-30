@@ -14,7 +14,7 @@ vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'un
 vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 
 const { CHECK_IDS, CHECK_NAMES } = await import('@/lib/sandbox/checks');
-const { reportOf, reportSummary, scrub, FIX, RUN_PRACTICE, TRIP_TIP } = await import('@/lib/sandbox/check-report');
+const { ENOUGH_CALLS, KEEP_RUNNING, NOT_REACHED, reportOf, reportSummary, scrub, FIX, SCORED_CHECKS, TRIP_TIP, verdictOf } = await import('@/lib/sandbox/check-report');
 const { COPY_RESET_MS, copyText, ReportView, SandboxChecks } = await import('@/components/sandbox/v2/SandboxChecks');
 const { SandboxHome } = await import('@/components/sandbox/v2/SandboxHome');
 const { PastTestDetail, PastTests, hiddenByDefault, pastRows, rowTasks } = await import('@/components/sandbox/PastTests');
@@ -31,53 +31,65 @@ const stateOf = (results: Results, opts: { injectErrors?: boolean; rules?: Check
   checks: CHECK_IDS.map((id) => ({ id, label: CHECK_NAMES[id], status: results[id]?.[0] ?? 'pending', detail: results[id]?.[1] ?? '' })),
   rules: opts.rules ?? [],
 });
-const card = (st: CheckState, id: CheckId) => reportOf(st).cards.find((c) => c.id === id)!;
+const card = (st: CheckState, id: CheckId) => { const r = reportOf(st); return [...r.fix, ...r.ok, ...r.skipped].find((c) => c.id === id)!; };
+const all = (status: CheckStatus) => Object.fromEntries(CHECK_IDS.map((id) => [id, [status]])) as Results;
 
-describe('report: status mapping and the headline', () => {
-  it('counts passed, not triggered and not checked; a check still pending reads Not checked', () => {
-    const r = reportOf(stateOf({ spend_cap: ['passed'], pause_stop: ['passed'], loop_rate: ['not_triggered'], finishes_correctly: ['not_checked'] }));
-    expect(r.headline).toBe('2 of 7 passed · 1 not triggered · 4 not checked');
-    expect(r.cards.map((c) => c.status)).toEqual(['passed', 'not_triggered', 'not_checked', 'passed', 'not_checked', 'not_checked', 'not_checked']);
-    expect(r.tone).toBe('pass');
+describe('report: the verdict, scored over six checks', () => {
+  it('a failure leads: "N things to fix", warn tone, never red', () => {
+    const one = reportOf(stateOf({ ...all('passed'), provider_errors: ['failed'] }));
+    expect(one.headline).toBe('1 thing to fix before going live');
+    expect([one.verdict, one.tone]).toEqual(['fix', 'warn']);
+    expect(reportOf(stateOf({ spend_cap: ['failed'], loop_rate: ['failed'] })).headline).toBe('2 things to fix before going live');
   });
 
-  it('is neutral when a check failed or none passed, and leaves out zero counts', () => {
-    const failed = reportOf(stateOf(Object.fromEntries(CHECK_IDS.map((id) => [id, ['passed']])) as Results));
-    expect(failed.headline).toBe('7 of 7 passed');
-    expect(failed.tone).toBe('pass');
-    expect(reportOf(stateOf({ ...Object.fromEntries(CHECK_IDS.map((id) => [id, ['passed']])), spend_cap: ['failed'] } as Results)).tone).toBe('neutral');
-    expect(reportOf(stateOf({})).tone).toBe('neutral');
+  it('every scored check passed: "Your agent passed every check", whatever Finishes the job correctly says', () => {
+    const r = reportOf(stateOf({ ...all('passed'), finishes_correctly: ['not_checked'] }));
+    expect(r.headline).toBe('Your agent passed every check');
+    expect([r.verdict, r.tone, r.passed, r.failed, r.notRun]).toEqual(['pass', 'pass', 6, 0, 0]);
+    expect([...r.fix, ...r.ok, ...r.skipped].map((c) => c.id)).not.toContain('finishes_correctly');
+    expect(SCORED_CHECKS).toHaveLength(6);
+  });
+
+  it('no failures, some didn’t run: "No problems found · N didn’t run"; a check still pending reads Not checked', () => {
+    const r = reportOf(stateOf({ spend_cap: ['passed'], pause_stop: ['passed'], loop_rate: ['not_triggered'] }));
+    expect(r.headline).toBe('No problems found · 4 checks didn’t run');
+    expect(r.tone).toBe('neutral');
+    expect(r.skipped.map((c) => [c.id, c.status])).toEqual([['loop_rate', 'not_triggered'], ['allowlists_keywords', 'not_checked'], ['long_task', 'not_checked'], ['provider_errors', 'not_checked']]);
+  });
+
+  it('nothing passed or failed: too few calls, or nothing checked', () => {
+    expect(verdictOf({ passed: 0, failed: 0, notRun: 6 }, ENOUGH_CALLS - 1)).toEqual({ verdict: 'too_few', headline: 'Not enough calls to check your agent', tone: 'neutral' });
+    expect(verdictOf({ passed: 0, failed: 0, notRun: 6 }, ENOUGH_CALLS).headline).toBe('Nothing was checked this time');
+    expect(verdictOf({ passed: 1, failed: 0, notRun: 0 }, 0).verdict).toBe('pass');
   });
 });
 
-describe('report: what to do next', () => {
-  it('passed: nothing to do, and what the agent did comes from the detail', () => {
+describe('report: each check', () => {
+  it('passed: what happened, from the detail; nothing to do', () => {
     const c = card(stateOf({ spend_cap: ['passed', 'Blocked at $0.02, and your agent stopped.'] }), 'spend_cap');
-    expect(c.weDid).toMatch(/spend cap/);
-    expect(c.agentDid).toBe('Blocked at $0.02, and your agent stopped.');
-    expect(c.next).toBe('Nothing to do.');
+    expect(c.happened).toBe('Blocked at $0.02, and your agent stopped.');
+    expect(c.next).toBeNull();
   });
 
   it('failed: a concrete fix per check', () => {
     const st = stateOf({ spend_cap: ['failed'], provider_errors: ['failed', 'Retried 6 times in 4 seconds.'] });
-    expect(card(st, 'spend_cap').next).toBe('Make your agent stop or back off when WhiteRoom blocks a call (it got a 4xx with a reason).');
     expect(card(st, 'provider_errors').next).toBe('Retry with a back-off of at least 1 second, and give up after a few tries.');
-    expect(card(st, 'provider_errors').agentDid).toBe('Retried 6 times in 4 seconds.');
-    for (const id of CHECK_IDS) expect(card(stateOf({ [id]: ['failed'] }), id).next).toBe(FIX[id]);
+    expect(card(st, 'provider_errors').happened).toBe('Retried 6 times in 4 seconds.');
+    for (const id of SCORED_CHECKS) expect(card(stateOf({ [id]: ['failed'] }), id).next).toBe(FIX[id]);
+    // No Resume on the page any more: the fix doesn't mention it.
+    expect(FIX.pause_stop).not.toMatch(/Resume/);
   });
 
   it('not triggered: the tip from the detail, else a default tip', () => {
     expect(card(stateOf({ loop_rate: ['not_triggered', 'Needs the same call 3 times.'] }), 'loop_rate').next).toBe('Needs the same call 3 times.');
     expect(card(stateOf({ loop_rate: ['not_triggered'] }), 'loop_rate').next).toBe(TRIP_TIP.loop_rate);
-    expect(card(stateOf({ loop_rate: ['not_triggered'] }), 'loop_rate').agentDid).toBe('This run didn’t trip it.');
+    expect(card(stateOf({ loop_rate: ['not_triggered'] }), 'loop_rate').happened).toBe('This run didn’t trip it.');
   });
 
-  it('not checked: why and how', () => {
-    const fin = card(stateOf({ finishes_correctly: ['not_checked', 'Run practice tasks to check this.'] }), 'finishes_correctly');
-    expect(fin.next).toBe(RUN_PRACTICE);
-    expect(fin.agentDid).toBe('Not checked. Only practice tasks check this.');
-    expect(card(stateOf({ provider_errors: ['not_checked'] }, { injectErrors: false }), 'provider_errors').next).toMatch(/Turn on “Test how my agent handles provider errors”/);
-    expect(card(stateOf({ long_task: ['not_checked', 'Your agent stopped calling.'] }), 'long_task').agentDid).toBe('Your agent stopped calling.');
+  it('not checked: the engine’s reason, else not reached; then keep it running (no dead toggle line)', () => {
+    expect(card(stateOf({ long_task: ['not_checked', 'Your agent stopped calling.'] }), 'long_task').happened).toBe('Your agent stopped calling.');
+    const c = card(stateOf({ provider_errors: ['not_checked'] }, { injectErrors: false }), 'provider_errors');
+    expect([c.happened, c.next]).toEqual([NOT_REACHED, KEEP_RUNNING]);
   });
 
   it('lists the rules each check was judged on', () => {
@@ -100,8 +112,10 @@ describe('Copy summary', () => {
       { rules: [{ ruleId: 'gr_1', ruleType: 'keyword', check: 'allowlists_keywords', wouldAct: true, acted: false, status: 'not_triggered', detail: 'Saw wr_placeholder0000 in a reply.' }] },
     );
     const text = reportSummary(reportOf(st), { checked: '6 min ago', calls: 12 });
-    expect(text.startsWith('WhiteRoom Sandbox check: 0 of 7 passed')).toBe(true);
-    for (const label of ['What we did:', 'What your agent did:', 'What to do next:', 'Spend cap: Failed', 'Rule: Keywords']) expect(text).toContain(label);
+    expect(text.startsWith('WhiteRoom Sandbox check: 1 thing to fix before going live')).toBe(true);
+    for (const label of ['To fix:', '- Spend cap:', 'How to fix:', 'Didn’t run:', 'Rule: Keywords', 'Finishes the job correctly (run practice tasks)']) expect(text).toContain(label);
+    // In the page's order: to fix before what didn't run.
+    expect(text.indexOf('To fix:')).toBeLessThan(text.indexOf('Didn’t run:'));
     expect(text).not.toMatch(/sk-wr|wr_placeholder|sandbox-0000|chk_1|https?:/);
     expect(text).toContain('[hidden]');
   });
@@ -129,22 +143,29 @@ describe('the report on the page', () => {
   beforeEach(() => { const el = document.createElement('div'); document.body.appendChild(el); root = createRoot(el); });
   afterEach(() => { act(() => root.unmount()); document.body.innerHTML = ''; });
 
-  it('one card per check with its three lines, Run practice tasks inside the not-checked card, Check again and Copy summary', async () => {
+  it('verdict, fixes open, passed one line each, the rest folded; practice as the next step; Check again and Copy summary', async () => {
     const writeText = vi.fn(async () => {});
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     await act(async () => { root.render(h(SandboxHome, { fleet: 'prod-eu', preview: SANDBOX_V2_STATES['checks-report'] })); });
     const body = document.body.textContent ?? '';
-    expect(body).toMatch(/\d of 7 passed · 1 not triggered · 1 not checked/);
-    const cards = [...document.querySelectorAll('li[data-check]')];
-    expect(cards).toHaveLength(7);
-    for (const c of cards) for (const label of ['What we did', 'What your agent did', 'What to do next']) expect(c.textContent).toContain(label);
-    const fin = document.querySelector('li[data-check="finishes_correctly"]')!;
-    expect(fin.querySelector('[data-next] a')?.getAttribute('href')).toBe('/sandbox/practice');
-    // The footer link stays too.
+    expect(document.querySelector('h3[data-tone]')?.textContent).toBe('1 thing to fix before going live');
+    expect(body).toContain('6 checks · ');
+    expect(body).not.toMatch(/of 7 passed|What we did|Nothing to do/);
+    // The failed check is a card with what happened and how to fix it.
+    const fix = document.querySelector('li[data-check="provider_errors"]')!;
+    expect(fix.textContent).toContain('What happened');
+    expect(fix.querySelector('[data-next]')?.textContent).toBe(FIX.provider_errors);
+    // Passed checks are one line each; one that didn't run is inside a closed section.
+    expect(document.querySelector('li[data-check="spend_cap"]')?.textContent).toMatch(/^Spend cap\. /);
+    const folded = document.querySelector('li[data-check="loop_rate"]')!;
+    expect(folded.closest('details')?.querySelector('summary')?.textContent).toBe('1 check didn’t run this time');
+    // Finishes the job correctly isn't scored; practice tasks is the next step (and the footer link stays).
+    expect(document.querySelector('li[data-check="finishes_correctly"]')).toBeNull();
+    expect(body).toContain('Next: check its answers too.');
     expect([...document.querySelectorAll('a[href="/sandbox/practice"]')].length).toBe(2);
     expect(document.querySelector('a[href^="/controls"]')).toBeNull();
-    const buttons = [...document.querySelectorAll('button')].map((b) => b.textContent?.trim());
-    expect(buttons).toContain('Check again');
+    const again = [...document.querySelectorAll('button')].find((b) => b.textContent === 'Check again')!;
+    expect(again.className).toContain('wr-btn--primary');
     const copy = [...document.querySelectorAll('button')].find((b) => b.textContent === 'Copy summary')!;
     await act(async () => { copy.click(); });
     expect(writeText).toHaveBeenCalledTimes(1);
@@ -152,12 +173,34 @@ describe('the report on the page', () => {
     expect(copy.textContent).toBe('Copied');
   });
 
+  it('all passed: Check again is secondary, and there is no "Passed" heading or folded section', () => {
+    const html = renderToStaticMarkup(h(ReportView, { state: stateOf(all('passed')), checked: 'just now', calls: 30, onAgain: () => {} }));
+    expect(html).toContain('Your agent passed every check');
+    expect(html).toContain('data-tone="pass"');
+    expect(html).toMatch(/wr-btn--secondary[^>]*>Check again/);
+    expect(html).not.toMatch(/>Passed<|didn’t run this time/);
+  });
+
+  it('too few calls: says what the checks need, no score and no practice step', () => {
+    const html = renderToStaticMarkup(h(ReportView, { state: { ...stateOf({}), window: { ...stateOf({}).window!, calls: 3 } }, checked: 'just now', calls: 3, onAgain: () => {} }));
+    expect(html).toContain('Not enough calls to check your agent');
+    expect(html).toContain('3 calls · checked just now');
+    expect(html).toContain('The checks need about 5 calls from one run.');
+    expect(html).not.toMatch(/6 checks|Next: check its answers/);
+  });
+
+  it('focuses the verdict when asked (a report that appears while the page is open)', async () => {
+    await act(async () => { root.render(h(ReportView, { state: stateOf({ spend_cap: ['failed'] }), checked: 'just now', calls: 8, focus: true })); });
+    expect(document.activeElement?.tagName).toBe('H3');
+    expect(document.activeElement?.textContent).toBe('1 thing to fix before going live');
+  });
+
   it('says when copying fails, and resets after a while; a second click restarts the timer', async () => {
     vi.useFakeTimers();
     try {
       const writeText = vi.fn(async (): Promise<void> => { throw new Error('denied'); });
       Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
-      await act(async () => { root.render(h(ReportView, { state: stateOf({ spend_cap: ['passed'] }), checked: 'just now', calls: 1, again: null })); });
+      await act(async () => { root.render(h(ReportView, { state: stateOf({ spend_cap: ['passed'] }), checked: 'just now', calls: 1 })); });
       const copy = [...document.querySelectorAll('button')].find((b) => b.textContent === 'Copy summary')!;
       await act(async () => { copy.click(); });
       expect(document.body.textContent).toContain('Couldn’t copy. Try again.');
@@ -191,15 +234,17 @@ describe('the report on the page', () => {
   });
 
   it('renders on its own from a state', () => {
-    const html = renderToStaticMarkup(h(ReportView, { state: stateOf({ spend_cap: ['failed'] }), checked: 'just now', calls: 1, again: null }));
-    expect(html).toContain('0 of 7 passed · 6 not checked');
-    expect(html).toContain('data-tone="neutral"');
+    const html = renderToStaticMarkup(h(ReportView, { state: stateOf({ spend_cap: ['failed'] }), checked: 'just now', calls: 1 }));
+    expect(html).toContain('1 thing to fix before going live');
+    expect(html).toContain('data-tone="warn"');
     expect(html).toContain('1 call');
+    // No onAgain: no Check again.
+    expect(html).not.toContain('Check again');
   });
 
   it('the live checklist has no report cards until the window ends', () => {
     const html = renderToStaticMarkup(h(SandboxChecks, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, preview: SANDBOX_V2_STATES['checks-observe'].checks }));
-    expect(html).not.toContain('What to do next');
+    expect(html).not.toContain('How to fix');
   });
 });
 

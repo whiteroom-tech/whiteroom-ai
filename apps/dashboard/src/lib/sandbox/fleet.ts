@@ -184,7 +184,7 @@ export function lastCallText(lastCallAt: string | null, now = Date.now()): strin
 /** "Kept until Nov 12 — renewed each time your agent calls". */
 export function keptUntilText(expiresAt: string | null, now = Date.now()): string {
   const day = expiresAt ? fmtDay(expiresAt, now) : '';
-  return day ? `Kept until ${day} — renewed each time your agent calls` : 'Kept for 14 days after your agent’s last call';
+  return day ? `Kept until ${day} — renewed each time your agent calls` : 'Kept for 7 days after your agent’s last call';
 }
 
 // ── Browser calls (through the BFF) ──

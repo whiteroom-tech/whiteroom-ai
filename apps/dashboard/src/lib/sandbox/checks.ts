@@ -192,9 +192,10 @@ export function stageLine(state: CheckState): string {
       return now ? `Testing ${now.label}…` : 'Testing your rules…';
     }
     case 'pause': return 'Paused your agent for 5 seconds…';
-    case 'stop': return 'Your agent is stopped for 5 seconds, then it can call again. Resume lets it go now.';
+    case 'stop': return 'Stopped your agent for 5 seconds…';
     case 'errors': return 'Sending a provider error…';
-    case 'done': return 'Done. Stop checking to see your report.';
+    // The engine ends the window itself at done; this shows for at most one read.
+    case 'done': return 'Getting your results…';
   }
 }
 

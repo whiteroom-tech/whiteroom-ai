@@ -126,13 +126,14 @@ describe('Check your agent', () => {
     // The enforce stage names the first rule still to test, in order: spend cap, then allowlists and keywords.
     expect(text()).toContain('Testing Label allowlists_keywords…');
     expect(button('Resume')).toBeUndefined();
-    expect(button('Stop checking')).toBeDefined();
+    expect(button('Finish now')).toBeDefined();
   });
 
-  it('Resume shows only while the check has the agent stopped, and sends resume', async () => {
-    for (const stage of ['observe', 'enforce', 'pause', 'errors', 'done']) {
-      expect(stageLine(checkStateOf(checkAnswer({ stage }))!)).not.toContain('Press Resume');
+  it('no Resume at any stage: the check lifts its own stop after 5 seconds', async () => {
+    for (const stage of ['observe', 'enforce', 'pause', 'stop', 'errors', 'done']) {
+      expect(stageLine(checkStateOf(checkAnswer({ stage }))!)).not.toMatch(/Resume|Stop checking/);
     }
+    expect(stageLine(checkStateOf(checkAnswer({ stage: 'done' }))!)).toBe('Getting your results…');
     checks = checkAnswer({ stage: 'pause' });
     await render(checksEl());
     expect(text()).toContain('Paused your agent for 5 seconds…');
@@ -141,12 +142,9 @@ describe('Check your agent', () => {
     root = createRoot(document.body.appendChild(document.createElement('div')));
     checks = checkAnswer({ stage: 'stop' });
     await render(checksEl());
-    expect(text()).toContain('Your agent is stopped for 5 seconds, then it can call again. Resume lets it go now.');
-    checks = checkAnswer({ stage: 'errors' }, { pause_stop: 'passed' });
-    await click('Resume');
-    expect(calls().find((c) => c.url.endsWith('/checks/resume'))?.body).toEqual({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID });
-    expect(text()).toContain('Sending a provider error…');
+    expect(text()).toContain('Stopped your agent for 5 seconds…');
     expect(button('Resume')).toBeUndefined();
+    expect(calls().some((c) => c.url.endsWith('/checks/resume'))).toBe(false);
   });
 
   it('polls every 30 seconds in a hidden tab, and reads at once when the tab comes back', async () => {
@@ -187,31 +185,34 @@ describe('Check your agent', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     await flush();
     expect(reads()).toBe(4);
-    // The report: N of 7 passed, a check never reached reads Not checked, and Check again.
-    expect(text()).toContain('2 of 7 passed');
-    expect(row('long_task')?.textContent).toContain('Not checked');
+    // The report: a verdict, a check never reached is among the ones that didn't run, and Check again.
+    expect(text()).toContain('No problems found · 4 checks didn’t run');
+    expect(row('long_task')?.textContent).toContain('Your agent didn’t reach this step.');
     expect(button('Check again')).toBeDefined();
-    expect(button('Stop checking')).toBeUndefined();
+    expect(button('Finish now')).toBeUndefined();
   });
 
-  it('Stop checking ends the window and shows the report', async () => {
+  it('Finish now ends the window and shows the report, with focus on the verdict', async () => {
     checks = checkAnswer({ stage: 'observe' });
     await render(checksEl());
     checks = checkAnswer({ stage: 'observe', endedAt: '2026-10-29T10:06:00.000Z' }, { long_task: 'passed' });
-    await click('Stop checking');
+    await click('Finish now');
     expect(calls().some((c) => c.url.endsWith('/checks/stop'))).toBe(true);
-    expect(text()).toContain('1 of 7 passed');
+    expect(text()).toContain('No problems found · 5 checks didn’t run');
+    expect(document.activeElement?.textContent).toBe('No problems found · 5 checks didn’t run');
   });
 
   it('Check again after a report starts a new check and shows it live', async () => {
     checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z' }, { long_task: 'passed' });
     await render(checksEl());
-    expect(text()).toContain('1 of 7 passed');
+    expect(text()).toContain('No problems found · 5 checks didn’t run');
+    // Already there on load: the page doesn't take focus.
+    expect(document.activeElement?.tagName).not.toBe('H3');
     checks = checkAnswer({ stage: 'observe', calls: 0 });
     await click('Check again');
     expect(calls().find((c) => c.url.endsWith('/checks/start'))?.body).toEqual({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID });
     expect(text()).toContain('Watching your agent’s calls…');
-    expect(button('Stop checking')).toBeDefined();
+    expect(button('Finish now')).toBeDefined();
   });
 
   it('a refused Check again shows why and reads the checks again', async () => {
@@ -357,16 +358,16 @@ describe('Stale Sandbox vs state conflicts, overtaken answers, and parent re-ren
     checks = checkAnswer({ stage: 'observe' });
     await render(h(SandboxChecks, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, onStale }));
     once('/api/sandbox/checks/stop', () => Response.json({ error: 'No check is running.' }, { status: 409 }));
-    await click('Stop checking');
+    await click('Finish now');
     expect(onStale).not.toHaveBeenCalled();
     expect(statusReads()).toBe(2);
     expect(text()).toContain('No check is running.');
     once('/api/sandbox/checks/stop', () => Response.json(STALE, { status: 409 }));
-    await click('Stop checking');
+    await click('Finish now');
     expect(onStale).toHaveBeenCalledTimes(1);
     expect(statusReads()).toBe(2);
     once('/api/sandbox/checks/stop', () => Response.json({ error: 'This fleet has no Sandbox.' }, { status: 404 }));
-    await click('Stop checking');
+    await click('Finish now');
     expect(onStale).toHaveBeenCalledTimes(2);
   });
 
@@ -378,19 +379,19 @@ describe('Stale Sandbox vs state conflicts, overtaken answers, and parent re-ren
     once('/api/sandbox/checks/stop', () => new Promise<Response>((resolve) => {
       answer = () => resolve(Response.json(checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z' }, { long_task: 'passed' })));
     }));
-    await act(async () => { button('Stop checking')!.click(); });
+    await act(async () => { button('Finish now')!.click(); });
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     await flush();
     expect(statusReads()).toBe(1);
     checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z' }, { long_task: 'passed' });
     await act(async () => { answer(); });
     await flush();
-    expect(text()).toContain('1 of 7 passed');
+    expect(text()).toContain('No problems found · 5 checks didn’t run');
     // Polling carries on after the action, and the report stays.
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     await flush();
     expect(statusReads()).toBe(2);
-    expect(text()).toContain('1 of 7 passed');
+    expect(text()).toContain('No problems found · 5 checks didn’t run');
   });
 
   it('no refetch loop: a new onStale on every parent render reads once, even when the read is stale', async () => {
@@ -528,8 +529,7 @@ describe('Sandbox page', () => {
       expect(bff).not.toHaveBeenCalled();
       expect(text()).toContain('4. Check your agent');
       expect(document.body.innerHTML).not.toContain('href="/controls');
-      if (state === 'checks-stopped') expect(button('Resume')).toBeDefined();
-      else expect(button('Resume')).toBeUndefined();
+      expect(button('Resume')).toBeUndefined();
     },
   );
 });
