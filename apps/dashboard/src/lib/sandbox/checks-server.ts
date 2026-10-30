@@ -24,6 +24,6 @@ export async function sandboxChecksEngine(action: SandboxChecksAction, owner: Sa
   if ('error' in answer) return answer.error;
   const state = checkStateOf(answer.data);
   if (state) return json(200, { success: true, ...state });
-  // Start, Stop and Resume may answer without the state: the page reads it next.
+  // Start and Stop may answer without the state: the page reads it next.
   return action === 'status' ? fail(502, 'WhiteRoom sent an answer the dashboard couldn’t read. Try again.') : json(200, { success: true });
 }
