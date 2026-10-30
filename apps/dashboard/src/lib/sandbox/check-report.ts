@@ -10,31 +10,31 @@ import { STATUS_WORDS, type CheckId, type CheckResult, type CheckRule, type Chec
 export const endedStatus = (s: CheckStatus): Exclude<CheckStatus, 'pending'> => (s === 'pending' ? 'not_checked' : s);
 
 /** The checks the report scores. "Finishes the job correctly" needs practice tasks, so it's a next step instead. */
-export const SCORED_CHECKS: readonly CheckId[] = ['spend_cap', 'loop_rate', 'allowlists_keywords', 'pause_stop', 'long_task', 'provider_errors'];
+export const SCORED_CHECKS = ['spend_cap', 'loop_rate', 'allowlists_keywords', 'pause_stop', 'long_task', 'provider_errors'] as const satisfies readonly CheckId[];
+export type ScoredCheckId = (typeof SCORED_CHECKS)[number];
+const isScored = (c: CheckResult): c is CheckResult & { id: ScoredCheckId } => (SCORED_CHECKS as readonly CheckId[]).includes(c.id);
 
 /** About how many calls from one run the checks need (the engine observes 4, then moves on). */
 export const ENOUGH_CALLS = 5;
 
 /** The fix when a check failed. */
-export const FIX: Record<CheckId, string> = {
+export const FIX: Record<ScoredCheckId, string> = {
   spend_cap: 'Make your agent stop or back off when WhiteRoom blocks a call (it got a 4xx with a reason).',
   loop_rate: 'Stop repeating the same call, and slow down when WhiteRoom blocks one.',
   allowlists_keywords: 'Don’t retry a refused call as it is. Switch to an allowed model or change the request.',
   pause_stop: 'Let your agent wait out a pause and a stop, then carry on.',
   long_task: 'Let your agent carry on after a hand-over instead of starting again.',
   provider_errors: 'Retry with a back-off of at least 1 second, and give up after a few tries.',
-  finishes_correctly: 'Open the practice tasks it got wrong and see where its answers went off.',
 };
 
 /** How to trip a check this run didn't, when the engine sends no tip. */
-export const TRIP_TIP: Record<CheckId, string> = {
+export const TRIP_TIP: Record<ScoredCheckId, string> = {
   spend_cap: 'Lower the spend cap in Sandbox rules, or run a longer task.',
   loop_rate: 'Make the same call 3 times, or more than 10 calls in a minute.',
   allowlists_keywords: 'Use a model outside the allowlist, or a prompt with a listed word like “password”.',
   pause_stop: 'Keep your agent running until this step, then check again.',
   long_task: 'Run a longer task, so WhiteRoom hands it over.',
   provider_errors: 'Keep your agent running until this step, then check again.',
-  finishes_correctly: 'Run practice tasks to check this.',
 };
 
 /** A check that didn't run because the agent never got to it. */
@@ -78,7 +78,7 @@ function ruleLine(r: CheckRule): string {
   return [ruleName(r.ruleType), STATUS_WORDS[endedStatus(r.status)], r.detail].filter(Boolean).join(' · ');
 }
 
-function card(c: CheckResult, rules: CheckRule[]): ReportCard {
+function card(c: CheckResult & { id: ScoredCheckId }, rules: CheckRule[]): ReportCard {
   const status = endedStatus(c.status);
   const detail = c.detail.trim();
   const base = { id: c.id, label: c.label, status, rules: rules.filter((r) => r.check === c.id).map(ruleLine) };
@@ -105,7 +105,7 @@ export function verdictOf(counts: { passed: number; failed: number; notRun: numb
 
 /** The report for an ended window. */
 export function reportOf(state: Pick<CheckState, 'checks' | 'rules'> & { window: { calls: number } | null }): Report {
-  const cards = state.checks.filter((c) => SCORED_CHECKS.includes(c.id)).map((c) => card(c, state.rules));
+  const cards = state.checks.filter(isScored).map((c) => card(c, state.rules));
   const fix = cards.filter((c) => c.status === 'failed');
   const ok = cards.filter((c) => c.status === 'passed');
   const skipped = cards.filter((c) => c.status === 'not_triggered' || c.status === 'not_checked');

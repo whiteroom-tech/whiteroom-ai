@@ -223,6 +223,21 @@ describe('Check your agent', () => {
     expect(JSON.stringify(sent)).not.toMatch(/sandbox-|chk_|prod-eu|sk-/);
   });
 
+  it.each([
+    ['pass', { spend_cap: 'passed', loop_rate: 'passed', allowlists_keywords: 'passed', pause_stop: 'passed', long_task: 'passed', provider_errors: 'passed' }, 14, { passed: 6, failed: 0 }],
+    ['clear', { long_task: 'passed' }, 14, { passed: 1, failed: 0 }],
+    ['none', {}, 14, { passed: 0, failed: 0 }],
+    ['too_few', {}, 3, { passed: 0, failed: 0 }],
+  ] as const)('the report event carries the %s verdict, its counts and the calls', async (verdict, statuses, calls, counts) => {
+    capture.mockClear();
+    checks = checkAnswer({ stage: 'observe' });
+    await render(checksEl());
+    checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z', calls }, statuses);
+    await click('Finish now');
+    await flush();
+    expect(capture.mock.calls.filter(([name]) => name === 'sandbox_v2_report')).toEqual([['sandbox_v2_report', { verdict, ...counts, calls }]]);
+  });
+
   it('a check that opens and ends between two reads still counts as new: focus and one report event', async () => {
     vi.useFakeTimers();
     capture.mockClear();
