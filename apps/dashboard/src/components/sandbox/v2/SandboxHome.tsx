@@ -103,7 +103,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   // One callback for the steps below: a new one each render would re-run their reads.
   const reload = useCallback(() => { void load(); }, [load]);
 
-  async function connect(req: ConnectRequest): Promise<string | null> {
+  async function connect(req: ConnectRequest, detected = false): Promise<string | null> {
     if (preview) {
       setIssued({ proxyKey: 'sk-wr-<preview-key>', proxyUrl: 'https://proxy.whiteroom.tech/sk-wr-<preview-key>', provider: req.provider, keyHint: req.api_key.slice(-4) });
       setReplacing(false);
@@ -115,6 +115,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
       // A new key: the old Sandbox's results don't apply to it.
       setChecks(null);
       connectedAt.current = Date.now();
+      analytics.capture('sandbox_v2_connected', { provider: req.provider, detected });
       setStatus(done.status);
       setIssued(done.issued);
       setReplacing(false);
@@ -205,7 +206,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
         )}
 
         {showForm && (
-          <Panel id={CONNECT_CARD_ID} title={connected ? 'Connect a different key' : 'Connect your provider key'}>
+          <Panel id={CONNECT_CARD_ID} title={connected ? 'Connect a different key' : 'Paste your agent’s API key'}>
             <div className={v.stack}>
               {connected && <p className={v.text}>Your Sandbox URL changes when you connect a new provider key. Update your agent after.</p>}
               <ConnectForm busy={busy} onConnect={connect} onCancel={connected ? () => setReplacing(false) : undefined} />

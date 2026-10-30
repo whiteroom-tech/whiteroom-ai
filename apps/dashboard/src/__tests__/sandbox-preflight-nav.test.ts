@@ -155,7 +155,7 @@ describe('/sandbox: Sandbox v2, else the pre-flight or the connection test', () 
     expect(el.querySelector('[aria-busy="true"]')).not.toBeNull();
     await act(async () => { answer(Response.json({ fleetId: 'prod-eu' })); });
     await flush();
-    expect(text()).toContain('Connect your provider key');
+    expect(text()).toContain('Paste your agent’s API key');
     expect(text()).not.toContain('CONNECTION TEST');
     expect(nav.replace).not.toHaveBeenCalled();
     expect(engine.source).not.toHaveBeenCalled();

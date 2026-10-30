@@ -148,10 +148,10 @@ export function connectCheck(provider: unknown, rawKey: unknown, rawEndpoint?: u
   if (key.startsWith('sk-wr-') || key.startsWith('wr_')) return { ok: false, error: 'That’s a WhiteRoom key. Paste the key your agent uses with its provider.' };
   if (key.length < 8 || key.length > 512 || /\s/.test(key)) return { ok: false, error: 'That doesn’t look like a provider key. Check it and paste it again.' };
   if (provider === 'anthropic' && !key.startsWith('sk-ant-')) {
-    return { ok: false, error: key.startsWith('sk-') ? 'That looks like an OpenAI key. Pick OpenAI above.' : 'Anthropic keys start with sk-ant-.' };
+    return { ok: false, error: key.startsWith('sk-') ? 'That looks like an OpenAI key. Pick OpenAI instead.' : 'Anthropic keys start with sk-ant-.' };
   }
   if (provider === 'openai') {
-    if (key.startsWith('sk-ant-')) return { ok: false, error: 'That looks like an Anthropic key. Pick Anthropic above.' };
+    if (key.startsWith('sk-ant-')) return { ok: false, error: 'That looks like an Anthropic key. Pick Anthropic instead.' };
     if (!key.startsWith('sk-')) return { ok: false, error: 'OpenAI keys start with sk-.' };
   }
   if (!isCloudProvider(provider)) return { ok: true, request: { api_key: key, provider } };
