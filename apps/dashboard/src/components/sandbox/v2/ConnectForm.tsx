@@ -84,7 +84,7 @@ export function ConnectForm({ busy, onConnect, onCancel }: {
             readOnly={busy}
             value={key}
             onChange={(e) => { setKey(e.target.value); setError(''); }}
-            placeholder={provider && isCloudProvider(provider) ? KEY_PLACEHOLDER[provider] : 'sk-ant-… or sk-…'}
+            placeholder={picked ? KEY_PLACEHOLDER[picked] : 'sk-ant-… or sk-…'}
             aria-invalid={error ? true : undefined}
             aria-describedby="sandbox-v2-key-hint"
           />

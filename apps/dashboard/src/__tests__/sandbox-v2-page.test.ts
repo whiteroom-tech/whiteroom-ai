@@ -210,6 +210,7 @@ describe('Sandbox v2 page', () => {
     await click('Using Azure, Foundry or Bedrock?');
     await act(async () => { document.querySelector<HTMLInputElement>('input[name="sandbox-provider"][value="anthropic"]')!.click(); });
     expect(text()).toContain('Find it in Claude Console');
+    expect((document.getElementById('sandbox-v2-key') as HTMLInputElement).placeholder).toBe('sk-ant-…');
     await type(document.getElementById('sandbox-v2-key') as HTMLInputElement, PROVIDER_KEY);
     await click('Connect');
     expect(calls()[1]).toEqual({ url: '/api/sandbox/fleet/connect', body: { fleet: 'prod-eu', provider: 'anthropic', api_key: PROVIDER_KEY } });
