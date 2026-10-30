@@ -161,7 +161,8 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   // No call since this page opened, and nothing checked yet: what "Nothing happening?" is for.
   const openedAt = useRef(now);
   const lastCallAt = state?.activity?.lastCallAt;
-  const noCallYet = !!state && (!w || (!ended && w.calls === 0)) && (!lastCallAt || Date.parse(lastCallAt) < openedAt.current);
+  // Not while quiet: the quiet box already says what to do.
+  const noCallYet = !!state && !quiet && (!w || (!ended && w.calls === 0)) && (!lastCallAt || Date.parse(lastCallAt) < openedAt.current);
   const [helpOpen, setHelpOpen] = useState(!!preview?.helpOpen);
   // It opens itself once, a minute after the page starts waiting; opening or closing it by hand stops that.
   const helpChosen = useRef(!!preview?.helpOpen);

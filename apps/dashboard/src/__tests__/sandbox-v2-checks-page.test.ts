@@ -170,6 +170,13 @@ describe('Check your agent', () => {
     const finish = [...document.querySelectorAll('button')].filter((b) => b.textContent === 'Finish now');
     expect(finish).toHaveLength(1);
     expect(finish[0].className).toContain('wr-btn--primary');
+    // One prompt at a time: no "Nothing happening?" beside the quiet box.
+    act(() => root.unmount());
+    root = createRoot(document.body.appendChild(document.createElement('div')));
+    checks = { ...checkAnswer({ stage: 'observe', calls: 0 }), activity: { lastCallAt: new Date(Date.now() - 10 * QUIET_MS).toISOString(), callsOutsideWindow24h: 0 } };
+    await render(checksEl());
+    expect(text()).toContain('Your agent stopped calling');
+    expect(text()).not.toContain('Nothing happening?');
   });
 
   it('Finish now sends the stop with the stage, and whether the agent had gone quiet', async () => {
