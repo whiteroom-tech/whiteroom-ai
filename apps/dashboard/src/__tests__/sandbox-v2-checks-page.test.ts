@@ -566,7 +566,7 @@ describe('Sandbox page', () => {
     });
     await render(h(SandboxHome, { fleet: 'prod-eu' }));
     expect(text()).toContain('Your agent called the Sandbox 42 times outside a check in the last day. Sandbox rules only watch then, so nothing was blocked.');
-    expect(text()).toContain('4. Check your agent');
+    expect(document.querySelector('#sandbox-step h2')?.textContent).toBe('Run your agent');
     // Like production: no Run agent helper on the page.
     expect(text()).not.toContain('Run agent');
     expect(document.body.innerHTML).not.toContain('href="/controls');
@@ -577,7 +577,8 @@ describe('Sandbox page', () => {
     async (state) => {
       await render(h(SandboxHome, { fleet: 'prod-eu', preview: SANDBOX_V2_STATES[state] }));
       expect(bff).not.toHaveBeenCalled();
-      expect(text()).toContain('4. Check your agent');
+      const ended = !!(SANDBOX_V2_STATES[state] as { checks?: { state: { window: { endedAt: string | null } | null } | null } }).checks?.state?.window?.endedAt;
+      expect(document.querySelector('#sandbox-step h2')?.textContent).toBe(ended ? 'Results' : 'Run your agent');
       expect(document.body.innerHTML).not.toContain('href="/controls');
       expect(button('Resume')).toBeUndefined();
     },

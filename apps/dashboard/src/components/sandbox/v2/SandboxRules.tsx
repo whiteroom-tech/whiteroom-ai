@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Banner, Button, Panel, SkeletonCard, Tag } from '@whiteroom/ui';
+import { Banner, Button, SkeletonCard, Tag } from '@whiteroom/ui';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { AddRuleDialog } from '@/app/(citadel)/controls/_components/AddRuleDialog';
 import { ruleSentenceText } from '@/lib/controls-view';
@@ -11,7 +11,7 @@ import { governanceList } from '@/lib/whiteroom/client';
 import type { GovernanceRule, GovernanceRuleType } from '@/lib/whiteroom/types';
 import { SandboxFleetError } from '@/lib/sandbox/fleet';
 import {
-  applyReadyMadeRules, copyProductionRules, previewReadyMade, createSandboxRule, deleteSandboxRule, listSandboxRules, RULES_DURING_CHECK, SANDBOX_RULES_ONLY, sourceLine,
+  applyReadyMadeRules, copyProductionRules, previewReadyMade, createSandboxRule, deleteSandboxRule, listSandboxRules, rulesSummary, RULES_DURING_CHECK, SANDBOX_RULES_ID, SANDBOX_RULES_ONLY, sourceLine,
   updateSandboxRule, type SandboxRuleFields, type SandboxRulesState,
 } from '@/lib/sandbox/rules';
 import { SandboxRuleEditor } from './SandboxRuleEditor';
@@ -36,7 +36,8 @@ const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : 'T
 const stale = (e: unknown) => e instanceof SandboxFleetError && (e.status === 404 || e.status === 409);
 
 /**
- * "3. Sandbox rules" (spec sandbox-v2 §1 decision 3, §2 step 3, §4): the
+ * Sandbox rules, a closed section under the current step (spec sandbox-v2 §1
+ * decision 3, §4; first-run UX spec §8.1). It stays mounted while closed, so the
  * ready-made set by default (applied once, when the Sandbox has no rules
  * yet), "Copy my production rules" when production has any, and an editor.
  * Rules change only on the Sandbox fleet; there's no link to Controls (§8.2).
@@ -200,8 +201,10 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
   const agentNames = [...new Set([...agents, ...rules.flatMap((r) => (r.appliesTo === 'all' ? [] : r.appliesTo))])];
 
   return (
-    <Panel title="3. Sandbox rules" actions={state ? <Button size={28} onClick={() => setAdding(true)} disabled={busy}>Add a rule</Button> : undefined}>
-      <div className={v.stack}>
+    <>
+    <details id={SANDBOX_RULES_ID} className={v.fold}>
+      <summary className={v.foldHead}><span className={v.foldTitle}>Sandbox rules</span><span className={v.foldSub}>{loadFailed && !state ? 'Couldn’t load. Open to try again.' : rulesSummary(state)}</span></summary>
+      <div className={`${v.stack} ${v.foldBody}`}>
         <p className={v.text}>{SANDBOX_RULES_ONLY} {RULES_DURING_CHECK}</p>
         {loading && <SkeletonCard label="Loading your Sandbox rules…" lines={['60%', '45%']} heights={[12, 12]} />}
         {error && <Banner variant="error" actions={loadFailed && !loading && !preview ? <Button size={28} onClick={() => void load()} disabled={busy}>Try again</Button> : undefined}>{error}</Banner>}
@@ -221,6 +224,7 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
           <div className={v.actions}>
             <Button size={32} onClick={() => setReplace('ready-made')} disabled={busy}>Use the ready-made set</Button>
             {canCopy && <Button size={32} onClick={() => setReplace('copy')} disabled={busy}>Copy my production rules</Button>}
+            <Button size={32} onClick={() => setAdding(true)} disabled={busy}>Add a rule</Button>
           </div>
         )}
 
@@ -246,6 +250,8 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
           </ul>
         )}
       </div>
+    </details>
+
 
       <ConfirmDialog
         open={replace === 'ready-made'}
@@ -277,6 +283,6 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
         onCancel={() => setRemoving(null)}
       />
       <AddRuleDialog open={adding} busy={busy} onPick={add} onCancel={() => setAdding(false)} />
-    </Panel>
+    </>
   );
 }
