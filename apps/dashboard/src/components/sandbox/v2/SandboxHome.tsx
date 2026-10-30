@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { Banner, Button, Icon, Panel, SkeletonCard } from '@whiteroom/ui';
 import { PageHeader, PageLead } from '@/components/citadel/PageChrome';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
-import { CopyChip } from '@/components/citadel/CopyChip';
+import { CopyChip, useCopy } from '@/components/citadel/CopyChip';
+import { analytics } from '@/lib/analytics';
 import { AgentNaming } from '@/components/citadel/AgentNaming';
 import { agentNamingFor } from '@/lib/provider-key-form';
 import { ROUTES } from '@/lib/routes';
@@ -68,6 +69,9 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   const [notice, setNotice] = useState('');
   // The latest check state, from the checks card's own reads: decides Run your agent or Results.
   const [checks, setChecks] = useState<CheckState | null>(null);
+  // When a key was connected on this page (for the first-call event).
+  const connectedAt = useRef<number | null>(null);
+  const copiedEvent = useCallback(() => analytics.capture('sandbox_v2_setting_copied'), []);
   const now = preview?.now ?? Date.now();
   const statusRef = useRef(status);
   useEffect(() => { statusRef.current = status; }, [status]);
@@ -110,6 +114,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
       const done = await connectSandboxFleet(fleet, req);
       // A new key: the old Sandbox's results don't apply to it.
       setChecks(null);
+      connectedAt.current = Date.now();
       setStatus(done.status);
       setIssued(done.issued);
       setReplacing(false);
@@ -155,6 +160,17 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   const outside = connected ? outsideWindowText(connected) : null;
   const showForm = !loading && status !== null && (!connected || replacing);
   const step = sandboxStepOf({ connected: !!connected, replacing, checks });
+  // Last call, live: the checks' own reads carry it every few seconds; the Sandbox status only on load.
+  const lastCallAt = checks?.activity?.lastCallAt ?? connected?.lastCallAt ?? null;
+
+  // The first call after connecting on this page: how long it took. Never ids, keys or names.
+  const firstCallSent = useRef(false);
+  useEffect(() => {
+    const at = connectedAt.current;
+    if (preview || firstCallSent.current || at === null || !lastCallAt || Date.parse(lastCallAt) < at) return;
+    firstCallSent.current = true;
+    analytics.capture('sandbox_v2_first_call', { seconds_since_connect: Math.max(0, Math.round((Date.parse(lastCallAt) - at) / 1000)) });
+  }, [preview, lastCallAt]);
 
   // A new step: focus its card's heading (not on the first render).
   const shownStep = useRef<SandboxStep | null>(null);
@@ -207,8 +223,10 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
             onState={setChecks}
             // A URL issued on this page (connect, or Get a new Sandbox URL on Results) shows even above a report.
             setupAlways={!!issued}
+            provider={connected.key!.provider}
+            onChangeKey={() => setReplacing(true)}
             setup={issued
-              ? <RunSetup issued={issued} />
+              ? <RunSetup issued={issued} onCopied={preview ? undefined : copiedEvent} />
               : <ReturnSetup prefix={connected.key!.prefix} busy={busy} onNewUrl={() => setConfirm('rotate')} />}
           />
         )}
@@ -230,7 +248,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
           <details className={v.fold}>
             <summary className={v.foldHead}>
               <span className={v.foldTitle}>Sandbox settings</span>
-              <span className={v.foldSub}>{providerLabel(connected.key!.provider)} · {connected.lastCallAt ? `last call ${lastCallText(connected.lastCallAt, now)}` : 'no calls yet'}</span>
+              <span className={v.foldSub}>{providerLabel(connected.key!.provider)} · {lastCallAt ? `last call ${lastCallText(lastCallAt, now)}` : 'no calls yet'}</span>
             </summary>
             <div className={`${v.stack} ${v.foldBody}`}>
               <dl className={v.facts}>
@@ -239,7 +257,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
                 <dt>Sandbox URL</dt>
                 <dd className={v.mono}>…/{connected.key!.prefix.replace(/\.+$/, '')}…</dd>
                 <dt>Last call</dt>
-                <dd>{lastCallText(connected.lastCallAt, now)}</dd>
+                <dd>{lastCallText(lastCallAt, now)}</dd>
               </dl>
               <p className={v.text}>{keptUntilText(connected.expiresAt, now)}</p>
               <div className={v.actions}>
@@ -297,25 +315,33 @@ export function SandboxSteps({ current }: { current: SandboxStep }) {
   );
 }
 
-/** Run your agent, right after connect or rotate: the line for the agent's settings, on screen until the page is left. */
-export function RunSetup({ issued }: { issued: IssuedSandboxKey }) {
+/** Run your agent, right after connect or rotate (first-run UX spec §7.2): the line to copy first, on screen until the page is left. */
+export function RunSetup({ issued, onCopied }: { issued: IssuedSandboxKey; onCopied?: () => void }) {
   const setting = sandboxSetting(issued.provider, issued.proxyUrl);
+  const line = `${setting.name}=${setting.value}`;
+  const { copied, copy } = useCopy(line);
+  // Copied once on this visit: the next step stays on screen after the button resets.
+  const [done, setDone] = useState(false);
+  useEffect(() => { if (copied && !done) { setDone(true); onCopied?.(); } }, [copied, done, onCopied]);
   return <>
-    <Banner variant="warn">Copy this before you leave this page. We can’t show your Sandbox URL again after that.</Banner>
-    <p className={v.label}>Put this in your agent’s .env (or wherever it reads its settings)</p>
-    <CopyChip text={`${setting.name}=${setting.value}`} label="Copy the setting" />
+    <p className={v.setupTitle}>Add this line to your agent’s .env, then run it</p>
+    <div className={v.codeRow}>
+      <code className={v.codeLine}>{line}</code>
+      <Button size={32} variant="primary" onClick={() => void copy()} aria-label="Copy the setting">{copied ? 'Copied' : 'Copy'}</Button>
+    </div>
+    <p className={v.copiedLine} aria-live="polite">{done ? <><Icon name="check" size={13} /> Copied. Now run your agent as you normally do.</> : null}</p>
     <p className={v.text}>
-      {issued.keyHint ? <>Your agent keeps using its own key (ending {issued.keyHint}). </> : <>Your agent keeps using its own key. </>}
-      Then run your agent as normal. Checks start on its first call.
+      Your agent keeps its own API key{issued.keyHint ? <> (ending {issued.keyHint})</> : null}. This URL is shown only on this visit; you can get a new one any time.
     </p>
-    <details>
-      <summary className={v.label}>Sandbox URL and key, if a tool asks for them</summary>
+    <details className={v.members}>
+      <summary>Not using a .env file?</summary>
       <div className={`${v.stack} ${v.reveal}`}>
+        <p className={v.text}>Set the Sandbox URL wherever your agent reads its settings, or pass it as the client’s base URL.</p>
         <CopyChip text={setting.value} label="Copy the Sandbox URL" />
         <CopyChip text={issued.proxyKey} label="Copy the Sandbox key" />
+        <AgentNaming {...agentNamingFor(issued.provider)} />
       </div>
     </details>
-    <AgentNaming {...agentNamingFor(issued.provider)} />
   </>;
 }
 

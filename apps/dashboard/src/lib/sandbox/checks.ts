@@ -180,6 +180,33 @@ export function startCheck(body: Record<string, unknown>): StartCheck {
 /** The order rules are enforced in (spec §5 stage 2). */
 const ENFORCE_ORDER: CheckId[] = ['spend_cap', 'allowlists_keywords', 'loop_rate'];
 
+/**
+ * The check being tested now, by the window's stage (first-run UX spec §7.3):
+ * observe tests the long task, enforce the first rule check still pending, the
+ * pause and stop stages pause and stop, errors provider errors. Null when the
+ * window is over, or that check is already decided.
+ */
+export function currentCheckOf(state: CheckState): CheckId | null {
+  const w = state.window;
+  if (!w || w.endedAt) return null;
+  const pending = (id: CheckId) => state.checks.find((c) => c.id === id)?.status === 'pending';
+  const id: CheckId | null = w.stage === 'observe' ? 'long_task'
+    : w.stage === 'enforce' ? ENFORCE_ORDER.find(pending) ?? null
+    : w.stage === 'pause' || w.stage === 'stop' ? 'pause_stop'
+    : w.stage === 'errors' ? 'provider_errors'
+    : null;
+  return id && pending(id) ? id : null;
+}
+
+/** No call for this long during a check: the agent has stopped, so the page offers Finish now. */
+export const QUIET_MS = 2 * 60_000;
+
+/** A check is open and the agent's last call was QUIET_MS or more ago. */
+export function isQuiet(state: CheckState, now = Date.now()): boolean {
+  const last = state.activity?.lastCallAt;
+  return !!state.window && !state.window.endedAt && !!last && now - Date.parse(last) >= QUIET_MS;
+}
+
 /** The live stage line in plain words. */
 export function stageLine(state: CheckState): string {
   const w = state.window;

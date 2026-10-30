@@ -40,8 +40,6 @@
 .live::before { content:''; width:8px; height:8px; border-radius:50%; background:var(--line2); flex:none; }
 .liveOn { color:var(--tx); font-weight:600; }
 .liveOn::before { background:var(--ok); }
-.stage { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:12px 14px; border:1px solid var(--line2); border-radius:8px; background:var(--sunk); min-width:0; }
-.stageText { margin:0; flex:1 1 240px; min-width:0; font-size:var(--fs-md); font-weight:600; color:var(--tx); }
 .checks { list-style:none; margin:0; padding:0; border-top:1px solid var(--line); }
 .checkBody { flex:1; min-width:0; }
 .checkMuted { background:var(--sunk); color:var(--tx3); }
@@ -109,3 +107,27 @@
 @media(max-width:560px) {
   .steps3 > li { flex-direction:column; align-items:flex-start; gap:4px; }
 }
+
+/* Run your agent (first-run UX spec §7.2–7.3): copy-first setup, status rows, progress, help. */
+.setupTitle { margin:0; font-size:var(--fs-md); font-weight:600; color:var(--tx); }
+.codeRow { display:flex; align-items:center; gap:10px; padding:4px 4px 4px 12px; border:1px solid var(--line); border-radius:8px; background:var(--sunk); min-width:0; }
+.codeLine { flex:1; min-width:0; padding:6px 0; font-family:var(--font-mono); font-size:var(--fs-sm); color:var(--tx); overflow-wrap:anywhere; }
+.codeRow > button { flex:none; }
+.copiedLine { margin:0; display:flex; align-items:center; gap:6px; font-size:var(--fs-sm); font-weight:600; color:var(--ok); }
+.copiedLine:empty { display:none; }
+.status { margin:0; display:flex; align-items:center; gap:10px; font-size:var(--fs-md); font-weight:600; color:var(--tx); min-width:0; }
+.pulse, .still { width:10px; height:10px; border-radius:50%; flex:none; }
+.pulse { background:var(--brand); animation:sbxPulse 1.6s ease-in-out infinite; }
+.still { background:var(--line2); }
+@keyframes sbxPulse { 50% { opacity:.25; } }
+@media (prefers-reduced-motion: reduce) { .pulse { animation:none; } }
+.quiet { display:grid; gap:10px; padding:14px 16px; border:1px solid var(--line2); border-radius:8px; background:var(--sunk); min-width:0; }
+.progress { display:grid; gap:6px; }
+.bar { height:6px; border-radius:3px; background:var(--track); overflow:hidden; }
+.bar > i { display:block; height:100%; background:var(--brand); transition:width .3s; }
+@media (prefers-reduced-motion: reduce) { .bar > i { transition:none; } }
+.upNext { opacity:.7; }
+.help { border:1px solid var(--warn-line); background:var(--warn-bg); border-radius:8px; padding:12px 14px; min-width:0; }
+.helpHead { cursor:pointer; font-size:var(--fs-sm); font-weight:600; color:var(--tx); min-height:24px; }
+.helpList { margin:10px 0 0; padding-left:20px; display:grid; gap:8px; font-size:var(--fs-sm); color:var(--tx2); line-height:1.5; }
+.helpList strong { color:var(--tx); }

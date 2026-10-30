@@ -78,11 +78,13 @@ describe('Sandbox v2 page', () => {
     await type(input, PROVIDER_KEY);
     await click('Connect');
     expect(calls()[1]).toEqual({ url: '/api/sandbox/fleet/connect', body: { fleet: 'prod-eu', provider: 'anthropic', api_key: PROVIDER_KEY } });
-    expect(text()).toContain('We can’t show your Sandbox URL again after that.');
+    // Copy first: the line, a full-size Copy button, then one quiet line instead of a warning.
+    expect(text()).toContain('Add this line to your agent’s .env, then run it');
+    expect(text()).toContain('This URL is shown only on this visit; you can get a new one any time.');
+    expect(text()).not.toContain('Copy this before you leave this page.');
     // Like production: one setting for the agent's .env, then run it as normal.
     expect(text()).toContain(`ANTHROPIC_BASE_URL=${ISSUED.proxyUrl}`);
     expect(document.querySelector('[aria-label="Copy the setting"]')).not.toBeNull();
-    expect(text()).toContain('Checks start on its first call.');
     expect(document.getElementById('sandbox-start-command')).toBeNull();
     expect(document.querySelector('[aria-label="Copy the Sandbox URL"]')).not.toBeNull();
     expect(text()).toContain(ISSUED.proxyKey);

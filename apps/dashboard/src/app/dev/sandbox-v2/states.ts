@@ -106,6 +106,10 @@ export const SANDBOX_V2_STATES = {
   'rules-error': { status: connected(new Date(NOW - 5 * 60_000).toISOString()), rules: rules(null, { error: 'The Sandbox couldn’t do that right now. Try again in a moment.' }), now: NOW },
   /** Step 4: no check yet, waiting for the agent's first call. */
   'checks-ready': live({ checks: checkState(null, {}) }),
+  /** Run your agent just after connect, a minute with no call: "Nothing happening?" open. */
+  'run-help': { status: connected(null), issued: ISSUED, now: NOW, rules: rules({}), checks: { ...checkState(null, {}), helpOpen: true } },
+  /** A check in progress whose agent last called 3 minutes ago: Finish now is the next step. */
+  'checks-quiet': live({ checks: { ...checkState('enforce', { ...OBSERVED, spend_cap: ENFORCED.spend_cap }, { calls: 9 }), state: { ...checkState('enforce', { ...OBSERVED, spend_cap: ENFORCED.spend_cap }, { calls: 9 }).state!, activity: { lastCallAt: new Date(NOW - 3 * 60_000).toISOString(), callsOutsideWindow24h: 0 } } } }),
   /** Step 4: just started, no calls yet. */
   'checks-waiting': live({ checks: checkState('observe', {}, { calls: 0 }) }),
   /** Step 4: watching the agent's calls. */
