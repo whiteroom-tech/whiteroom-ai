@@ -5,11 +5,11 @@ import Link from 'next/link';
 import { Banner, Button, Icon, Panel, SkeletonCard, type IconName } from '@whiteroom/ui';
 import { ROUTES } from '@/lib/routes';
 import { RULE_LABELS } from '@/lib/governance';
-import { fmtWhen } from '@/lib/format';
-import { isStaleSandbox, SandboxFleetError } from '@/lib/sandbox/fleet';
+import { fmtWhen, timeAgo } from '@/lib/format';
+import { isStaleSandbox, providerLabel, sandboxSetting, SandboxFleetError } from '@/lib/sandbox/fleet';
 import {
-  activityLine, checkAction, getCheckState, isOpen, stageLine, STATUS_WORDS,
-  type CheckResult, type CheckRule, type CheckState, type CheckStatus,
+  activityLine, checkAction, currentCheckOf, getCheckState, isOpen, isQuiet, stageLine, STATUS_WORDS,
+  type CheckId, type CheckResult, type CheckRule, type CheckState, type CheckStatus,
 } from '@/lib/sandbox/checks';
 import { reportOf, reportSummary, SCORED_CHECKS, TOO_FEW_HELP, type ReportCard } from '@/lib/sandbox/check-report';
 import { analytics } from '@/lib/analytics';
@@ -22,12 +22,16 @@ export interface SandboxChecksPreview {
   state: CheckState | null;
   error?: string;
   now?: number;
+  /** "Nothing happening?" already open (it opens itself after a minute with no call). */
+  helpOpen?: boolean;
 }
 
 const POLL_MS = { visible: 5_000, hidden: 30_000 };
-export const RUN_NOW = 'Run your agent as you normally do. Checks start on its first call.';
+export const RUN_NOW = 'Run your agent as you normally do. Checks start by themselves.';
 /** The current step's card: the page moves focus to its heading when the step changes. */
 export const STEP_CARD_ID = 'sandbox-step';
+/** "Nothing happening?" opens itself after this long with no call. */
+export const IDLE_HELP_MS = 60_000;
 
 const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : 'That didn’t work. Check your connection and try again.');
 
@@ -38,7 +42,7 @@ const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : 'T
  * window ends. A check's stop lifts itself after 5 seconds, so there's no
  * Resume here.
  */
-export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState, setup, setupAlways = false }: {
+export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState, setup, setupAlways = false, provider = 'anthropic', onChangeKey }: {
   fleet: string;
   sandboxFleetId: string;
   preview?: SandboxChecksPreview;
@@ -50,6 +54,10 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   setup?: React.ReactNode;
   /** Show `setup` above the report too: a URL just issued must be seen before the page is left. */
   setupAlways?: boolean;
+  /** The Sandbox's provider, for "Nothing happening?". */
+  provider?: string;
+  /** "Change key" in "Nothing happening?". */
+  onChangeKey?: () => void;
 }) {
   const [state, setState] = useState<CheckState | null>(preview ? preview.state : null);
   const [loading, setLoading] = useState(!preview);
@@ -148,6 +156,35 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
 
   const w = state?.window ?? null;
   const ended = !!w?.endedAt;
+  const quiet = !!state && isQuiet(state, now);
+
+  // No call since this page opened, and nothing checked yet: what "Nothing happening?" is for.
+  const openedAt = useRef(now);
+  const lastCallAt = state?.activity?.lastCallAt;
+  // Not while quiet: the quiet box already says what to do.
+  const noCallYet = !!state && !quiet && (!w || (!ended && w.calls === 0)) && (!lastCallAt || Date.parse(lastCallAt) < openedAt.current);
+  const [helpOpen, setHelpOpen] = useState(!!preview?.helpOpen);
+  // It opens itself once, a minute after the page starts waiting; opening or closing it by hand stops that.
+  const helpChosen = useRef(!!preview?.helpOpen);
+  useEffect(() => {
+    if (preview || !noCallYet || helpChosen.current) return;
+    const t = setTimeout(() => {
+      helpChosen.current = true;
+      setHelpOpen(true);
+      analytics.capture('sandbox_v2_idle_help', { opened: 'auto' });
+    }, IDLE_HELP_MS);
+    return () => clearTimeout(t);
+  }, [preview, noCallYet]);
+  const toggleHelp = (open: boolean) => {
+    if (open === helpOpen) return;
+    helpChosen.current = true;
+    setHelpOpen(open);
+    if (open && !preview) analytics.capture('sandbox_v2_idle_help', { opened: 'manual' });
+  };
+  const finish = () => {
+    if (!preview && w) analytics.capture('sandbox_v2_finish_now', { stage: w.stage, quiet });
+    void act('stop');
+  };
 
   // The page's steps follow the checks: the latest onState, read when called.
   const onStateRef = useRef(onState);
@@ -178,11 +215,11 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
     <Panel
       id={STEP_CARD_ID}
       title={ended ? 'Results' : 'Run your agent'}
-      actions={open ? <Button size={28} variant="ghost" onClick={() => void act('stop')} disabled={busy}>Finish now</Button> : undefined}
+      actions={open && !quiet ? <Button size={28} variant="ghost" onClick={finish} disabled={busy}>Finish now</Button> : undefined}
     >
       <div className={v.stack}>
         {setup && (!ended || setupAlways) && <div className={`${v.stack} ${v.setup}`}>{setup}</div>}
-        {state && (() => {
+        {state && !quiet && (() => {
           const live = activityLine(state, now);
           // Not a live region: it changes on every read, and the stage box below announces what matters.
           return live && <p className={`${v.live} ${live.calling ? v.liveOn : ''}`}>{live.text}</p>;
@@ -191,21 +228,30 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
         {error && <Banner variant="error" actions={!state && !loading && !preview ? <Button size={28} onClick={() => void load()}>Try again</Button> : undefined}>{error}</Banner>}
 
         {state && !w && <>
-          <div className={v.stage} role="status" aria-live="polite">
-            <p className={v.stageText}>Waiting for your agent’s first call…</p>
-          </div>
-          <p className={v.text}>
-            {RUN_NOW} We watch its calls, then test each rule, a pause, a stop and a provider error. Your live agents aren’t touched.
-          </p>
+          <p className={v.status} role="status" aria-live="polite"><span className={v.pulse} aria-hidden="true" />Waiting for your agent’s first call</p>
+          <p className={v.text}>{RUN_NOW}</p>
         </>}
 
         {state && w && !ended && <>
-          <div className={v.stage} role="status" aria-live="polite">
-            <p className={v.stageText}>{stageLine(state)}</p>
-          </div>
-          {w.calls === 0 && w.stage === 'observe' && <p className={v.text}>{RUN_NOW}</p>}
-          <CheckList checks={state.checks} rules={state.rules} live />
+          {quiet ? (
+            <div className={v.quiet} role="status" aria-live="polite">
+              <p className={v.status}><span className={v.still} aria-hidden="true" />Your agent stopped calling</p>
+              <p className={v.text}>
+                Last call {lastCallAt ? timeAgo(lastCallAt, now) : 'a while ago'}, {decidedCount(state)} of {SCORED_CHECKS.length} checks done.
+                {' '}Run your agent again to carry on, or finish now to see what we have.
+              </p>
+              <div className={v.actions}><Button size={32} variant="primary" onClick={finish} busy={busy} busyLabel="Finishing…">Finish now</Button></div>
+            </div>
+          ) : (
+            <p className={v.status} role="status" aria-live="polite"><span className={v.pulse} aria-hidden="true" />{stageLine(state)}</p>
+          )}
+          {w.calls === 0 && w.stage === 'observe' && !quiet && <p className={v.text}>{RUN_NOW}</p>}
+          <LiveChecks state={state} />
         </>}
+
+        {noCallYet && (
+          <NothingHappening provider={provider} open={helpOpen} onToggle={toggleHelp} onChangeKey={onChangeKey} />
+        )}
 
         {state && w && ended && (
           <ReportView state={state} checked={fmtWhen(w.startedAt, now)} calls={w.calls} focus={focusReport}
@@ -362,30 +408,48 @@ const MARK: Record<CheckStatus, { icon: IconName; tone: 'pass' | 'fail' | 'now' 
   not_checked: { icon: 'dash', tone: 'muted' },
 };
 
-/** The seven checks; under each, the Sandbox rules it was judged on. `live`: still being checked. */
-export function CheckList({ checks, rules, live }: { checks: CheckResult[]; rules: CheckRule[]; live: boolean }) {
-  return (
+/** Checks decided so far, of the scored six. */
+const decidedCount = (state: CheckState) => state.checks.filter((c) => SCORED_CHECKS.includes(c.id as (typeof SCORED_CHECKS)[number]) && c.status !== 'pending').length;
+
+/**
+ * The check in progress (first-run UX spec §7.3): "N of 6 done", then the six
+ * scored checks in the order they're tested — decided ones with their result,
+ * the one being tested now marked Now, the rest Up next — and under each, the
+ * Sandbox rules it's judged on.
+ */
+export function LiveChecks({ state }: { state: CheckState }) {
+  const current = currentCheckOf(state);
+  const done = decidedCount(state);
+  const ordered = TEST_ORDER.map((id) => state.checks.find((c) => c.id === id)).filter((c): c is CheckResult => !!c);
+  return <>
+    <div className={v.progress}>
+      <p className={v.text}>{done} of {SCORED_CHECKS.length} done</p>
+      <div className={v.bar} role="progressbar" aria-label="Checks done" aria-valuemin={0} aria-valuemax={SCORED_CHECKS.length} aria-valuenow={done}>
+        <i style={{ width: `${(done / SCORED_CHECKS.length) * 100}%` }} />
+      </div>
+    </div>
     <ul className={v.checks}>
-      {checks.map((c) => {
-        // Once the window is over, a check still pending was never reached.
-        const status: CheckStatus = !live && c.status === 'pending' ? 'not_checked' : c.status;
-        const mark = MARK[status];
-        const tone = mark.tone === 'pass' ? s.checkPass : mark.tone === 'fail' ? s.checkFail : mark.tone === 'now' ? s.checkWait : v.checkMuted;
-        const own = rules.filter((r) => r.check === c.id);
+      {ordered.map((c) => {
+        const isCurrent = c.id === current;
+        const status: CheckStatus = c.status;
+        const upNext = status === 'pending' && !isCurrent;
+        const mark = isCurrent ? { icon: 'clock' as IconName, tone: 'now' } : MARK[status];
+        const tone = upNext ? v.checkMuted : mark.tone === 'pass' ? s.checkPass : mark.tone === 'fail' ? s.checkFail : mark.tone === 'now' ? s.checkWait : v.checkMuted;
+        const judgedBy = state.rules.filter((r) => r.check === c.id);
         return (
-          <li key={c.id} className={s.check} data-check={c.id} data-status={status}>
-            <div className={`${s.checkIcon} ${tone}`} aria-hidden="true"><Icon name={mark.icon} size={13} /></div>
+          <li key={c.id} className={`${s.check} ${upNext ? v.upNext : ''}`} data-check={c.id} data-status={isCurrent ? 'now' : status}>
+            <div className={`${s.checkIcon} ${tone}`} aria-hidden="true"><Icon name={upNext ? 'dash' : mark.icon} size={13} /></div>
             <div className={v.checkBody}>
               <div className={s.checkName}>{c.label}</div>
               <div className={`${s.checkDetail} ${status === 'passed' ? s.checkDetailPass : ''}`}>
-                <strong>{live && status === 'pending' ? 'Checking…' : STATUS_WORDS[status]}</strong>{c.detail ? ` · ${c.detail}` : ''}
+                <strong>{isCurrent ? 'Now' : upNext ? 'Up next' : STATUS_WORDS[status]}</strong>{c.detail && !upNext ? ` · ${c.detail}` : ''}
               </div>
-              {own.length > 0 && (
+              {judgedBy.length > 0 && (
                 <details className={v.members}>
-                  <summary>{own.length === 1 ? '1 rule' : `${own.length} rules`}</summary>
-                  {own.map((r) => (
+                  <summary>{judgedBy.length === 1 ? '1 rule' : `${judgedBy.length} rules`}</summary>
+                  {judgedBy.map((r) => (
                     <div key={r.ruleId} className={v.member}>
-                      <div className={v.memberName}>{(RULE_LABELS as Record<string, string>)[r.ruleType] ?? r.ruleType} · {ruleWords(r, live)}</div>
+                      <div className={v.memberName}>{(RULE_LABELS as Record<string, string>)[r.ruleType] ?? r.ruleType} · {ruleWords(r)}</div>
                       {r.detail && <div className={v.text}>{r.detail}</div>}
                     </div>
                   ))}
@@ -396,12 +460,36 @@ export function CheckList({ checks, rules, live }: { checks: CheckResult[]; rule
         );
       })}
     </ul>
+  </>;
+}
+
+/** The order the checks are tested in: the long task while watching, the rules, pause and stop, provider errors. */
+const TEST_ORDER: CheckId[] = ['long_task', 'spend_cap', 'allowlists_keywords', 'loop_rate', 'pause_stop', 'provider_errors'];
+
+/** After a minute with no call (or when opened): the three usual reasons, with this Sandbox's provider and setting. */
+export function NothingHappening({ provider, open, onToggle, onChangeKey }: {
+  provider: string; open: boolean; onToggle: (open: boolean) => void; onChangeKey?: () => void;
+}) {
+  const name = providerLabel(provider);
+  const setting = sandboxSetting(provider, 'https://proxy.whiteroom.tech').name;
+  return (
+    <details className={v.help} open={open} onToggle={(e) => onToggle((e.currentTarget as HTMLDetailsElement).open)}>
+      <summary className={v.helpHead}>Nothing happening?</summary>
+      <ol className={v.helpList}>
+        <li><strong>Restart your agent</strong> after changing .env, so it picks up the new line.</li>
+        <li><strong>Check it reads <code className={v.mono}>{setting}</code>.</strong> The {name} SDKs do. If yours doesn’t, pass the Sandbox URL as the base URL when you create the client.</li>
+        <li>
+          <strong>Check it calls {name}.</strong> This Sandbox is set up for {/^[AEIOU]/i.test(name) ? 'an' : 'a'} {name} key.
+          {onChangeKey && <> <button type="button" className={v.linkButton} onClick={onChangeKey}>Change key</button></>}
+        </li>
+      </ol>
+    </details>
   );
 }
 
-function ruleWords(r: CheckRule, live: boolean): string {
-  if (r.status === 'pending' && live) return r.acted ? 'Acted' : r.wouldAct ? 'Would have acted' : 'Checking…';
-  if (r.status === 'pending') return 'Not checked';
+/** A rule's line during a check: what it did so far, or its result. */
+function ruleWords(r: CheckRule): string {
+  if (r.status === 'pending') return r.acted ? 'Acted' : r.wouldAct ? 'Would have acted' : 'Checking…';
   return STATUS_WORDS[r.status];
 }
 
