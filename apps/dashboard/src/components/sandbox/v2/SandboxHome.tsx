@@ -33,9 +33,9 @@ export interface SandboxHomePreview {
   issued?: IssuedSandboxKey | null;
   error?: string;
   now?: number;
-  /** Step 3, once connected. */
+  /** Sandbox rules, once connected. */
   rules?: SandboxRulesPreview;
-  /** Step 4, once connected. */
+  /** The checks card, once connected. */
   checks?: SandboxChecksPreview;
 }
 
@@ -134,7 +134,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
         setIssued(done.issued);
       } else {
         setStatus(await resetSandboxFleet(fleet, id));
-        // Step 4 starts over: its old report is gone too.
+        // The checks card starts over: its old report is gone too.
         setResets((n) => n + 1);
         setNotice(RESET_NOTICE);
       }
@@ -156,7 +156,8 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   const shownStep = useRef<SandboxStep | null>(null);
   useEffect(() => {
     if (loading || status === null) return;
-    if (shownStep.current !== null && shownStep.current !== step) {
+    // Results: the report moves focus to its verdict itself.
+    if (shownStep.current !== null && shownStep.current !== step && step !== 'results') {
       const head = document.querySelector<HTMLElement>(`#${step === 'connect' ? CONNECT_CARD_ID : STEP_CARD_ID} h2`);
       if (head) { head.tabIndex = -1; head.focus(); }
     }

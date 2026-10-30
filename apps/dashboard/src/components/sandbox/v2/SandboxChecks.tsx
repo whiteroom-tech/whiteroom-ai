@@ -152,7 +152,9 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   // The page's steps follow the checks: the latest onState, read when called.
   const onStateRef = useRef(onState);
   useEffect(() => { onStateRef.current = onState; }, [onState]);
-  useEffect(() => { onStateRef.current?.(state); }, [state]);
+  // Only once a read has landed: a card that just (re)mounted has no state yet, and reporting that
+  // would flip the page to Run your agent and back.
+  useEffect(() => { if (state) onStateRef.current?.(state); }, [state]);
 
   // The report already ended when the page first loaded (null: none, or a check still open then).
   // Any other ended window is a new report, even one that opened and ended between two reads:

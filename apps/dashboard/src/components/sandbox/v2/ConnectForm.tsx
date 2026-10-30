@@ -19,7 +19,7 @@ const KEY_PLACEHOLDER: Record<SandboxProvider, string> = {
 export type ConnectRequest = { api_key: string; provider: SandboxProvider; endpoint?: string };
 
 /**
- * Step 1: where the agent's model runs, and the key it uses. The key stays in
+ * Connect: where the agent's model runs, and the key it uses. The key stays in
  * this form only until Connect sends it; it's cleared after, either way.
  */
 export function ConnectForm({ busy, onConnect, onCancel }: {

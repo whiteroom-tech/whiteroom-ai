@@ -244,6 +244,37 @@ describe('Sandbox v2 page', () => {
     expect(text()).toContain('https://proxy.whiteroom.tech/sk-wr-placeholder-rotated');
   });
 
+  it('a check that ends on the page: Results, with focus on the verdict (not the card heading)', async () => {
+    const win = { id: 'chk_1', startedAt: '2026-10-29T10:00:00.000Z', injectErrors: true, calls: 12 };
+    let ended = false;
+    bff.mockImplementation(async (url: string) => {
+      if (url.endsWith('/checks/stop')) ended = true;
+      if (url.startsWith('/api/sandbox/checks/')) return Response.json({ success: true, window: { ...win, endedAt: ended ? '2026-10-29T10:06:00.000Z' : null, stage: ended ? 'done' : 'observe' }, checks: [], rules: [] });
+      return Response.json(STATUS);
+    });
+    await render({ fleet: 'prod-eu' });
+    expect(document.querySelector('[aria-current="step"]')?.textContent).toBe('2Run your agent');
+    await click('Finish now');
+    expect(document.querySelector('[aria-current="step"]')?.textContent).toBe('3Results');
+    expect(document.activeElement?.tagName).toBe('H3');
+  });
+
+  it('Reset on Results goes back to Run your agent once the checks are read again', async () => {
+    let reset = false;
+    bff.mockImplementation(async (url: string) => {
+      if (url.endsWith('/reset')) { reset = true; return Response.json(STATUS); }
+      if (url.startsWith('/api/sandbox/checks/')) return Response.json(reset
+        ? { success: true, window: null, checks: [], rules: [] }
+        : { success: true, window: { id: 'chk_1', startedAt: '2026-10-29T10:00:00.000Z', endedAt: '2026-10-29T10:06:00.000Z', stage: 'done', injectErrors: true, calls: 12 }, checks: [], rules: [] });
+      return Response.json(STATUS);
+    });
+    await render({ fleet: 'prod-eu' });
+    expect(document.querySelector('[aria-current="step"]')?.textContent).toBe('3Results');
+    await click('Reset Sandbox');
+    await click('Reset Sandbox');
+    expect(document.querySelector('[aria-current="step"]')?.textContent).toBe('2Run your agent');
+  });
+
   it('focus follows the step: Change key focuses Connect, Cancel focuses the step card again', async () => {
     bff.mockImplementation(async () => Response.json(STATUS));
     await render({ fleet: 'prod-eu' });
