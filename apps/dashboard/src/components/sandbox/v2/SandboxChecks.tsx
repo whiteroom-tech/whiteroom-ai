@@ -301,11 +301,11 @@ function ReportLine({ card }: { card: ReportCard }) {
   return (
     <li className={v.line} data-check={card.id} data-status={card.status}>
       <span className={mark.tone === 'pass' ? v.lineOk : v.lineSkip} aria-hidden="true"><Icon name={mark.icon} size={13} /></span>
-      <span>
+      <div>
         <strong>{card.label}.</strong> {card.happened}
         {card.next && <> {card.next}</>}
         {card.status !== 'passed' && <RuleLines rules={card.rules} />}
-      </span>
+      </div>
     </li>
   );
 }

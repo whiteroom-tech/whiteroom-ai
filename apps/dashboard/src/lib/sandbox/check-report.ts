@@ -157,6 +157,7 @@ export function reportSummary(report: Report, when: { checked: string; calls: nu
     }
   };
   group('To fix', report.fix, (c) => [`- ${c.label}: ${c.happened}`, `    How to fix: ${c.next}`]);
+  // Plain text has no visual grouping, so every group is named (the page leaves out "Passed" when nothing failed).
   group('Passed', report.ok, (c) => [`- ${c.label}: ${c.happened}`]);
   // Too few calls: like the page, what the checks need instead of six checks that didn't run.
   if (report.verdict === 'too_few') {
