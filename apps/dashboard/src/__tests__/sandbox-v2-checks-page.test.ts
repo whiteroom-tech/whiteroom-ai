@@ -22,7 +22,7 @@ const { CLI_VERSION } = await import('@/lib/sandbox/practice/model');
 const { outsideWindowText } = await import('@/lib/sandbox/fleet');
 
 const SANDBOX_ID = 'sandbox-00000000-0000-4000-8000-000000000000';
-type Win = { stage: string; endedAt?: string | null; calls?: number } | null;
+type Win = { id?: string; stage: string; endedAt?: string | null; calls?: number } | null;
 const checkAnswer = (win: Win, statuses: Record<string, string> = {}, rules: unknown[] = []) => ({
   success: true,
   window: win && { id: 'chk_1', startedAt: '2026-10-29T10:00:00.000Z', endedAt: null, injectErrors: true, calls: 4, ...win },
@@ -221,6 +221,20 @@ describe('Check your agent', () => {
     expect(sent).toEqual([['sandbox_v2_report', { verdict: 'fix', passed: 1, failed: 1, calls: expect.any(Number) }]]);
     // Only the verdict and counts: no ids, keys or names.
     expect(JSON.stringify(sent)).not.toMatch(/sandbox-|chk_|prod-eu|sk-/);
+  });
+
+  it('a check that opens and ends between two reads still counts as new: focus and one report event', async () => {
+    vi.useFakeTimers();
+    capture.mockClear();
+    checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z' }, { long_task: 'passed' });
+    await render(checksEl());
+    expect(capture).not.toHaveBeenCalledWith('sandbox_v2_report', expect.anything());
+    // The next read already has a different, ended window: the page never saw it open.
+    checks = checkAnswer({ id: 'chk_2', stage: 'done', endedAt: '2026-10-29T10:20:00.000Z' }, { spend_cap: 'failed' });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    await flush();
+    expect(document.activeElement?.textContent).toBe('1 thing to fix before going live');
+    expect(capture.mock.calls.filter(([name]) => name === 'sandbox_v2_report')).toHaveLength(1);
   });
 
   it('Check again after a report starts a new check and shows it live', async () => {

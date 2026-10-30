@@ -11,7 +11,7 @@ import {
   activityLine, checkAction, getCheckState, isOpen, stageLine, STATUS_WORDS,
   type CheckResult, type CheckRule, type CheckState, type CheckStatus,
 } from '@/lib/sandbox/checks';
-import { reportOf, reportSummary, SCORED_CHECKS, type ReportCard } from '@/lib/sandbox/check-report';
+import { ENOUGH_CALLS, reportOf, reportSummary, SCORED_CHECKS, type ReportCard } from '@/lib/sandbox/check-report';
 import { analytics } from '@/lib/analytics';
 import s from '../guided.module.css';
 import v from './v2.module.css';
@@ -140,10 +140,14 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale }: {
   const w = state?.window ?? null;
   const ended = !!w?.endedAt;
 
-  // A report that appears while the page is open gets focus (not one already there on load).
-  const seenOpen = useRef(false);
-  if (w && !ended) seenOpen.current = true;
-  const focusReport = ended && seenOpen.current;
+  // The report already ended when the page first loaded (null: none, or a check still open then).
+  // Any other ended window is a new report, even one that opened and ended between two reads:
+  // it gets focus and the report event. Unset until the first read lands.
+  const loadedReport = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (state && loadedReport.current === undefined) loadedReport.current = state.window?.endedAt ? state.window.id : null;
+  }, [state]);
+  const focusReport = ended && !!w && loadedReport.current !== undefined && w.id !== loadedReport.current;
 
   // One report event per check that finishes while the page is open (not an old report on load). Never ids, keys or names.
   const reported = useRef<string | null>(null);
@@ -248,7 +252,7 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
       <h3 ref={heading} tabIndex={-1} className={`${v.reportHead} ${report.tone === 'pass' ? v.reportPass : report.tone === 'warn' ? v.reportWarn : ''}`} data-tone={report.tone}>{report.headline}</h3>
       <p className={v.text}>{few ? `${callsText} · checked ${checked}` : `${SCORED_CHECKS.length} checks · ${callsText} · checked ${checked}`}</p>
     </div>
-    {few && <p className={v.text}>The checks need about 5 calls from one run. Run a longer task, or run your agent again. Checks start by themselves.</p>}
+    {few && <p className={v.text}>The checks need about {ENOUGH_CALLS} calls from one run. Run a longer task, or run your agent again. Checks start by themselves.</p>}
     {report.fix.length > 0 && <>
       <p className={v.sect}>To fix</p>
       <ul className={v.cards}>{report.fix.map((c) => <FixCard key={c.id} card={c} />)}</ul>
