@@ -108,6 +108,8 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
     setBusy(true); setNotice('');
     try {
       const done = await connectSandboxFleet(fleet, req);
+      // A new key: the old Sandbox's results don't apply to it.
+      setChecks(null);
       setStatus(done.status);
       setIssued(done.issued);
       setReplacing(false);
@@ -134,6 +136,8 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
         setIssued(done.issued);
       } else {
         setStatus(await resetSandboxFleet(fleet, id));
+        // The old results are gone: the steps bar goes back to Run your agent now, not on the next read.
+        setChecks(null);
         // The checks card starts over: its old report is gone too.
         setResets((n) => n + 1);
         setNotice(RESET_NOTICE);

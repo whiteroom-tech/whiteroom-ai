@@ -16,7 +16,7 @@
   .facts { grid-template-columns:minmax(0,1fr); gap:2px; }
   .facts dd { margin-bottom:8px; }
 }
-/* Step 3: Sandbox rules. */
+/* Sandbox rules (closed section). */
 .source { display:grid; gap:4px; }
 .sourceText { margin:0; font-size:var(--fs-md); color:var(--tx); font-weight:600; }
 .linkButton { justify-self:start; background:none; border:0; padding:0; font:inherit; font-weight:600; color:var(--brand); cursor:pointer; text-decoration:underline; text-underline-offset:2px; }
@@ -35,7 +35,7 @@
 .segment { display:flex; max-width:100%; justify-self:start; }
 .check { display:inline-flex; align-items:center; gap:10px; font-size:var(--fs-sm); cursor:pointer; justify-self:start; min-height:32px; }
 .check input { width:16px; height:16px; margin:0; accent-color:var(--brand); }
-/* Step 4: checks and the report. Rows reuse guided.module.css's check marks. */
+/* The checks card: live checks and the report. Rows reuse guided.module.css's check marks. */
 .live { display:flex; align-items:center; gap:8px; margin:0; font-size:var(--fs-sm); color:var(--tx2); }
 .live::before { content:''; width:8px; height:8px; border-radius:50%; background:var(--line2); flex:none; }
 .liveOn { color:var(--tx); font-weight:600; }

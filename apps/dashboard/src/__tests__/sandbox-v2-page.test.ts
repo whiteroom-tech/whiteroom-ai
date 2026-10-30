@@ -270,8 +270,17 @@ describe('Sandbox v2 page', () => {
     });
     await render({ fleet: 'prod-eu' });
     expect(document.querySelector('[aria-current="step"]')?.textContent).toBe('3Results');
+    // Answer the reset, but hold the next checks read: the steps bar moves at once anyway.
+    let release = () => {};
+    bff.mockImplementation(async (url: string) => {
+      if (url.endsWith('/reset')) { reset = true; return Response.json(STATUS); }
+      if (url.startsWith('/api/sandbox/checks/')) { await new Promise<void>((r) => { release = r; }); return Response.json({ success: true, window: null, checks: [], rules: [] }); }
+      return Response.json(STATUS);
+    });
     await click('Reset Sandbox');
     await click('Reset Sandbox');
+    expect(document.querySelector('[aria-current="step"]')?.textContent).toBe('2Run your agent');
+    await act(async () => { release(); });
     expect(document.querySelector('[aria-current="step"]')?.textContent).toBe('2Run your agent');
   });
 
