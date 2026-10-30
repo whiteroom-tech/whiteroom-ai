@@ -224,8 +224,7 @@ export async function getCheckState(fleet: string, sandboxFleetId: string): Prom
   return mustState(await call('status', { fleet, sandboxFleetId }));
 }
 
-/** Start, Stop or Resume; then the current state (the answer's own, or a fresh read). */
-/** Start (Check again, provider-error test on), Stop or Resume. */
+/** Start (Check again) or Stop (Finish now); then the current state (the answer's own, or a fresh read). */
 export async function checkAction(action: Exclude<SandboxChecksAction, 'status'>, fleet: string, sandboxFleetId: string): Promise<CheckState> {
   const data = await call(action, { fleet, sandboxFleetId });
   return checkStateOf(data) ?? getCheckState(fleet, sandboxFleetId);

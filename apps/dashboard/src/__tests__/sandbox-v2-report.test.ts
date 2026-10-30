@@ -100,6 +100,14 @@ describe('report: each check', () => {
 });
 
 describe('Copy summary', () => {
+  it('passed checks are one line, without their rules, as on the page', () => {
+    const rule = (check: CheckId, status: CheckStatus) => ({ ruleId: `gr_${check}`, ruleType: 'spend_cap', check, wouldAct: true, acted: true, status, detail: `Rule detail ${check}` });
+    const st = stateOf({ spend_cap: ['passed'], loop_rate: ['failed'] }, { rules: [rule('spend_cap', 'passed'), rule('loop_rate', 'failed')] });
+    const text = reportSummary(reportOf(st), { checked: 'just now', calls: 12 });
+    expect(text).not.toContain('Rule detail spend_cap');
+    expect(text).toContain('Rule detail loop_rate');
+  });
+
   it('keeps ordinary hyphenated words like key-value or tok-limit', () => {
     const st = stateOf({ spend_cap: ['failed', 'Wrote to a key-value store and hit the tok-limit; key_rotation pending.'] });
     const text = reportSummary(reportOf(st), { checked: '1 min ago', calls: 3 });

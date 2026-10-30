@@ -152,7 +152,8 @@ export function reportSummary(report: Report, when: { checked: string; calls: nu
     lines.push('', `${title}:`);
     for (const c of cards) {
       lines.push(...line(c));
-      for (const r of c.rules) lines.push(`    Rule: ${r}`);
+      // As on the page: passed checks are one line, without their rules.
+      if (c.status !== 'passed') for (const r of c.rules) lines.push(`    Rule: ${r}`);
     }
   };
   group('To fix', report.fix, (c) => [`- ${c.label}: ${c.happened}`, `    How to fix: ${c.next}`]);
