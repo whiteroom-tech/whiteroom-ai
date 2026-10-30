@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { Button } from '@whiteroom/ui';
-import { connectCheck } from '@/lib/sandbox/fleet';
+import { connectCheck, type ConnectRefusal } from '@/lib/sandbox/fleet';
 import { detectKey, isCloudProvider, KEY_HELP, type SandboxProvider } from '@/lib/sandbox/providers';
 import { CloudEndpointField, ProviderChoices } from '../CloudProviderParts';
 import s from '../guided.module.css';
@@ -24,10 +24,12 @@ export type ConnectRequest = { api_key: string; provider: SandboxProvider; endpo
  * one link, and a key that's neither opens the choices too. The key stays in
  * this form only until Connect sends it; it's cleared after, either way.
  */
-export function ConnectForm({ busy, onConnect, onCancel }: {
+export function ConnectForm({ busy, onConnect, onRefused, onCancel }: {
   busy: boolean;
   /** Resolves to the refusal to show, or null when it connected. `detected`: the provider came from the key. */
   onConnect: (req: ConnectRequest, detected: boolean) => Promise<string | null>;
+  /** Refused in the browser, before anything was sent: why, as a category. */
+  onRefused?: (reason: ConnectRefusal) => void;
   onCancel?: () => void;
 }) {
   // Picked from the choices; null while the key decides.
@@ -49,9 +51,9 @@ export function ConnectForm({ busy, onConnect, onCancel }: {
 
   async function submit() {
     if (inFlight.current || busy) return;
-    if (!provider && kind !== 'empty' && kind !== 'fleet' && kind !== 'account') { setChoosing(true); setError('Pick where your agent’s model runs.'); return; }
+    if (!provider && kind !== 'empty' && kind !== 'fleet' && kind !== 'account') { setChoosing(true); setError('Pick where your agent’s model runs.'); onRefused?.('no_provider'); return; }
     const check = connectCheck(provider ?? 'anthropic', key, endpoint);
-    if (!check.ok) { setError(check.error); return; }
+    if (!check.ok) { setError(check.error); onRefused?.(check.reason); return; }
     inFlight.current = true;
     setError('');
     try {

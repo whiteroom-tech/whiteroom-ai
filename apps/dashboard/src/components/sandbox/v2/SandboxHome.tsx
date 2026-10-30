@@ -12,7 +12,7 @@ import { agentNamingFor } from '@/lib/provider-key-form';
 import { ROUTES } from '@/lib/routes';
 import {
   connectSandboxFleet, getSandboxFleetStatus, isUnavailable, keptUntilText, lastCallText, outsideWindowText, providerLabel, sandboxSetting,
-  resetSandboxFleet, rotateSandboxFleetKey, SandboxFleetError, type IssuedSandboxKey, type SandboxFleetStatus,
+  resetSandboxFleet, rotateSandboxFleetKey, SandboxFleetError, type ConnectRefusal, type IssuedSandboxKey, type SandboxFleetStatus,
 } from '@/lib/sandbox/fleet';
 import { ConnectForm, type ConnectRequest } from './ConnectForm';
 import { SandboxChecks, STEP_CARD_ID, type SandboxChecksPreview } from './SandboxChecks';
@@ -72,6 +72,8 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   // When a key was connected on this page (for the first-call event).
   const connectedAt = useRef<number | null>(null);
   const copiedEvent = useCallback(() => analytics.capture('sandbox_v2_setting_copied'), []);
+  // Where people stop (first-run UX spec §9): Connect refusals, by category only.
+  const refusedEvent = useCallback((reason: ConnectRefusal) => analytics.capture('sandbox_v2_connect_refused', { reason }), []);
   const now = preview?.now ?? Date.now();
   const statusRef = useRef(status);
   useEffect(() => { statusRef.current = status; }, [status]);
@@ -122,6 +124,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
       setError('');
       return null;
     } catch (e) {
+      if (!preview) analytics.capture('sandbox_v2_connect_refused', { reason: 'engine', status: e instanceof SandboxFleetError ? e.status : 0 });
       return message(e);
     } finally {
       setBusy(false);
@@ -161,6 +164,14 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   const outside = connected ? outsideWindowText(connected) : null;
   const showForm = !loading && status !== null && (!connected || replacing);
   const step = sandboxStepOf({ connected: !!connected, replacing, checks });
+
+  // Once per page, when the Sandbox has loaded: someone opened it, and on which step. Never ids or names.
+  const openedSent = useRef(false);
+  useEffect(() => {
+    if (preview || openedSent.current || loading || status === null) return;
+    openedSent.current = true;
+    analytics.capture('sandbox_v2_opened', { step, connected: !!connected });
+  }, [preview, loading, status, step, connected]);
   // Last call, live: the checks' own reads carry it every few seconds; the Sandbox status only on load.
   const lastCallAt = checks?.activity?.lastCallAt ?? connected?.lastCallAt ?? null;
 
@@ -209,7 +220,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
           <Panel id={CONNECT_CARD_ID} title={connected ? 'Connect a different key' : 'Paste your agent’s API key'}>
             <div className={v.stack}>
               {connected && <p className={v.text}>Your Sandbox URL changes when you connect a new provider key. Update your agent after.</p>}
-              <ConnectForm busy={busy} onConnect={connect} onCancel={connected ? () => setReplacing(false) : undefined} />
+              <ConnectForm busy={busy} onConnect={connect} onRefused={preview ? undefined : refusedEvent} onCancel={connected ? () => setReplacing(false) : undefined} />
             </div>
           </Panel>
         )}

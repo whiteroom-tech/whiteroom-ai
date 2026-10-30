@@ -134,7 +134,10 @@ export function issuedOf(data: unknown, fallback?: { provider?: string; keyHint?
 
 export type ConnectCheck =
   | { ok: true; request: { api_key: string; provider: SandboxProvider; endpoint?: string } }
-  | { ok: false; error: string };
+  | { ok: false; error: string; reason: ConnectRefusal };
+
+/** Why Connect refused a key in the browser: a category for the refusal event, never the key itself. */
+export type ConnectRefusal = 'no_provider' | 'empty' | 'whiteroom_key' | 'format' | 'wrong_provider' | 'endpoint';
 
 /**
  * What Connect may send: the agent's provider key for the chosen provider,
@@ -142,21 +145,21 @@ export type ConnectCheck =
  * in the BFF, so a WhiteRoom key or a mismatched one never reaches the engine.
  */
 export function connectCheck(provider: unknown, rawKey: unknown, rawEndpoint?: unknown): ConnectCheck {
-  if (!isSandboxProvider(provider)) return { ok: false, error: 'Pick where your agent’s model runs.' };
+  if (!isSandboxProvider(provider)) return { ok: false, error: 'Pick where your agent’s model runs.', reason: 'no_provider' };
   const key = typeof rawKey === 'string' ? rawKey.trim() : '';
-  if (!key) return { ok: false, error: 'Paste the key your agent uses.' };
-  if (key.startsWith('sk-wr-') || key.startsWith('wr_')) return { ok: false, error: 'That’s a WhiteRoom key. Paste the key your agent uses with its provider.' };
-  if (key.length < 8 || key.length > 512 || /\s/.test(key)) return { ok: false, error: 'That doesn’t look like a provider key. Check it and paste it again.' };
+  if (!key) return { ok: false, error: 'Paste the key your agent uses.', reason: 'empty' };
+  if (key.startsWith('sk-wr-') || key.startsWith('wr_')) return { ok: false, error: 'That’s a WhiteRoom key. Paste the key your agent uses with its provider.', reason: 'whiteroom_key' };
+  if (key.length < 8 || key.length > 512 || /\s/.test(key)) return { ok: false, error: 'That doesn’t look like a provider key. Check it and paste it again.', reason: 'format' };
   if (provider === 'anthropic' && !key.startsWith('sk-ant-')) {
-    return { ok: false, error: key.startsWith('sk-') ? 'That looks like an OpenAI key. Pick OpenAI instead.' : 'Anthropic keys start with sk-ant-.' };
+    return { ok: false, error: key.startsWith('sk-') ? 'That looks like an OpenAI key. Pick OpenAI instead.' : 'Anthropic keys start with sk-ant-.', reason: 'wrong_provider' };
   }
   if (provider === 'openai') {
-    if (key.startsWith('sk-ant-')) return { ok: false, error: 'That looks like an Anthropic key. Pick Anthropic instead.' };
-    if (!key.startsWith('sk-')) return { ok: false, error: 'OpenAI keys start with sk-.' };
+    if (key.startsWith('sk-ant-')) return { ok: false, error: 'That looks like an Anthropic key. Pick Anthropic instead.', reason: 'wrong_provider' };
+    if (!key.startsWith('sk-')) return { ok: false, error: 'OpenAI keys start with sk-.', reason: 'wrong_provider' };
   }
   if (!isCloudProvider(provider)) return { ok: true, request: { api_key: key, provider } };
   const target = cloudStart(provider, typeof rawEndpoint === 'string' ? rawEndpoint : '');
-  if (!target.ok) return { ok: false, error: target.error };
+  if (!target.ok) return { ok: false, error: target.error, reason: 'endpoint' };
   return { ok: true, request: { api_key: key, provider, endpoint: target.endpoint } };
 }
 
