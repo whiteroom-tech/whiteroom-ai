@@ -78,7 +78,7 @@ const FINISHED: Results = { ...RESUMED, provider_errors: ['failed', 'Your agent 
 const live = (extra: Partial<SandboxHomePreview>): SandboxHomePreview => ({ status: connected(new Date(NOW - 60_000).toISOString()), rules: rules({}), now: NOW, ...extra });
 
 // The sample agent (spec sandbox-sample-agent): WhiteRoom runs it, so its key stores no provider key ("none").
-const sampleStatus = (running: boolean) => ({ ...connected(new Date(NOW - 2_000).toISOString()), key: { ...KEY, keyHint: 'none' }, sample: true, sampleRunning: running, sampleAvailable: !running });
+const sampleStatus = (running: boolean) => ({ ...connected(new Date(NOW - 2_000).toISOString()), key: { ...KEY, keyHint: 'none' }, sample: true, sampleAvailable: !running });
 const SAMPLE_DONE: Results = {
   long_task: ['passed', 'WhiteRoom handed over after 2 calls → your agent’s next call carried on.'],
   spend_cap: ['passed', 'We blocked a call → it didn’t retry that call.'],

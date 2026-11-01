@@ -30,13 +30,12 @@ export interface SandboxFleetKey {
 
 /**
  * The sample agent (spec sandbox-sample-agent): whether this Sandbox is the
- * sample's, whether its run is going, and whether one can start now (the
- * switch is on, no key of the owner's, under the limits). Absent from an
- * engine without it.
+ * sample's, and whether one can start now (the switch is on, no key of the
+ * owner's, under the limits). Absent from an engine without it. Whether its
+ * run is going is the check window's to say, so it isn't read here.
  */
 export interface SandboxSampleFlags {
   sample?: boolean;
-  sampleRunning?: boolean;
   sampleAvailable?: boolean;
 }
 
@@ -124,7 +123,6 @@ export function statusOf(data: unknown): SandboxFleetStatus | null {
       lastCallOutsideWindowAt: strOrNull(d.lastCallOutsideWindowAt),
     }),
     ...(d.sample === true && { sample: true }),
-    ...(d.sampleRunning === true && { sampleRunning: true }),
     ...(d.sampleAvailable === true && { sampleAvailable: true }),
   };
 }

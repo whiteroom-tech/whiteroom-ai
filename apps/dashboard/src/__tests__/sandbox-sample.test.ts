@@ -183,7 +183,8 @@ describe('Sandbox sample agent: wording and status', () => {
   it('reads the sample flags, with or without a Sandbox', () => {
     expect(statusOf({ exists: false, sampleAvailable: true })).toEqual({ exists: false, sampleAvailable: true });
     expect(statusOf({ exists: false })).toEqual({ exists: false });
-    expect(statusOf(SAMPLE)).toMatchObject({ sample: true, sampleRunning: true });
+    expect(statusOf(SAMPLE)).toMatchObject({ sample: true });
+    expect(statusOf(SAMPLE)).not.toHaveProperty('sampleRunning');
     expect(statusOf(OWN)).not.toHaveProperty('sample');
   });
 

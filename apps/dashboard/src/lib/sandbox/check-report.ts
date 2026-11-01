@@ -87,8 +87,9 @@ function card(c: CheckResult & { id: ScoredCheckId }, rules: CheckRule[]): Repor
   const base = { id: c.id, label: c.label, status, rules: rules.filter((r) => r.check === c.id).map(ruleLine) };
   switch (status) {
     case 'passed': return { ...base, happened: detail || 'Handled it.', next: null };
-    // The engine's detail ends with its own "Fix: …"; the card's How to fix says it, so it isn't said twice.
-    case 'failed': return { ...base, happened: detail.replace(/\s*Fix: [\s\S]*$/, '') || 'Didn’t handle it.', next: FIX[c.id] };
+    // The engine ends a failure's detail with one sentence of its own advice ("… Fix: retry with a growing wait.");
+    // the card's How to fix gives it, so that last sentence isn't said twice. Anything else in the detail stays.
+    case 'failed': return { ...base, happened: detail.replace(/(?<=[.!?])\s+Fix: [^.!?]*[.!?]?$/, '') || 'Didn’t handle it.', next: FIX[c.id] };
     case 'not_triggered': return { ...base, happened: 'This run didn’t trip it.', next: detail || TRIP_TIP[c.id] };
     case 'not_checked': return { ...base, happened: detail && detail !== KEEP_RUNNING ? detail : NOT_REACHED, next: KEEP_RUNNING };
   }
