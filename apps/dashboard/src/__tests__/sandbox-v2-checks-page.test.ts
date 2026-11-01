@@ -307,7 +307,7 @@ describe('Check your agent', () => {
     await click('Finish now');
     await flush();
     const sent = capture.mock.calls.filter(([name]) => name === 'sandbox_v2_report');
-    expect(sent).toEqual([['sandbox_v2_report', { verdict: 'fix', passed: 1, failed: 1, calls: expect.any(Number) }]]);
+    expect(sent).toEqual([['sandbox_v2_report', { verdict: 'fix', passed: 1, failed: 1, calls: expect.any(Number), sample: false }]]);
     // Only the verdict and counts: no ids, keys or names.
     expect(JSON.stringify(sent)).not.toMatch(/sandbox-|chk_|prod-eu|sk-/);
   });
@@ -324,7 +324,7 @@ describe('Check your agent', () => {
     checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z', calls }, statuses);
     await click('Finish now');
     await flush();
-    expect(capture.mock.calls.filter(([name]) => name === 'sandbox_v2_report')).toEqual([['sandbox_v2_report', { verdict, ...counts, calls }]]);
+    expect(capture.mock.calls.filter(([name]) => name === 'sandbox_v2_report')).toEqual([['sandbox_v2_report', { verdict, ...counts, calls, sample: false }]]);
   });
 
   it('a check that opens and ends between two reads still counts as new: focus and one report event', async () => {

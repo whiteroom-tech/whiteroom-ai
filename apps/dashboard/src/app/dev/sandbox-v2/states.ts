@@ -77,6 +77,20 @@ const FINISHED: Results = { ...RESUMED, provider_errors: ['failed', 'Your agent 
 
 const live = (extra: Partial<SandboxHomePreview>): SandboxHomePreview => ({ status: connected(new Date(NOW - 60_000).toISOString()), rules: rules({}), now: NOW, ...extra });
 
+// The sample agent (spec sandbox-sample-agent): WhiteRoom runs it, so its key stores no provider key ("none").
+const sampleStatus = (running: boolean) => ({ ...connected(new Date(NOW - 2_000).toISOString()), key: { ...KEY, keyHint: 'none' }, sample: true, sampleRunning: running, sampleAvailable: !running });
+const SAMPLE_DONE: Results = {
+  long_task: ['passed', 'WhiteRoom handed over after 2 calls → your agent’s next call carried on.'],
+  spend_cap: ['passed', 'We blocked a call → it didn’t retry that call.'],
+  allowlists_keywords: ['passed', 'Would have blocked 1 call (in Watch). We tested blocking once, with your Spend cap rule.'],
+  loop_rate: ['passed', 'Would have blocked 2 calls (in Watch). We tested blocking once, with your Spend cap rule.'],
+  pause_stop: ['passed', 'We paused your agent for 5 seconds → it carried on. We stopped it → its calls were refused until it was let go.'],
+  provider_errors: ['failed', 'We returned a provider error (529) → your agent retried it 4 times within 5 s. Fix: retry with a growing wait, and give up after a few tries.'],
+  finishes_correctly: ['not_checked', 'Not checked: run practice tasks to check this.'],
+};
+const sampleRunning = checkState('pause', { long_task: SAMPLE_DONE.long_task, spend_cap: SAMPLE_DONE.spend_cap, allowlists_keywords: SAMPLE_DONE.allowlists_keywords, loop_rate: SAMPLE_DONE.loop_rate }, { calls: 9 });
+const sampleResults = checkState('done', SAMPLE_DONE, { ended: true, calls: 17 });
+
 export const SANDBOX_V2_STATES = {
   /** No Sandbox yet: step 1. */
   'not-connected': { status: { exists: false }, now: NOW },
@@ -130,6 +144,16 @@ export const SANDBOX_V2_STATES = {
   'checks-report-few': live({ checks: checkState('done', {}, { ended: true, calls: 3 }) }),
   /** Step 4: the checks couldn't be read. */
   'checks-error': live({ checks: { state: null, error: 'The Sandbox couldn’t do that right now. Try again in a moment.', now: NOW } }),
+  /** Connect, with the sample agent on offer. */
+  'sample-offer': { status: { exists: false, sampleAvailable: true }, now: NOW },
+  /** Connect, after today's sample runs are used up. */
+  'sample-limit': { status: { exists: false }, sampleRefusal: { reason: 'limit_fleet', message: 'You’ve used today’s sample runs. Try again tomorrow, or use your own key.' }, now: NOW },
+  /** The sample agent running: no setup, no "Nothing happening?". */
+  'sample-running': live({ status: sampleStatus(true), checks: { ...sampleRunning, state: { ...sampleRunning.state!, activity: { lastCallAt: new Date(NOW - 2_000).toISOString(), callsOutsideWindow24h: 0 } } } }),
+  /** The sample's report: its note, one fix, and Check your own agent. */
+  'sample-results': live({ status: sampleStatus(false), checks: sampleResults }),
+  /** Connect your own key over the sample. */
+  'sample-connect-own': live({ status: sampleStatus(false), checks: sampleResults, replacing: true }),
   /** The Sandbox card: an agent called outside a check. */
   'outside-window': live({ status: { ...connected(new Date(NOW - 60_000).toISOString()), callsOutsideWindow24h: 42, lastCallOutsideWindowAt: new Date(NOW - 60_000).toISOString() } }),
 } satisfies Record<string, SandboxHomePreview>;
