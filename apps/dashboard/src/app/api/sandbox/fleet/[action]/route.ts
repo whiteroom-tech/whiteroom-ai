@@ -4,6 +4,7 @@
 //   POST /api/sandbox/fleet/connect  {fleet, provider, api_key, endpoint?}
 //   POST /api/sandbox/fleet/rotate   {fleet, sandboxFleetId?}
 //   POST /api/sandbox/fleet/reset    {fleet, sandboxFleetId?}
+//   POST /api/sandbox/fleet/sample   {fleet}   (the sample agent's run)
 //
 // `fleet` is the user's production fleet. Every request must be same-origin
 // and from the signed-in account that owns it (lib/sandbox/fleet-server.ts).

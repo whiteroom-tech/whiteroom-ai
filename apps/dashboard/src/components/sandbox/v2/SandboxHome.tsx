@@ -12,7 +12,8 @@ import { agentNamingFor } from '@/lib/provider-key-form';
 import { ROUTES } from '@/lib/routes';
 import {
   connectSandboxFleet, getSandboxFleetStatus, isUnavailable, keptUntilText, lastCallText, outsideWindowText, providerLabel, sandboxSetting,
-  resetSandboxFleet, rotateSandboxFleetKey, SandboxFleetError, type ConnectRefusal, type IssuedSandboxKey, type SandboxFleetStatus,
+  resetSandboxFleet, rotateSandboxFleetKey, SAMPLE_REFUSALS, SandboxFleetError, startSandboxSample,
+  type ConnectRefusal, type IssuedSandboxKey, type SampleRefusal, type SandboxFleetStatus,
 } from '@/lib/sandbox/fleet';
 import { ConnectForm, type ConnectRequest } from './ConnectForm';
 import { SandboxChecks, STEP_CARD_ID, type SandboxChecksPreview } from './SandboxChecks';
@@ -28,6 +29,11 @@ export const RESET_NOTICE = 'Sandbox reset. Its calls and check results are clea
 /** The one line under the title, on the Connect step. */
 export const SANDBOX_LEAD = 'Test your agent before it goes live. It runs on your own API key, and nothing here touches your live agents.';
 
+/** Under "Try a sample agent" on the Connect step (spec sandbox-sample-agent §5.1). */
+export const SAMPLE_OFFER = 'Watch our sample agent go through the checks. It takes about a minute and runs on our key.';
+/** Connecting your own key over the sample. */
+export const SAMPLE_REPLACE = 'This replaces the sample. Its calls and results are cleared; your rules stay.';
+
 /** /dev/sandbox-v2: a fixed state instead of the engine. Actions change only the page. */
 export interface SandboxHomePreview {
   status: SandboxFleetStatus | null;
@@ -38,6 +44,10 @@ export interface SandboxHomePreview {
   rules?: SandboxRulesPreview;
   /** The checks card, once connected. */
   checks?: SandboxChecksPreview;
+  /** Connect your own key over the sample, already open. */
+  replacing?: boolean;
+  /** A refused sample start, as the engine words it. */
+  sampleRefusal?: { reason: SampleRefusal; message: string };
 }
 
 type Confirm = 'rotate' | 'reset' | null;
@@ -65,10 +75,15 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   const [error, setError] = useState(preview?.error ?? '');
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<Confirm>(null);
-  const [replacing, setReplacing] = useState(false);
+  const [replacing, setReplacing] = useState(!!preview?.replacing);
+  // The sample agent: starting it, and why it was last refused.
+  const [sampleBusy, setSampleBusy] = useState(false);
+  const [sampleRefusal, setSampleRefusal] = useState<{ reason: SampleRefusal | 'engine' | 'network'; message: string } | null>(preview?.sampleRefusal ?? null);
   const [notice, setNotice] = useState('');
   // The latest check state, from the checks card's own reads: decides Run your agent or Results.
   const [checks, setChecks] = useState<CheckState | null>(null);
+  // Bumped when the checks card must start over (a reset, a sample run, your key over the sample).
+  const [resets, setResets] = useState(0);
   // When a key was connected on this page (for the first-call event).
   const connectedAt = useRef<number | null>(null);
   const copiedEvent = useCallback(() => analytics.capture('sandbox_v2_setting_copied'), []);
@@ -112,12 +127,16 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
       return null;
     }
     setBusy(true); setNotice('');
+    const afterSample = status?.exists === true && status.sample === true;
     try {
       const done = await connectSandboxFleet(fleet, req);
       // A new key: the old Sandbox's results don't apply to it.
       setChecks(null);
+      // Over the sample, the engine cleared its results: the checks card starts over.
+      if (afterSample) setResets((n) => n + 1);
+      setSampleRefusal(null);
       connectedAt.current = Date.now();
-      analytics.capture('sandbox_v2_connected', { provider: req.provider, detected });
+      analytics.capture('sandbox_v2_connected', { provider: req.provider, detected, after_sample: afterSample });
       setStatus(done.status);
       setIssued(done.issued);
       setReplacing(false);
@@ -133,7 +152,29 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
     }
   }
 
-  const [resets, setResets] = useState(0);
+  async function startSample() {
+    if (preview) return;
+    setSampleBusy(true); setNotice(''); setError(''); setSampleRefusal(null);
+    try {
+      const next = await startSandboxSample(fleet);
+      // A new run: its own check, so the card and the steps start over.
+      setChecks(null);
+      setIssued(null);
+      setReplacing(false);
+      setStatus(next);
+      setResets((n) => n + 1);
+      analytics.capture('sandbox_v2_sample_started');
+    } catch (e) {
+      const known = e instanceof SandboxFleetError && SAMPLE_REFUSALS.includes(e.reason as SampleRefusal);
+      const reason = known ? (e as SandboxFleetError).reason as SampleRefusal : e instanceof SandboxFleetError && e.status > 0 ? 'engine' : 'network';
+      analytics.capture('sandbox_v2_sample_refused', { reason });
+      setSampleRefusal({ reason, message: message(e) });
+      // Connected elsewhere meanwhile: show their Sandbox.
+      if (reason === 'connected') void load(true);
+    } finally {
+      setSampleBusy(false);
+    }
+  }
 
   async function act(kind: 'rotate' | 'reset') {
     setConfirm(null);
@@ -147,6 +188,8 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
         setIssued(done.issued);
       } else {
         setStatus(await resetSandboxFleet(fleet, id));
+        // A refusal from before the reset (the day's limit, busy) no longer describes what Run the sample again would do.
+        setSampleRefusal(null);
         // The old results are gone: the steps bar goes back to Run your agent now, not on the next read.
         setChecks(null);
         // The checks card starts over: its old report is gone too.
@@ -163,7 +206,13 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   }
 
   const connected = status?.exists === true && status.key !== null ? status : null;
-  const outside = connected ? outsideWindowText(connected) : null;
+  const sample = connected?.sample === true;
+  const outside = connected && !sample ? outsideWindowText(connected) : null;
+  // Today's sample runs are used up (or every run is): the button gives way to a line saying so.
+  const sampleLimit = sampleRefusal?.reason === 'limit_fleet' || sampleRefusal?.reason === 'limit_global';
+  const sampleOffered = !connected && (status?.sampleAvailable === true || sampleLimit);
+  // Run the sample again goes once a start is refused for the limit.
+  const sampleAgain = sampleLimit ? undefined : () => void startSample();
   const showForm = !loading && status !== null && (!connected || replacing);
   const step = sandboxStepOf({ connected: !!connected, replacing, checks });
 
@@ -213,16 +262,30 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
         {connected && !replacing && (
           <p className={v.done}>
             <span className={v.doneMark} aria-hidden="true"><Icon name="check" size={13} /></span>
-            <span>Connected · {providerLabel(connected.key!.provider)} key ending <span className={v.mono}>{connected.key!.keyHint}</span></span>
-            <button type="button" className={`${v.linkButton} ${v.push}`} onClick={() => setReplacing(true)} disabled={busy}>Change key</button>
+            {sample
+              ? <span>Sample agent · run by WhiteRoom</span>
+              : <span>Connected · {providerLabel(connected.key!.provider)} key ending <span className={v.mono}>{connected.key!.keyHint}</span></span>}
+            <button type="button" className={`${v.linkButton} ${v.push}`} onClick={() => setReplacing(true)} disabled={busy}>{sample ? 'Use your own key' : 'Change key'}</button>
           </p>
         )}
 
         {showForm && (
-          <Panel id={CONNECT_CARD_ID} title={connected ? 'Connect a different key' : 'Paste your agent’s API key'}>
+          <Panel id={CONNECT_CARD_ID} title={sample ? 'Connect your own key' : connected ? 'Connect a different key' : 'Paste your agent’s API key'}>
             <div className={v.stack}>
-              {connected && <p className={v.text}>Your Sandbox URL changes when you connect a new provider key. Update your agent after.</p>}
-              <ConnectForm busy={busy} onConnect={connect} onRefused={preview ? undefined : refusedEvent} onCancel={connected ? () => setReplacing(false) : undefined} />
+              {connected && <p className={v.text}>{sample ? SAMPLE_REPLACE : 'Your Sandbox URL changes when you connect a new provider key. Update your agent after.'}</p>}
+              <ConnectForm busy={busy || sampleBusy} onConnect={connect} onRefused={preview ? undefined : refusedEvent} onCancel={connected ? () => setReplacing(false) : undefined} />
+              {sampleOffered && (
+                <div className={v.sampleOr}>
+                  {sampleLimit
+                    ? <p className={v.text} role="status">{sampleRefusal!.message}</p>
+                    : <>
+                      <strong>No key handy?</strong>
+                      <Button size={32} onClick={() => void startSample()} busy={sampleBusy} busyLabel="Starting…" disabled={busy}>Try a sample agent</Button>
+                      <p className={v.text}>{SAMPLE_OFFER}</p>
+                      {sampleRefusal && <p className={v.text} role="alert">{sampleRefusal.message}</p>}
+                    </>}
+                </div>
+              )}
             </div>
           </Panel>
         )}
@@ -236,10 +299,12 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
             onStale={reload}
             onState={setChecks}
             // A URL issued on this page (connect, or Get a new Sandbox URL on Results) shows even above a report.
-            setupAlways={!!issued}
+            setupAlways={!sample && !!issued}
             provider={connected.key!.provider}
             onChangeKey={() => setReplacing(true)}
-            setup={issued
+            // WhiteRoom runs the sample: nothing to set up, and its report leads to your own key.
+            sample={sample ? { onOwnKey: () => setReplacing(true), onAgain: sampleAgain, busy: sampleBusy, refusal: sampleRefusal?.message } : undefined}
+            setup={sample ? undefined : issued
               ? <RunSetup issued={issued} onCopied={preview ? undefined : copiedEvent} />
               : <ReturnSetup prefix={connected.key!.prefix} busy={busy} onNewUrl={() => setConfirm('rotate')} />}
           />
@@ -262,21 +327,23 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
           <details className={v.fold}>
             <summary className={v.foldHead}>
               <span className={v.foldTitle}>Sandbox settings</span>
-              <span className={v.foldSub}>{providerLabel(connected.key!.provider)} · {lastCallAt ? `last call ${lastCallText(lastCallAt, now)}` : 'no calls yet'}</span>
+              <span className={v.foldSub}>{sample ? 'Sample agent' : providerLabel(connected.key!.provider)} · {lastCallAt ? `last call ${lastCallText(lastCallAt, now)}` : 'no calls yet'}</span>
             </summary>
             <div className={`${v.stack} ${v.foldBody}`}>
               <dl className={v.facts}>
                 <dt>Provider</dt>
-                <dd>{providerLabel(connected.key!.provider)} · key ending <span className={v.mono}>{connected.key!.keyHint}</span></dd>
-                <dt>Sandbox URL</dt>
-                <dd className={v.mono}>…/{connected.key!.prefix.replace(/\.+$/, '')}…</dd>
+                <dd>{sample ? 'Sample agent (WhiteRoom)' : <>{providerLabel(connected.key!.provider)} · key ending <span className={v.mono}>{connected.key!.keyHint}</span></>}</dd>
+                {!sample && <>
+                  <dt>Sandbox URL</dt>
+                  <dd className={v.mono}>…/{connected.key!.prefix.replace(/\.+$/, '')}…</dd>
+                </>}
                 <dt>Last call</dt>
                 <dd>{lastCallText(lastCallAt, now)}</dd>
               </dl>
               <p className={v.text}>{keptUntilText(connected.expiresAt, now)}</p>
               <div className={v.actions}>
-                <Button size={32} onClick={() => setConfirm('rotate')} disabled={busy}>Get a new Sandbox URL</Button>
-                <Button size={32} onClick={() => setReplacing(true)} disabled={busy}>Change API key</Button>
+                {!sample && <Button size={32} onClick={() => setConfirm('rotate')} disabled={busy}>Get a new Sandbox URL</Button>}
+                <Button size={32} onClick={() => setReplacing(true)} disabled={busy}>{sample ? 'Use your own key' : 'Change API key'}</Button>
                 <Button size={32} variant="danger" onClick={() => setConfirm('reset')} disabled={busy}>Reset Sandbox</Button>
               </div>
             </div>

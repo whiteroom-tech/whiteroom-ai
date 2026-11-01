@@ -12,7 +12,7 @@ import { fmtDay, timeAgo } from '@/lib/format';
 import { issuedEnvHint } from '@/lib/provider-key-form';
 import { cloudStart, isCloudProvider, isSandboxProvider, SANDBOX_PROVIDER_LABELS, type SandboxProvider } from './providers';
 
-export const SANDBOX_FLEET_ACTIONS = ['status', 'connect', 'rotate', 'reset'] as const;
+export const SANDBOX_FLEET_ACTIONS = ['status', 'connect', 'rotate', 'reset', 'sample'] as const;
 export type SandboxFleetAction = (typeof SANDBOX_FLEET_ACTIONS)[number];
 
 export function isSandboxFleetAction(v: unknown): v is SandboxFleetAction {
@@ -28,9 +28,20 @@ export interface SandboxFleetKey {
   endpoint?: string;
 }
 
+/**
+ * The sample agent (spec sandbox-sample-agent): whether this Sandbox is the
+ * sample's, and whether one can start now (the switch is on, no key of the
+ * owner's, under the limits). Absent from an engine without it. Whether its
+ * run is going is the check window's to say, so it isn't read here.
+ */
+export interface SandboxSampleFlags {
+  sample?: boolean;
+  sampleAvailable?: boolean;
+}
+
 export type SandboxFleetStatus =
-  | { exists: false }
-  | {
+  | ({ exists: false } & Pick<SandboxSampleFlags, 'sampleAvailable'>)
+  | (SandboxSampleFlags & {
     exists: true;
     sandboxFleetId: string;
     createdAt: string;
@@ -40,7 +51,7 @@ export type SandboxFleetStatus =
     /** Calls in the last day that came outside a check (spec §8.3): a forgotten agent. */
     callsOutsideWindow24h?: number;
     lastCallOutsideWindowAt?: string | null;
-  };
+  });
 
 /** A Sandbox key handed out by connect or rotate. Shown once; never stored. */
 export interface IssuedSandboxKey {
@@ -93,7 +104,7 @@ const KEY_PREFIX_RE = /^sk-wr-[0-9a-f]{4,32}\.{0,3}$/;
 export function statusOf(data: unknown): SandboxFleetStatus | null {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
   const d = data as Record<string, unknown>;
-  if (d.exists === false) return { exists: false };
+  if (d.exists === false) return { exists: false, ...(d.sampleAvailable === true && { sampleAvailable: true }) };
   if (d.exists !== true || !str(d.sandboxFleetId, 128) || !str(d.createdAt, 64)) return null;
   let key: SandboxFleetKey | null = null;
   const k = d.key as Record<string, unknown> | null | undefined;
@@ -111,6 +122,8 @@ export function statusOf(data: unknown): SandboxFleetStatus | null {
       callsOutsideWindow24h: d.callsOutsideWindow24h,
       lastCallOutsideWindowAt: strOrNull(d.lastCallOutsideWindowAt),
     }),
+    ...(d.sample === true && { sample: true }),
+    ...(d.sampleAvailable === true && { sampleAvailable: true }),
   };
 }
 
@@ -241,6 +254,15 @@ export async function rotateSandboxFleetKey(fleet: string, sandboxFleetId?: stri
   const issued = issuedOf(data);
   if (!issued) throw new SandboxFleetError('WhiteRoom didn’t send your new Sandbox key. Try again.', 502);
   return { status: mustStatus(data), issued };
+}
+
+/** Why the engine refused the sample (its `reason`), for the page's line and the refusal event. */
+export type SampleRefusal = 'off' | 'connected' | 'busy' | 'limit_fleet' | 'limit_global' | 'sandbox';
+export const SAMPLE_REFUSALS: readonly SampleRefusal[] = ['off', 'connected', 'busy', 'limit_fleet', 'limit_global', 'sandbox'];
+
+/** Starts the sample agent: WhiteRoom runs it through this Sandbox, and a check opens. */
+export async function startSandboxSample(fleet: string): Promise<SandboxFleetStatus> {
+  return mustStatus(await call('sample', { fleet }));
 }
 
 export async function resetSandboxFleet(fleet: string, sandboxFleetId?: string): Promise<SandboxFleetStatus> {

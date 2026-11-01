@@ -52,6 +52,8 @@ export async function sandboxFleetOwner(fleet: unknown): Promise<SandboxFleetOwn
  * page's Sandbox isn't the fleet's current one.
  */
 export function engineBody(action: SandboxFleetAction, fleet: string, body: Record<string, unknown>): Record<string, unknown> | { error: Response } {
+  // The sample's run takes nothing but the fleet: its key and prompts are the engine's own.
+  if (action === 'sample') return { action: 'sandbox_sample_start', fleet_id: fleet };
   const base = { action: `sandbox_fleet_${action}`, fleet_id: fleet };
   if (action === 'status') return base;
   if (action === 'connect') {

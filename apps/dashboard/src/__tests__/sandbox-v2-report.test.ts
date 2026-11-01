@@ -76,6 +76,14 @@ describe('report: each check', () => {
     expect(card(st, 'provider_errors').next).toBe('Retry with a back-off of at least 1 second, and give up after a few tries.');
     expect(card(st, 'provider_errors').happened).toBe('Retried 6 times in 4 seconds.');
     for (const id of SCORED_CHECKS) expect(card(stateOf({ [id]: ['failed'] }), id).next).toBe(FIX[id]);
+    // The engine's closing "Fix: …" sentence isn't repeated in What happened; How to fix says it.
+    expect(card(stateOf({ provider_errors: ['failed', 'We returned a provider error (529) → your agent retried it 4 times within 5 s. Fix: retry with a growing wait, and give up after a few tries.'] }), 'provider_errors').happened)
+      .toBe('We returned a provider error (529) → your agent retried it 4 times within 5 s.');
+    expect(card(stateOf({ long_task: ['failed', 'WhiteRoom handed over, and your agent didn’t call again. Fix: when a call is refused with a short wait (429), retry it.'] }), 'long_task').happened)
+      .toBe('WhiteRoom handed over, and your agent didn’t call again.');
+    // A Fix with a period in it goes whole; a detail that is nothing but "Fix:" (no sentence before it) stays.
+    expect(card(stateOf({ spend_cap: ['failed', 'Blocked a call. Fix: wait 1.5 seconds, then try once more.'] }), 'spend_cap').happened).toBe('Blocked a call.');
+    expect(card(stateOf({ spend_cap: ['failed', 'Fix: this text is the whole detail.'] }), 'spend_cap').happened).toBe('Fix: this text is the whole detail.');
     // No Resume on the page any more: the fix doesn't mention it.
     expect(FIX.pause_stop).not.toMatch(/Resume/);
   });

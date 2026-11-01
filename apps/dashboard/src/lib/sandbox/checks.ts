@@ -148,9 +148,12 @@ const ago = (ms: number, now: number) => {
  * Step 4's live line: is the agent calling, and is this run being checked? Null before the
  * engine says (an older engine) or before any call while waiting for the first.
  */
-export function activityLine(state: CheckState, now = Date.now()): { calling: boolean; text: string } | null {
+export function activityLine(state: CheckState, now = Date.now(), sample = false): { calling: boolean; text: string } | null {
   const a = state.activity;
   if (!a?.lastCallAt) return null;
+  // The sample agent stops when its check ends: there's no next run to talk about.
+  if (sample && (!state.window || state.window.endedAt)) return null;
+  const Who = sample ? 'The sample agent' : 'Your agent';
   const since = Math.max(0, now - Date.parse(a.lastCallAt));
   const calling = since < CALLING_MS;
   const w = state.window;
@@ -158,8 +161,8 @@ export function activityLine(state: CheckState, now = Date.now()): { calling: bo
   if (w && !w.endedAt) {
     const checked = `${w.calls} ${w.calls === 1 ? 'call' : 'calls'} checked`;
     return calling
-      ? { calling, text: `Your agent is calling the Sandbox · ${last} · ${checked}` }
-      : { calling, text: `Your agent stopped calling · ${last} · ${checked}. The check carries on when it calls again.` };
+      ? { calling, text: `${Who} is calling the Sandbox · ${last} · ${checked}` }
+      : { calling, text: `${Who} stopped calling · ${last} · ${checked}. The check carries on when it calls again.` };
   }
   return calling
     ? { calling, text: `Your agent is calling the Sandbox · ${last}. This check has finished; its next run starts a new one.` }
@@ -212,19 +215,20 @@ export function isQuiet(state: CheckState, now = Date.now()): boolean {
   return now - Math.max(Date.parse(last), Date.parse(w.startedAt) || 0) >= QUIET_MS;
 }
 
-/** The live stage line in plain words. */
-export function stageLine(state: CheckState): string {
+/** The live stage line in plain words; `sample`: about the sample agent, not yours. */
+export function stageLine(state: CheckState, sample = false): string {
+  const who = sample ? 'the sample agent' : 'your agent';
   const w = state.window;
   if (!w) return '';
   if (w.endedAt) return 'Done';
   switch (w.stage) {
-    case 'observe': return 'Watching your agent’s calls…';
+    case 'observe': return `Watching ${who}’s calls…`;
     case 'enforce': {
       const now = ENFORCE_ORDER.map((id) => state.checks.find((c) => c.id === id)).find((c) => c?.status === 'pending');
       return now ? `Testing ${now.label}…` : 'Testing your rules…';
     }
-    case 'pause': return 'Paused your agent for 5 seconds…';
-    case 'stop': return 'Stopped your agent for 5 seconds…';
+    case 'pause': return `Paused ${who} for 5 seconds…`;
+    case 'stop': return `Stopped ${who} for 5 seconds…`;
     case 'errors': return 'Sending a provider error…';
     // The engine ends the window itself at done; this shows for at most one read.
     case 'done': return 'Getting your results…';

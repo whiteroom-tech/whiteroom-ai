@@ -42,7 +42,7 @@ const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : 'T
  * window ends. A check's stop lifts itself after 5 seconds, so there's no
  * Resume here.
  */
-export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState, setup, setupAlways = false, provider = 'anthropic', onChangeKey }: {
+export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState, setup, setupAlways = false, provider = 'anthropic', onChangeKey, sample }: {
   fleet: string;
   sandboxFleetId: string;
   preview?: SandboxChecksPreview;
@@ -58,6 +58,12 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   provider?: string;
   /** "Change key" in "Nothing happening?". */
   onChangeKey?: () => void;
+  /**
+   * The sample agent's Sandbox (spec sandbox-sample-agent §5): WhiteRoom runs
+   * the agent, so there's nothing to set up and no "Nothing happening?". Its
+   * report leads to connecting your own key, and can run the sample again.
+   */
+  sample?: SampleActions;
 }) {
   const [state, setState] = useState<CheckState | null>(preview ? preview.state : null);
   const [loading, setLoading] = useState(!preview);
@@ -156,6 +162,7 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
 
   const w = state?.window ?? null;
   const ended = !!w?.endedAt;
+  const isSample = !!sample;
   const quiet = !!state && isQuiet(state, now);
 
   // No call since this page opened, and nothing checked yet: what "Nothing happening?" is for.
@@ -208,19 +215,20 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
     if (preview || !focusReport || !state || !w?.endedAt || reported.current === w.id) return;
     reported.current = w.id;
     const r = reportOf(state);
-    analytics.capture('sandbox_v2_report', { verdict: r.verdict, passed: r.passed, failed: r.failed, calls: w.calls });
-  }, [preview, focusReport, state, w]);
+    analytics.capture('sandbox_v2_report', { verdict: r.verdict, passed: r.passed, failed: r.failed, calls: w.calls, sample: isSample });
+  }, [preview, focusReport, state, w, isSample]);
 
   return (
     <Panel
       id={STEP_CARD_ID}
-      title={ended ? 'Results' : 'Run your agent'}
+      title={ended ? 'Results' : isSample ? 'Our sample agent is running' : 'Run your agent'}
       actions={open && !quiet ? <Button size={28} variant="ghost" onClick={finish} disabled={busy}>Finish now</Button> : undefined}
     >
       <div className={v.stack}>
+        {isSample && !ended && <p className={v.text}>{SAMPLE_RUNNING}</p>}
         {setup && (!ended || setupAlways) && <div className={`${v.stack} ${v.setup}`}>{setup}</div>}
         {state && !quiet && (() => {
-          const live = activityLine(state, now);
+          const live = activityLine(state, now, isSample);
           // Not a live region: it changes on every read, and the stage box below announces what matters.
           return live && <p className={`${v.live} ${live.calling ? v.liveOn : ''}`}>{live.text}</p>;
         })()}
@@ -228,38 +236,53 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
         {error && <Banner variant="error" actions={!state && !loading && !preview ? <Button size={28} onClick={() => void load()}>Try again</Button> : undefined}>{error}</Banner>}
 
         {state && !w && <>
-          <p className={v.status} role="status" aria-live="polite"><span className={v.pulse} aria-hidden="true" />Waiting for your agent’s first call</p>
-          <p className={v.text}>{RUN_NOW}</p>
+          <p className={v.status} role="status" aria-live="polite"><span className={v.pulse} aria-hidden="true" />{isSample ? 'Starting the sample agent…' : 'Waiting for your agent’s first call'}</p>
+          {!isSample && <p className={v.text}>{RUN_NOW}</p>}
         </>}
 
         {state && w && !ended && <>
           {quiet ? (
             <div className={v.quiet} role="status" aria-live="polite">
-              <p className={v.status}><span className={v.still} aria-hidden="true" />Your agent stopped calling</p>
+              <p className={v.status}><span className={v.still} aria-hidden="true" />{isSample ? 'The sample agent stopped calling' : 'Your agent stopped calling'}</p>
               <p className={v.text}>
                 Last call {lastCallAt ? timeAgo(lastCallAt, now) : 'a while ago'}, {decidedCount(state)} of {SCORED_CHECKS.length} checks done.
-                {' '}Run your agent again to carry on, or finish now to see what we have.
+                {' '}{isSample ? 'Finish now to see what we have.' : 'Run your agent again to carry on, or finish now to see what we have.'}
               </p>
               <div className={v.actions}><Button size={32} variant="primary" onClick={finish} busy={busy} busyLabel="Finishing…">Finish now</Button></div>
             </div>
           ) : (
-            <p className={v.status} role="status" aria-live="polite"><span className={v.pulse} aria-hidden="true" />{stageLine(state)}</p>
+            <p className={v.status} role="status" aria-live="polite"><span className={v.pulse} aria-hidden="true" />{stageLine(state, isSample)}</p>
           )}
-          {w.calls === 0 && w.stage === 'observe' && !quiet && <p className={v.text}>{RUN_NOW}</p>}
+          {w.calls === 0 && w.stage === 'observe' && !quiet && !isSample && <p className={v.text}>{RUN_NOW}</p>}
           <LiveChecks state={state} />
         </>}
 
-        {noCallYet && (
+        {noCallYet && !isSample && (
           <NothingHappening provider={provider} open={helpOpen} onToggle={toggleHelp} onChangeKey={onChangeKey} />
         )}
 
         {state && w && ended && (
           <ReportView state={state} checked={fmtWhen(w.startedAt, now)} calls={w.calls} focus={focusReport}
-            onAgain={() => void act('start')} busy={busy} />
+            onAgain={isSample ? undefined : () => void act('start')} busy={busy} sample={sample} />
         )}
       </div>
     </Panel>
   );
+}
+
+/** Under the title while the sample runs. */
+export const SAMPLE_RUNNING = 'A small support agent working through customer tickets. Checks start on its first call.';
+/** Above the sample's verdict. */
+export const SAMPLE_NOTE = 'It retries too fast on purpose, so you can see what a fix looks like.';
+
+/** What the sample's report offers: connecting your own key (the next step), and running the sample again. */
+export interface SampleActions {
+  onOwnKey: () => void;
+  /** None: the day's runs are used up, so the button is hidden. */
+  onAgain?: () => void;
+  busy?: boolean;
+  /** Why Run the sample again was refused, shown beside it. */
+  refusal?: string;
 }
 
 type CopyState = 'idle' | 'copied' | 'failed';
@@ -283,8 +306,10 @@ export async function copyText(text: string): Promise<boolean> {
  * (closed). Copy summary puts it on the clipboard as plain text, with keys,
  * URLs and IDs hidden.
  */
-export function ReportView({ state, checked, calls, onAgain, busy = false, focus = false }: {
+export function ReportView({ state, checked, calls, onAgain, busy = false, focus = false, sample }: {
   state: CheckState; checked: string; calls: number;
+  /** The sample agent's report: a note on its flaw, and Check your own agent as the next step. */
+  sample?: SampleActions;
   /** Check again; none hides the button. */
   onAgain?: () => void;
   busy?: boolean;
@@ -313,6 +338,7 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
   const judgedOn = new Set(state.rules.map((r) => r.ruleId)).size;
   const callsText = calls === 1 ? '1 call' : `${calls.toLocaleString('en-US')} calls`;
   return <>
+    {sample && <p className={v.sampleNote}><strong>This was our sample agent.</strong> {SAMPLE_NOTE}</p>}
     <div className={v.report}>
       <h3 ref={heading} tabIndex={-1} className={`${v.reportHead} ${report.tone === 'pass' ? v.reportPass : report.tone === 'warn' ? v.reportWarn : ''}`} data-tone={report.tone}>{report.headline}</h3>
       <p className={v.text}>{few ? `${callsText} · checked ${checked}` : `${SCORED_CHECKS.length} checks · ${callsText} · checked ${checked}`}</p>
@@ -333,11 +359,13 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
       </details>
     )}
     <div className={v.actions}>
+      {sample && <Button size={32} variant="primary" onClick={sample.onOwnKey}>Check your own agent</Button>}
+      {sample?.onAgain && <Button size={32} variant="secondary" onClick={sample.onAgain} busy={sample.busy} busyLabel="Starting…">Run the sample again</Button>}
       {onAgain && <Button size={32} variant={report.verdict === 'pass' ? 'secondary' : 'primary'} onClick={onAgain} busy={busy} busyLabel="Starting…">Check again</Button>}
       <Button size={32} variant="ghost" onClick={copy}>{copied === 'copied' ? 'Copied' : 'Copy summary'}</Button>
-      <span className={v.text} aria-live="polite">{copied === 'failed' ? 'Couldn’t copy. Try again.' : ''}</span>
+      <span className={v.text} aria-live="polite">{copied === 'failed' ? 'Couldn’t copy. Try again.' : sample?.refusal ?? ''}</span>
     </div>
-    {!few && <p className={v.next}>Next: check its answers too. <Link href={ROUTES.practiceTest} className="wr-link">Run practice tasks</Link></p>}
+    {!few && !sample && <p className={v.next}>Next: check its answers too. <Link href={ROUTES.practiceTest} className="wr-link">Run practice tasks</Link></p>}
     <p className={v.text}>
       {judgedOn > 0 && <>Checked against {judgedOn === 1 ? '1 Sandbox rule' : `${judgedOn} Sandbox rules`} · </>}
       <button type="button" className={v.linkButton} onClick={openRules}>{judgedOn > 0 ? 'Change rules' : 'Sandbox rules'}</button>

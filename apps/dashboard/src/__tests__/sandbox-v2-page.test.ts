@@ -166,7 +166,7 @@ describe('Sandbox v2 page', () => {
     expect(document.querySelector('input[name="sandbox-provider"]')).toBeNull();
     await click('Connect');
     expect(calls()[1]).toEqual({ url: '/api/sandbox/fleet/connect', body: { fleet: 'prod-eu', provider: 'openai', api_key: 'sk-placeholder-openai-key-0000' } });
-    expect(capture).toHaveBeenCalledWith('sandbox_v2_connected', { provider: 'openai', detected: true });
+    expect(capture).toHaveBeenCalledWith('sandbox_v2_connected', { provider: 'openai', detected: true, after_sample: false });
   });
 
   it('Using Azure, Foundry or Bedrock? opens the choices; a cloud provider sends its endpoint', async () => {
@@ -181,7 +181,7 @@ describe('Sandbox v2 page', () => {
     await type(document.getElementById('sandbox-v2-key') as HTMLInputElement, 'placeholder-azure-key-0000');
     await click('Connect');
     expect(calls()[1]).toEqual({ url: '/api/sandbox/fleet/connect', body: { fleet: 'prod-eu', provider: 'azure-openai', api_key: 'placeholder-azure-key-0000', endpoint: 'https://placeholder.openai.azure.com' } });
-    expect(capture).toHaveBeenCalledWith('sandbox_v2_connected', { provider: 'azure-openai', detected: false });
+    expect(capture).toHaveBeenCalledWith('sandbox_v2_connected', { provider: 'azure-openai', detected: false, after_sample: false });
   });
 
   it('a key that is neither Anthropic’s nor OpenAI’s opens the choices and asks to pick one; nothing is sent', async () => {

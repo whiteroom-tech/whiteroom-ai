@@ -8,6 +8,7 @@ import { SANDBOX_V2_STATES, type SandboxV2State } from './states';
 // run-help, checks-quiet,
 // step 4: checks-ready, checks-waiting, checks-observe, checks-enforce, checks-pause, checks-stopped,
 // checks-errors, checks-done, checks-report, checks-report-pass, checks-report-few, checks-error,
+// sample agent: sample-offer, sample-limit, sample-running, sample-results, sample-connect-own,
 // and outside-window.
 export const metadata = { title: 'Sandbox v2 preview' };
 
