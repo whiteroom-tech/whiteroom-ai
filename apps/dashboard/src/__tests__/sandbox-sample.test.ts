@@ -133,6 +133,32 @@ describe('Sandbox sample agent: the page', () => {
     expect(button('Use your own key')).toBeDefined();
   });
 
+  it('Run the sample again starts a new run from the report; a limit refusal hides it and says why, another keeps it', async () => {
+    const DONE = { success: true, window: { ...WINDOW, endedAt: '2026-10-29T10:02:00.000Z', stage: 'done' }, checks: [], rules: [] };
+    let answer: Response | null = null;
+    bff.mockImplementation(async (url: string) => {
+      if (url.endsWith('/fleet/sample')) return answer ?? Response.json(SAMPLE);
+      if (url.startsWith('/api/sandbox/checks/')) return Response.json(DONE);
+      return Response.json({ ...SAMPLE, sampleRunning: false });
+    });
+    await render({ fleet: 'prod-eu' });
+    await click('Run the sample again');
+    expect(calls().filter((c) => c.url.endsWith('/fleet/sample'))).toHaveLength(1);
+    expect(capture).toHaveBeenCalledWith('sandbox_v2_sample_started');
+
+    answer = Response.json({ error: 'Sample runs are busy right now. Try again in a minute.', reason: 'busy' }, { status: 429 });
+    await click('Run the sample again');
+    expect(text()).toContain('Sample runs are busy right now. Try again in a minute.');
+    expect(button('Run the sample again')).toBeDefined();
+
+    answer = Response.json({ error: 'You’ve used today’s sample runs. Try again tomorrow, or use your own key.', reason: 'limit_fleet' }, { status: 429 });
+    await click('Run the sample again');
+    expect(text()).toContain('You’ve used today’s sample runs.');
+    expect(button('Run the sample again')).toBeUndefined();
+    expect(button('Check your own agent')).toBeDefined();
+    expect(capture).toHaveBeenCalledWith('sandbox_v2_sample_refused', { reason: 'limit_fleet' });
+  });
+
   it('Check your own agent opens Connect over the sample; connecting counts after_sample and starts the checks over', async () => {
     bff.mockImplementation(async (url: string) => {
       if (url.endsWith('/fleet/connect')) return Response.json({ ...OWN, created: false, ...ISSUED });
@@ -194,6 +220,9 @@ describe('Sandbox sample agent: wording and status', () => {
     expect(activityLine(state as never, now, true)?.text).toMatch(/^The sample agent is calling the Sandbox/);
     expect(activityLine(state as never, now)?.text).toMatch(/^Your agent is calling the Sandbox/);
     expect(activityLine({ ...state, window: { ...WINDOW, endedAt: '2026-10-29T10:00:59.000Z' } } as never, now, true)).toBeNull();
+    // No check at all (the run hasn't opened one, or it's gone): nothing to say about the sample.
+    expect(activityLine({ ...state, window: null } as never, now, true)).toBeNull();
+    expect(activityLine({ ...state, window: null } as never, now)?.text).toMatch(/^Your agent is calling the Sandbox/);
     expect(stageLine(state as never, true)).toBe('Watching the sample agent’s calls…');
     expect(stageLine({ ...state, window: { ...WINDOW, stage: 'pause' } } as never, true)).toBe('Paused the sample agent for 5 seconds…');
   });
