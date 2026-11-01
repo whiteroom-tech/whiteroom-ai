@@ -115,6 +115,64 @@ describe('Sandbox sample agent: the page', () => {
     expect(capture).toHaveBeenCalledWith('sandbox_v2_sample_refused', { reason: 'busy' });
   });
 
+  it('refused because a key of the owner’s is connected: reads the Sandbox again; no answer at all or an unnamed refusal is counted as network or engine', async () => {
+    let answer: () => Response | Promise<Response> = () => Response.json({ error: 'This Sandbox has your own key connected, so the sample can’t run in it.', reason: 'connected' }, { status: 409 });
+    let connectedNow = false;
+    bff.mockImplementation(async (url: string) => {
+      if (url.endsWith('/fleet/sample')) { connectedNow = true; return answer(); }
+      if (url.startsWith('/api/sandbox/checks/')) return Response.json({ success: true, window: null, checks: [], rules: [] });
+      return Response.json(connectedNow ? { ...OWN, sampleAvailable: false } : { success: true, exists: false, sampleAvailable: true });
+    });
+    await render({ fleet: 'prod-eu' });
+    await click('Try a sample agent');
+    expect(capture).toHaveBeenCalledWith('sandbox_v2_sample_refused', { reason: 'connected' });
+    expect(calls().filter((c) => c.url.endsWith('/fleet/status'))).toHaveLength(2);
+    expect(text()).toContain('key ending WXYZ');
+
+    act(() => root.unmount());
+    root = createRoot(document.body.appendChild(document.createElement('div')));
+    connectedNow = false;
+    bff.mockImplementation(async (url: string) => {
+      if (url.endsWith('/fleet/sample')) return answer();
+      return Response.json({ success: true, exists: false, sampleAvailable: true });
+    });
+    await render({ fleet: 'prod-eu' });
+    answer = () => { throw new TypeError('Failed to fetch'); };
+    await click('Try a sample agent');
+    expect(capture).toHaveBeenCalledWith('sandbox_v2_sample_refused', { reason: 'network' });
+    answer = () => Response.json({ error: 'The Sandbox couldn’t do that right now. Try again in a moment.' }, { status: 502 });
+    await click('Try a sample agent');
+    expect(capture).toHaveBeenCalledWith('sandbox_v2_sample_refused', { reason: 'engine' });
+  });
+
+  it('Reset clears a limit refusal: Run the sample again comes back', async () => {
+    const DONE = { success: true, window: { ...WINDOW, endedAt: '2026-10-29T10:02:00.000Z', stage: 'done' }, checks: [], rules: [] };
+    bff.mockImplementation(async (url: string) => {
+      if (url.endsWith('/fleet/sample')) return Response.json({ error: 'You’ve used today’s sample runs. Try again tomorrow, or use your own key.', reason: 'limit_fleet' }, { status: 429 });
+      if (url.startsWith('/api/sandbox/checks/')) return Response.json(DONE);
+      return Response.json({ ...SAMPLE, sampleRunning: false });
+    });
+    await render({ fleet: 'prod-eu' });
+    await click('Run the sample again');
+    expect(button('Run the sample again')).toBeUndefined();
+    await click('Reset Sandbox');
+    await click('Reset Sandbox');
+    expect(text()).not.toContain('You’ve used today’s sample runs.');
+    expect(button('Run the sample again')).toBeDefined();
+  });
+
+  it('a sample report that finishes on the page is counted with sample: true', async () => {
+    let ended = false;
+    bff.mockImplementation(async (url: string) => {
+      if (url.endsWith('/checks/stop')) ended = true;
+      if (url.startsWith('/api/sandbox/checks/')) return Response.json({ success: true, window: { ...WINDOW, endedAt: ended ? '2026-10-29T10:02:00.000Z' : null, stage: ended ? 'done' : 'observe' }, checks: [], rules: [] });
+      return Response.json(SAMPLE);
+    });
+    await render({ fleet: 'prod-eu' });
+    await click('Finish now');
+    expect(capture).toHaveBeenCalledWith('sandbox_v2_report', expect.objectContaining({ sample: true }));
+  });
+
   it('the sample’s report: its note, Check your own agent first, Run the sample again, and no practice line or Check again', async () => {
     await render({ fleet: 'prod-eu', preview: SANDBOX_V2_STATES['sample-results'] });
     expect(document.querySelector('[aria-current="step"]')?.textContent).toBe('3Results');

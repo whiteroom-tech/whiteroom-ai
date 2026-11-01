@@ -188,6 +188,8 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
         setIssued(done.issued);
       } else {
         setStatus(await resetSandboxFleet(fleet, id));
+        // A refusal from before the reset (the day's limit, busy) no longer describes what Run the sample again would do.
+        setSampleRefusal(null);
         // The old results are gone: the steps bar goes back to Run your agent now, not on the next read.
         setChecks(null);
         // The checks card starts over: its old report is gone too.

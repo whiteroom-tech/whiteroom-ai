@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement as h } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { readFileSync } from 'node:fs';
 import type { CheckState, CheckStatus, CheckId } from '@/lib/sandbox/checks';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -81,9 +82,11 @@ describe('report: each check', () => {
       .toBe('We returned a provider error (529) → your agent retried it 4 times within 5 s.');
     expect(card(stateOf({ long_task: ['failed', 'WhiteRoom handed over, and your agent didn’t call again. Fix: when a call is refused with a short wait (429), retry it.'] }), 'long_task').happened)
       .toBe('WhiteRoom handed over, and your agent didn’t call again.');
-    // Only a closing sentence that starts with "Fix:": anything else in the detail stays as the engine sent it.
+    // A Fix with a period in it goes whole; a detail that is nothing but "Fix:" (no sentence before it) stays.
+    expect(card(stateOf({ spend_cap: ['failed', 'Blocked a call. Fix: wait 1.5 seconds, then try once more.'] }), 'spend_cap').happened).toBe('Blocked a call.');
     expect(card(stateOf({ spend_cap: ['failed', 'Fix: this text is the whole detail.'] }), 'spend_cap').happened).toBe('Fix: this text is the whole detail.');
-    expect(card(stateOf({ spend_cap: ['failed', 'Blocked a call. Fix: back off. Then it retried 5 times.'] }), 'spend_cap').happened).toBe('Blocked a call. Fix: back off. Then it retried 5 times.');
+    // No lookbehind: it would stop the whole report loading on Safari before 16.4.
+    expect(readFileSync('src/lib/sandbox/check-report.ts', 'utf8')).not.toContain('(?<');
     // No Resume on the page any more: the fix doesn't mention it.
     expect(FIX.pause_stop).not.toMatch(/Resume/);
   });
