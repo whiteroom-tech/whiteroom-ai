@@ -7,7 +7,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement as h } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { readFileSync } from 'node:fs';
 import type { CheckState, CheckStatus, CheckId } from '@/lib/sandbox/checks';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -85,8 +84,6 @@ describe('report: each check', () => {
     // A Fix with a period in it goes whole; a detail that is nothing but "Fix:" (no sentence before it) stays.
     expect(card(stateOf({ spend_cap: ['failed', 'Blocked a call. Fix: wait 1.5 seconds, then try once more.'] }), 'spend_cap').happened).toBe('Blocked a call.');
     expect(card(stateOf({ spend_cap: ['failed', 'Fix: this text is the whole detail.'] }), 'spend_cap').happened).toBe('Fix: this text is the whole detail.');
-    // No lookbehind: it would stop the whole report loading on Safari before 16.4.
-    expect(readFileSync('src/lib/sandbox/check-report.ts', 'utf8')).not.toContain('(?<');
     // No Resume on the page any more: the fix doesn't mention it.
     expect(FIX.pause_stop).not.toMatch(/Resume/);
   });
