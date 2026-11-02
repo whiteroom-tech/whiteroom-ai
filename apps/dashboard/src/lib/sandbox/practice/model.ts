@@ -9,7 +9,7 @@ import { failedCallReason } from '@/lib/sandbox/failed-calls';
 import { counted, fmtDay } from '@/lib/format';
 import type {
   PracticeCheck, PracticeControlCheck, PracticeFailedCalls, PracticeKeyRefusal, PracticeProviderKey, PracticeReport, PracticeRun, PracticeRunRow, PracticeSource,
-  PracticeStart, PracticeVerdict, RunCode,
+  PracticeProfile, PracticeStart, PracticeVerdict, RunCode,
 } from './types';
 
 export { CATALOG };
@@ -50,10 +50,19 @@ export const ADAPTER_HELP_URL = 'https://www.npmjs.com/package/@whiteroom-ai/cli
 /** The one line that says what the adapter is, beside its link. */
 export const ADAPTER_EXPLAINER = 'A short script that passes each practice task to your agent. We give you a starter.';
 
-/** One run's practice tasks, as the engine plans them: all of them, or those a rerun's checks are judged on. */
-export function planOf(scope: string[] | null): (Scenario | 'controls')[] {
-  return (Object.keys(TASK_NAMES) as (Scenario | 'controls')[]).filter((s) => !scope
-    || (s === 'controls' ? scope.some((id) => id.startsWith('ctl')) : CATALOG.checks.some((c) => c.task === s && scope.includes(c.id))));
+/** How thorough a test is (engine plan.ts): quick, deep, or null for a test started without one (today's plan). */
+export type { PracticeProfile };
+/** The quick test's tasks, in the order the engine plays them. */
+export const QUICK_PLAN: readonly Scenario[] = ['D', 'A', 'C_timeout', 'C_fail'];
+/** Played only by a test with a profile: one started without one keeps today's plan. */
+const PROFILE_ONLY: readonly string[] = ['D'];
+
+/** One run's practice tasks, as the engine plans them: a quick test's; or all of them (a deep test adds D first), or those a rerun's checks are judged on. */
+export function planOf(scope: string[] | null, profile: PracticeProfile | null = null): (Scenario | 'controls')[] {
+  if (profile === 'quick') return [...QUICK_PLAN];
+  const today = (Object.keys(TASK_NAMES) as (Scenario | 'controls')[]).filter((s) => !PROFILE_ONLY.includes(s) && (!scope
+    || (s === 'controls' ? scope.some((id) => id.startsWith('ctl')) : CATALOG.checks.some((c) => c.task === s && scope.includes(c.id)))));
+  return profile === 'deep' ? ['D', ...today] : today;
 }
 
 // ── The CLI ──────────────────────────────────────────────────────────────
@@ -202,7 +211,7 @@ export function keyLine(choice: PracticeKeyChoice | null, fleet: string, sample 
 // ── Cost (§1: the range and the cap before anything runs) ────────────────
 
 /** Model calls a practice task usually takes, from the reference agent's runs (an estimate, not a cap). */
-const USUAL_CALLS: Record<Scenario, [number, number]> = { A: [6, 10], B_base: [8, 12], B_long: [15, 25], C_timeout: [4, 7], C_fail: [4, 8] };
+const USUAL_CALLS: Record<Scenario, [number, number]> = { A: [6, 10], B_base: [8, 12], B_long: [15, 25], C_timeout: [4, 7], C_fail: [4, 8], D: [3, 5] };
 
 /**
  * List prices in dollars per million tokens (input, output) for the models we
@@ -236,6 +245,8 @@ export interface CallEstimate {
   high: number;
   /** Never more than this many: each task's allowance and the control checks. */
   cap: number;
+  /** Whether the test makes control checks (a quick test doesn't): the cost line says they're included only then. */
+  controls?: boolean;
   /** At list price, when the model has one we know. */
   cost: [number, number] | null;
   /** R7: who bills the calls, when it's a cloud account. Azure's prices aren't shown; Bedrock's are Anthropic's list prices, approximately. */
@@ -249,17 +260,19 @@ const BILLED_BY: Partial<Record<PracticeProvider, 'Azure' | 'AWS'>> = { 'azure-o
  * What a test usually costs and its hard cap, for `runs` runs of `scope`
  * (null: everything) plus `controlCalls` extra calls for the control checks.
  */
-export function callEstimate(o: { runs: number; scope: string[] | null; controlCalls: number; model: string | null | undefined; provider?: PracticeProvider | null }): CallEstimate {
-  const plan = planOf(o.scope);
+export function callEstimate(o: { runs: number; scope: string[] | null; controlCalls: number; model: string | null | undefined; provider?: PracticeProvider | null; profile?: PracticeProfile | null }): CallEstimate {
+  const plan = planOf(o.scope, o.profile ?? null);
   const tasks = plan.filter((s): s is Scenario => s !== 'controls');
   const controls = plan.includes('controls') ? o.controlCalls : 0;
   const allowances = CATALOG.allowances as Record<Scenario, number>;
   const low = o.runs * (tasks.reduce((n, s) => n + USUAL_CALLS[s][0], 0) + controls);
   const high = o.runs * (tasks.reduce((n, s) => n + USUAL_CALLS[s][1], 0) + controls);
-  const perRun = Math.min(CATALOG.runCallCap, tasks.reduce((n, s) => n + allowances[s], 0) + (plan.includes('controls') ? CATALOG.controlCallsMax : 0));
+  // The run cap is for today's plan; a deep pass's planted-instruction task comes on top of it.
+  const cap = CATALOG.runCallCap + (tasks.includes('D') ? allowances.D : 0);
+  const perRun = Math.min(cap, tasks.reduce((n, s) => n + allowances[s], 0) + (plan.includes('controls') ? CATALOG.controlCallsMax : 0));
   const billedBy = (o.provider && BILLED_BY[o.provider]) ?? null;
   const price = billedBy === 'Azure' ? null : perCall(billedBy === 'AWS' && o.model ? anthropicName(o.model) : o.model);
-  return { low, high, cap: o.runs * perRun, cost: price && [low * price[0], high * price[1]], billedBy };
+  return { low, high, cap: o.runs * perRun, cost: price && [low * price[0], high * price[1]], billedBy, controls: plan.includes('controls') };
 }
 
 /** "usually 40–65 model calls (≈ $0.25–$0.80 at list price)"; Bedrock "(approx. $0.25–$0.80 at Anthropic’s list prices)". */
@@ -274,8 +287,9 @@ const billing = (e: CallEstimate) => (e.billedBy ? `, billed by your ${e.billedB
 /** Setup's cost line. On Azure, only the cap: what the calls cost depends on the deployment. */
 export function costLine(e: CallEstimate, runs: number): string {
   const cap = runs > 1 ? `${CATALOG.runCallCap} calls a run (${e.cap} in all)` : `${e.cap} calls`;
-  if (e.billedBy === 'Azure') return `Never more than ${cap}${billing(e)}. That includes control checks.`;
-  return `On the key you test with: ${usualCalls(e)}. Never more than ${cap}${billing(e)}, including control checks.`;
+  const included = e.controls !== false;
+  if (e.billedBy === 'Azure') return `Never more than ${cap}${billing(e)}.${included ? ' That includes control checks.' : ''}`;
+  return `On the key you test with: ${usualCalls(e)}. Never more than ${cap}${billing(e)}${included ? ', including control checks' : ''}.`;
 }
 
 /** The results' billing line, for the key the test used and its runs: "… never more than 120 a run (360 in all)." */
@@ -369,13 +383,15 @@ export interface RowResult {
  * agent (D2: never a failure); else Not checked, with the first open check's
  * reason.
  */
-export function groupRows(r: Pick<PracticeReport, 'checks' | 'scope'>): RowResult[] {
+export function groupRows(r: Pick<PracticeReport, 'checks' | 'scope' | 'profile'>): RowResult[] {
+  const plan = planOf(r.scope, r.profile ?? null);
   return ROWS.map((row) => {
     const members = membersOf(row, r.checks);
     const noun = isGuardrail(row) && row.id !== PAUSE_STOP ? 'rule' : 'test';
     const out = (status: RowStatus, reason: string, partial = false): RowResult => ({ row, status, reason, members, partial, noun });
     if (!members.length) {
       if (r.scope) return out('not_checked', 'Not part of this rerun.');
+      if (!rowTasks(row).some((t) => plan.includes(t))) return out('not_checked', notInThisTest(row, r.profile ?? null));
       if (row.id === PAUSE_STOP) return out('not_checked', 'Pause and Stop aren’t on for this fleet.');
       return isGuardrail(row) ? out('not_set_up', 'No rule yet.') : out('not_checked', 'Didn’t run.');
     }
@@ -415,9 +431,11 @@ export const WILL_CHECK = 'Will be checked';
  * checks, the guardrails from the engine's planned control checks (null: they
  * couldn't be read). Empty keyword rules aren't planned by the engine.
  */
-export function planRows(controls: PracticeControlCheck[] | null): RowPlan[] {
+export function planRows(controls: PracticeControlCheck[] | null, profile: PracticeProfile | null = null): RowPlan[] {
+  const plan = planOf(null, profile);
   return ROWS.map((row) => {
     const out = (status: RowPlan['status'], reason: string, members: string[]): RowPlan => ({ row, status, reason, members });
+    if (!rowTasks(row).some((t) => plan.includes(t))) return out('not_checked', notInThisTest(row, profile), []);
     if (!isGuardrail(row)) {
       const checks = membersOf(row, CATALOG.checks);
       return out('will_check', counted(checks.length, 'check'), checks.map((c) => c.label));
@@ -436,6 +454,12 @@ export function planRows(controls: PracticeControlCheck[] | null): RowPlan[] {
     const rules = checked.length < live.length ? `${checked.length} of ${counted(live.length, 'rule')}` : members.length > 1 && counted(members.length, 'rule');
     return out('will_check', [rules, modes, calls ? counted(calls, 'extra call') : 'no extra calls'].filter(Boolean).join(' · '), names);
   });
+}
+
+/** Why a row isn't part of a test: the quick test leaves the guardrails to the Sandbox's live check and the long task to the deep test; a test without a profile has no planted-instruction task. */
+function notInThisTest(row: PreflightRow, profile: PracticeProfile | null): string {
+  if (isGuardrail(row)) return 'Checked live in your Sandbox.';
+  return profile ? 'In the deep test.' : 'In the quick and deep tests.';
 }
 
 /** The pre-flight's five steps (§7 Phase 2). */
@@ -665,9 +689,9 @@ function rowTasks(row: PreflightRow): (Scenario | 'controls')[] {
  * the tasks done so far (`skip`: not part of this rerun). Pass or fail comes
  * with the report, not before.
  */
-export function liveRows(run: Pick<PracticeRun, 'runs' | 'scope' | 'progress'>): { row: PreflightRow; state: 'done' | 'now' | 'todo' | 'skip' }[] {
-  const plan = planOf(run.scope);
-  const order = Array.from({ length: run.runs }, () => plan).flat();
+export function liveRows(run: Pick<PracticeRun, 'runs' | 'scope' | 'progress' | 'profile' | 'plan'>): { row: PreflightRow; state: 'done' | 'now' | 'todo' | 'skip' }[] {
+  // The plan the engine settled, once claimed; before that, the one the test was started with.
+  const order = run.plan ? run.plan.tasks.map((t) => t.scenario as Scenario) : Array.from({ length: run.runs }, () => planOf(run.scope, run.profile ?? null)).flat();
   const done = run.progress?.done ?? 0;
   return ROWS.map((row) => {
     const tasks = rowTasks(row);

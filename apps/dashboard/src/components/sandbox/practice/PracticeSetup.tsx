@@ -3,12 +3,12 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { FONT_DISPLAY, SegmentedControl } from '@whiteroom/ui';
-import { sourceModel } from '@/lib/sandbox/practice/api';
+import { practiceCapabilities, sourceModel } from '@/lib/sandbox/practice/api';
 import {
   ADAPTER_EXPLAINER, ADAPTER_HELP_URL, callEstimate, CATALOG, choiceOf, CLOUD_MODEL_FIELD, controlCalls, costLine, defaultAgent, directChoice, DISCLAIMER, KEY_REFUSALS, keyLine, keyOptions,
   planRows, practiceBlock, PRACTICE_SUMMARY, providerKeyLabel, SAMPLE_AGENT, usualMinutes, SAMPLE_MODELS, UNSUPPORTED_FLEET, WILL_CHECK, ROW_STATUS_LABEL, type PracticeKeyChoice,
 } from '@/lib/sandbox/practice/model';
-import type { PracticeControlCheck, PracticeSource, PracticeStart } from '@/lib/sandbox/practice/types';
+import type { PracticeCapabilities, PracticeControlCheck, PracticeProfile, PracticeSource, PracticeStart } from '@/lib/sandbox/practice/types';
 import { ROUTES } from '@/lib/routes';
 import { RowGroups, type RowItem } from './PreflightRows';
 import s from '../guided.module.css';
@@ -27,8 +27,8 @@ function KeyLine({ choice, fleet, sample, className }: { choice: PracticeKeyChoi
 }
 
 /** Step 2's rows: what each of the seven will do, from the catalog and the engine's planned control checks (null: couldn't be read). */
-export function planItems(controls: PracticeControlCheck[] | null): RowItem[] {
-  return planRows(controls).map((x) => ({
+export function planItems(controls: PracticeControlCheck[] | null, profile: PracticeProfile | null = null): RowItem[] {
+  return planRows(controls, profile).map((x) => ({
     row: x.row,
     tone: 'muted',
     label: x.status === 'will_check' ? WILL_CHECK : ROW_STATUS_LABEL[x.status],
@@ -54,12 +54,14 @@ const cloudKey = (src: PracticeSource | undefined, prefix: string | null) => {
  * started from the computer the agent runs on, so on a phone the Start
  * button gives way to a note saying so.
  */
-export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, ownAgent = false, onStart }: {
+export function PracticeSetup({ fleet, data, busy, preview, previewCapabilities, refresh = 0, ownAgent = false, onStart }: {
   fleet: string;
   data: SetupData;
   busy: boolean;
   /** /dev/practice: what source-model would say, instead of asking the engine. */
   preview?: PracticeSource;
+  /** /dev/practice: what the engine's capabilities would say (null: an engine without profiles). */
+  previewCapabilities?: PracticeCapabilities | null;
   /** Changes when the keys should be read again (Start said the picked one is gone). */
   refresh?: number;
   /** /dev/practice: start on the own-agent test. */
@@ -74,6 +76,18 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, ownAgen
   const recent = defaultAgent(data.agents, data.lastActiveAt);
   const [agent, setAgent] = useState(recent);
   const [runs, setRuns] = useState<1 | 3>(1);
+  // Quick or deep, once the engine says it offers them (undefined while asking; null: an engine without profiles, today's plan).
+  const [caps, setCaps] = useState<PracticeCapabilities | null | undefined>(previewCapabilities);
+  const [profile, setProfile] = useState<PracticeProfile>('quick');
+  useEffect(() => {
+    if (previewCapabilities !== undefined) { setCaps(previewCapabilities); return; }
+    let live = true;
+    practiceCapabilities(fleet).then((c) => { if (live) setCaps(c); }, () => { if (live) setCaps(null); });
+    return () => { live = false; };
+  }, [fleet, previewCapabilities]);
+  // The profile a Start sends: quick or deep where the engine offers them; a sample-agent test is quick.
+  const sent: PracticeProfile | null = caps ? (sample ? 'quick' : profile) : null;
+  const quick = sent === 'quick';
   // What source-model says: the agent's latest model, where its calls go, the keys to pick from (undefined while loading).
   const [src, setSrc] = useState<PracticeSource | undefined>(preview);
   // The Fleet key key picked (its display prefix), or null for the fleet's own key.
@@ -121,13 +135,14 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, ownAgen
   // The key the test runs on: the picked Fleet key key, else the fleet's own key's provider as its latest call showed.
   const keyChoice = sample ? null : choice ?? directChoice(src);
   const est = callEstimate({
-    runs: sample ? 1 : runs, scope: null, controlCalls: src?.controls ? controlCalls(src.controls.checks) : src ? CATALOG.controlCallsMax : 0, provider: choice?.provider ?? null,
+    runs: sample || quick ? 1 : runs, scope: null, profile: sent, controlCalls: src?.controls ? controlCalls(src.controls.checks) : src ? CATALOG.controlCallsMax : 0, provider: choice?.provider ?? null,
     model: model ?? (sample && !cloudField ? SAMPLE_MODELS.anthropic : null),
   });
   const pick = (v: boolean) => { setSample(v); if (!cloudField) { setChanging(false); setTyped(''); } };
   const change = () => { setTyped(sample ? '' : latest ?? ''); setChanging(true); };
   const start = () => onStart({
-    fleet, sample, runs: sample ? 1 : runs,
+    fleet, sample, runs: sample || quick ? 1 : runs,
+    ...(sent && { profile: sent }),
     ...(agent && { agent }),
     ...(model && { model }),
     ...(key && { proxyKeyDisplayPrefix: key.displayPrefix }),
@@ -169,7 +184,7 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, ownAgen
         )}
         {sample ? (
           <p className={s.small}>
-            WhiteRoom’s sample agent runs the tasks with your rules: no code, 1 run, about {usualMinutes(1)}. It checks your guardrails, not your own agent.
+            WhiteRoom’s sample agent runs the tasks with your rules: no code, 1 run, {quick ? 'a few minutes' : `about ${usualMinutes(1)}`}. It checks your guardrails, not your own agent.
             {noAgents && ' Testing your own agent opens once it has called through WhiteRoom.'}
           </p>
         ) : (
@@ -196,7 +211,18 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, ownAgen
           </div>
         )}
 
-        {!sample && (
+        {!sample && caps && (
+          <div className={s.formGroup}>
+            <span className={s.formLabel}>How thorough</span>
+            <SegmentedControl<PracticeProfile> label="How thorough" value={profile} onChange={setProfile}
+              options={[{ value: 'quick', label: 'Quick · a few minutes' }, { value: 'deep', label: 'Deep · longer' }]} />
+            <p className={s.small} style={{ marginTop: 6 }}>{profile === 'quick'
+              ? 'Finishes the job, fails gracefully, and ignores a planted instruction. Your guardrails are checked live in your Sandbox.'
+              : 'Adds the long task and your guardrails’ control checks, and can run 3 times.'}</p>
+          </div>
+        )}
+
+        {!sample && !quick && (
           <div className={s.formGroup}>
             <span className={s.formLabel}>Runs</span>
             <SegmentedControl<'1' | '3'> label="Runs" value={String(runs) as '1' | '3'} onChange={(v) => setRuns(v === '3' ? 3 : 1)}
@@ -219,8 +245,8 @@ export function PracticeSetup({ fleet, data, busy, preview, refresh = 0, ownAgen
 
       <section className={s.card} aria-labelledby="practice-plan-title">
         <h3 id="practice-plan-title" className={s.sectionTitle}>2. What we’ll test</h3>
-        <RowGroups items={planItems(controls)} />
-        <p className={s.small} style={{ marginTop: 12 }}>{costLine(est, sample ? 1 : runs)}</p>
+        <RowGroups items={planItems(controls, sent)} />
+        <p className={s.small} style={{ marginTop: 12 }}>{costLine(est, sample || quick ? 1 : runs)}</p>
         {!blocked && <KeyLine choice={keyChoice} fleet={fleet} sample={sample} className={s.small} />}
         <div className={`${s.btnRow} ${p.desktopOnly}`} style={{ marginTop: 12 }}>
           <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy || !!blocked || (!!cloudField && !model)} onClick={start}>{busy ? 'Starting…' : 'Start test'}</button>

@@ -33,12 +33,12 @@ const row = (r: ReturnType<typeof groupRows>, id: string) => {
   return { status: x.status, reason: x.reason, members: x.members.map((c) => c.id) };
 };
 
-describe('the catalog’s seven rows (engine E1)', () => {
-  it('are seven, in two groups, named as the checklist names them', () => {
-    expect(ROWS.map((r) => r.id)).toEqual(['finishes_job', 'long_task', 'fails_gracefully', 'spend_cap', 'loop_breaker', 'keyword', 'pause_stop']);
+describe('the catalog’s eight rows (engine E1, eight checks B3)', () => {
+  it('are eight, in two groups, named as the checklist names them', () => {
+    expect(ROWS.map((r) => r.id)).toEqual(['finishes_job', 'long_task', 'fails_gracefully', 'spend_cap', 'loop_breaker', 'keyword', 'pause_stop', 'planted_instruction']);
     expect(ROW_GROUPS).toEqual(['The agent', 'The guardrails']);
     expect(CATALOG.rowStatusLabels).toEqual({ passed: 'Passed', failed: "Didn't pass", not_set_up: 'Not set up', not_checked: 'Not checked' });
-    expect(PRACTICE_SUMMARY).toBe('7 checks, 3 for your agent and 4 for its guardrails · about 5–10 min for one run');
+    expect(PRACTICE_SUMMARY).toBe('8 checks, 3 for your agent and 5 for its guardrails · about 5–10 min for one run');
   });
 });
 
@@ -137,7 +137,7 @@ describe('a report’s rows, from structured fields only (D1, §3b)', () => {
 
   it('a rerun’s rows outside its scope weren’t part of it', () => {
     const r = groupRows({ checks: [check('c.timeout')], scope: ['c.timeout'] });
-    expect(r.map((x) => x.status)).toEqual(['not_checked', 'not_checked', 'passed', 'not_checked', 'not_checked', 'not_checked', 'not_checked']);
+    expect(r.map((x) => x.status)).toEqual(['not_checked', 'not_checked', 'passed', 'not_checked', 'not_checked', 'not_checked', 'not_checked', 'not_checked']);
     expect(row(r, 'spend_cap')).toMatchObject({ reason: 'Not part of this rerun.' });
   });
 
@@ -174,7 +174,10 @@ describe('setup’s plan of the rows (§7 step 2)', () => {
     expect(plan.find((x) => x.row.id === 'spend_cap')).toMatchObject({ status: 'not_set_up', reason: 'Off in Controls.' });
     expect(plan.find((x) => x.row.id === 'loop_breaker')).toMatchObject({ status: 'not_set_up', reason: 'Not set up for billing-bot.' });
     expect(plan.find((x) => x.row.id === 'pause_stop')).toMatchObject({ status: 'not_checked', reason: 'Pause and Stop aren’t on for this fleet.' });
-    expect(planRows(null).filter((x) => x.row.group === 'The guardrails').every((x) => x.status === 'not_checked' && x.reason.startsWith('Couldn’t read'))).toBe(true);
+    expect(planRows(null).filter((x) => x.row.members.every((m) => m.startsWith('ctl.'))).every((x) => x.status === 'not_checked' && x.reason.startsWith('Couldn’t read'))).toBe(true);
+    // Row 08's task is only in a test with a profile.
+    expect(planRows(null).find((x) => x.row.id === 'planted_instruction')).toMatchObject({ status: 'not_checked', reason: 'In the quick and deep tests.' });
+    expect(planRows(null, 'deep').find((x) => x.row.id === 'planted_instruction')).toMatchObject({ status: 'will_check' });
   });
 
   it('setup shows the seven rows; a row with no rule says so, with no link into production Controls', () => {

@@ -12,7 +12,7 @@ import {
   callEstimate, CATALOG, choiceOf, controlCalls, draftFromStart, headline, isOpen, KEY_REFUSALS, planOf, PREFLIGHT_STEPS, preflightStep, rerunConfirm, rerunKey, RUN_ID_RE, runKeyChoice, SAMPLE_AGENT, type PracticeKeyChoice,
 } from '@/lib/sandbox/practice/model';
 import { practiceReportFileName, practiceReportHtml } from '@/lib/sandbox/practice/report';
-import type { PracticeControlCheck, PracticeProviderKey, PracticeResult, PracticeRun, PracticeRunRow, PracticeSource, PracticeSourceProvider, PracticeStart, RunCode } from '@/lib/sandbox/practice/types';
+import type { PracticeCapabilities, PracticeControlCheck, PracticeProviderKey, PracticeResult, PracticeRun, PracticeRunRow, PracticeSource, PracticeSourceProvider, PracticeStart, RunCode } from '@/lib/sandbox/practice/types';
 import { DEMO_RESULT, DEMO_RUN } from '@/lib/sandbox/practice/demo';
 import { PastTests } from '../PastTests';
 import { StepsRail } from '../StepsRail';
@@ -47,6 +47,8 @@ export interface PracticePreview {
   blocked?: PracticeSource['blocked'];
   /** null: the engine couldn't say. */
   controls?: PracticeControlCheck[] | null;
+  /** What the engine offers: quick and deep tests (left out: an engine without profiles). */
+  capabilities?: PracticeCapabilities | null;
   run?: PracticeRun;
   code?: RunCode | null;
   result?: PracticeResult | null;
@@ -346,7 +348,7 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
           <StepsRail steps={PREFLIGHT_STEPS} current={preflightStep(view, run)} label="Pre-flight steps" />
           <div className={s.body}>
             {view === 'setup' && fleet && setup && <>
-              <PracticeSetup fleet={fleet} data={setup} busy={busy} preview={previewSrc} ownAgent={preview?.test === 'agent'} refresh={refreshKeys} onStart={(st, key) => { void start(st, key); }} />
+              <PracticeSetup fleet={fleet} data={setup} busy={busy} preview={previewSrc} previewCapabilities={preview ? preview.capabilities ?? null : undefined} ownAgent={preview?.test === 'agent'} refresh={refreshKeys} onStart={(st, key) => { void start(st, key); }} />
               <PastTests preview={preview ? [] : undefined} practice={rows ?? undefined} />
             </>}
             {view === 'run' && run && (

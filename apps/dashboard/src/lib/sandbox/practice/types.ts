@@ -40,6 +40,10 @@ export type PracticeRuleSetup = 'ok' | 'not_set_up' | 'off';
 
 export interface PracticeReport {
   testVersion: number;
+  /** Eight checks (test version 3): how thorough, and what the CLI ran. Absent from older reports. */
+  profile?: PracticeProfile;
+  adapterKind?: 'sample' | 'custom';
+  skipped?: Array<{ scenario: string; reason: string; needs?: string }>;
   verdict: PracticeVerdict;
   runs: number;
   sample: boolean;
@@ -78,7 +82,20 @@ export interface PracticeRun {
   codeTriesLeft: number | null;
   /** Only the WhiteRoom server running the test knows these. */
   progress: { done: number; total: number; lastContactAt: string } | null;
+  /** Eight checks (engine B5): how thorough, where it was started, and the plan the engine settled at claim. Absent from older engines. */
+  profile?: PracticeProfile | null;
+  origin?: 'sandbox' | null;
+  plan?: PracticePlan | null;
 }
+
+export interface PracticePlan {
+  tasks: Array<{ scenario: string; runIndex: number }>;
+  overallDeadlineAt: string | null;
+  skipped: Array<{ scenario: string; reason: string; needs?: string }>;
+  adapterKind: 'sample' | 'custom';
+}
+
+export type PracticeProfile = 'quick' | 'deep';
 
 /** GET /runs?fleet=: a Past tests row. */
 export interface PracticeRunRow {
@@ -167,6 +184,17 @@ export interface PracticeStart {
   scope?: string[];
   /** R7: the Fleet key provider key to test with ("sk-wr-" and 16 hex, as Fleet key lists it). */
   proxyKeyDisplayPrefix?: string;
+  /** Eight checks: how thorough (absent on an engine without profiles), longer limits for a quick rerun, and a test started from the Sandbox. */
+  profile?: PracticeProfile;
+  longer?: true;
+  origin?: 'sandbox';
+}
+
+/** GET /capabilities: what the engine's practice tests offer; null from an engine without profiles. */
+export interface PracticeCapabilities {
+  testVersion: number;
+  profiles: PracticeProfile[];
+  quick: { tasks: string[]; taskSeconds: Record<string, number>; overallSeconds: number };
 }
 
 export interface RunCode {

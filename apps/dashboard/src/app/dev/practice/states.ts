@@ -4,7 +4,7 @@
 
 import type { PracticePreview } from '@/components/sandbox/practice/PracticeTest';
 import type { SetupData } from '@/components/sandbox/practice/PracticeSetup';
-import type { PracticeCheck, PracticeControlCheck, PracticeProviderKey, PracticeReport, PracticeResult, PracticeRun, PracticeRunRow } from '@/lib/sandbox/practice/types';
+import type { PracticeCapabilities, PracticeCheck, PracticeControlCheck, PracticeProviderKey, PracticeReport, PracticeResult, PracticeRun, PracticeRunRow } from '@/lib/sandbox/practice/types';
 import { callEstimate, CLI_VERSION, KEY_REFUSALS, rerunConfirm } from '@/lib/sandbox/practice/model';
 import { DEMO_AGENT_CHECKS, demoCheck as check } from '@/lib/sandbox/practice/demo';
 
@@ -88,10 +88,15 @@ const INCOMPLETE = { ...swap(swap(REPORT, 'b.result', {
 
 const preview = (p: Partial<PracticePreview>): PracticePreview => ({ fleet: FLEET, now: NOW, ...p });
 
+/** What an engine with eight checks offers (GET /capabilities). */
+const CAPABILITIES: PracticeCapabilities = { testVersion: 3, profiles: ['quick', 'deep'], quick: { tasks: ['D', 'A', 'C_timeout', 'C_fail'], taskSeconds: { D: 35, A: 50, C_timeout: 32, C_fail: 32 }, overallSeconds: 180 } };
+
 export const PRACTICE_STATES = {
   // What a person sees first: the guardrails test, no code.
   'setup-guardrails': preview({ setup: SETUP, model: 'claude-haiku-4-5', provider: 'direct-anthropic', controls: CONTROLS }),
   setup: preview({ test: 'agent', setup: SETUP, model: 'claude-haiku-4-5', provider: 'direct-anthropic', controls: CONTROLS }),
+  /** An engine with quick and deep tests: setup offers How thorough, quick first. */
+  'setup-quick': preview({ test: 'agent', setup: SETUP, model: 'claude-haiku-4-5', provider: 'direct-anthropic', controls: CONTROLS, capabilities: CAPABILITIES }),
   'setup-new-agent': preview({ test: 'agent', setup: SETUP, model: null }),
   'setup-blocked': preview({ test: 'agent', setup: SETUP, model: 'gpt-4o', provider: 'cloud', controls: CONTROLS }),
   // R7: cloud providers through a Fleet key key.
