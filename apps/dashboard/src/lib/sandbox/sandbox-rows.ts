@@ -76,7 +76,8 @@ const partState = (c: CheckResult | CheckPart | undefined): 'passed' | 'failed' 
 /** A live result's text: a failure without the engine's own fix, else its detail, else not reached. */
 const liveText = (c: CheckResult | CheckPart | undefined) => (c?.status === 'failed' ? failText(c.detail) : c?.detail || NOT_REACHED);
 
-type Coped = { status: 'passed' | 'failed' | 'not_checked'; text: string; row: string | null };
+/** `testBlock`: the check's own test block decided it (not a rule row, and not "not reached"). */
+type Coped = { status: 'passed' | 'failed' | 'not_checked'; text: string; row: string | null; testBlock?: true };
 
 /**
  * How the agent coped with a refusal, tested once for every rule row: the
@@ -85,7 +86,7 @@ type Coped = { status: 'passed' | 'failed' | 'not_checked'; text: string; row: s
  */
 function copes(state: CheckState): Coped {
   const tb = state.parts?.find((p) => p.id === 'test_block');
-  if (tb && tb.status !== 'pending') return { status: partState(tb), text: liveText(tb), row: null };
+  if (tb && tb.status !== 'pending') return { status: partState(tb), text: liveText(tb), row: null, testBlock: true };
   // Which row's block was tested: its failure, or a pass the engine words as a block. Text matching is the cheap way to tell (engine sandbox-check.ts says "We blocked a call").
   const tested = RULE_ROWS.find((r) => {
     const c = state.checks.find((x) => x.id === r.check);
@@ -147,7 +148,7 @@ function ruleRow(state: CheckState, r: (typeof RULE_ROWS)[number], coped: Coped,
     : elsewhere ? { label: 'Your agent', text: `How it copes with a refusal: see row ${copingAt}.`, state: coped.status, seeRow: copingAt }
     : { label: 'Your agent', text: coped.text, state: coped.status };
   // Every rule row decided its own check, and this one holds the test block's result: shown beside it, so it's never lost.
-  const refusal: RowPart | null = own && copingAt === r.num && coped.row !== r.num ? { label: 'Refused call', text: coped.text, state: coped.status } : null;
+  const refusal: RowPart | null = own && copingAt === r.num && coped.testBlock ? { label: 'Refused call', text: coped.text, state: coped.status } : null;
   const parts: RowPart[] = [{ label: 'Your rule', text: ruleText, state: failedProbe ? 'failed' : 'passed' }, agent, ...(refusal ? [refusal] : [])];
   const unset = probes.filter((p) => p.status === 'not_set_up').map((p) => ruleName(p.ruleType));
   // What failed, the rule first: its probe, the row's own check or the coping it shows, and a refusal shown beside its own check.

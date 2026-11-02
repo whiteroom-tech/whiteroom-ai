@@ -106,6 +106,24 @@ describe('practice tasks on the report (eight checks C3)', () => {
     expect(practiceUrls.at(-1)).toBe('/api/sandbox/practice/r-2/report?fleet=prod-eu');
   });
 
+  it('the report event waits for the practice read, so a bound run is in its counts', async () => {
+    checks = checkAnswer({ stage: 'observe', agentId: 'support-bot' });
+    bff.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/sandbox/checks/')) return Response.json(checks);
+      if (url.startsWith('/api/sandbox/practice/r-')) return Response.json(result);
+      if (url.startsWith('/api/sandbox/practice')) return Response.json({ runs: [runRow('r-1', 'support-bot', 1)] });
+      if (url.startsWith('/api/sandbox/helper/')) return Response.json(helper);
+      return Response.json({ error: 'unexpected' }, { status: 500 });
+    });
+    await render(checksEl());
+    capture.mockClear();
+    checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z', agentId: 'support-bot' }, { long_task: 'passed' });
+    await click('Finish now');
+    await flush();
+    // Rows 01 and 08 are filled by the bound run: none left needing practice tasks.
+    expect(capture.mock.calls.filter(([name]) => name === 'sandbox_report_rows')).toEqual([['sandbox_report_rows', expect.objectContaining({ practice: 0 })]]);
+  });
+
   it('a new report for another agent starts with nothing bound, even when reading practice runs then fails', async () => {
     checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z', agentId: 'support-bot' }, { long_task: 'passed' });
     let failing = false;

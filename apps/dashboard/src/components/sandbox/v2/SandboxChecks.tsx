@@ -91,6 +91,8 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   // The practice run bound to this report: chosen once, kept until the owner picks a newer one (eight checks §6).
   // Kept with the report it was read for ("window|agent"), so a new report never shows, or counts, the last one's.
   const [practiceRead, setPracticeRead] = useState<{ key: string; view: PracticeView } | null>(null);
+  // The report whose practice read finished (bound, nothing to bind, or failed): its analytics wait for it.
+  const [settledKey, setSettledKey] = useState<string | null>(null);
   // The run bound so far (read, never a reason to fetch again), and the one the owner picked with Use it (a reason to).
   const boundRef = useRef<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
@@ -216,7 +218,7 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
       const run = runs.find((r) => r.id === b.bind)!;
       setPractice({ bound: res.report ? { runId: b.bind, endedAt: run.endedAt, checks: res.report.checks } : null, newer: b.newer, other });
     // A failed read keeps what's on screen: a new report or agent never shows the last one's (practiceRead's key).
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => { if (live) setSettledKey(key); });
     return () => { live = false; };
   }, [preview, sample, reportWindow, reportAgent, fleet, picked]);
   const ended = !!w?.endedAt;
@@ -270,15 +272,16 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   // One report event per check that finishes while the page is open (not an old report on load). Never ids, keys or names.
   const reported = useRef<string | null>(null);
   useEffect(() => {
-    if (preview || !focusReport || !state || !w?.endedAt || reported.current === w.id) return;
+    // Once this report's practice read has finished (a sample's report has none), so its counts include a bound run.
+    const settled = isSample || settledKey === reportKey;
+    if (preview || !focusReport || !state || !w?.endedAt || !settled || reported.current === w.id) return;
     reported.current = w.id;
     // What the page shows: the rows' counts and tone, under a new name (the old event carried the six-check verdict).
-    // Sent once, when the report appears: a practice run bound after that isn't in its counts.
     const few = tooFewCalls(state);
     const rows = sandboxRows(state, practice.bound ?? undefined);
     const c = rowCounts(rows);
     analytics.capture('sandbox_report_rows', { tone: few ? 'too_few' : rowsHeadline(rows).tone, fix: c.fix, checked: c.checked, practice: c.practice, notSetUp: c.notSetUp, calls: w.calls, sample: isSample });
-  }, [preview, focusReport, state, w, isSample, practice.bound]);
+  }, [preview, focusReport, state, w, isSample, practice.bound, settledKey, reportKey]);
 
   return (
     <Panel
