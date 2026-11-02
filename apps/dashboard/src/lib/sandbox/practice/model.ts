@@ -535,7 +535,8 @@ export function passCaveat(r: PracticeReport): string | null {
   const gaps = r.scope ? [] : notFullyChecked(r).names;
   const notAll = gaps.length ? `Not fully checked: ${gaps.join(', ')}. Each one below says why. ` : '';
   if (r.sample) return `${notAll}This was WhiteRoom’s sample agent: it checks your rules and this setup, not your own agent.`;
-  if (r.runs === 1) return `${notAll}One run shows your agent can pass. Run it 3 times to see that it passes every time.`;
+  // A quick test has no second run: the deep test is the one that runs 3 times.
+  if (r.runs === 1) return `${notAll}One run shows your agent can pass. ${r.profile === 'quick' ? 'A deep test can run 3 times to see' : 'Run it 3 times to see'} that it passes every time.`;
   return notAll.trim() || null;
 }
 

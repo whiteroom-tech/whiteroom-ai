@@ -207,6 +207,12 @@ describe('practice test screens', () => {
       'Call rate · Watch', 'Download report', 'What was tested', '(sent by the CLI, not verified)', 'Adapter (reported by the CLI)', DISCLAIMER,
       'Full details kept until', 'Test r-7f3a']) expect(passed).toContain(s);
     expect(text(render('passed-1run'))).toContain('Run it 3 times');
+    // A quick test takes no second run: no "Run it 3 times"; a deep one does.
+    const one = PRACTICE_STATES['passed-1run'];
+    const as = (profile: 'quick' | 'deep') => text(renderToStaticMarkup(createElement(PracticeTest, { preview: { ...one, result: { ...one.result!, report: { ...one.result!.report!, profile } } } })));
+    expect(as('quick')).not.toContain('Run it 3 times');
+    expect(as('quick')).toContain('A deep test can run 3 times to see that it passes every time.');
+    expect(as('deep')).toContain('Run it 3 times');
     const sample = text(render('passed-sample'));
     expect(sample).toContain('WhiteRoom’s sample agent, as support-bot');
     expect(sample).toContain('Download needs a test of your own agent.');
