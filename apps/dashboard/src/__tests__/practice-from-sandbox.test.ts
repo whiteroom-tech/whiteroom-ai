@@ -74,6 +74,22 @@ describe('a practice test from the Sandbox', () => {
     act(() => root.unmount());
   });
 
+  it('no agent known yet: Start stays off (from the Sandbox there’s only your own agent to test)', async () => {
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const root = createRoot(el);
+    await act(async () => {
+      root.render(createElement(PracticeSetup, {
+        fleet: 'prod-eu', data: { agents: [] }, busy: false, sandboxAgent: 'sbx-agent',
+        previewCapabilities: PRACTICE_STATES['setup-from-sandbox'].capabilities,
+        preview: { model: null, provider: 'unknown', directKey: false, blocked: null, providerKeys: [], controls: null },
+        onStart: () => {},
+      }));
+    });
+    expect([...el.querySelectorAll('button')].find((b) => b.textContent === 'Start test')!.disabled).toBe(true);
+    act(() => root.unmount());
+  });
+
   it('an engine without profiles: Start stays off, and says why', async () => {
     const el = document.createElement('div');
     document.body.appendChild(el);

@@ -125,6 +125,28 @@ describe('the rows’ edges', () => {
     expect(rowsHeadline(sandboxRows(s)).headline).toBe('1 thing to fix before going live');
   });
 
+  it('the coping row: a tested rule row’s own block; the first undecided row; else beside a decided row’s own check', () => {
+    // A rule row's block was tested (its check failed): that row shows it, the undecided rows point to it.
+    const tested = by(state({ checks: { spend_cap: ['not_triggered', ''], loop_rate: ['failed', 'We blocked a call → it retried 5 times. Fix: back off.'], allowlists_keywords: ['not_triggered', ''] } }));
+    expect(tested['05']).toMatchObject({ state: 'failed', fix: { next: 'Stop repeating the same call, and slow down when WhiteRoom blocks one.' } });
+    for (const n of ['04', '06']) expect(tested[n].parts[1]).toMatchObject({ seeRow: '05' });
+    // Row 04 decided on its own; the test block's result goes to row 05, the first that didn't.
+    const block = [{ id: 'test_block' as const, status: 'failed' as const, detail: 'We sent a test block → your agent retried it 5 times.' }];
+    const skip = by(state({ checks: { loop_rate: ['not_triggered', ''], allowlists_keywords: ['not_triggered', ''] }, parts: block }));
+    expect(skip['04'].parts.map((p) => p.label)).toEqual(['Your rule', 'Your agent']);
+    expect(skip['05']).toMatchObject({ state: 'failed' });
+    expect(skip['06'].parts[1]).toMatchObject({ seeRow: '05' });
+    // Every rule row decided: the first carries the test block's result beside its own check, and it counts.
+    const all = state({ parts: block });
+    const r = by(all);
+    expect(r['04'].parts[2]).toMatchObject({ label: 'Refused call', state: 'failed' });
+    expect(r['04']).toMatchObject({ state: 'failed', fix: { next: 'Make your agent stop or back off when WhiteRoom blocks a call (it got a 4xx with a reason).' } });
+    expect(rowsHeadline(sandboxRows(all)).headline).toBe('1 thing to fix before going live');
+    // No rule set up anywhere: no row to point to.
+    const none = by(state({ probes: [probe('spend_cap', 'not_set_up')], parts: block }));
+    for (const n of ['04', '05', '06']) expect(none[n].state).toBe('not_set_up');
+  });
+
   it('names the rows practice tasks would check, from the rows themselves', () => {
     expect(practiceRows(sandboxRows(state()))).toBe('01, 08 and the rest of 03');
   });

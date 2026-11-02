@@ -266,7 +266,7 @@ export function PracticeSetup({ fleet, data, busy, preview, previewCapabilities,
         {sandboxAgent && !sample ? <p className={s.small}>Run it where your agent’s key is set: the same key you connected to your Sandbox.</p>
           : !blocked && <KeyLine choice={keyChoice} fleet={fleet} sample={sample} className={s.small} />}
         <div className={`${s.btnRow} ${p.desktopOnly}`} style={{ marginTop: 12 }}>
-          <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy || !!blocked || (!!cloudField && !model) || caps === undefined || sandboxNeedsCaps} onClick={start}>{busy ? 'Starting…' : 'Start test'}</button>
+          <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy || !!blocked || (!!cloudField && !model) || caps === undefined || sandboxNeedsCaps || (!sample && !agent)} onClick={start}>{busy ? 'Starting…' : 'Start test'}</button>
         </div>
         {sandboxNeedsCaps && (
           <p className={`${s.small} ${p.desktopOnly}`} role="status">

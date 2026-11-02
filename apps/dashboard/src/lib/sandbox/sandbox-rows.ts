@@ -113,11 +113,16 @@ function liveRow(num: string, name: string, group: SandboxRow['group'], check: C
   return { num, name, group, state, line: liveText(check), parts: [], fix: state === 'failed' ? { happened: liveText(check), next: fix } : null, note: null };
 }
 
-/** The rule row that shows how the agent copes: the one whose block was tested, else the first with a rule set up. */
+/**
+ * The rule row that shows how the agent copes: the one whose block was
+ * tested; else the first with a rule set up whose own check didn't decide;
+ * else the first with a rule set up (shown beside its own check).
+ */
 function copingRow(state: CheckState, coped: Coped): string | null {
   if (coped.row) return coped.row;
-  const set = (r: (typeof RULE_ROWS)[number]) => state.probes?.some((p) => (r.types as readonly string[]).includes(p.ruleType) && p.status !== 'not_set_up');
-  return RULE_ROWS.find(set)?.num ?? null;
+  const set = RULE_ROWS.filter((r) => state.probes?.some((p) => (r.types as readonly string[]).includes(p.ruleType) && p.status !== 'not_set_up'));
+  const undecided = set.find((r) => { const c = state.checks.find((x) => x.id === r.check); return c?.status !== 'passed' && c?.status !== 'failed'; });
+  return (undecided ?? set[0])?.num ?? null;
 }
 
 function ruleRow(state: CheckState, r: (typeof RULE_ROWS)[number], coped: Coped, copingAt: string | null): SandboxRow {
@@ -141,12 +146,17 @@ function ruleRow(state: CheckState, r: (typeof RULE_ROWS)[number], coped: Coped,
   const agent: RowPart = own ? { label: 'Your agent', text: liveText(check), state: partState(check) }
     : elsewhere ? { label: 'Your agent', text: `How it copes with a refusal: see row ${copingAt}.`, state: coped.status, seeRow: copingAt }
     : { label: 'Your agent', text: coped.text, state: coped.status };
-  const parts: RowPart[] = [{ label: 'Your rule', text: ruleText, state: failedProbe ? 'failed' : 'passed' }, agent];
+  // Every rule row decided its own check, and this one holds the test block's result: shown beside it, so it's never lost.
+  const refusal: RowPart | null = own && copingAt === r.num && coped.row !== r.num ? { label: 'Refused call', text: coped.text, state: coped.status } : null;
+  const parts: RowPart[] = [{ label: 'Your rule', text: ruleText, state: failedProbe ? 'failed' : 'passed' }, agent, ...(refusal ? [refusal] : [])];
   const unset = probes.filter((p) => p.status === 'not_set_up').map((p) => ruleName(p.ruleType));
-  const agentFix = agent.state === 'failed' && !agent.seeRow ? { happened: agent.text, next: own ? FIX[r.check] : BLOCKED_FIX } : null;
-  const ruleFix = failedProbe ? { happened: ruleText, next: 'Check this rule in your Sandbox rules, then check again.' } : null;
-  // Both can fail at once: say both, the rule first.
-  const fix = ruleFix && agentFix ? { happened: `${ruleFix.happened} ${agentFix.happened}`, next: `${ruleFix.next} ${agentFix.next}` } : ruleFix ?? agentFix;
+  // What failed, the rule first: its probe, the row's own check or the coping it shows, and a refusal shown beside its own check.
+  const fixes = [
+    failedProbe && { happened: ruleText, next: 'Check this rule in your Sandbox rules, then check again.' },
+    agent.state === 'failed' && !agent.seeRow && { happened: agent.text, next: own ? FIX[r.check] : BLOCKED_FIX },
+    refusal?.state === 'failed' && { happened: refusal.text, next: BLOCKED_FIX },
+  ].filter((f): f is { happened: string; next: string } => !!f);
+  const fix = fixes.length ? { happened: fixes.map((f) => f.happened).join(' '), next: [...new Set(fixes.map((f) => f.next))].join(' ') } : null;
   return { ...base, state: precedence(parts), line: '', parts, fix, note: unset.length ? `Not set up: ${[...new Set(unset)].join(', ').toLowerCase()}.` : null };
 }
 
