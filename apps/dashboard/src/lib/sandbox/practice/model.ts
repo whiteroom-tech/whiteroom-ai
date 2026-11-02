@@ -62,6 +62,7 @@ export function planOf(scope: string[] | null, profile: PracticeProfile | null =
   if (profile === 'quick') return [...QUICK_PLAN];
   const today = (Object.keys(TASK_NAMES) as (Scenario | 'controls')[]).filter((s) => !PROFILE_ONLY.includes(s) && (!scope
     || (s === 'controls' ? scope.some((id) => id.startsWith('ctl')) : CATALOG.checks.some((c) => c.task === s && scope.includes(c.id)))));
+  // As the engine does (plan.ts): a deep pass plays D first, a scoped rerun's too.
   return profile === 'deep' ? ['D', ...today] : today;
 }
 
@@ -299,9 +300,9 @@ export function billedLine(r: Pick<PracticeReport, 'runs' | 'tested'>): string {
   return `Model calls were billed to the key you tested with${key}, never more than ${cap}.`;
 }
 
-// ── The seven rows (pre-flight D1): the checks in two groups ─────────────
+// ── The eight rows (pre-flight D1, eight checks): the checks in two groups ─────────────
 
-/** One of the seven pre-flight rows, from the engine's catalog: its members are check-id prefixes. */
+/** One of the eight pre-flight rows, from the engine's catalog: its members are check-id prefixes. */
 export type PreflightRow = (typeof CATALOG.rows)[number];
 export const ROWS: readonly PreflightRow[] = CATALOG.rows;
 /** "The agent", "The guardrails", in the catalog's order. */
@@ -376,7 +377,7 @@ export interface RowResult {
 }
 
 /**
- * The seven rows of a report (D1, §3b), from structured fields only: a row is
+ * The eight rows of a report (D1, §3b), from structured fields only: a row is
  * Didn't pass if any of its checks failed; Passed when every check of a rule
  * set up for the agent passed (Watch passes when it would have acted, D3);
  * Not set up when it has no rule, or its rules are Off or don't cover the
@@ -427,7 +428,7 @@ export interface RowPlan {
 export const WILL_CHECK = 'Will be checked';
 
 /**
- * The seven rows as setup previews them: the agent rows from the catalog's
+ * The eight rows as setup previews them: the agent rows from the catalog's
  * checks, the guardrails from the engine's planned control checks (null: they
  * couldn't be read). Empty keyword rules aren't planned by the engine.
  */
@@ -685,7 +686,7 @@ function rowTasks(row: PreflightRow): (Scenario | 'controls')[] {
 }
 
 /**
- * The seven rows while a test runs (§7 step 4, §9): each row's progress from
+ * The eight rows while a test runs (§7 step 4, §9): each row's progress from
  * the tasks done so far (`skip`: not part of this rerun). Pass or fail comes
  * with the report, not before.
  */

@@ -14,6 +14,7 @@ vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 
 const { PracticeTest } = await import('@/components/sandbox/practice/PracticeTest');
 const { PracticeCard } = await import('@/components/sandbox/practice/PracticeCard');
+const { PracticeSetup } = await import('@/components/sandbox/practice/PracticeSetup');
 const { PastTests } = await import('@/components/sandbox/PastTests');
 const { TestRunFlow } = await import('@/components/sandbox/TestRunFlow');
 const { PRACTICE_ROWS, PRACTICE_STATES } = await import('@/app/dev/practice/states');
@@ -73,6 +74,10 @@ describe('practice test screens', () => {
     // A quick test makes no control checks, so its cost line doesn't say they're included.
     expect(t).toMatch(/Never more than 42 calls\./);
     expect(t).not.toContain('including control checks');
+    // Start waits for the answer, so a test never starts without the profile the engine offers.
+    const asking = text(renderToStaticMarkup(createElement(PracticeSetup, { fleet: 'prod-eu', data: PRACTICE_STATES['setup-quick'].setup!, busy: false, onStart: () => {} })));
+    expect(renderToStaticMarkup(createElement(PracticeSetup, { fleet: 'prod-eu', data: PRACTICE_STATES['setup-quick'].setup!, busy: false, onStart: () => {} }))).toMatch(/<button[^>]*disabled=""[^>]*>Start test<\/button>/);
+    expect(asking).not.toContain('How thorough');
     // An engine without profiles: today's setup, runs and all.
     const old = text(renderToStaticMarkup(createElement(PracticeTest, { preview: PRACTICE_STATES.setup })));
     expect(old).not.toContain('How thorough');

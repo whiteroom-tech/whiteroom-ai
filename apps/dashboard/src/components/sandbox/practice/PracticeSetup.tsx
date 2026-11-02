@@ -26,7 +26,7 @@ function KeyLine({ choice, fleet, sample, className }: { choice: PracticeKeyChoi
   return <p className={className}>{l.before}<code>{l.keyVar}</code>{l.after}</p>;
 }
 
-/** Step 2's rows: what each of the seven will do, from the catalog and the engine's planned control checks (null: couldn't be read). */
+/** Step 2's rows: what each of the eight will do, from the catalog and the engine's planned control checks (null: couldn't be read). */
 export function planItems(controls: PracticeControlCheck[] | null, profile: PracticeProfile | null = null): RowItem[] {
   return planRows(controls, profile).map((x) => ({
     row: x.row,
@@ -249,7 +249,7 @@ export function PracticeSetup({ fleet, data, busy, preview, previewCapabilities,
         <p className={s.small} style={{ marginTop: 12 }}>{costLine(est, sample || quick ? 1 : runs)}</p>
         {!blocked && <KeyLine choice={keyChoice} fleet={fleet} sample={sample} className={s.small} />}
         <div className={`${s.btnRow} ${p.desktopOnly}`} style={{ marginTop: 12 }}>
-          <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy || !!blocked || (!!cloudField && !model)} onClick={start}>{busy ? 'Starting…' : 'Start test'}</button>
+          <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy || !!blocked || (!!cloudField && !model) || caps === undefined} onClick={start}>{busy ? 'Starting…' : 'Start test'}</button>
         </div>
         {cloudField && !model && !blocked && <p className={`${s.small} ${p.desktopOnly}`}>{cloudField.missing}</p>}
         <p className={`${s.notice} ${p.phoneOnly}`}>Start from your computer: open this page on the computer where your agent runs.</p>

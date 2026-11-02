@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import contract from '@practice-contract/contract.json';
 import { SANDBOX_CHECKS } from '@/lib/sandbox/report';
-import { keyGone, PracticeError, retryable, sourceModel } from '@/lib/sandbox/practice/api';
+import { keyGone, practiceCapabilities, PracticeError, retryable, sourceModel } from '@/lib/sandbox/practice/api';
 import {
   billedLine, callEstimate, CATALOG, choiceOf, KEY_REFUSALS, keyLine, keyOptions, providerKeyLabel, PROXY_KEY_PREFIX_RE, cliCommands, codeCountdown, controlCalls, costLine, fixLine, headline,
   CLI_VERSION, directChoice, draftFromStart, endedBecause, lostContact, passCaveat, pastKind, RUN_ID_RE, pastResult, pastTasks, planOf, practiceAgent, progressLine, rerunConfirm,
@@ -58,6 +58,19 @@ describe('practice test setup: the agent’s model and where its calls go', () =
     // A kind this dashboard doesn't know reads as not yet known.
     answer({ ...fixture<Record<string, unknown>>('source-model'), model: '', provider: 'somewhere-new' });
     expect(await sourceModel('prod-eu', 'support-bot')).toMatchObject({ model: null, provider: 'unknown' });
+  });
+
+  it('reads what the engine offers: quick and deep, or null from an engine without profiles; other errors aren’t hidden', async () => {
+    const caps = { testVersion: 3, profiles: ['quick', 'deep'], quick: { tasks: ['D', 'A', 'C_timeout', 'C_fail'], taskSeconds: {}, overallSeconds: 180 } };
+    answer(caps);
+    expect(await practiceCapabilities('prod-eu')).toEqual(caps);
+    // An answer without quick reads as none.
+    answer({ testVersion: 3, profiles: ['deep'] });
+    expect(await practiceCapabilities('prod-eu')).toBeNull();
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'Not found.' }, { status: 404 })));
+    expect(await practiceCapabilities('prod-eu')).toBeNull();
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'Something broke.' }, { status: 500 })));
+    await expect(practiceCapabilities('prod-eu')).rejects.toBeInstanceOf(PracticeError);
   });
 
   it('carries the Fleet key key the agent’s latest call used through to setup’s default', async () => {
