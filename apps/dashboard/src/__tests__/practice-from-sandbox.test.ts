@@ -8,7 +8,7 @@ import { createRoot } from 'react-dom/client';
 import { PracticeSetup } from '@/components/sandbox/practice/PracticeSetup';
 import { PRACTICE_STATES } from '@/app/dev/practice/states';
 
-afterEach(() => { document.body.innerHTML = ''; });
+afterEach(() => { document.body.innerHTML = ''; vi.unstubAllGlobals(); });
 
 describe('a practice test from the Sandbox', () => {
   it('Start sends the agent, quick and origin sandbox, and no key from Fleet key', async () => {
@@ -72,7 +72,6 @@ describe('a practice test from the Sandbox', () => {
     expect(start().disabled).toBe(false);
     expect(el.textContent).not.toContain('Couldn’t reach practice tests');
     act(() => root.unmount());
-    vi.unstubAllGlobals();
   });
 
   it('an engine without profiles: Start stays off, and says why', async () => {

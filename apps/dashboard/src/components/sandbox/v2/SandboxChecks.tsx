@@ -269,11 +269,12 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   useEffect(() => {
     if (preview || !focusReport || !state || !w?.endedAt || reported.current === w.id) return;
     reported.current = w.id;
-    // What the page shows: the rows' counts and tone (practice results bound later don't send it again).
+    // What the page shows: the rows' counts and tone, under a new name (the old event carried the six-check verdict).
+    // Sent once, when the report appears: a practice run bound after that isn't in its counts.
     const few = tooFewCalls(state);
     const rows = sandboxRows(state, practice.bound ?? undefined);
     const c = rowCounts(rows);
-    analytics.capture('sandbox_v2_report', { tone: few ? 'too_few' : rowsHeadline(rows).tone, fix: c.fix, checked: c.checked, practice: c.practice, notSetUp: c.notSetUp, calls: w.calls, sample: isSample });
+    analytics.capture('sandbox_report_rows', { tone: few ? 'too_few' : rowsHeadline(rows).tone, fix: c.fix, checked: c.checked, practice: c.practice, notSetUp: c.notSetUp, calls: w.calls, sample: isSample });
   }, [preview, focusReport, state, w, isSample, practice.bound]);
 
   return (

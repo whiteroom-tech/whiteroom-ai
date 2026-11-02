@@ -352,11 +352,11 @@ describe('Check your agent', () => {
     expect(document.activeElement?.textContent).toBe('Nothing to fix');
   });
 
-  it('sends one sandbox_v2_report for a check that finishes while the page is open, and none for an old report on load', async () => {
+  it('sends one sandbox_report_rows for a check that finishes while the page is open, and none for an old report on load', async () => {
     capture.mockClear();
     checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z' }, { long_task: 'passed' });
     await render(checksEl());
-    expect(capture).not.toHaveBeenCalledWith('sandbox_v2_report', expect.anything());
+    expect(capture).not.toHaveBeenCalledWith('sandbox_report_rows', expect.anything());
     act(() => root.unmount());
     root = createRoot(document.body.appendChild(document.createElement('div')));
     checks = checkAnswer({ stage: 'observe' });
@@ -364,8 +364,8 @@ describe('Check your agent', () => {
     checks = checkAnswer({ stage: 'observe', endedAt: '2026-10-29T10:06:00.000Z' }, { long_task: 'passed', provider_errors: 'failed' });
     await click('Finish now');
     await flush();
-    const sent = capture.mock.calls.filter(([name]) => name === 'sandbox_v2_report');
-    expect(sent).toEqual([['sandbox_v2_report', { tone: 'warn', fix: 1, checked: expect.any(Number), practice: expect.any(Number), notSetUp: expect.any(Number), calls: expect.any(Number), sample: false }]]);
+    const sent = capture.mock.calls.filter(([name]) => name === 'sandbox_report_rows');
+    expect(sent).toEqual([['sandbox_report_rows', { tone: 'warn', fix: 1, checked: expect.any(Number), practice: expect.any(Number), notSetUp: expect.any(Number), calls: expect.any(Number), sample: false }]]);
     // Only the tone and row counts the page shows: no ids, keys or names.
     expect(JSON.stringify(sent)).not.toMatch(/sandbox-|chk_|prod-eu|sk-/);
   });
@@ -382,7 +382,7 @@ describe('Check your agent', () => {
     checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z', calls }, statuses);
     await click('Finish now');
     await flush();
-    expect(capture.mock.calls.filter(([name]) => name === 'sandbox_v2_report')).toEqual([['sandbox_v2_report', { tone, ...counts, practice: 2, notSetUp: expect.any(Number), calls, sample: false }]]);
+    expect(capture.mock.calls.filter(([name]) => name === 'sandbox_report_rows')).toEqual([['sandbox_report_rows', { tone, ...counts, practice: 2, notSetUp: expect.any(Number), calls, sample: false }]]);
   });
 
   it('a check that opens and ends between two reads still counts as new: focus and one report event', async () => {
@@ -390,13 +390,13 @@ describe('Check your agent', () => {
     capture.mockClear();
     checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z' }, { long_task: 'passed' });
     await render(checksEl());
-    expect(capture).not.toHaveBeenCalledWith('sandbox_v2_report', expect.anything());
+    expect(capture).not.toHaveBeenCalledWith('sandbox_report_rows', expect.anything());
     // The next read already has a different, ended window: the page never saw it open.
     checks = checkAnswer({ id: 'chk_2', stage: 'done', endedAt: '2026-10-29T10:20:00.000Z' }, { spend_cap: 'failed' });
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     await flush();
     expect(document.activeElement?.textContent).toBe('1 thing to fix before going live');
-    expect(capture.mock.calls.filter(([name]) => name === 'sandbox_v2_report')).toHaveLength(1);
+    expect(capture.mock.calls.filter(([name]) => name === 'sandbox_report_rows')).toHaveLength(1);
   });
 
   it('Check again after a report starts a new check and shows it live', async () => {
