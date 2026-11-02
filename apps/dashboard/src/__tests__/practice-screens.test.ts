@@ -62,6 +62,13 @@ describe('practice test screens', () => {
     expect(text(html)).not.toMatch(/around \d+ model calls/);
   });
 
+  it('opened from the Sandbox: the Sandbox’s agent and key, no Fleet key picker', () => {
+    const t = text(renderToStaticMarkup(createElement(PracticeTest, { preview: PRACTICE_STATES['setup-from-sandbox'] })));
+    expect(t).toContain('sbx-agent');
+    expect(t).toContain('the same key you connected to your Sandbox');
+    expect(t).not.toContain('Key to test with');
+  });
+
   it('an engine with quick and deep tests: setup offers How thorough, quick first, and its rows say where each check happens', () => {
     const t = text(renderToStaticMarkup(createElement(PracticeTest, { preview: PRACTICE_STATES['setup-quick'] })));
     expect(t).toContain('How thorough');
@@ -97,7 +104,7 @@ describe('practice test screens', () => {
     expect(setup([])).toContain('Human pause/stop Not checked · Pause and Stop aren’t on for this fleet.');
   });
 
-  it('a fleet whose calls go through a proxy URL or a cloud provider, with no Fleet key key to pick, is refused before Start', () => {
+  it('a fleet whose calls go through a proxy URL or a cloud provider, with no key from Fleet key to pick, is refused before Start', () => {
     const startButton = (html: string) => html.match(/<button[^>]*>Start test<\/button>/)?.[0] ?? '';
     const blocked = (provider: 'proxy-url' | 'cloud') => renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES['setup-blocked'], provider } }));
     expect(text(blocked('proxy-url'))).toContain('Practice tests don’t support this fleet’s provider yet. Use the connection test instead: Test my agent →');

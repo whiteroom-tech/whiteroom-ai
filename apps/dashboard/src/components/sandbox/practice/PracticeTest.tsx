@@ -49,6 +49,8 @@ export interface PracticePreview {
   controls?: PracticeControlCheck[] | null;
   /** What the engine offers: quick and deep tests (left out: an engine without profiles). */
   capabilities?: PracticeCapabilities | null;
+  /** Opened from the Sandbox's report for this agent. */
+  sandboxAgent?: string;
   run?: PracticeRun;
   code?: RunCode | null;
   result?: PracticeResult | null;
@@ -78,6 +80,9 @@ const validRun = (v: string | null | undefined) => (v && RUN_ID_RE.test(v) ? v :
 const LOAD_FAILED: Refusal = { message: 'Couldn’t load your fleet from WhiteRoom. Check your connection and try again.', reason: 'retry' };
 const ACTION_FAILED: Refusal = { message: 'That didn’t work. Check your connection and try again.' };
 
+/** An agent name from the address, as the engine bounds it (1–128 characters), else null. */
+const validAgent = (v: string | null | undefined) => (v && v.length <= 128 ? v : null);
+
 /** Sandbox › Practice test: setup, the terminal steps, progress and the result, one test at a time. */
 export function PracticeTest({ preview }: { preview?: PracticePreview }) {
   const [fleet, setFleet] = useState<string | null>(preview?.fleet ?? null);
@@ -93,6 +98,8 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
   const params = useSearchParams();
   const demo = preview ? !!preview.demo : params?.get('demo') === '1';
   const askedRun = preview ? null : validRun(params?.get('run'));
+  // Opened from the Sandbox's report (eight checks §5.2a): a test of that agent, started from the Sandbox with its key.
+  const sandboxAgent = preview ? preview.sandboxAgent ?? null : params?.get('from') === 'sandbox' ? validAgent(params?.get('agent')) : null;
   // Past tests under setup (§8: moved here from the old start screen); the connection tests come with them.
   const [rows, setRows] = useState<PracticeRunRow[] | null>(preview?.rows ?? null);
   // Practice tests aren't on for this engine: a calm page instead of an error, and nothing is asked again.
@@ -113,10 +120,12 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
   const view = off ? 'unavailable' : demo ? 'demo' : loading ? 'loading' : run ? (open ? 'run' : 'results') : 'setup';
 
   const loadSetup = useCallback(async (f: string) => {
+    // From the Sandbox the agent is the one its report named: it may never have called production.
+    if (sandboxAgent) { setSetup({ agents: [sandboxAgent] }); track('practice_setup_opened'); return; }
     const gov = await governanceList(f);
     setSetup({ agents: gov.agents ?? [], lastActiveAt: gov.lastActiveAt });
     track('practice_setup_opened');
-  }, [track]);
+  }, [track, sandboxAgent]);
 
   /** Shows a test: its progress while open, else its result. */
   const showRun = useCallback(async (f: string, id: string) => {
@@ -348,7 +357,7 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
           <StepsRail steps={PREFLIGHT_STEPS} current={preflightStep(view, run)} label="Pre-flight steps" />
           <div className={s.body}>
             {view === 'setup' && fleet && setup && <>
-              <PracticeSetup fleet={fleet} data={setup} busy={busy} preview={previewSrc} previewCapabilities={preview ? preview.capabilities ?? null : undefined} ownAgent={preview?.test === 'agent'} refresh={refreshKeys} onStart={(st, key) => { void start(st, key); }} />
+              <PracticeSetup fleet={fleet} data={setup} busy={busy} preview={previewSrc} previewCapabilities={preview ? preview.capabilities ?? null : undefined} sandboxAgent={sandboxAgent ?? undefined} ownAgent={preview?.test === 'agent'} refresh={refreshKeys} onStart={(st, key) => { void start(st, key); }} />
               <PastTests preview={preview ? [] : undefined} practice={rows ?? undefined} />
             </>}
             {view === 'run' && run && (

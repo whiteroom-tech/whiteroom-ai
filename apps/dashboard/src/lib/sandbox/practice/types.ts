@@ -116,6 +116,9 @@ export interface PracticeRunRow {
   failed?: string[];
   /** Tasks finished of those planned; the control checks count as one task a run. */
   tasks: { finished: number; total: number };
+  /** Eight checks (engine B5): how thorough, and where it was started. Absent from older engines. */
+  profile?: PracticeProfile | null;
+  origin?: 'sandbox' | null;
 }
 
 /** Where the source agent's calls go, so setup can refuse a fleet practice tests can't run yet before Start. */

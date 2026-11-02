@@ -54,7 +54,7 @@ const cloudKey = (src: PracticeSource | undefined, prefix: string | null) => {
  * started from the computer the agent runs on, so on a phone the Start
  * button gives way to a note saying so.
  */
-export function PracticeSetup({ fleet, data, busy, preview, previewCapabilities, refresh = 0, ownAgent = false, onStart }: {
+export function PracticeSetup({ fleet, data, busy, preview, previewCapabilities, sandboxAgent, refresh = 0, ownAgent = false, onStart }: {
   fleet: string;
   data: SetupData;
   busy: boolean;
@@ -62,6 +62,8 @@ export function PracticeSetup({ fleet, data, busy, preview, previewCapabilities,
   preview?: PracticeSource;
   /** /dev/practice: what the engine's capabilities would say (null: an engine without profiles). */
   previewCapabilities?: PracticeCapabilities | null;
+  /** Opened from the Sandbox for this agent: the test starts from the Sandbox, on the key connected there (eight checks §5.2a). */
+  sandboxAgent?: string;
   /** Changes when the keys should be read again (Start said the picked one is gone). */
   refresh?: number;
   /** /dev/practice: start on the own-agent test. */
@@ -71,7 +73,7 @@ export function PracticeSetup({ fleet, data, busy, preview, previewCapabilities,
   // Your agent needs an agent the fleet knows: one that has called through WhiteRoom.
   const noAgents = data.agents.length === 0;
   // The guardrails test first: no code, and any key pays for it.
-  const [sample, setSample] = useState(!(ownAgent && !noAgents));
+  const [sample, setSample] = useState(!((ownAgent || !!sandboxAgent) && !noAgents));
   // Step 1: the most recently active agent (§7), else the first by name.
   const recent = defaultAgent(data.agents, data.lastActiveAt);
   const [agent, setAgent] = useState(recent);
@@ -108,7 +110,8 @@ export function PracticeSetup({ fleet, data, busy, preview, previewCapabilities,
     return () => { live = false; };
   }, [fleet, agent, preview, refresh]);
 
-  const options = src ? keyOptions(src) : NO_KEYS;
+  // From the Sandbox the key is the one connected there: no key from Fleet key to pick, and production's setup can't block it.
+  const options = sandboxAgent ? NO_KEYS : src ? keyOptions(src) : NO_KEYS;
   /** Picks a key; a cloud key's model field starts as the model the agent used most recently. */
   const pickKey = (prefix: string | null, from = src) => {
     setPicked(prefix);
@@ -126,10 +129,10 @@ export function PracticeSetup({ fleet, data, busy, preview, previewCapabilities,
   const chosen = typed.trim() || null;
   // Sent with Start, so the sample agent or the starter uses it: the sample keeps its own unless one is chosen; a cloud key always needs one.
   const model = cloudField ? chosen : sample ? (changing ? chosen : null) : changing || !latest ? chosen : latest;
-  const ineligible = src?.providerKeys.filter((k) => !k.eligible) ?? [];
-  // Why Start can't run here at all: an IAM-role fleet; a fleet with its own host, or a cloud agent, with no Fleet key key to pick.
+  const ineligible = sandboxAgent ? [] : src?.providerKeys.filter((k) => !k.eligible) ?? [];
+  // Why Start can't run here at all: an IAM-role fleet; a fleet with its own host, or a cloud agent, with no key from Fleet key to pick.
   // (The sample agent calls with the fleet's own key, so a cloud agent's fleet can still run it.)
-  const blocked = src ? practiceBlock(src, { sample, hasKey: !!key }) : null;
+  const blocked = src && !sandboxAgent ? practiceBlock(src, { sample, hasKey: !!key }) : null;
   // Unknown controls: list none, and estimate with the most control calls a test can make rather than none.
   const controls = src === undefined ? [] : src.controls?.checks ?? null;
   // The key the test runs on: the picked Fleet key key, else the fleet's own key's provider as its latest call showed.
@@ -143,6 +146,8 @@ export function PracticeSetup({ fleet, data, busy, preview, previewCapabilities,
   const start = () => onStart({
     fleet, sample, runs: sample || quick ? 1 : runs,
     ...(sent && { profile: sent }),
+    // The sample-agent test too: the engine takes a Sandbox-started sample run's settings from the Sandbox, with any key paying for it.
+    ...(sandboxAgent && { origin: 'sandbox' as const }),
     ...(agent && { agent }),
     ...(model && { model }),
     ...(key && { proxyKeyDisplayPrefix: key.displayPrefix }),
@@ -247,7 +252,8 @@ export function PracticeSetup({ fleet, data, busy, preview, previewCapabilities,
         <h3 id="practice-plan-title" className={s.sectionTitle}>2. What we’ll test</h3>
         <RowGroups items={planItems(controls, sent)} />
         <p className={s.small} style={{ marginTop: 12 }}>{costLine(est, sample || quick ? 1 : runs)}</p>
-        {!blocked && <KeyLine choice={keyChoice} fleet={fleet} sample={sample} className={s.small} />}
+        {sandboxAgent && !sample ? <p className={s.small}>Run it where your agent’s key is set: the same key you connected to your Sandbox.</p>
+          : !blocked && <KeyLine choice={keyChoice} fleet={fleet} sample={sample} className={s.small} />}
         <div className={`${s.btnRow} ${p.desktopOnly}`} style={{ marginTop: 12 }}>
           <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy || !!blocked || (!!cloudField && !model) || caps === undefined} onClick={start}>{busy ? 'Starting…' : 'Start test'}</button>
         </div>

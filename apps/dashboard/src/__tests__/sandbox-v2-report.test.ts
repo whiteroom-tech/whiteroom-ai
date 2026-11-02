@@ -234,6 +234,25 @@ describe('the report on the page', () => {
     expect(quiet).not.toMatch(/Also called during|Your agent streams/);
   });
 
+  it('practice tasks bound to the report fill all eight rows, with each part’s time; Run practice tasks opens the test for this agent from the Sandbox', async () => {
+    await act(async () => { root.render(h(SandboxHome, { fleet: 'prod-eu', preview: SANDBOX_V2_STATES['checks-report-practice'] })); });
+    const body = document.body.textContent ?? '';
+    expect(document.querySelector('li[data-row="08"]')?.getAttribute('data-state')).toBe('passed');
+    expect(document.querySelector('li[data-row="01"]')?.getAttribute('data-state')).toBe('passed');
+    expect(body).toMatch(/8 of 8 checked/);
+    expect(body).toMatch(/Live check .+ · Practice tasks /);
+    expect(document.querySelector('a[href^="/sandbox/practice?from=sandbox"]')).toBeNull();
+  });
+
+  it('another agent’s practice run is shown apart and not counted; a newer run of this agent is offered', async () => {
+    await act(async () => { root.render(h(SandboxHome, { fleet: 'prod-eu', preview: SANDBOX_V2_STATES['checks-report-other-agent'] })); });
+    const body = document.body.textContent ?? '';
+    expect(body).toContain('Practice tasks (different agent): billing-agent');
+    expect(body).toContain('They don’t count toward support-bot’s checks.');
+    expect(body).toContain('6 of 8 checked · 2 need practice tasks');
+    expect(document.querySelector('a[href="/sandbox/practice?from=sandbox&agent=support-bot"]')).not.toBeNull();
+  });
+
   it('focuses the verdict when asked (a report that appears while the page is open)', async () => {
     await act(async () => { root.render(h(ReportView, { state: stateOf({ spend_cap: ['failed'] }), checked: 'just now', calls: 8, focus: true })); });
     expect(document.activeElement?.tagName).toBe('H3');

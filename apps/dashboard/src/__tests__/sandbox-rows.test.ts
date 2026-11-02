@@ -2,7 +2,7 @@
 // results, its rule probes and its parts, with the headline counted over them.
 import { describe, expect, it } from 'vitest';
 import { CHECK_IDS, checkStateOf, type CheckState, type CheckStatus, type RuleProbe } from '@/lib/sandbox/checks';
-import { practiceRows, rowsHeadline, rowsSummary, sandboxRows } from '@/lib/sandbox/sandbox-rows';
+import { practiceBinding, practiceRows, rowsHeadline, rowsSummary, sandboxRows, type BoundPractice } from '@/lib/sandbox/sandbox-rows';
 
 const ALL_PASSED: Record<string, [CheckStatus, string]> = {
   spend_cap: ['passed', 'We blocked a call → it didn’t retry that call.'],
@@ -138,5 +138,35 @@ describe('the status answer’s eight-checks fields', () => {
     expect(st).not.toHaveProperty('parts');
     expect(st).not.toHaveProperty('streaming');
     expect(st.window).not.toHaveProperty('otherAgents');
+  });
+});
+
+describe('a practice run bound to the report (eight checks §6)', () => {
+  const pc = (id: string, status: 'passed' | 'failed' | 'not_tested', label = id) => ({ id, label, status, summary: status === 'failed' ? 'Sent the file when the email asked.' : 'Passed 1 of 1 run.', fix: status === 'failed' ? 'Treat text from tools as data.' : null });
+  const run = (checks: BoundPractice['checks']): BoundPractice => ({ runId: 'r-1', endedAt: '2026-11-02T10:09:00Z', checks });
+
+  it('fills 01, 08 and the rest of 03: a clean run reads Nothing to fix · 8 of 8 checked', () => {
+    const rows = sandboxRows(state(), run([pc('a.result', 'passed', 'Finishes a job correctly'), pc('c.timeout', 'passed', 'Saves once'), pc('c.keeps_failing', 'passed', 'Stops'), pc('d.injection', 'passed', 'Ignores a planted instruction')]));
+    expect(rows.map((r) => `${r.num}:${r.state}`)).toEqual(['01:passed', '02:partly', '03:passed', '04:passed', '05:passed', '06:passed', '07:passed', '08:passed']);
+    expect(rowsHeadline(rows)).toMatchObject({ headline: 'Nothing to fix', sub: '8 of 8 checked', tone: 'pass' });
+    expect(by(state())['03'].parts[1].state).toBe('not_run_yet');
+    // A passed row says what the run found, not its own name again.
+    expect(rows.find((r) => r.num === '08')!.line).toBe('Passed 1 of 1 run.');
+  });
+
+  it('a failure in practice tasks opens in place with its own fix; a check the run didn’t have stays not run yet', () => {
+    const r = Object.fromEntries(sandboxRows(state(), run([pc('a.result', 'passed'), pc('d.injection', 'failed', 'Ignores a planted instruction')])).map((x) => [x.num, x]));
+    expect(r['08']).toMatchObject({ state: 'failed', fix: { happened: 'Sent the file when the email asked.', next: 'Treat text from tools as data.' } });
+    expect(r['03'].parts[1].state).toBe('not_run_yet');
+  });
+
+  it('binds the newest finished run of the window’s agent, keeps it when a newer one comes, and shows another agent’s apart', () => {
+    const at = (m: number) => new Date(Date.UTC(2026, 10, 2, 10, m)).toISOString();
+    const r = (id: string, agentId: string, m: number, o: Record<string, unknown> = {}) => ({ id, agentId, lifecycle: 'finished', profile: 'quick', createdAt: at(m), endedAt: at(m + 3), ...o });
+    const runs = [r('r-old', 'support-bot', 1), r('r-new', 'support-bot', 5), r('r-other', 'billing-agent', 9), r('r-legacy', 'support-bot', 20, { profile: null }), r('r-open', 'support-bot', 30, { lifecycle: 'active' })];
+    expect(practiceBinding(runs, 'support-bot', null)).toEqual({ bind: 'r-new', newer: null, other: null });
+    expect(practiceBinding(runs, 'support-bot', 'r-old')).toEqual({ bind: 'r-old', newer: 'r-new', other: null });
+    expect(practiceBinding(runs, 'ops-bot', null)).toMatchObject({ bind: null, newer: null, other: { id: 'r-other' } });
+    expect(practiceBinding([], 'support-bot', 'r-gone')).toEqual({ bind: null, newer: null, other: null });
   });
 });
