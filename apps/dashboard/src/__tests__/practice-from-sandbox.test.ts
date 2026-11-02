@@ -2,7 +2,7 @@
 // A practice test opened from the Sandbox's report: Start sends origin
 // "sandbox" for the report's agent, quick, with no key from Fleet key; only
 // your own agent is offered, and Start waits for a profile.
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { PracticeSetup } from '@/components/sandbox/practice/PracticeSetup';
@@ -33,6 +33,37 @@ describe('a practice test from the Sandbox', () => {
     await act(async () => { [...el.querySelectorAll('button')].find((b) => b.textContent === 'Deep · longer')!.click(); });
     expect(el.textContent).toContain('Your Sandbox rules');
     act(() => root.unmount());
+  });
+
+  it('capabilities that couldn’t be read: Start stays off, and Try again asks again', async () => {
+    const asks: string[] = [];
+    let ok = false;
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (String(url).includes('/capabilities')) { asks.push(String(url)); return ok ? Response.json({ profiles: ['quick', 'deep'] }) : Response.json({ error: 'down' }, { status: 503 }); }
+      return Response.json({ error: 'unexpected' }, { status: 500 });
+    }));
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const root = createRoot(el);
+    await act(async () => {
+      root.render(createElement(PracticeSetup, {
+        fleet: 'prod-eu', data: { agents: ['sbx-agent'] }, busy: false, sandboxAgent: 'sbx-agent',
+        preview: { model: null, provider: 'unknown', directKey: false, blocked: null, providerKeys: [], controls: null },
+        onStart: () => {},
+      }));
+    });
+    await act(async () => { await Promise.resolve(); });
+    const start = () => [...el.querySelectorAll('button')].find((b) => b.textContent === 'Start test')!;
+    expect(start().disabled).toBe(true);
+    expect(el.textContent).toContain('Couldn’t reach practice tests just now.');
+    ok = true;
+    await act(async () => { [...el.querySelectorAll('button')].find((b) => b.textContent === 'Try again')!.click(); });
+    await act(async () => { await Promise.resolve(); });
+    expect(asks).toHaveLength(2);
+    expect(start().disabled).toBe(false);
+    expect(el.textContent).not.toContain('Couldn’t reach practice tests');
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
   });
 
   it('an engine without profiles: Start stays off, and says why', async () => {

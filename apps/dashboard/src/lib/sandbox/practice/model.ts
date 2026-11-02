@@ -584,7 +584,6 @@ export function rerunKey(tested: Pick<PracticeReport['tested'], 'provider' | 'pr
   return usable.find((k) => k.displayPrefix === tested.proxyKeyDisplayPrefix) ?? (usable.length === 1 ? usable[0] : usable.length ? 'pick' : 'gone');
 }
 
-/** "Rerun 1 check × 3 runs · usually 15–25 model calls (≈ $0.20–$0.35), never more than 40." (§10 fixed copy) */
 /**
  * Where a rerun or "Run it 3 times" starts, and how thorough: as the test it
  * reruns, so it fills the same report. A quick test takes no scope or second
@@ -595,6 +594,7 @@ export function rerunPlacement(run: { profile?: PracticeProfile | null; origin?:
   return { ...(profile && { profile }), ...(run.origin === 'sandbox' && { origin: 'sandbox' as const }) };
 }
 
+/** "Rerun 1 check × 3 runs · usually 15–25 model calls (≈ $0.20–$0.35), never more than 40." (§10 fixed copy) */
 export function rerunConfirm(scope: string[] | null, runs: number, e: CallEstimate): string {
   const what = scope ? `Rerun ${counted(scope.length, 'check')}` : 'Run the full test';
   if (e.billedBy === 'Azure') return `${what} × ${counted(runs, 'run')} · never more than ${e.cap} model calls${billing(e)}.`;

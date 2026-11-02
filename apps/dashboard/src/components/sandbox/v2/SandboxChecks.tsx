@@ -212,7 +212,8 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
       if (!live) return;
       const run = runs.find((r) => r.id === b.bind)!;
       setPractice({ bound: res.report ? { runId: b.bind, endedAt: run.endedAt, checks: res.report.checks } : null, newer: b.newer, other });
-    }).catch(() => { if (live) { boundRef.current = null; setPractice(NO_PRACTICE); } });
+    // A failed read keeps what's on screen: a new report or agent already cleared it (above).
+    }).catch(() => {});
     return () => { live = false; };
   }, [preview, sample, reportWindow, reportAgent, fleet, picked]);
   const ended = !!w?.endedAt;

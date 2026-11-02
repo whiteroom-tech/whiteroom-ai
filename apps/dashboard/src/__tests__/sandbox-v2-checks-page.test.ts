@@ -105,6 +105,27 @@ describe('practice tasks on the report (eight checks C3)', () => {
     expect(text()).not.toContain('A newer practice run is available');
     expect(practiceUrls.at(-1)).toBe('/api/sandbox/practice/r-2/report?fleet=prod-eu');
   });
+
+  it('a new report for another agent starts with nothing bound, even when reading practice runs then fails', async () => {
+    checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z', agentId: 'support-bot' }, { long_task: 'passed' });
+    let failing = false;
+    bff.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/sandbox/checks/')) return Response.json(checks);
+      if (url.startsWith('/api/sandbox/practice') && failing) return Response.json({ error: 'down' }, { status: 503 });
+      if (url.startsWith('/api/sandbox/practice/r-')) return Response.json(result);
+      if (url.startsWith('/api/sandbox/practice')) return Response.json({ runs: [runRow('r-1', 'support-bot', 1)] });
+      if (url.startsWith('/api/sandbox/helper/')) return Response.json(helper);
+      return Response.json({ error: 'unexpected' }, { status: 500 });
+    });
+    await render(checksEl());
+    expect(document.querySelector('li[data-row="08"]')?.getAttribute('data-state')).toBe('passed');
+    // Check again lands on a new ended window, for another agent; the practice read fails.
+    failing = true;
+    checks = checkAnswer({ id: 'chk_2', stage: 'done', endedAt: '2026-10-29T10:20:00.000Z', agentId: 'ops-bot' }, { long_task: 'passed' });
+    await click('Check again');
+    expect(document.querySelector('li[data-row="08"]')?.getAttribute('data-state')).toBe('not_run_yet');
+    expect(document.querySelector('li[data-row="01"]')?.getAttribute('data-state')).toBe('not_run_yet');
+  });
 });
 
 describe('Check your agent', () => {
