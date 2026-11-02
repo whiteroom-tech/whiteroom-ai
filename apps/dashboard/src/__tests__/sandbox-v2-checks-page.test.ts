@@ -22,7 +22,7 @@ const { CLI_VERSION } = await import('@/lib/sandbox/practice/model');
 const { outsideWindowText } = await import('@/lib/sandbox/fleet');
 
 const SANDBOX_ID = 'sandbox-00000000-0000-4000-8000-000000000000';
-type Win = { id?: string; stage: string; endedAt?: string | null; calls?: number } | null;
+type Win = { id?: string; stage: string; endedAt?: string | null; calls?: number; agentId?: string } | null;
 const checkAnswer = (win: Win, statuses: Record<string, string> = {}, rules: unknown[] = []) => ({
   success: true,
   window: win && { id: 'chk_1', startedAt: '2026-10-29T10:00:00.000Z', endedAt: null, injectErrors: true, calls: 4, ...win },
@@ -71,6 +71,41 @@ afterEach(() => { act(() => root.unmount()); document.body.innerHTML = ''; vi.un
 
 const checksEl = () => h(SandboxChecks, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID });
 const row = (id: string) => document.querySelector(`[data-check="${id}"]`);
+
+describe('practice tasks on the report (eight checks C3)', () => {
+  const runRow = (id: string, agentId: string, minute: number) => ({ id, agentId, lifecycle: 'finished', profile: 'quick', createdAt: `2026-10-29T10:${String(minute).padStart(2, '0')}:00.000Z`, endedAt: `2026-10-29T10:${String(minute + 3).padStart(2, '0')}:00.000Z` });
+  const result = { id: 'r-1', lifecycle: 'finished', verdict: 'passed', detailsKeptUntil: null, summaryKeptUntil: null, report: { checks: [
+    { id: 'a.result', label: 'Finishes a job correctly', status: 'passed', summary: 'Passed 1 of 1 run.', fix: null },
+    { id: 'd.injection', label: 'Ignores a planted instruction', status: 'passed', summary: 'Passed 1 of 1 run.', fix: null },
+  ] } };
+
+  it('binds the agent’s newest finished practice run once and fills its rows; a fresh report binds the newest', async () => {
+    checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z', agentId: 'support-bot' }, { long_task: 'passed' });
+    let runs = [runRow('r-1', 'support-bot', 1)];
+    const practiceUrls: string[] = [];
+    bff.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/sandbox/checks/')) return Response.json(checks);
+      if (url.startsWith('/api/sandbox/practice/r-')) { practiceUrls.push(url); return Response.json({ ...result, id: url.split('/')[4] }); }
+      if (url.startsWith('/api/sandbox/practice')) { practiceUrls.push(url); return Response.json({ runs }); }
+      if (url.startsWith('/api/sandbox/helper/')) return Response.json(helper);
+      return Response.json({ error: 'unexpected' }, { status: 500 });
+    });
+    await act(async () => { root.render(checksEl()); });
+    await flush();
+    expect(document.querySelector('li[data-row="08"]')?.getAttribute('data-state')).toBe('passed');
+    expect(document.querySelector('li[data-row="01"]')?.getAttribute('data-state')).toBe('passed');
+    // One list read and one result read: binding doesn't read again by itself.
+    expect(practiceUrls).toEqual(['/api/sandbox/practice?fleet=prod-eu', '/api/sandbox/practice/r-1/report?fleet=prod-eu']);
+    // A newer run, and the report shown afresh: it binds the newest; "Use it" only offers within one report.
+    runs = [runRow('r-2', 'support-bot', 20), runRow('r-1', 'support-bot', 1)];
+    act(() => root.unmount());
+    const el = document.createElement('div'); document.body.appendChild(el); root = createRoot(el);
+    await act(async () => { root.render(checksEl()); });
+    await flush();
+    expect(text()).not.toContain('A newer practice run is available');
+    expect(practiceUrls.at(-1)).toBe('/api/sandbox/practice/r-2/report?fleet=prod-eu');
+  });
+});
 
 describe('Check your agent', () => {
   it('no check yet: no button; it waits for the first call and picks the check up when one starts', async () => {

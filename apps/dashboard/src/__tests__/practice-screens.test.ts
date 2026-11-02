@@ -104,7 +104,7 @@ describe('practice test screens', () => {
     expect(setup([])).toContain('Human pause/stop Not checked · Pause and Stop aren’t on for this fleet.');
   });
 
-  it('a fleet whose calls go through a proxy URL or a cloud provider, with no Fleet key key to pick, is refused before Start', () => {
+  it('a fleet whose calls go through a proxy URL or a cloud provider, with no key from Fleet key to pick, is refused before Start', () => {
     const startButton = (html: string) => html.match(/<button[^>]*>Start test<\/button>/)?.[0] ?? '';
     const blocked = (provider: 'proxy-url' | 'cloud') => renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES['setup-blocked'], provider } }));
     expect(text(blocked('proxy-url'))).toContain('Practice tests don’t support this fleet’s provider yet. Use the connection test instead: Test my agent →');

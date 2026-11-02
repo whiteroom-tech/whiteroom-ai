@@ -110,7 +110,7 @@ export function PracticeSetup({ fleet, data, busy, preview, previewCapabilities,
     return () => { live = false; };
   }, [fleet, agent, preview, refresh]);
 
-  // From the Sandbox the key is the one connected there: no Fleet key key to pick, and production's setup can't block it.
+  // From the Sandbox the key is the one connected there: no key from Fleet key to pick, and production's setup can't block it.
   const options = sandboxAgent ? NO_KEYS : src ? keyOptions(src) : NO_KEYS;
   /** Picks a key; a cloud key's model field starts as the model the agent used most recently. */
   const pickKey = (prefix: string | null, from = src) => {
@@ -130,7 +130,7 @@ export function PracticeSetup({ fleet, data, busy, preview, previewCapabilities,
   // Sent with Start, so the sample agent or the starter uses it: the sample keeps its own unless one is chosen; a cloud key always needs one.
   const model = cloudField ? chosen : sample ? (changing ? chosen : null) : changing || !latest ? chosen : latest;
   const ineligible = sandboxAgent ? [] : src?.providerKeys.filter((k) => !k.eligible) ?? [];
-  // Why Start can't run here at all: an IAM-role fleet; a fleet with its own host, or a cloud agent, with no Fleet key key to pick.
+  // Why Start can't run here at all: an IAM-role fleet; a fleet with its own host, or a cloud agent, with no key from Fleet key to pick.
   // (The sample agent calls with the fleet's own key, so a cloud agent's fleet can still run it.)
   const blocked = src && !sandboxAgent ? practiceBlock(src, { sample, hasKey: !!key }) : null;
   // Unknown controls: list none, and estimate with the most control calls a test can make rather than none.
@@ -146,6 +146,7 @@ export function PracticeSetup({ fleet, data, busy, preview, previewCapabilities,
   const start = () => onStart({
     fleet, sample, runs: sample || quick ? 1 : runs,
     ...(sent && { profile: sent }),
+    // The sample-agent test too: the engine takes a Sandbox-started sample run's settings from the Sandbox, with any key paying for it.
     ...(sandboxAgent && { origin: 'sandbox' as const }),
     ...(agent && { agent }),
     ...(model && { model }),

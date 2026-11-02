@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // A practice test opened from the Sandbox's report (eight checks C3): Start
-// sends origin "sandbox" for the report's agent, quick, with no Fleet key key.
+// sends origin "sandbox" for the report's agent, quick, with no key from Fleet key.
 import { afterEach, describe, expect, it } from 'vitest';
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -10,7 +10,7 @@ import { PRACTICE_STATES } from '@/app/dev/practice/states';
 afterEach(() => { document.body.innerHTML = ''; });
 
 describe('a practice test from the Sandbox', () => {
-  it('Start sends the agent, quick and origin sandbox, and no Fleet key key', async () => {
+  it('Start sends the agent, quick and origin sandbox, and no key from Fleet key', async () => {
     const started: unknown[] = [];
     const el = document.createElement('div');
     document.body.appendChild(el);

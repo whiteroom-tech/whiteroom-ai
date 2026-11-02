@@ -88,7 +88,9 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   const now = preview?.now ?? Date.now();
   // The practice run bound to this report: chosen once, kept until the owner picks a newer one (eight checks §6).
   const [practice, setPractice] = useState<PracticeView>(preview?.practice ?? NO_PRACTICE);
-  const [chosen, setChosen] = useState<string | null>(null);
+  // The run bound so far (read, never a reason to fetch again), and the one the owner picked with Use it (a reason to).
+  const boundRef = useRef<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
   // The latest onStale, read when called: a new callback from the page never re-reads or restarts polling.
   const staleRef = useRef(onStale);
   useEffect(() => { staleRef.current = onStale; }, [onStale]);
@@ -187,17 +189,18 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
     if (preview || sample || !reportWindow) return;
     let live = true;
     listPracticeRuns(fleet).then(async (runs) => {
-      const b = practiceBinding(runs, reportAgent, chosen);
+      const b = practiceBinding(runs, reportAgent, picked ?? boundRef.current);
       const other = b.other && { agentId: b.other.agentId, endedAt: b.other.endedAt };
+      // Gone from the list (or none yet): nothing bound, so no stale result is shown.
+      boundRef.current = b.bind;
       if (!b.bind) { if (live) setPractice({ bound: null, newer: null, other }); return; }
       const res = await getPracticeResult(fleet, b.bind);
       if (!live) return;
       const run = runs.find((r) => r.id === b.bind)!;
-      setChosen(b.bind);
       setPractice({ bound: res.report ? { runId: b.bind, endedAt: run.endedAt, checks: res.report.checks } : null, newer: b.newer, other });
     }).catch(() => {});
     return () => { live = false; };
-  }, [preview, sample, reportWindow, reportAgent, fleet, chosen]);
+  }, [preview, sample, reportWindow, reportAgent, fleet, picked]);
   const ended = !!w?.endedAt;
   const isSample = !!sample;
   const quiet = !!state && isQuiet(state, now);
@@ -301,7 +304,7 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
         {state && w && ended && (
           <ReportView state={state} checked={fmtWhen(w.startedAt, now)} calls={w.calls} focus={focusReport}
             onAgain={isSample ? undefined : () => void act('start')} busy={busy} sample={sample}
-            practice={practice} practiceWhen={(at) => fmtWhen(at, now)} onUseNewer={practice.newer ? () => setChosen(practice.newer) : undefined} />
+            practice={practice} practiceWhen={(at) => fmtWhen(at, now)} onUseNewer={practice.newer ? () => setPicked(practice.newer) : undefined} />
         )}
       </div>
     </Panel>

@@ -80,10 +80,10 @@ const validRun = (v: string | null | undefined) => (v && RUN_ID_RE.test(v) ? v :
 const LOAD_FAILED: Refusal = { message: 'Couldn’t load your fleet from WhiteRoom. Check your connection and try again.', reason: 'retry' };
 const ACTION_FAILED: Refusal = { message: 'That didn’t work. Check your connection and try again.' };
 
-/** Sandbox › Practice test: setup, the terminal steps, progress and the result, one test at a time. */
 /** An agent name from the address, as the engine bounds it (1–128 characters), else null. */
 const validAgent = (v: string | null | undefined) => (v && v.length <= 128 ? v : null);
 
+/** Sandbox › Practice test: setup, the terminal steps, progress and the result, one test at a time. */
 export function PracticeTest({ preview }: { preview?: PracticePreview }) {
   const [fleet, setFleet] = useState<string | null>(preview?.fleet ?? null);
   const [setup, setSetup] = useState<SetupData | null>(preview?.setup ?? null);
