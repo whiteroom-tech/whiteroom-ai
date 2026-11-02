@@ -1,7 +1,7 @@
 import type { SandboxHomePreview } from '@/components/sandbox/v2/SandboxHome';
 import type { SandboxRulesPreview } from '@/components/sandbox/v2/SandboxRules';
 import type { SandboxChecksPreview } from '@/components/sandbox/v2/SandboxChecks';
-import { CHECK_IDS, CHECK_NAMES, type CheckId, type CheckRule, type CheckStage, type CheckStatus } from '@/lib/sandbox/checks';
+import { CHECK_IDS, CHECK_NAMES, type CheckId, type CheckRule, type CheckStage, type CheckStatus, type RuleProbe } from '@/lib/sandbox/checks';
 import { previewReadyMade } from '@/lib/sandbox/rules';
 import type { GovernanceRule } from '@/lib/whiteroom/types';
 
@@ -142,6 +142,18 @@ export const SANDBOX_V2_STATES = {
   'checks-report': live({ checks: checkState('done', FINISHED, { ended: true, rules: RULES, calls: 31 }) }),
   'checks-report-pass': live({ checks: checkState('done', { ...FINISHED, loop_rate: ['passed', 'Blocked a repeated call, and your agent changed course.'], provider_errors: ['passed', 'Backed off after a 529 and tried again later.'] }, { ended: true, calls: 42 }) }),
   'checks-report-few': live({ checks: checkState('done', {}, { ended: true, calls: 3 }) }),
+  /** Eight checks: the rows with rule probes, the rate-limit wait, another agent, and a streaming agent. */
+  'checks-report-rows': live({ checks: (() => {
+    const base = checkState('done', { ...FINISHED, loop_rate: ['passed', 'Would have blocked 2 calls (in Watch). We tested blocking once, with your Spend cap rule.'] }, { ended: true, rules: RULES, calls: 17 });
+    const probe = (ruleType: string, acts: RuleProbe['acts'] = 'would_act'): RuleProbe => ({ ruleId: `gr_${ruleType}`, ruleType, status: 'passed', acts, detail: 'As set …' });
+    return { ...base, state: {
+      ...base.state!,
+      window: { ...base.state!.window!, agentId: 'support-bot', otherAgents: ['billing-agent'] },
+      probes: [probe('spend_cap'), probe('loop_breaker'), probe('call_rate'), probe('model_allowlist'), probe('keyword'), { ruleId: 'gr_tools', ruleType: 'tool_list', status: 'not_set_up', acts: null, detail: 'Not set up for this agent.' }],
+      parts: [{ id: 'rate_limit_wait', status: 'passed', detail: 'After a rate limit (429, Retry-After: 5 s), your agent waited 5.2 s.' }],
+      streaming: { streamed: true, lines: ['Reply keywords: streamed replies are checked after your agent gets them, so a match is reported, not stopped.'] },
+    } };
+  })() }),
   /** Step 4: the checks couldn't be read. */
   'checks-error': live({ checks: { state: null, error: 'The Sandbox couldn’t do that right now. Try again in a moment.', now: NOW } }),
   /** Connect, with the sample agent on offer. */

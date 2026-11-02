@@ -11,7 +11,8 @@ import {
   activityLine, checkAction, currentCheckOf, getCheckState, isOpen, isQuiet, stageLine, STATUS_WORDS,
   type CheckId, type CheckResult, type CheckRule, type CheckState, type CheckStatus,
 } from '@/lib/sandbox/checks';
-import { reportOf, reportSummary, SCORED_CHECKS, TOO_FEW_HELP, type ReportCard } from '@/lib/sandbox/check-report';
+import { reportOf, reportSummary, SCORED_CHECKS, TOO_FEW_HELP } from '@/lib/sandbox/check-report';
+import { ROW_GROUP_NAMES, rowsHeadline, rowsSummary, sandboxRows, type RowPart, type SandboxRow } from '@/lib/sandbox/sandbox-rows';
 import { analytics } from '@/lib/analytics';
 import { SANDBOX_RULES_ID } from '@/lib/sandbox/rules';
 import s from '../guided.module.css';
@@ -331,41 +332,42 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
       setCopied(to);
       timer.current = setTimeout(() => setCopied('idle'), COPY_RESET_MS);
     };
-    void copyText(reportSummary(report, { checked, calls })).then((ok) => show(ok ? 'copied' : 'failed'));
+    void copyText(report.verdict === 'too_few' ? reportSummary(report, { checked, calls }) : rowsSummary(sandboxRows(state), { checked, calls })).then((ok) => show(ok ? 'copied' : 'failed'));
   };
-  // Too few calls: no score, just what the checks need. Nothing checked despite enough calls: the list says why per check.
+  // Too few calls: no score, just what the checks need. Otherwise the eight rows, in number order and their two groups.
   const few = report.verdict === 'too_few';
+  const rows = sandboxRows(state);
+  const head = few ? { headline: report.headline, sub: '', tone: report.tone } : rowsHeadline(rows);
   const judgedOn = new Set(state.rules.map((r) => r.ruleId)).size;
   const callsText = calls === 1 ? '1 call' : `${calls.toLocaleString('en-US')} calls`;
+  const others = state.window?.otherAgents ?? [];
   return <>
     {sample && <p className={v.sampleNote}><strong>This was our sample agent.</strong> {SAMPLE_NOTE}</p>}
     <div className={v.report}>
-      <h3 ref={heading} tabIndex={-1} className={`${v.reportHead} ${report.tone === 'pass' ? v.reportPass : report.tone === 'warn' ? v.reportWarn : ''}`} data-tone={report.tone}>{report.headline}</h3>
-      <p className={v.text}>{few ? `${callsText} · checked ${checked}` : `${SCORED_CHECKS.length} checks · ${callsText} · checked ${checked}`}</p>
+      <h3 ref={heading} tabIndex={-1} className={`${v.reportHead} ${head.tone === 'pass' ? v.reportPass : head.tone === 'warn' ? v.reportWarn : ''}`} data-tone={head.tone}>{head.headline}</h3>
+      <p className={v.text}>{[head.sub, callsText, `checked ${checked}`].filter(Boolean).join(' · ')}</p>
     </div>
-    {few && <p className={v.text}>{TOO_FEW_HELP}</p>}
-    {report.fix.length > 0 && <>
-      <p className={v.sect}>To fix</p>
-      <ul className={v.cards}>{report.fix.map((c) => <FixCard key={c.id} card={c} />)}</ul>
-    </>}
-    {report.ok.length > 0 && <>
-      {report.fix.length > 0 && <p className={v.sect}>Passed</p>}
-      <ul className={v.lines}>{report.ok.map((c) => <ReportLine key={c.id} card={c} />)}</ul>
-    </>}
-    {!few && report.skipped.length > 0 && (
+    {few ? <p className={v.text}>{TOO_FEW_HELP}</p> : (['agent', 'guardrails'] as const).map((g) => (
+      <section key={g} className={v.rowGroup} aria-label={ROW_GROUP_NAMES[g].name}>
+        <div className={v.rowGroupHead}><b>{ROW_GROUP_NAMES[g].name}</b><span>{ROW_GROUP_NAMES[g].q}</span></div>
+        <ul className={v.rows}>{rows.filter((r) => r.group === g).map((r) => <RowLine key={r.num} row={r} sample={!!sample} />)}</ul>
+      </section>
+    ))}
+    {!few && others.length > 0 && <p className={v.text}>Also called during this check: {others.join(', ')} (not checked).</p>}
+    {!few && state.streaming?.streamed && state.streaming.lines.length > 0 && (
       <details className={v.members}>
-        <summary>{report.skipped.length === 1 ? '1 check' : `${report.skipped.length} checks`} didn’t run this time</summary>
-        <ul className={`${v.lines} ${v.reveal}`}>{report.skipped.map((c) => <ReportLine key={c.id} card={c} />)}</ul>
+        <summary>Your agent streams: how your rules treat its replies</summary>
+        <ul className={v.cardRules}>{state.streaming.lines.map((l) => <li key={l}>{l}</li>)}</ul>
       </details>
     )}
     <div className={v.actions}>
       {sample && <Button size={32} variant="primary" onClick={sample.onOwnKey}>Check your own agent</Button>}
       {sample?.onAgain && <Button size={32} variant="secondary" onClick={sample.onAgain} busy={sample.busy} busyLabel="Starting…">Run the sample again</Button>}
-      {onAgain && <Button size={32} variant={report.verdict === 'pass' ? 'secondary' : 'primary'} onClick={onAgain} busy={busy} busyLabel="Starting…">Check again</Button>}
+      {onAgain && <Button size={32} variant={head.tone === 'pass' ? 'secondary' : 'primary'} onClick={onAgain} busy={busy} busyLabel="Starting…">Check again</Button>}
       <Button size={32} variant="ghost" onClick={copy}>{copied === 'copied' ? 'Copied' : 'Copy summary'}</Button>
       <span className={v.text} aria-live="polite">{copied === 'failed' ? 'Couldn’t copy. Try again.' : sample?.refusal ?? ''}</span>
     </div>
-    {!few && !sample && <p className={v.next}>Next: check its answers too. <Link href={ROUTES.practiceTest} className="wr-link">Run practice tasks</Link></p>}
+    {!few && !sample && <p className={v.next}>Next: <Link href={ROUTES.practiceTest} className="wr-link">Run practice tasks</Link> for 01, 08 and the rest of 03.</p>}
     <p className={v.text}>
       {judgedOn > 0 && <>Checked against {judgedOn === 1 ? '1 Sandbox rule' : `${judgedOn} Sandbox rules`} · </>}
       <button type="button" className={v.linkButton} onClick={openRules}>{judgedOn > 0 ? 'Change rules' : 'Sandbox rules'}</button>
@@ -384,47 +386,39 @@ export function openRules() {
   el.scrollIntoView({ block: 'start', behavior: still ? 'auto' : 'smooth' });
 }
 
-/** A failed check: what happened, how to fix it, and the rules it was judged on. */
-function FixCard({ card }: { card: ReportCard }) {
-  return (
-    <li className={v.card} data-check={card.id} data-status={card.status}>
-      <div className={v.cardHead}>
-        <div className={`${s.checkIcon} ${s.checkFail}`} aria-hidden="true"><Icon name="x" size={13} /></div>
-        <span className={s.checkName}>{card.label}</span>
-      </div>
-      <dl className={v.cardFacts}>
-        <dt>What happened</dt>
-        <dd>{card.happened}</dd>
-        <dt>How to fix</dt>
-        <dd data-next>{card.next}</dd>
-      </dl>
-      <RuleLines rules={card.rules} />
-    </li>
-  );
-}
+const ROW_MARK: Record<SandboxRow['state'], { icon: IconName; cls: string }> = {
+  passed: { icon: 'check', cls: 'rowOk' }, partly: { icon: 'check', cls: 'rowOk' }, failed: { icon: 'x', cls: 'rowFail' },
+  not_checked: { icon: 'dash', cls: 'rowSkip' }, not_run_yet: { icon: 'dash', cls: 'rowSkip' }, not_set_up: { icon: 'dash', cls: 'rowSkip' },
+};
+const PART_MARK: Record<RowPart['state'], string> = { passed: '✓', failed: '✕', not_checked: '–', not_run_yet: '–', not_set_up: '–' };
 
-/** A passed check, or one that didn't run, in one line: its name, what happened, and how to get it checked. */
-function ReportLine({ card }: { card: ReportCard }) {
-  const mark = MARK[card.status];
+/** One of the eight rows: its number, mark and name, then its one line or its parts, a failure's fix in place, and a note. */
+function RowLine({ row, sample }: { row: SandboxRow; sample: boolean }) {
+  const mark = ROW_MARK[row.state];
   return (
-    <li className={v.line} data-check={card.id} data-status={card.status}>
-      <span className={mark.tone === 'pass' ? v.lineOk : v.lineSkip} aria-hidden="true"><Icon name={mark.icon} size={13} /></span>
-      <div>
-        <strong>{card.label}.</strong> {card.happened}
-        {card.next && <> {card.next}</>}
-        {card.status !== 'passed' && <RuleLines rules={card.rules} />}
+    <li className={v.row} data-row={row.num} data-state={row.state}>
+      <span className={v.rowNum}>{row.num}</span>
+      <span className={v[mark.cls]} aria-hidden="true"><Icon name={mark.icon} size={13} /></span>
+      <div className={v.rowBody}>
+        <strong>{row.name}.</strong>{' '}
+        {row.state === 'not_run_yet' && !row.parts.length
+          ? <>{row.line}{!sample && <> <Link href={ROUTES.practiceTest} className="wr-link">Run practice tasks</Link></>}</>
+          : row.line}
+        {row.state === 'partly' && <span className={v.chip}>Partly checked</span>}
+        {row.parts.length > 0 && (
+          <dl className={v.rowParts}>
+            {row.parts.map((p) => <div key={p.label}><dt>{p.label}</dt><dd><span aria-hidden="true" className={v.partMark}>{PART_MARK[p.state]}</span> {p.text}</dd></div>)}
+          </dl>
+        )}
+        {row.note && <span className={v.rowNote}>{row.note}</span>}
+        {row.fix && (
+          <dl className={`${v.cardFacts} ${v.rowFix}`}>
+            <dt>What happened</dt><dd>{row.fix.happened}</dd>
+            <dt>How to fix</dt><dd data-next>{row.fix.next}</dd>
+          </dl>
+        )}
       </div>
     </li>
-  );
-}
-
-function RuleLines({ rules }: { rules: string[] }) {
-  if (!rules.length) return null;
-  return (
-    <details className={v.members}>
-      <summary>{rules.length === 1 ? '1 rule' : `${rules.length} rules`}</summary>
-      <ul className={v.cardRules}>{rules.map((r, i) => <li key={i}>{r}</li>)}</ul>
-    </details>
   );
 }
 
