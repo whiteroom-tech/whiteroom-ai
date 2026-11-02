@@ -58,6 +58,17 @@ describe('practice BFF', () => {
     expect(engine).not.toHaveBeenCalled();
   });
 
+  it('eight checks: forwards how thorough, longer limits and a Sandbox start; refuses other values; reads capabilities for the owner', async () => {
+    await post(['start'], { fleet: 'prod-eu', sample: false, runs: 1, agent: 'support-bot', profile: 'quick', longer: true, origin: 'sandbox' });
+    expect(JSON.parse(String(sent().init.body))).toEqual({ fleet: 'prod-eu', sample: false, runs: 1, agent: 'support-bot', profile: 'quick', longer: true, origin: 'sandbox', startedBy: 'u1' });
+    for (const bad of [{ profile: 'fast' }, { longer: 'yes' }, { origin: 'production' }]) {
+      expect((await post(['start'], { fleet: 'prod-eu', sample: false, runs: 1, agent: 'support-bot', ...bad })).status).toBe(400);
+    }
+    engine.mockResolvedValue(Response.json({ testVersion: 3, profiles: ['quick', 'deep'] }));
+    expect((await get(['capabilities'], 'fleet=prod-eu')).status).toBe(200);
+    expect(String(engine.mock.calls.at(-1)![0])).toMatch(/\/api\/readiness\/capabilities$/);
+  });
+
   it('refuses anyone who doesn’t own the fleet, before the engine is asked', async () => {
     access.mockResolvedValue({ status: 403, error: 'Only this fleet’s owner can change its controls and settings.' });
     const res = await get(undefined, 'fleet=prod-eu');

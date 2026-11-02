@@ -241,7 +241,7 @@ describe("--require (pre-flight D6)", () => {
   it("takes the catalog's row ids, and refuses unknown ones", () => {
     assert.deepEqual(parseRequire("spend_cap, keyword,spend_cap"), ["spend_cap", "keyword"]);
     const bad = parseRequire("spend_cap,budget");
-    assert.ok(!Array.isArray(bad) && /Unknown check for --require: budget\. Use any of: finishes_job, long_task, fails_gracefully, spend_cap, loop_breaker, keyword, pause_stop\./.test(bad.problem));
+    assert.ok(!Array.isArray(bad) && /Unknown check for --require: budget\. Use any of: finishes_job, long_task, fails_gracefully, spend_cap, loop_breaker, keyword, pause_stop, planted_instruction\./.test(bad.problem));
     assert.ok(!Array.isArray(parseRequire(" , ")));
   });
 

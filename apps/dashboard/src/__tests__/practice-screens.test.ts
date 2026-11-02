@@ -14,6 +14,7 @@ vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 
 const { PracticeTest } = await import('@/components/sandbox/practice/PracticeTest');
 const { PracticeCard } = await import('@/components/sandbox/practice/PracticeCard');
+const { PracticeSetup } = await import('@/components/sandbox/practice/PracticeSetup');
 const { PastTests } = await import('@/components/sandbox/PastTests');
 const { TestRunFlow } = await import('@/components/sandbox/TestRunFlow');
 const { PRACTICE_ROWS, PRACTICE_STATES } = await import('@/app/dev/practice/states');
@@ -59,6 +60,28 @@ describe('practice test screens', () => {
     expect(html).toContain('href="https://www.npmjs.com/package/@whiteroom-ai/cli#connecting-your-own-agent"');
     // The cost line is the only place the model calls are counted.
     expect(text(html)).not.toMatch(/around \d+ model calls/);
+  });
+
+  it('an engine with quick and deep tests: setup offers How thorough, quick first, and its rows say where each check happens', () => {
+    const t = text(renderToStaticMarkup(createElement(PracticeTest, { preview: PRACTICE_STATES['setup-quick'] })));
+    expect(t).toContain('How thorough');
+    expect(t).toContain('Quick · a few minutes');
+    expect(t).toContain('Your guardrails are checked live in your Sandbox.');
+    expect(t).not.toContain('3 runs show it passes every time');
+    expect(t).toContain('Checked live in your Sandbox.');
+    expect(t).toContain('In the deep test.');
+    expect(t).toContain('Ignores a planted instruction');
+    // A quick test makes no control checks, so its cost line doesn't say they're included.
+    expect(t).toMatch(/Never more than 42 calls\./);
+    expect(t).not.toContain('including control checks');
+    // Start waits for the answer, so a test never starts without the profile the engine offers.
+    const asking = text(renderToStaticMarkup(createElement(PracticeSetup, { fleet: 'prod-eu', data: PRACTICE_STATES['setup-quick'].setup!, busy: false, onStart: () => {} })));
+    expect(renderToStaticMarkup(createElement(PracticeSetup, { fleet: 'prod-eu', data: PRACTICE_STATES['setup-quick'].setup!, busy: false, onStart: () => {} }))).toMatch(/<button[^>]*disabled=""[^>]*>Start test<\/button>/);
+    expect(asking).not.toContain('How thorough');
+    // An engine without profiles: today's setup, runs and all.
+    const old = text(renderToStaticMarkup(createElement(PracticeTest, { preview: PRACTICE_STATES.setup })));
+    expect(old).not.toContain('How thorough');
+    expect(old).toContain('3 runs show it passes every time');
   });
 
   it('the guardrail rows on a fleet with no rules, and when the controls couldn’t be read', () => {
@@ -334,14 +357,14 @@ describe('the Sandbox screens practice tests are added to', () => {
   it('the start screen card, only once practice tests answered', () => {
     expect(renderToStaticMarkup(createElement(PracticeCard, { entry: { fleet: 'prod-eu', rows: null, open: null } }))).toBe('');
     expect(text(renderToStaticMarkup(createElement(PracticeCard, { entry: { fleet: 'prod-eu', rows: [], open: null } }))))
-      .toContain('Try your agent on practice tasks 7 checks, 3 for your agent and 4 for its guardrails · about 5–10 min for one run Set up a practice test →');
+      .toContain('Try your agent on practice tasks 8 checks, 3 for your agent and 5 for its guardrails · about 5–10 min for one run Set up a practice test →');
   });
 
   it('Ready to go live gains one line, only when practice tests are available', () => {
     const passed = { sandboxId: 'p', mode: 'connected' as const, expiresInSeconds: 900, agents: [],
       controls: ['core.connect', 'core.handoff', 'core.resume'].map((controlId) => ({ controlId, name: controlId, result: { liveEvidence: { status: 'observed' } } })) } as unknown as RunStatusResult;
     const flow = (practice: PracticeEntry) => text(renderToStaticMarkup(createElement(TestRunFlow as FC<NonNullable<Parameters<typeof TestRunFlow>[0]>>, { previewUserId: 'u', previewRun: passed, previewPractice: practice })));
-    const line = 'Want more confidence before going live? Run a practice test : 7 checks, 3 for your agent and 4 for its guardrails · about 5–10 min for one run.';
+    const line = 'Want more confidence before going live? Run a practice test : 8 checks, 3 for your agent and 5 for its guardrails · about 5–10 min for one run.';
     const without = flow({ fleet: null, rows: null, open: null });
     expect(without).toContain('Ready to go live');
     expect(without).not.toContain('practice test');
@@ -355,7 +378,7 @@ describe('the Sandbox screens practice tests are added to', () => {
     const cloud = { sandboxId: 'p', mode: 'connected' as const, expiresInSeconds: 900, agents: [], provider: 'azure-openai', endpointHost: 'acme.openai.azure.com',
       controls: ['core.connect', 'core.handoff', 'core.resume'].map((controlId) => ({ controlId, name: controlId, result: { liveEvidence: { status: 'observed' } } })) } as unknown as RunStatusResult;
     const flow = (practice: PracticeEntry) => text(renderToStaticMarkup(createElement(TestRunFlow as FC<NonNullable<Parameters<typeof TestRunFlow>[0]>>, { previewUserId: 'u', previewRun: cloud, previewPractice: practice })));
-    const line = 'Want more confidence before going live? Run a practice test : 7 checks, 3 for your agent and 4 for its guardrails · about 5–10 min for one run.';
+    const line = 'Want more confidence before going live? Run a practice test : 8 checks, 3 for your agent and 5 for its guardrails · about 5–10 min for one run.';
     const without = flow({ fleet: null, rows: null, open: null });
     expect(without).toContain('Ready to go live');
     const withLine = flow({ fleet: 'prod-eu', rows: [], open: null });

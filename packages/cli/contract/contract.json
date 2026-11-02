@@ -111,6 +111,9 @@
           "tasks": 18,
           "practiceTasks": 15,
           "controls": true
+        },
+        "capabilities": {
+          "finalFields": []
         }
       }
     },
@@ -342,6 +345,9 @@
           "tasks": 1,
           "practiceTasks": 1,
           "controls": false
+        },
+        "capabilities": {
+          "finalFields": []
         }
       }
     },

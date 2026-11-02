@@ -5,11 +5,12 @@ import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import contract from '@practice-contract/contract.json';
 import { SANDBOX_CHECKS } from '@/lib/sandbox/report';
-import { keyGone, PracticeError, retryable, sourceModel } from '@/lib/sandbox/practice/api';
+import { keyGone, practiceCapabilities, PracticeError, retryable, sourceModel } from '@/lib/sandbox/practice/api';
 import {
   billedLine, callEstimate, CATALOG, choiceOf, KEY_REFUSALS, keyLine, keyOptions, providerKeyLabel, PROXY_KEY_PREFIX_RE, cliCommands, codeCountdown, controlCalls, costLine, fixLine, headline,
   CLI_VERSION, directChoice, draftFromStart, endedBecause, lostContact, passCaveat, pastKind, RUN_ID_RE, pastResult, pastTasks, planOf, practiceAgent, progressLine, rerunConfirm,
   rerunKey, rerunScope, runKeyChoice, liveRows, failedRowNames,
+  QUICK_PLAN,
 } from '@/lib/sandbox/practice/model';
 import { canDownload, practiceReportFileName, practiceReportHtml, REPORT_CSP } from '@/lib/sandbox/practice/report';
 import type { PracticeControlCheck, PracticeProviderKey, PracticeReport, PracticeRun, PracticeRunRow, PracticeSource } from '@/lib/sandbox/practice/types';
@@ -24,7 +25,7 @@ const withCheck = (r: PracticeReport, id: string, patch: Partial<PracticeReport[
 describe('practice test catalog', () => {
   it('fix lines that send the owner to a rerun say so in the catalog’s own words, never the old button copy', () => {
     const lines = Object.values(CATALOG.fixLines as Record<string, string>);
-    expect(lines.filter((l) => l.endsWith('Rerun this check to try again.'))).toHaveLength(6);
+    expect(lines.filter((l) => l.endsWith('Rerun this check to try again.'))).toHaveLength(7);
     for (const l of lines) expect(l).not.toMatch(/Then click|Rerun checks that didn|open Activity/);
   });
 
@@ -57,6 +58,19 @@ describe('practice test setup: the agent’s model and where its calls go', () =
     // A kind this dashboard doesn't know reads as not yet known.
     answer({ ...fixture<Record<string, unknown>>('source-model'), model: '', provider: 'somewhere-new' });
     expect(await sourceModel('prod-eu', 'support-bot')).toMatchObject({ model: null, provider: 'unknown' });
+  });
+
+  it('reads what the engine offers: quick and deep, or null from an engine without profiles; other errors aren’t hidden', async () => {
+    const caps = { testVersion: 3, profiles: ['quick', 'deep'], quick: { tasks: ['D', 'A', 'C_timeout', 'C_fail'], taskSeconds: {}, overallSeconds: 180 } };
+    answer(caps);
+    expect(await practiceCapabilities('prod-eu')).toEqual(caps);
+    // An answer without quick reads as none.
+    answer({ testVersion: 3, profiles: ['deep'] });
+    expect(await practiceCapabilities('prod-eu')).toBeNull();
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'Not found.' }, { status: 404 })));
+    expect(await practiceCapabilities('prod-eu')).toBeNull();
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'Something broke.' }, { status: 500 })));
+    await expect(practiceCapabilities('prod-eu')).rejects.toBeInstanceOf(PracticeError);
   });
 
   it('carries the Fleet key key the agent’s latest call used through to setup’s default', async () => {
@@ -215,14 +229,17 @@ describe('practice test progress and Past tests', () => {
     expect(progressLine(r, now)).toBe('Practice tasks: 7 of 18 done (run 2 of 3) · 12 min so far, usually 15–30 min in total');
     expect(lostContact(r, now)).toBe(false);
     expect(lostContact(run({ progress: { done: 7, total: 18, lastContactAt: '2026-10-12T14:18:00Z' } }), now)).toBe(true);
-    // The seven rows fill in as tasks finish: run 2 has finished A and is on B's short version.
+    // The rows fill in as tasks finish: run 2 has finished A and is on B's short version. A test started without a profile doesn't play row 08's task.
     const live = (done: number, p: Partial<PracticeRun> = {}) => liveRows(run({ progress: { done, total: 18, lastContactAt: '2026-10-12T14:19:30Z' }, ...p })).map((x) => `${x.row.id}:${x.state}`);
-    expect(live(7)).toEqual(['finishes_job:now', 'long_task:now', 'fails_gracefully:now', 'spend_cap:now', 'loop_breaker:now', 'keyword:now', 'pause_stop:now']);
-    expect(live(1, { runs: 1 })).toEqual(['finishes_job:done', 'long_task:now', 'fails_gracefully:todo', 'spend_cap:todo', 'loop_breaker:todo', 'keyword:todo', 'pause_stop:todo']);
-    expect(live(6, { runs: 1 }).every((x) => x.endsWith(':done'))).toBe(true);
-    expect(liveRows(run({ progress: null, runs: 1 })).every((x) => x.state === 'todo')).toBe(true);
+    expect(live(7)).toEqual(['finishes_job:now', 'long_task:now', 'fails_gracefully:now', 'spend_cap:now', 'loop_breaker:now', 'keyword:now', 'pause_stop:now', 'planted_instruction:skip']);
+    expect(live(1, { runs: 1 })).toEqual(['finishes_job:done', 'long_task:now', 'fails_gracefully:todo', 'spend_cap:todo', 'loop_breaker:todo', 'keyword:todo', 'pause_stop:todo', 'planted_instruction:skip']);
+    expect(live(6, { runs: 1 }).filter((x) => !x.endsWith(':skip')).every((x) => x.endsWith(':done'))).toBe(true);
+    expect(liveRows(run({ progress: null, runs: 1 })).filter((x) => x.state !== 'skip').every((x) => x.state === 'todo')).toBe(true);
     // A rerun of one check: the other rows aren't part of it.
-    expect(live(0, { runs: 1, scope: ['c.timeout'] })).toEqual(['finishes_job:skip', 'long_task:skip', 'fails_gracefully:now', 'spend_cap:skip', 'loop_breaker:skip', 'keyword:skip', 'pause_stop:skip']);
+    expect(live(0, { runs: 1, scope: ['c.timeout'] })).toEqual(['finishes_job:skip', 'long_task:skip', 'fails_gracefully:now', 'spend_cap:skip', 'loop_breaker:skip', 'keyword:skip', 'pause_stop:skip', 'planted_instruction:skip']);
+    // A quick test follows the plan the engine settled: D, A, then the C tasks; the guardrails and the long task aren't in it.
+    const quick = { runs: 1, profile: 'quick' as const, plan: { tasks: QUICK_PLAN.map((scenario) => ({ scenario, runIndex: 0 })), overallDeadlineAt: null, skipped: [], adapterKind: 'custom' as const } };
+    expect(live(1, quick)).toEqual(['finishes_job:now', 'long_task:skip', 'fails_gracefully:todo', 'spend_cap:skip', 'loop_breaker:skip', 'keyword:skip', 'pause_stop:skip', 'planted_instruction:done']);
     expect(codeCountdown('2026-10-12T14:49:47Z', now)).toBe('29:47');
     expect(codeCountdown('2026-10-12T14:19:00Z', now)).toBeNull();
   });
