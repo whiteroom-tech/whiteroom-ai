@@ -344,24 +344,24 @@ describe('Check your agent', () => {
     await click('Finish now');
     await flush();
     const sent = capture.mock.calls.filter(([name]) => name === 'sandbox_v2_report');
-    expect(sent).toEqual([['sandbox_v2_report', { verdict: 'fix', passed: 1, failed: 1, calls: expect.any(Number), sample: false }]]);
-    // Only the verdict and counts: no ids, keys or names.
+    expect(sent).toEqual([['sandbox_v2_report', { tone: 'warn', fix: 1, checked: expect.any(Number), practice: expect.any(Number), notSetUp: expect.any(Number), calls: expect.any(Number), sample: false }]]);
+    // Only the tone and row counts the page shows: no ids, keys or names.
     expect(JSON.stringify(sent)).not.toMatch(/sandbox-|chk_|prod-eu|sk-/);
   });
 
   it.each([
-    ['pass', { spend_cap: 'passed', loop_rate: 'passed', allowlists_keywords: 'passed', pause_stop: 'passed', long_task: 'passed', provider_errors: 'passed' }, 14, { passed: 6, failed: 0 }],
-    ['clear', { long_task: 'passed' }, 14, { passed: 1, failed: 0 }],
-    ['none', {}, 14, { passed: 0, failed: 0 }],
-    ['too_few', {}, 3, { passed: 0, failed: 0 }],
-  ] as const)('the report event carries the %s verdict, its counts and the calls', async (verdict, statuses, calls, counts) => {
+    ['pass', { spend_cap: 'passed', loop_rate: 'passed', allowlists_keywords: 'passed', pause_stop: 'passed', long_task: 'passed', provider_errors: 'passed' }, 14, { fix: 0, checked: 6 }],
+    ['neutral', { long_task: 'passed' }, 14, { fix: 0, checked: 1 }],
+    ['neutral', {}, 14, { fix: 0, checked: 0 }],
+    ['too_few', {}, 3, { fix: 0, checked: 0 }],
+  ] as const)('the report event carries the %s tone, the rows’ counts and the calls', async (tone, statuses, calls, counts) => {
     capture.mockClear();
     checks = checkAnswer({ stage: 'observe' });
     await render(checksEl());
     checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z', calls }, statuses);
     await click('Finish now');
     await flush();
-    expect(capture.mock.calls.filter(([name]) => name === 'sandbox_v2_report')).toEqual([['sandbox_v2_report', { verdict, ...counts, calls, sample: false }]]);
+    expect(capture.mock.calls.filter(([name]) => name === 'sandbox_v2_report')).toEqual([['sandbox_v2_report', { tone, ...counts, practice: 2, notSetUp: expect.any(Number), calls, sample: false }]]);
   });
 
   it('a check that opens and ends between two reads still counts as new: focus and one report event', async () => {

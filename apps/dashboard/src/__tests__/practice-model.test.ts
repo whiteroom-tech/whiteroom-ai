@@ -407,3 +407,18 @@ describe('practice tests on cloud providers (R7, §17)', () => {
     expect(PROXY_KEY_PREFIX_RE.test('sk-wr-a1b2...')).toBe(false);
   });
 });
+
+describe('a rerun starts where its test did, as thorough', () => {
+  it('keeps a deep or Sandbox test’s profile and origin; a quick test’s rerun or 3 runs is deep; an engine without profiles sends none', async () => {
+    const { rerunPlacement, planOf } = await import('@/lib/sandbox/practice/model');
+    expect(rerunPlacement({ profile: 'deep', origin: 'sandbox' }, ['d.injection'], 1)).toEqual({ profile: 'deep', origin: 'sandbox' });
+    expect(rerunPlacement({ profile: 'quick', origin: 'sandbox' }, ['a.result'], 1)).toEqual({ profile: 'deep', origin: 'sandbox' });
+    expect(rerunPlacement({ profile: 'quick', origin: null }, null, 3)).toEqual({ profile: 'deep' });
+    expect(rerunPlacement({ profile: 'quick' }, null, 1)).toEqual({ profile: 'quick' });
+    expect(rerunPlacement({}, ['a.result'], 1)).toEqual({});
+    // As the engine plans it: a deep rerun of row 08 plays D; one of another check doesn't.
+    expect(planOf(['d.injection'], 'deep')).toEqual(['D']);
+    expect(planOf(['a.result'], 'deep')).toEqual(['A']);
+    expect(planOf(null, 'deep')[0]).toBe('D');
+  });
+});

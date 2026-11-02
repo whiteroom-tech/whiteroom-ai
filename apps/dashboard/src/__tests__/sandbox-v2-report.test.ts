@@ -14,7 +14,8 @@ vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'un
 vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 
 const { CHECK_IDS, CHECK_NAMES } = await import('@/lib/sandbox/checks');
-const { ENOUGH_CALLS, KEEP_RUNNING, TOO_FEW_HELP, NOT_REACHED, reportOf, reportSummary, scrub, FIX, SCORED_CHECKS, TRIP_TIP, verdictOf } = await import('@/lib/sandbox/check-report');
+const { BLOCKED_FIX, ENOUGH_CALLS, failText, FIX, scrub, SCORED_CHECKS, TOO_FEW_HELP, tooFewCalls, tooFewSummary } = await import('@/lib/sandbox/check-report');
+const { rowsSummary, sandboxRows } = await import('@/lib/sandbox/sandbox-rows');
 const { COPY_RESET_MS, copyText, ReportView, SandboxChecks } = await import('@/components/sandbox/v2/SandboxChecks');
 const { SandboxHome } = await import('@/components/sandbox/v2/SandboxHome');
 const { PastTestDetail, PastTests, hiddenByDefault, pastRows, rowTasks } = await import('@/components/sandbox/PastTests');
@@ -31,108 +32,43 @@ const stateOf = (results: Results, opts: { injectErrors?: boolean; rules?: Check
   checks: CHECK_IDS.map((id) => ({ id, label: CHECK_NAMES[id], status: results[id]?.[0] ?? 'pending', detail: results[id]?.[1] ?? '' })),
   rules: opts.rules ?? [],
 });
-const card = (st: CheckState, id: CheckId) => { const r = reportOf(st); return [...r.fix, ...r.ok, ...r.skipped].find((c) => c.id === id)!; };
 const all = (status: CheckStatus) => Object.fromEntries(CHECK_IDS.map((id) => [id, [status]])) as Results;
+const summary = (st: CheckState, when = 'checked 6 min ago') => rowsSummary(sandboxRows(st), { when, calls: 12 });
 
-describe('report: the verdict, scored over six checks', () => {
-  it('a failure leads: "N things to fix", warn tone, never red', () => {
-    const one = reportOf(stateOf({ ...all('passed'), provider_errors: ['failed'] }));
-    expect(one.headline).toBe('1 thing to fix before going live');
-    expect([one.verdict, one.tone]).toEqual(['fix', 'warn']);
-    expect(reportOf(stateOf({ spend_cap: ['failed'], loop_rate: ['failed'] })).headline).toBe('2 things to fix before going live');
-  });
-
-  it('every scored check passed: "Your agent passed every check", whatever Finishes the job correctly says', () => {
-    const r = reportOf(stateOf({ ...all('passed'), finishes_correctly: ['not_checked'] }));
-    expect(r.headline).toBe('Your agent passed every check');
-    expect([r.verdict, r.tone, r.passed, r.failed, r.notRun]).toEqual(['pass', 'pass', 6, 0, 0]);
-    expect([...r.fix, ...r.ok, ...r.skipped].map((c) => c.id)).not.toContain('finishes_correctly');
+describe('report: the shared pieces', () => {
+  it('too few calls: nothing passed or failed, under about 5 calls', () => {
+    const st = (calls: number, results: Results = {}) => ({ ...stateOf(results), window: { ...stateOf({}).window!, calls } });
+    expect(tooFewCalls(st(ENOUGH_CALLS - 1))).toBe(true);
+    expect(tooFewCalls(st(ENOUGH_CALLS))).toBe(false);
+    expect(tooFewCalls(st(1, { spend_cap: ['passed'] }))).toBe(false);
     expect(SCORED_CHECKS).toHaveLength(6);
   });
 
-  it('no failures, some didn’t run: "No problems found · N didn’t run"; a check still pending reads Not checked', () => {
-    const r = reportOf(stateOf({ spend_cap: ['passed'], pause_stop: ['passed'], loop_rate: ['not_triggered'] }));
-    expect(r.headline).toBe('No problems found · 4 checks didn’t run');
-    expect(r.tone).toBe('neutral');
-    expect(r.skipped.map((c) => [c.id, c.status])).toEqual([['loop_rate', 'not_triggered'], ['allowlists_keywords', 'not_checked'], ['long_task', 'not_checked'], ['provider_errors', 'not_checked']]);
-  });
-
-  it('nothing passed or failed: too few calls, or nothing checked', () => {
-    expect(verdictOf({ passed: 0, failed: 0, notRun: 6 }, ENOUGH_CALLS - 1)).toEqual({ verdict: 'too_few', headline: 'Not enough calls to check your agent', tone: 'neutral' });
-    expect(verdictOf({ passed: 0, failed: 0, notRun: 6 }, ENOUGH_CALLS).headline).toBe('Nothing was checked this time');
-    expect(verdictOf({ passed: 1, failed: 0, notRun: 0 }, 0).verdict).toBe('pass');
-  });
-});
-
-describe('report: each check', () => {
-  it('passed: what happened, from the detail; nothing to do', () => {
-    const c = card(stateOf({ spend_cap: ['passed', 'Blocked at $0.02, and your agent stopped.'] }), 'spend_cap');
-    expect(c.happened).toBe('Blocked at $0.02, and your agent stopped.');
-    expect(c.next).toBeNull();
-  });
-
-  it('failed: a concrete fix per check', () => {
-    const st = stateOf({ spend_cap: ['failed'], provider_errors: ['failed', 'Retried 6 times in 4 seconds.'] });
-    expect(card(st, 'provider_errors').next).toBe('Retry with a back-off of at least 1 second, and give up after a few tries.');
-    expect(card(st, 'provider_errors').happened).toBe('Retried 6 times in 4 seconds.');
-    for (const id of SCORED_CHECKS) expect(card(stateOf({ [id]: ['failed'] }), id).next).toBe(FIX[id]);
-    // The engine's closing "Fix: …" sentence isn't repeated in What happened; How to fix says it.
-    expect(card(stateOf({ provider_errors: ['failed', 'We returned a provider error (529) → your agent retried it 4 times within 5 s. Fix: retry with a growing wait, and give up after a few tries.'] }), 'provider_errors').happened)
+  it('a failure’s detail loses the engine’s closing "Fix: …"; How to fix says it', () => {
+    expect(failText('We returned a provider error (529) → your agent retried it 4 times within 5 s. Fix: retry with a growing wait, and give up after a few tries.'))
       .toBe('We returned a provider error (529) → your agent retried it 4 times within 5 s.');
-    expect(card(stateOf({ long_task: ['failed', 'WhiteRoom handed over, and your agent didn’t call again. Fix: when a call is refused with a short wait (429), retry it.'] }), 'long_task').happened)
-      .toBe('WhiteRoom handed over, and your agent didn’t call again.');
     // A Fix with a period in it goes whole; a detail that is nothing but "Fix:" (no sentence before it) stays.
-    expect(card(stateOf({ spend_cap: ['failed', 'Blocked a call. Fix: wait 1.5 seconds, then try once more.'] }), 'spend_cap').happened).toBe('Blocked a call.');
-    expect(card(stateOf({ spend_cap: ['failed', 'Fix: this text is the whole detail.'] }), 'spend_cap').happened).toBe('Fix: this text is the whole detail.');
-    // No Resume on the page any more: the fix doesn't mention it.
+    expect(failText('Blocked a call. Fix: wait 1.5 seconds, then try once more.')).toBe('Blocked a call.');
+    expect(failText('Fix: this text is the whole detail.')).toBe('Fix: this text is the whole detail.');
+    // One fix for a refused call, and no Resume on the page any more.
+    expect(FIX.spend_cap).toBe(BLOCKED_FIX);
     expect(FIX.pause_stop).not.toMatch(/Resume/);
-  });
-
-  it('not triggered: the tip from the detail, else a default tip', () => {
-    expect(card(stateOf({ loop_rate: ['not_triggered', 'Needs the same call 3 times.'] }), 'loop_rate').next).toBe('Needs the same call 3 times.');
-    expect(card(stateOf({ loop_rate: ['not_triggered'] }), 'loop_rate').next).toBe(TRIP_TIP.loop_rate);
-    expect(card(stateOf({ loop_rate: ['not_triggered'] }), 'loop_rate').happened).toBe('This run didn’t trip it.');
-  });
-
-  it('not checked: the engine’s reason, else not reached; then keep it running (no dead toggle line)', () => {
-    expect(card(stateOf({ long_task: ['not_checked', 'Your agent stopped calling.'] }), 'long_task').happened).toBe('Your agent stopped calling.');
-    const c = card(stateOf({ provider_errors: ['not_checked'] }, { injectErrors: false }), 'provider_errors');
-    expect([c.happened, c.next]).toEqual([NOT_REACHED, KEEP_RUNNING]);
-  });
-
-  it('lists the rules each check was judged on', () => {
-    const st = stateOf({ spend_cap: ['passed'] }, { rules: [{ ruleId: 'gr_1', ruleType: 'spend_cap', check: 'spend_cap', wouldAct: true, acted: true, status: 'passed', detail: 'Blocked at $0.02.' }] });
-    expect(card(st, 'spend_cap').rules).toEqual(['Spend cap · Passed · Blocked at $0.02.']);
-    expect(card(st, 'loop_rate').rules).toEqual([]);
   });
 });
 
 describe('Copy summary', () => {
-  it('passed checks are one line, without their rules, as on the page', () => {
-    const rule = (check: CheckId, status: CheckStatus) => ({ ruleId: `gr_${check}`, ruleType: 'spend_cap', check, wouldAct: true, acted: true, status, detail: `Rule detail ${check}` });
-    const st = stateOf({ spend_cap: ['passed'], loop_rate: ['failed'] }, { rules: [rule('spend_cap', 'passed'), rule('loop_rate', 'failed')] });
-    const text = reportSummary(reportOf(st), { checked: 'just now', calls: 12 });
-    expect(text).not.toContain('Rule detail spend_cap');
-    expect(text).toContain('Rule detail loop_rate');
-  });
-
   it('keeps ordinary hyphenated words like key-value or tok-limit', () => {
-    const st = stateOf({ spend_cap: ['failed', 'Wrote to a key-value store and hit the tok-limit; key_rotation pending.'] });
-    const text = reportSummary(reportOf(st), { checked: '1 min ago', calls: 3 });
+    const text = summary(stateOf({ spend_cap: ['failed', 'Wrote to a key-value store and hit the tok-limit; key_rotation pending.'] }));
     for (const w of ['key-value', 'tok-limit', 'key_rotation']) expect(text).toContain(w);
   });
 
-  it('is plain text with every card, and no keys, URLs or fleet IDs', () => {
-    const st = stateOf(
-      { spend_cap: ['failed', `Called with ${PLACEHOLDER_KEY} on ${SANDBOX_ID}`] },
-      { rules: [{ ruleId: 'gr_1', ruleType: 'keyword', check: 'allowlists_keywords', wouldAct: true, acted: false, status: 'not_triggered', detail: 'Saw wr_placeholder0000 in a reply.' }] },
-    );
-    const text = reportSummary(reportOf(st), { checked: '6 min ago', calls: 12 });
+  it('is plain text in the page’s order, with no keys, URLs or fleet IDs', () => {
+    const text = summary(stateOf({ spend_cap: ['failed', `Called with ${PLACEHOLDER_KEY} on ${SANDBOX_ID}`] }));
     expect(text.startsWith('WhiteRoom Sandbox check: 1 thing to fix before going live')).toBe(true);
-    for (const label of ['To fix:', '- Spend cap:', 'How to fix:', 'Didn’t run:', 'Rule: Keywords', 'Finishes the job correctly (run practice tasks)']) expect(text).toContain(label);
-    // In the page's order: to fix before what didn't run.
-    expect(text.indexOf('To fix:')).toBeLessThan(text.indexOf('Didn’t run:'));
-    expect(text).not.toMatch(/sk-wr|wr_placeholder|sandbox-0000|chk_1|https?:/);
+    expect(text).toContain('12 calls · checked 6 min ago');
+    for (const label of ['The agent:', 'The guardrails:', '- 04 Spend cap:', 'How to fix:']) expect(text).toContain(label);
+    expect(text.indexOf('The agent:')).toBeLessThan(text.indexOf('The guardrails:'));
+    expect(text).not.toMatch(/sk-wr|sandbox-0000|chk_1|https?:/);
     expect(text).toContain('[hidden]');
   });
 
@@ -140,12 +76,11 @@ describe('Copy summary', () => {
     const uuid = '00000000-0000-4000-8000-000000000000';
     const hex = '0123456789abcdef0123';
     const bare = 'PLACEHOLDERtoken0000placeholder0000';
-    const st = stateOf({
+    const text = summary(stateOf({
       spend_cap: ['failed', 'Posted to https://example.invalid/hooks/placeholder?id=1 and stopped.'],
-      loop_rate: ['failed', `Retried run ${uuid} with fleet-0000placeholder.`],
+      long_task: ['failed', `Retried run ${uuid} with fleet-0000placeholder.`],
       pause_stop: ['failed', `Sent header ${bare} and trace ${hex}.`],
-    });
-    const text = reportSummary(reportOf(st), { checked: '6 min ago', calls: 12 });
+    }));
     expect(text).not.toMatch(/https?:|example\.invalid|00000000-0000|fleet-0000|PLACEHOLDERtoken|0123456789abcdef/);
     expect(text).toContain('Posted to [hidden] and stopped.');
     expect(text).toContain('Retried run [hidden] with [hidden].');
@@ -178,7 +113,9 @@ describe('the report on the page', () => {
     expect(document.querySelector('li[data-row="01"]')?.getAttribute('data-state')).toBe('not_run_yet');
     expect(document.querySelector('li[data-row="08"]')?.textContent).toContain('Not run yet: checks in practice tasks.');
     expect(body).toContain('Next: Run practice tasks for 01, 08 and the rest of 03.');
-    expect([...document.querySelectorAll('a[href="/sandbox/practice"]')].length).toBe(3);
+    // Linked from rows 01 and 08, row 02's long-task note (that's in the deep test), and Next.
+    expect([...document.querySelectorAll('a[href="/sandbox/practice"]')].length).toBe(4);
+    expect(document.querySelector('li[data-row="02"] a[href="/sandbox/practice"]')).not.toBeNull();
     // "Checked against N Sandbox rules · Change rules" opens the closed rules section.
     expect(body).toMatch(/Checked against \d+ Sandbox rules · Change rules/);
     const rules = document.getElementById('sandbox-rules') as HTMLDetailsElement;
@@ -209,11 +146,10 @@ describe('the report on the page', () => {
     expect(html).toContain('The checks need about 5 calls from one run.');
     expect(html).not.toMatch(/6 checks|Next: check its answers/);
     // Copy summary agrees: no practice-tasks line either.
-    const st = { ...stateOf({}), window: { ...stateOf({}).window!, calls: 3 } };
-    const few = reportSummary(reportOf(st), { checked: 'just now', calls: 3 });
-    expect(few).not.toMatch(/practice tasks|Didn’t run/);
+    const few = tooFewSummary({ when: 'checked just now', calls: 3 });
+    expect(few).toContain('3 calls · checked just now');
+    expect(few).not.toMatch(/practice tasks/);
     expect(few).toContain(TOO_FEW_HELP);
-    expect(reportSummary(reportOf(stateOf({ spend_cap: ['passed'] })), { checked: 'just now', calls: 12 })).toContain('Finishes the job correctly (run practice tasks)');
   });
 
   it('enough calls but nothing checked: no "need 5 calls" line; the checks that didn’t run say why', () => {
@@ -234,17 +170,19 @@ describe('the report on the page', () => {
     expect(quiet).not.toMatch(/Also called during|Your agent streams/);
   });
 
-  it('practice tasks bound to the report fill all eight rows, with each part’s time; Run practice tasks opens the test for this agent from the Sandbox', async () => {
+  it('practice tasks bound to the report fill all eight rows, with each part’s time; only the deep test’s long task is still linked', async () => {
     await act(async () => { root.render(h(SandboxHome, { fleet: 'prod-eu', preview: SANDBOX_V2_STATES['checks-report-practice'] })); });
     const body = document.body.textContent ?? '';
     expect(document.querySelector('li[data-row="08"]')?.getAttribute('data-state')).toBe('passed');
     expect(document.querySelector('li[data-row="01"]')?.getAttribute('data-state')).toBe('passed');
     expect(body).toMatch(/8 of 8 checked/);
     expect(body).toMatch(/Live check .+ · Practice tasks /);
-    expect(document.querySelector('a[href^="/sandbox/practice?from=sandbox"]')).toBeNull();
+    // Only row 02 still points on: a quick run has no long task, that's in the deep test.
+    expect([...document.querySelectorAll('a[href^="/sandbox/practice?from=sandbox"]')].map((a) => a.closest('li')?.getAttribute('data-row'))).toEqual(['02']);
+    expect(body).not.toContain('Next: Run practice tasks');
   });
 
-  it('another agent’s practice run is shown apart and not counted; a newer run of this agent is offered', async () => {
+  it('another agent’s practice run is shown apart and not counted; this agent’s rows still link to practice tasks', async () => {
     await act(async () => { root.render(h(SandboxHome, { fleet: 'prod-eu', preview: SANDBOX_V2_STATES['checks-report-other-agent'] })); });
     const body = document.body.textContent ?? '';
     expect(body).toContain('Practice tasks (different agent): billing-agent');

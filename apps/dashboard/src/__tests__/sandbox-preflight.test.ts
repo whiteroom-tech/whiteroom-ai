@@ -176,7 +176,9 @@ describe('setup’s plan of the rows (§7 step 2)', () => {
     expect(plan.find((x) => x.row.id === 'pause_stop')).toMatchObject({ status: 'not_checked', reason: 'Pause and Stop aren’t on for this fleet.' });
     expect(planRows(null).filter((x) => x.row.members.every((m) => m.startsWith('ctl.'))).every((x) => x.status === 'not_checked' && x.reason.startsWith('Couldn’t read'))).toBe(true);
     // Row 08's task is only in a test with a profile.
-    expect(planRows(null).find((x) => x.row.id === 'planted_instruction')).toMatchObject({ status: 'not_checked', reason: 'In the quick and deep tests.' });
+    expect(planRows(null).find((x) => x.row.id === 'planted_instruction')).toMatchObject({ status: 'not_checked', reason: 'Not in this test.' });
+    // From the Sandbox the guardrails are the Sandbox's rules, which production's controls don't list.
+    expect(planRows(null, 'deep', true).filter((x) => x.row.members.every((m) => m.startsWith('ctl.'))).every((x) => x.status === 'will_check' && x.reason === 'Your Sandbox rules')).toBe(true);
     expect(planRows(null, 'deep').find((x) => x.row.id === 'planted_instruction')).toMatchObject({ status: 'will_check' });
   });
 

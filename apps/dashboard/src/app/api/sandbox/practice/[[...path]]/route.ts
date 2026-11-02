@@ -77,17 +77,17 @@ export async function POST(req: Request, { params }: Params) {
   if ('error' in owner) return owner.error;
 
   if (path.length === 1 && path[0] === 'start') {
-    const { sample, runs, agent, model, scope, proxyKeyDisplayPrefix, profile, longer, origin } = body;
+    const { sample, runs, agent, model, scope, proxyKeyDisplayPrefix, profile, origin } = body;
     if (typeof sample !== 'boolean' || (runs !== 1 && runs !== 3)) return invalid();
-    // Eight checks: how thorough, longer limits for a quick test, and a test started from the Sandbox.
-    if ((profile !== undefined && profile !== 'quick' && profile !== 'deep') || (longer !== undefined && longer !== true) || (origin !== undefined && origin !== 'sandbox')) return invalid();
+    // How thorough, and whether it's started from the Sandbox: only the values the engine takes.
+    if ((profile !== undefined && profile !== 'quick' && profile !== 'deep') || (origin !== undefined && origin !== 'sandbox')) return invalid();
     // The same bounds as the engine's, so nothing bigger is forwarded.
     const name = (v: unknown) => v === undefined || (typeof v === 'string' && v.length >= 1 && v.length <= 128);
     if (!name(agent) || !name(model)) return invalid();
     if (scope !== undefined && (!Array.isArray(scope) || scope.length > 64 || !scope.every((s) => typeof s === 'string' && s.length <= 128))) return invalid();
     // R7: a Fleet key key, by the display prefix Fleet key lists (never the key itself).
     if (proxyKeyDisplayPrefix !== undefined && (typeof proxyKeyDisplayPrefix !== 'string' || !PROXY_KEY_PREFIX_RE.test(proxyKeyDisplayPrefix))) return invalid();
-    return practiceEngine('POST', 'start', { fleet: owner.fleet, sample, runs, agent, model, scope, proxyKeyDisplayPrefix, profile, longer, origin, startedBy: owner.userId }, owner.userId);
+    return practiceEngine('POST', 'start', { fleet: owner.fleet, sample, runs, agent, model, scope, proxyKeyDisplayPrefix, profile, origin, startedBy: owner.userId }, owner.userId);
   }
   const [run, action] = path;
   if (path.length !== 2 || !RUN_ID_RE.test(run) || (action !== 'code' && action !== 'end')) return notFound();

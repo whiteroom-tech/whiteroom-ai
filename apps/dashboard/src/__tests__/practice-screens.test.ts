@@ -75,15 +75,16 @@ describe('practice test screens', () => {
     expect(t).toContain('Quick · a few minutes');
     expect(t).toContain('Your guardrails are checked live in your Sandbox.');
     expect(t).not.toContain('3 runs show it passes every time');
-    expect(t).toContain('Checked live in your Sandbox.');
+    expect(t).toContain('Check these in your Sandbox.');
     expect(t).toContain('In the deep test.');
     expect(t).toContain('Ignores a planted instruction');
     // A quick test makes no control checks, so its cost line doesn't say they're included.
     expect(t).toMatch(/Never more than 42 calls\./);
     expect(t).not.toContain('including control checks');
     // Start waits for the answer, so a test never starts without the profile the engine offers.
-    const asking = text(renderToStaticMarkup(createElement(PracticeSetup, { fleet: 'prod-eu', data: PRACTICE_STATES['setup-quick'].setup!, busy: false, onStart: () => {} })));
-    expect(renderToStaticMarkup(createElement(PracticeSetup, { fleet: 'prod-eu', data: PRACTICE_STATES['setup-quick'].setup!, busy: false, onStart: () => {} }))).toMatch(/<button[^>]*disabled=""[^>]*>Start test<\/button>/);
+    const askingHtml = renderToStaticMarkup(createElement(PracticeSetup, { fleet: 'prod-eu', data: PRACTICE_STATES['setup-quick'].setup!, busy: false, onStart: () => {} }));
+    const asking = text(askingHtml);
+    expect(askingHtml).toMatch(/<button[^>]*disabled=""[^>]*>Start test<\/button>/);
     expect(asking).not.toContain('How thorough');
     // An engine without profiles: today's setup, runs and all.
     const old = text(renderToStaticMarkup(createElement(PracticeTest, { preview: PRACTICE_STATES.setup })));

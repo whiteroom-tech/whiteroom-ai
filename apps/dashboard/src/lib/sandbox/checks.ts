@@ -51,12 +51,12 @@ export interface CheckWindow {
   stage: CheckStage;
   injectErrors: boolean;
   calls: number;
-  /** Eight checks (engine A2): the agent the window judges, and other agents that called during it (not judged). Absent from older engines. */
+  /** The agent the window judges (its first named one), and other agents that called during it, not judged. Absent from older engines. */
   agentId?: string | null;
   otherAgents?: string[];
 }
 
-/** A saved Sandbox rule judged at its limit for the window's agent (engine A2a). */
+/** A saved Sandbox rule judged at its limit for the window's agent. */
 export interface RuleProbe {
   ruleId: string;
   ruleType: string;
@@ -65,7 +65,7 @@ export interface RuleProbe {
   detail: string;
 }
 
-/** Live parts outside the seven checks (engine A2c): the wait after the hand-over's 429, and the test block. */
+/** Live parts outside the checks: the wait after the hand-over's 429, and the test block. */
 export interface CheckPart {
   id: 'rate_limit_wait' | 'test_block';
   status: CheckStatus;
@@ -95,7 +95,7 @@ export interface CheckState {
   rules: CheckRule[];
   /** The agent, live: its last call to the Sandbox and its calls outside a check. Absent from an older engine. */
   activity?: { lastCallAt: string | null; callsOutsideWindow24h: number };
-  /** Eight checks (engine A2): absent from an older engine, which the report then reads as before. */
+  /** Absent from an older engine: rows 04–06 then read from their checks alone, and row 03 from the provider error. */
   probes?: RuleProbe[];
   parts?: CheckPart[];
   streaming?: { streamed: boolean; lines: string[] };
