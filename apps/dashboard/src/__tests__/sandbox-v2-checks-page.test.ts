@@ -122,9 +122,12 @@ describe('practice tasks on the report (eight checks C3)', () => {
     // Check again lands on a new ended window, for another agent; the practice read fails.
     failing = true;
     checks = checkAnswer({ id: 'chk_2', stage: 'done', endedAt: '2026-10-29T10:20:00.000Z', agentId: 'ops-bot' }, { long_task: 'passed' });
+    capture.mockClear();
     await click('Check again');
     expect(document.querySelector('li[data-row="08"]')?.getAttribute('data-state')).toBe('not_run_yet');
     expect(document.querySelector('li[data-row="01"]')?.getAttribute('data-state')).toBe('not_run_yet');
+    // The new report's event counts its own rows, never the last report's practice run.
+    expect(capture.mock.calls.filter(([name]) => name === 'sandbox_report_rows')).toEqual([['sandbox_report_rows', expect.objectContaining({ practice: 2 })]]);
   });
 });
 

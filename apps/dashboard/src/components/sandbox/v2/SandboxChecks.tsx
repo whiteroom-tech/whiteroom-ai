@@ -89,7 +89,8 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   const [busy, setBusy] = useState(false);
   const now = preview?.now ?? Date.now();
   // The practice run bound to this report: chosen once, kept until the owner picks a newer one (eight checks §6).
-  const [practice, setPractice] = useState<PracticeView>(preview?.practice ?? NO_PRACTICE);
+  // Kept with the report it was read for ("window|agent"), so a new report never shows, or counts, the last one's.
+  const [practiceRead, setPracticeRead] = useState<{ key: string; view: PracticeView } | null>(null);
   // The run bound so far (read, never a reason to fetch again), and the one the owner picked with Use it (a reason to).
   const boundRef = useRef<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
@@ -186,22 +187,24 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   const w = state?.window ?? null;
   const reportWindow = w?.endedAt ? w.id : null;
   const reportAgent = w?.agentId ?? null;
-  // A new report, or another agent's: nothing of the last one's practice run carries over.
-  const reportKey = useRef<string | null>(null);
+  const reportKey = `${reportWindow}|${reportAgent}`;
+  const practice = preview ? preview.practice ?? NO_PRACTICE : practiceRead?.key === reportKey ? practiceRead.view : NO_PRACTICE;
+  // A new report, or another agent's: the last one's binding and pick don't carry over either.
+  const lastKey = useRef<string | null>(null);
   useEffect(() => {
     if (preview) return;
-    const key = `${reportWindow}|${reportAgent}`;
-    if (reportKey.current === null) { reportKey.current = key; return; }
-    if (reportKey.current === key) return;
-    reportKey.current = key;
-    boundRef.current = null;
-    setPicked(null);
-    setPractice(NO_PRACTICE);
-  }, [preview, reportWindow, reportAgent]);
+    if (lastKey.current !== null && lastKey.current !== reportKey) {
+      boundRef.current = null;
+      setPicked(null);
+    }
+    lastKey.current = reportKey;
+  }, [preview, reportKey]);
   // Best effort: a report without practice results just shows those rows as not run yet.
   useEffect(() => {
     if (preview || sample || !reportWindow) return;
     let live = true;
+    const key = `${reportWindow}|${reportAgent}`;
+    const setPractice = (view: PracticeView) => setPracticeRead({ key, view });
     listPracticeRuns(fleet).then(async (runs) => {
       const b = practiceBinding(runs, reportAgent, picked ?? boundRef.current);
       const other = b.other && { agentId: b.other.agentId, endedAt: b.other.endedAt };
@@ -212,7 +215,7 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
       if (!live) return;
       const run = runs.find((r) => r.id === b.bind)!;
       setPractice({ bound: res.report ? { runId: b.bind, endedAt: run.endedAt, checks: res.report.checks } : null, newer: b.newer, other });
-    // A failed read keeps what's on screen: a new report or agent already cleared it (above).
+    // A failed read keeps what's on screen: a new report or agent never shows the last one's (practiceRead's key).
     }).catch(() => {});
     return () => { live = false; };
   }, [preview, sample, reportWindow, reportAgent, fleet, picked]);
