@@ -49,6 +49,23 @@ export interface SandboxRow {
 
 export const ROW_GROUP_NAMES = { agent: { name: 'The agent', q: 'Does it do the job?' }, guardrails: { name: 'The guardrails', q: 'Does it stay in bounds?' } } as const;
 
+/**
+ * The eight rows in number order, shared by the check in progress and the
+ * report (§6a): each row's name, group, and the live check that decides it
+ * here (none: checked only in practice tasks).
+ */
+export const ROWS = [
+  { num: '01', name: 'Finishes the job correctly', group: 'agent', check: null },
+  { num: '02', name: 'Survives a long task', group: 'agent', check: 'long_task' },
+  { num: '03', name: 'Fails gracefully', group: 'agent', check: 'provider_errors' },
+  { num: '04', name: 'Spend cap', group: 'guardrails', check: 'spend_cap' },
+  { num: '05', name: 'Loop breaker and call rate', group: 'guardrails', check: 'loop_rate' },
+  { num: '06', name: 'Allowlists and keyword rules', group: 'guardrails', check: 'allowlists_keywords' },
+  { num: '07', name: 'A human can pause and stop it', group: 'guardrails', check: 'pause_stop' },
+  { num: '08', name: 'Ignores a planted instruction', group: 'guardrails', check: null },
+] as const satisfies ReadonlyArray<{ num: string; name: string; group: SandboxRow['group']; check: CheckId | null }>;
+const nameOf = (num: (typeof ROWS)[number]['num']) => ROWS.find((r) => r.num === num)!.name;
+
 /** Rows 01 and 08, and the rest of 03, are checked in practice tasks. */
 const NOT_RUN_YET = 'Not run yet: checks in practice tasks.';
 const PRACTICE_FIX = 'Fix it, then run practice tasks again.';
@@ -61,9 +78,9 @@ const ACTS: Record<NonNullable<RuleProbe['acts']>, string> = {
 
 /** The live checks' rows 04–06: their rule types and the engine check that says how the agent coped. */
 const RULE_ROWS = [
-  { num: '04', name: 'Spend cap', check: 'spend_cap', types: ['spend_cap'] },
-  { num: '05', name: 'Loop breaker and call rate', check: 'loop_rate', types: ['loop_breaker', 'call_rate'] },
-  { num: '06', name: 'Allowlists and keyword rules', check: 'allowlists_keywords', types: ['model_allowlist', 'tool_list', 'keyword'] },
+  { num: '04', name: nameOf('04'), check: 'spend_cap', types: ['spend_cap'] },
+  { num: '05', name: nameOf('05'), check: 'loop_rate', types: ['loop_breaker', 'call_rate'] },
+  { num: '06', name: nameOf('06'), check: 'allowlists_keywords', types: ['model_allowlist', 'tool_list', 'keyword'] },
 ] as const satisfies ReadonlyArray<{ num: string; name: string; check: CheckId; types: readonly string[] }>;
 
 /** Our fix for an early retry after a 429. */
@@ -188,10 +205,10 @@ export function sandboxRows(state: CheckState, practice?: BoundPractice): Sandbo
   const copingAt = copingRow(state, coped);
   const rows: SandboxRow[] = [];
 
-  rows.push(practiceRow('01', 'Finishes the job correctly', 'agent', practice, ['a.result']));
+  rows.push(practiceRow('01', nameOf('01'), 'agent', practice, ['a.result']));
 
   // Row 02: the live hand-over, and the deep test's long-task checks once a bound run has them.
-  const long = liveRow('02', 'Survives a long task', 'agent', check('long_task'), FIX.long_task);
+  const long = liveRow('02', nameOf('02'), 'agent', check('long_task'), FIX.long_task);
   const longIds = practice?.checks.filter((c) => c.id.startsWith('b.')).map((c) => c.id) ?? [];
   if (longIds.length) {
     const prac2 = practicePart(practice, longIds);
@@ -213,16 +230,16 @@ export function sandboxRows(state: CheckState, practice?: BoundPractice): Sandbo
   // Its live part checked and passed, its practice part not run yet: partly checked, as row 02 in a quick test.
   const s3 = precedence(p3);
   rows.push({
-    num: '03', name: 'Fails gracefully', group: 'agent', state: s3 === 'not_run_yet' && hereState === 'passed' ? 'partly' : s3, line: '', parts: p3,
+    num: '03', name: nameOf('03'), group: 'agent', state: s3 === 'not_run_yet' && hereState === 'passed' ? 'partly' : s3, line: '', parts: p3,
     fix: peState === 'failed' ? { happened: liveText(pe), next: FIX.provider_errors } : waitState === 'failed' ? { happened: liveText(wait), next: WAIT_FIX }
       : prac3.failed ? { happened: prac3.failed.summary, next: prac3.failed.fix ?? PRACTICE_FIX } : null,
     note: null,
   });
 
   for (const r of RULE_ROWS) rows.push(ruleRow(state, r, coped, copingAt));
-  rows.push(liveRow('07', 'A human can pause and stop it', 'guardrails', check('pause_stop'), FIX.pause_stop));
+  rows.push(liveRow('07', nameOf('07'), 'guardrails', check('pause_stop'), FIX.pause_stop));
 
-  rows.push(practiceRow('08', 'Ignores a planted instruction', 'guardrails', practice, ['d.injection']));
+  rows.push(practiceRow('08', nameOf('08'), 'guardrails', practice, ['d.injection']));
   return rows;
 }
 
@@ -249,13 +266,13 @@ export const STATE_WORDS: Record<RowState, string> = {
 
 /**
  * The report as plain text for the clipboard, in the page's order: headline,
- * the same when-line, each row with its parts and fix, then the page's notes
+ * the same when-line, the too-few-calls line when there is one, each row with its parts and fix, then the page's notes
  * (another agent's practice run, other agents that called). Keys, URLs and
  * IDs are hidden (scrub).
  */
-export function rowsSummary(rows: SandboxRow[], o: { when: string; calls: number; notes?: string[] }): string {
+export function rowsSummary(rows: SandboxRow[], o: { when: string; calls: number; notes?: string[]; lead?: string | null }): string {
   const h = rowsHeadline(rows);
-  const lines = [`WhiteRoom Sandbox check: ${h.headline}`, [h.sub, callsText(o.calls), o.when].join(' · ')];
+  const lines = [`WhiteRoom Sandbox check: ${h.headline}`, [h.sub, callsText(o.calls), o.when].join(' · '), ...(o.lead ? [o.lead] : [])];
   for (const g of ['agent', 'guardrails'] as const) {
     lines.push('', `${ROW_GROUP_NAMES[g].name}:`);
     for (const r of rows.filter((x) => x.group === g)) {

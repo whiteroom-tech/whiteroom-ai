@@ -2,7 +2,7 @@
 // results, its rule probes and its parts, with the headline counted over them.
 import { describe, expect, it } from 'vitest';
 import { CHECK_IDS, checkStateOf, type CheckState, type CheckStatus, type RuleProbe } from '@/lib/sandbox/checks';
-import { practiceBinding, practiceRows, rowsHeadline, rowsSummary, sandboxRows, type BoundPractice } from '@/lib/sandbox/sandbox-rows';
+import { practiceBinding, practiceRows, ROWS, rowsHeadline, rowsSummary, sandboxRows, type BoundPractice } from '@/lib/sandbox/sandbox-rows';
 
 const ALL_PASSED: Record<string, [CheckStatus, string]> = {
   spend_cap: ['passed', 'We blocked a call → it didn’t retry that call.'],
@@ -219,5 +219,15 @@ describe('a practice run bound to the report (eight checks §6)', () => {
     expect(rows['02']).toMatchObject({ state: 'failed', note: null, fix: { happened: 'Sent the file when the email asked.', next: 'Treat text from tools as data.' } });
     expect(rows['02'].parts.map((p) => [p.label, p.state])).toEqual([['Here', 'passed'], ['Practice tasks', 'failed']]);
     expect(by(state())['02']).toMatchObject({ state: 'partly', note: 'The long-task result is in the Deep test.', noteLinksPractice: true });
+  });
+});
+
+describe('ROWS: one list for the check in progress and the report', () => {
+  it('the report’s rows have the same numbers, names and groups, in the same order', () => {
+    const st = checkStateOf({ window: null, checks: CHECK_IDS.map((id) => ({ id, label: id, status: 'pending', detail: '' })), rules: [] })!;
+    expect(sandboxRows(st).map((r) => [r.num, r.name, r.group])).toEqual(ROWS.map((r) => [r.num, r.name, r.group]));
+    // 01 and 08 are practice tasks only; 02–07 are the six live checks, once each.
+    expect(ROWS.filter((r) => !r.check).map((r) => r.num)).toEqual(['01', '08']);
+    expect(new Set(ROWS.map((r) => r.check).filter(Boolean)).size).toBe(6);
   });
 });

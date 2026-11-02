@@ -22,7 +22,7 @@ const { CLI_VERSION } = await import('@/lib/sandbox/practice/model');
 const { outsideWindowText } = await import('@/lib/sandbox/fleet');
 
 const SANDBOX_ID = 'sandbox-00000000-0000-4000-8000-000000000000';
-type Win = { id?: string; stage: string; endedAt?: string | null; calls?: number; agentId?: string } | null;
+type Win = { id?: string; stage: string; endedAt?: string | null; calls?: number; agentId?: string; otherAgents?: string[] } | null;
 const checkAnswer = (win: Win, statuses: Record<string, string> = {}, rules: unknown[] = []) => ({
   success: true,
   window: win && { id: 'chk_1', startedAt: '2026-10-29T10:00:00.000Z', endedAt: null, injectErrors: true, calls: 4, ...win },
@@ -199,10 +199,17 @@ describe('Check your agent', () => {
       { ruleId: 'gr_1', ruleType: 'spend_cap', check: 'spend_cap', wouldAct: true, acted: true, status: 'passed', detail: 'Blocked at $0.02.' },
     ]);
     await render(checksEl());
-    // The six scored checks, in the order they're tested; Finishes the job correctly isn't one.
-    expect([...document.querySelectorAll('[data-check]')].map((e) => e.getAttribute('data-check'))).toEqual(['long_task', 'spend_cap', 'allowlists_keywords', 'loop_rate', 'pause_stop', 'provider_errors']);
+    // The same eight rows as the report, in number order and two groups: 02–07 are the six live checks, 01 and 08 practice tasks.
+    expect([...document.querySelectorAll('[data-row]')].map((e) => e.getAttribute('data-row'))).toEqual(['01', '02', '03', '04', '05', '06', '07', '08']);
+    expect([...document.querySelectorAll('[data-check]')].map((e) => e.getAttribute('data-check'))).toEqual(['long_task', 'provider_errors', 'spend_cap', 'loop_rate', 'allowlists_keywords', 'pause_stop']);
+    expect([...document.querySelectorAll('h4')].map((e) => e.textContent)).toEqual(['The agent', 'The guardrails']);
     expect(row('finishes_correctly')).toBeNull();
-    expect(text()).toContain('3 of 6 done');
+    for (const n of ['01', '08']) {
+      expect(document.querySelector(`[data-row="${n}"]`)?.getAttribute('data-status')).toBe('practice');
+      expect(document.querySelector(`[data-row="${n}"]`)?.textContent).toContain('Practice tasks · Not part of this check.');
+    }
+    expect(document.querySelector('[data-row="04"]')?.textContent).toContain('04 Spend cap');
+    expect(text()).toContain('3 of 6 checked here · 01 and 08 need practice tasks');
     expect(document.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('3');
     expect(row('spend_cap')?.textContent).toContain('Passed · Detail spend_cap');
     expect(row('loop_rate')?.textContent).toContain('Not triggered by this run');
@@ -217,6 +224,30 @@ describe('Check your agent', () => {
     expect(text()).toContain('Testing Label allowlists_keywords…');
     expect(button('Resume')).toBeUndefined();
     expect(button('Finish now')).toBeDefined();
+  });
+
+  it('shows the test block after the rule rows when the check uses one, and names other agents as not checked', async () => {
+    checks = { ...checkAnswer({ stage: 'enforce', otherAgents: ['billing-agent'] }, { long_task: 'passed' }), parts: [{ id: 'test_block', status: 'pending', detail: '' }] };
+    await render(checksEl());
+    const rowsInOrder = [...document.querySelectorAll('[data-row], [data-check="test_block"]')].map((e) => e.getAttribute('data-row') ?? e.getAttribute('data-check'));
+    expect(rowsInOrder).toEqual(['01', '02', '03', '04', '05', '06', 'test_block', '07', '08']);
+    expect(row('test_block')?.textContent).toContain('Sandbox check: a test block from WhiteRoom. Your rules didn’t change.');
+    expect(row('test_block')?.textContent).toContain('Up next');
+    expect(text()).toContain('Also called during this check: billing-agent (not checked).');
+  });
+
+  it('a decided test block shows its result and detail', async () => {
+    checks = { ...checkAnswer({ stage: 'pause' }, { long_task: 'passed' }), parts: [{ id: 'test_block', status: 'passed', detail: 'We blocked a call → it didn’t retry that call.' }] };
+    await render(checksEl());
+    expect(row('test_block')?.getAttribute('data-status')).toBe('passed');
+    expect(row('test_block')?.textContent).toContain('Passed · We blocked a call → it didn’t retry that call.');
+  });
+
+  it('no test block, no other agents: neither line shows', async () => {
+    checks = checkAnswer({ stage: 'observe' });
+    await render(checksEl());
+    expect(row('test_block')).toBeNull();
+    expect(text()).not.toContain('Also called during this check');
   });
 
   it('currentCheckOf: the check each stage tests, while it is still pending', () => {
@@ -386,16 +417,17 @@ describe('Check your agent', () => {
     await click('Finish now');
     await flush();
     const sent = capture.mock.calls.filter(([name]) => name === 'sandbox_report_rows');
-    expect(sent).toEqual([['sandbox_report_rows', { tone: 'warn', fix: 1, checked: expect.any(Number), practice: expect.any(Number), notSetUp: expect.any(Number), calls: expect.any(Number), sample: false }]]);
+    expect(sent).toEqual([['sandbox_report_rows', { tone: 'warn', fewCalls: false, fix: 1, checked: expect.any(Number), practice: expect.any(Number), notSetUp: expect.any(Number), calls: expect.any(Number), sample: false }]]);
     // Only the tone and row counts the page shows: no ids, keys or names.
     expect(JSON.stringify(sent)).not.toMatch(/sandbox-|chk_|prod-eu|sk-/);
   });
 
   it.each([
-    ['pass', { spend_cap: 'passed', loop_rate: 'passed', allowlists_keywords: 'passed', pause_stop: 'passed', long_task: 'passed', provider_errors: 'passed' }, 14, { fix: 0, checked: 6 }],
-    ['neutral', { long_task: 'passed' }, 14, { fix: 0, checked: 1 }],
-    ['neutral', {}, 14, { fix: 0, checked: 0 }],
-    ['too_few', {}, 3, { fix: 0, checked: 0 }],
+    ['pass', { spend_cap: 'passed', loop_rate: 'passed', allowlists_keywords: 'passed', pause_stop: 'passed', long_task: 'passed', provider_errors: 'passed' }, 14, { fix: 0, checked: 6, fewCalls: false }],
+    ['neutral', { long_task: 'passed' }, 14, { fix: 0, checked: 1, fewCalls: false }],
+    ['neutral', {}, 14, { fix: 0, checked: 0, fewCalls: false }],
+    // Too few calls: the page shows the rows (neutral), and the event says the calls held the live checks back.
+    ['neutral', {}, 3, { fix: 0, checked: 0, fewCalls: true }],
   ] as const)('the report event carries the %s tone, the rows’ counts and the calls', async (tone, statuses, calls, counts) => {
     capture.mockClear();
     checks = checkAnswer({ stage: 'observe' });

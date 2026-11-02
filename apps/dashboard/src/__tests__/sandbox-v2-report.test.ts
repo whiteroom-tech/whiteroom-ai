@@ -14,7 +14,7 @@ vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'un
 vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 
 const { CHECK_IDS, CHECK_NAMES } = await import('@/lib/sandbox/checks');
-const { BLOCKED_FIX, ENOUGH_CALLS, failText, FIX, scrub, SCORED_CHECKS, TOO_FEW_HELP, tooFewCalls, tooFewSummary } = await import('@/lib/sandbox/check-report');
+const { BLOCKED_FIX, ENOUGH_CALLS, failText, FIX, scrub, SCORED_CHECKS, tooFewCalls, tooFewNote } = await import('@/lib/sandbox/check-report');
 const { rowsSummary, sandboxRows } = await import('@/lib/sandbox/sandbox-rows');
 const { COPY_RESET_MS, copyText, ReportView, SandboxChecks } = await import('@/components/sandbox/v2/SandboxChecks');
 const { SandboxHome } = await import('@/components/sandbox/v2/SandboxHome');
@@ -139,17 +139,31 @@ describe('the report on the page', () => {
     expect(html).toMatch(/wr-btn--secondary[^>]*>Check again/);
   });
 
-  it('too few calls: says what the checks need, no score and no practice step', () => {
-    const html = renderToStaticMarkup(h(ReportView, { state: { ...stateOf({}), window: { ...stateOf({}).window!, calls: 3 } }, checked: 'just now', calls: 3, onAgain: () => {} }));
-    expect(html).toContain('Not enough calls to check your agent');
-    expect(html).toContain('3 calls · checked just now');
-    expect(html).toContain('The checks need about 5 calls from one run.');
-    expect(html).not.toMatch(/6 checks|Next: check its answers/);
-    // Copy summary agrees: no practice-tasks line either.
-    const few = tooFewSummary({ when: 'checked just now', calls: 3 });
-    expect(few).toContain('3 calls · checked just now');
-    expect(few).not.toMatch(/practice tasks/);
-    expect(few).toContain(TOO_FEW_HELP);
+  it('too few calls: the eight rows still show, with one line on what the live checks need', () => {
+    const few = { ...stateOf({}), window: { ...stateOf({}).window!, calls: 3, agentId: 'support-bot' } };
+    const html = renderToStaticMarkup(h(ReportView, { state: few, checked: 'just now', calls: 3, onAgain: () => {} }));
+    expect(html).not.toContain('Not enough calls to check your agent');
+    expect(html).toContain('Nothing was checked this time');
+    expect(html).toContain('0 of 8 checked · 2 need practice tasks · 3 calls · checked just now');
+    expect(html).toContain(tooFewNote(3));
+    expect(html).toContain('Only 3 calls this time, so the live checks couldn’t run.');
+    // All eight rows, in order; practice rows still offer practice tasks, and so does the next step.
+    expect([...html.matchAll(/data-row="(\d\d)"/g)].map((m) => m[1])).toEqual(['01', '02', '03', '04', '05', '06', '07', '08']);
+    expect(html).toContain('Not run yet: checks in practice tasks.');
+    expect(html).toMatch(/Next: <a[^>]*>Run practice tasks<\/a> for 01, 08 and the rest of 03/);
+    expect(html).toMatch(/>Check again</);
+    // Copy summary agrees: the same line under the when-line, then the rows.
+    const text = rowsSummary(sandboxRows(few), { when: 'checked just now', calls: 3, lead: tooFewNote(3) });
+    const lines = text.split('\n');
+    expect(lines[0]).toBe('WhiteRoom Sandbox check: Nothing was checked this time');
+    expect(lines[2]).toBe(tooFewNote(3));
+    expect(text).toContain('- 01 Finishes the job correctly: Not run yet');
+  });
+
+  it('the too-few line names the calls plainly', () => {
+    expect(tooFewNote(0)).toMatch(/^No calls reached your Sandbox this time/);
+    expect(tooFewNote(1)).toMatch(/^Only 1 call this time/);
+    expect(tooFewNote(4)).toMatch(/^Only 4 calls this time/);
   });
 
   it('enough calls but nothing checked: no "need 5 calls" line; the checks that didn’t run say why', () => {

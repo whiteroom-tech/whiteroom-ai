@@ -9,11 +9,11 @@ import { fmtWhen, timeAgo } from '@/lib/format';
 import { isStaleSandbox, providerLabel, sandboxSetting, SandboxFleetError } from '@/lib/sandbox/fleet';
 import {
   activityLine, checkAction, currentCheckOf, getCheckState, isOpen, isQuiet, stageLine, STATUS_WORDS,
-  type CheckId, type CheckResult, type CheckRule, type CheckState, type CheckStatus,
+  type CheckPart, type CheckResult, type CheckRule, type CheckState, type CheckStatus,
 } from '@/lib/sandbox/checks';
-import { SCORED_CHECKS, TOO_FEW_HEADLINE, TOO_FEW_HELP, tooFewCalls, tooFewSummary } from '@/lib/sandbox/check-report';
+import { SCORED_CHECKS, tooFewCalls, tooFewNote } from '@/lib/sandbox/check-report';
 import {
-  callsText, practiceBinding, practiceRows, ROW_GROUP_NAMES, rowCounts, rowsHeadline, rowsSummary, sandboxRows, STATE_WORDS, type BoundPractice, type RowPart, type SandboxRow,
+  callsText, practiceBinding, practiceRows, ROW_GROUP_NAMES, rowCounts, ROWS, rowsHeadline, rowsSummary, sandboxRows, STATE_WORDS, type BoundPractice, type RowPart, type SandboxRow,
 } from '@/lib/sandbox/sandbox-rows';
 import { getPracticeResult, listPracticeRuns } from '@/lib/sandbox/practice/api';
 import { analytics } from '@/lib/analytics';
@@ -276,11 +276,10 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
     const settled = isSample || settledKey === reportKey;
     if (preview || !focusReport || !state || !w?.endedAt || !settled || reported.current === w.id) return;
     reported.current = w.id;
-    // What the page shows: the rows' counts and tone, under a new name (the old event carried the six-check verdict).
-    const few = tooFewCalls(state);
+    // What the page shows: the rows' counts and tone, and whether too few calls held the live checks back.
     const rows = sandboxRows(state, practice.bound ?? undefined);
     const c = rowCounts(rows);
-    analytics.capture('sandbox_report_rows', { tone: few ? 'too_few' : rowsHeadline(rows).tone, fix: c.fix, checked: c.checked, practice: c.practice, notSetUp: c.notSetUp, calls: w.calls, sample: isSample });
+    analytics.capture('sandbox_report_rows', { tone: rowsHeadline(rows).tone, fewCalls: tooFewCalls(state), fix: c.fix, checked: c.checked, practice: c.practice, notSetUp: c.notSetUp, calls: w.calls, sample: isSample });
   }, [preview, focusReport, state, w, isSample, practice.bound, settledKey, reportKey]);
 
   return (
@@ -402,13 +401,13 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
       setCopied(to);
       timer.current = setTimeout(() => setCopied('idle'), COPY_RESET_MS);
     };
-    void copyText(few ? tooFewSummary({ when, calls }) : rowsSummary(rows, { when, calls, notes })).then((ok) => show(ok ? 'copied' : 'failed'));
+    void copyText(rowsSummary(rows, { when, calls, notes, lead: few })).then((ok) => show(ok ? 'copied' : 'failed'));
   };
-  // Too few calls: no score, just what the checks need. Otherwise the eight rows, in number order and their two groups.
-  const few = tooFewCalls(state);
+  // The eight rows, in number order and their two groups, always; too few calls adds one line on what the live checks need.
+  const few = tooFewCalls(state) ? tooFewNote(calls) : null;
   const rows = sandboxRows(state, practice.bound ?? undefined);
-  const head = few ? { headline: TOO_FEW_HEADLINE, sub: '', tone: 'neutral' as const } : rowsHeadline(rows);
-  const next = few || sample ? null : practiceRows(rows);
+  const head = rowsHeadline(rows);
+  const next = sample ? null : practiceRows(rows);
   const href = practiceHref(state.window?.agentId);
   const at = (iso: string) => fmtWhen(iso, now ?? Date.now());
   // Each part's own time, when practice tasks ran at another time than the live check (§8).
@@ -425,18 +424,19 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
       <h3 ref={heading} tabIndex={-1} className={`${v.reportHead} ${head.tone === 'pass' ? v.reportPass : head.tone === 'warn' ? v.reportWarn : ''}`} data-tone={head.tone}>{head.headline}</h3>
       <p className={v.text}>{[head.sub, callsText(calls), when].filter(Boolean).join(' · ')}</p>
     </div>
-    {few ? <p className={v.text}>{TOO_FEW_HELP}</p> : (['agent', 'guardrails'] as const).map((g) => (
+    {few && <p className={v.text} data-few>{few}</p>}
+    {(['agent', 'guardrails'] as const).map((g) => (
       <section key={g} className={v.rowGroup} aria-label={ROW_GROUP_NAMES[g].name}>
         <div className={v.rowGroupHead}><h4>{ROW_GROUP_NAMES[g].name}</h4><span>{ROW_GROUP_NAMES[g].q}</span></div>
         <ul className={v.rows}>{rows.filter((r) => r.group === g).map((r) => <RowLine key={r.num} row={r} sample={!!sample} href={href} />)}</ul>
       </section>
     ))}
-    {!few && practice.newer && onUseNewer && (
+    {practice.newer && onUseNewer && (
       <p className={v.text}>A newer practice run is available. <button type="button" className={v.linkButton} onClick={onUseNewer}>Use it</button></p>
     )}
-    {!few && otherRun && <p className={v.next}><strong>{otherRun}</strong>{otherRunNote}</p>}
-    {!few && othersNote && <p className={v.text}>{othersNote}</p>}
-    {!few && state.streaming?.streamed && state.streaming.lines.length > 0 && (
+    {otherRun && <p className={v.next}><strong>{otherRun}</strong>{otherRunNote}</p>}
+    {othersNote && <p className={v.text}>{othersNote}</p>}
+    {state.streaming?.streamed && state.streaming.lines.length > 0 && (
       <details className={v.members}>
         <summary>Your agent streams: how your rules treat its replies</summary>
         <ul className={v.cardRules}>{state.streaming.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>
@@ -522,59 +522,104 @@ const MARK: Record<CheckStatus, { icon: IconName; tone: 'pass' | 'fail' | 'now' 
 const decidedCount = (state: CheckState) => state.checks.filter((c) => SCORED_CHECKS.includes(c.id as (typeof SCORED_CHECKS)[number]) && c.status !== 'pending').length;
 
 /**
- * The check in progress (first-run UX spec §7.3): "N of 6 done", then the six
- * scored checks in the order they're tested — decided ones with their result,
- * the one being tested now marked Now, the rest Up next — and under each, the
- * Sandbox rules it's judged on.
+ * The check in progress (eight checks spec Rev 7 §6a): the same eight rows as
+ * the report, in number order and their two groups. Rows 02–07 are checked
+ * here — decided ones with their result, the one being tested now marked Now,
+ * the rest Up next — each with the Sandbox rules it's judged on; 01 and 08 are
+ * practice tasks. The test block shows when the check uses one, and other
+ * agents that called are named, not checked.
  */
 export function LiveChecks({ state }: { state: CheckState }) {
   const current = currentCheckOf(state);
   const done = decidedCount(state);
-  const ordered = TEST_ORDER.map((id) => state.checks.find((c) => c.id === id)).filter((c): c is CheckResult => !!c);
+  const practiceNums = ROWS.filter((r) => !r.check).map((r) => r.num);
+  const testBlock = state.parts?.find((p) => p.id === 'test_block');
+  const others = state.window?.otherAgents ?? [];
   return <>
     <div className={v.progress}>
-      <p className={v.text}>{done} of {SCORED_CHECKS.length} done</p>
+      <p className={v.text}>{done} of {SCORED_CHECKS.length} checked here · {practiceNums.join(' and ')} need practice tasks</p>
       <div className={v.bar} role="progressbar" aria-label="Checks done" aria-valuemin={0} aria-valuemax={SCORED_CHECKS.length} aria-valuenow={done}>
         <i style={{ width: `${(done / SCORED_CHECKS.length) * 100}%` }} />
       </div>
     </div>
-    <ul className={v.checks}>
-      {ordered.map((c) => {
-        const isCurrent = c.id === current;
-        const status: CheckStatus = c.status;
-        const upNext = status === 'pending' && !isCurrent;
-        const mark = isCurrent ? { icon: 'clock' as IconName, tone: 'now' } : MARK[status];
-        const tone = upNext ? v.checkMuted : mark.tone === 'pass' ? s.checkPass : mark.tone === 'fail' ? s.checkFail : mark.tone === 'now' ? s.checkWait : v.checkMuted;
-        const judgedBy = state.rules.filter((r) => r.check === c.id);
-        return (
-          <li key={c.id} className={`${s.check} ${upNext ? v.upNext : ''}`} data-check={c.id} data-status={isCurrent ? 'now' : status}>
-            <div className={`${s.checkIcon} ${tone}`} aria-hidden="true"><Icon name={upNext ? 'dash' : mark.icon} size={13} /></div>
-            <div className={v.checkBody}>
-              <div className={s.checkName}>{c.label}</div>
-              <div className={`${s.checkDetail} ${status === 'passed' ? s.checkDetailPass : ''}`}>
-                <strong>{isCurrent ? 'Now' : upNext ? 'Up next' : STATUS_WORDS[status]}</strong>{c.detail && !upNext ? ` · ${c.detail}` : ''}
-              </div>
-              {judgedBy.length > 0 && (
-                <details className={v.members}>
-                  <summary>{judgedBy.length === 1 ? '1 rule' : `${judgedBy.length} rules`}</summary>
-                  {judgedBy.map((r) => (
-                    <div key={r.ruleId} className={v.member}>
-                      <div className={v.memberName}>{(RULE_LABELS as Record<string, string>)[r.ruleType] ?? r.ruleType} · {ruleWords(r)}</div>
-                      {r.detail && <div className={v.text}>{r.detail}</div>}
-                    </div>
-                  ))}
-                </details>
-              )}
-            </div>
-          </li>
-        );
-      })}
-    </ul>
+    {(['agent', 'guardrails'] as const).map((g) => (
+      <section key={g} className={v.rowGroup} aria-label={ROW_GROUP_NAMES[g].name}>
+        <div className={v.rowGroupHead}><h4>{ROW_GROUP_NAMES[g].name}</h4><span>{ROW_GROUP_NAMES[g].q}</span></div>
+        <ul className={v.checks}>
+          {ROWS.filter((r) => r.group === g).flatMap((r) => {
+            const c = r.check && state.checks.find((x) => x.id === r.check);
+            const line = c ? <LiveRow key={r.num} num={r.num} name={r.name} check={c} current={c.id === current} rules={state.rules.filter((x) => x.check === c.id)} />
+              : <PracticeRowLine key={r.num} num={r.num} name={r.name} />;
+            // The test block, when the check uses one: after the rule rows it stands in for.
+            return r.num === '06' && testBlock ? [line, <TestBlockLine key="test_block" part={testBlock} />] : [line];
+          })}
+        </ul>
+      </section>
+    ))}
+    {others.length > 0 && <p className={v.text}>Also called during this check: {others.join(', ')} (not checked).</p>}
   </>;
 }
 
-/** The order the checks are tested in: the long task while watching, the rules, pause and stop, provider errors. */
-const TEST_ORDER: CheckId[] = ['long_task', 'spend_cap', 'allowlists_keywords', 'loop_rate', 'pause_stop', 'provider_errors'];
+/** One live row: its number and name, Now / Up next / its result, and the rules it's judged on. */
+function LiveRow({ num, name, check: c, current, rules }: { num: string; name: string; check: CheckResult; current: boolean; rules: CheckRule[] }) {
+  const status: CheckStatus = c.status;
+  const upNext = status === 'pending' && !current;
+  const mark = current ? { icon: 'clock' as IconName, tone: 'now' } : MARK[status];
+  const tone = upNext ? v.checkMuted : mark.tone === 'pass' ? s.checkPass : mark.tone === 'fail' ? s.checkFail : mark.tone === 'now' ? s.checkWait : v.checkMuted;
+  return (
+    <li className={`${s.check} ${upNext ? v.upNext : ''}`} data-row={num} data-check={c.id} data-status={current ? 'now' : status}>
+      <div className={`${s.checkIcon} ${tone}`} aria-hidden="true"><Icon name={upNext ? 'dash' : mark.icon} size={13} /></div>
+      <div className={v.checkBody}>
+        <div className={s.checkName}><span className={v.rowNum}>{num}</span> {name}</div>
+        <div className={`${s.checkDetail} ${status === 'passed' ? s.checkDetailPass : ''}`}>
+          <strong>{current ? 'Now' : upNext ? 'Up next' : STATUS_WORDS[status]}</strong>{c.detail && !upNext ? ` · ${c.detail}` : ''}
+        </div>
+        {rules.length > 0 && (
+          <details className={v.members}>
+            <summary>{rules.length === 1 ? '1 rule' : `${rules.length} rules`}</summary>
+            {rules.map((r) => (
+              <div key={r.ruleId} className={v.member}>
+                <div className={v.memberName}>{(RULE_LABELS as Record<string, string>)[r.ruleType] ?? r.ruleType} · {ruleWords(r)}</div>
+                {r.detail && <div className={v.text}>{r.detail}</div>}
+              </div>
+            ))}
+          </details>
+        )}
+      </div>
+    </li>
+  );
+}
+
+/** Rows 01 and 08 during a check: checked in practice tasks, not here. */
+function PracticeRowLine({ num, name }: { num: string; name: string }) {
+  return (
+    <li className={`${s.check} ${v.upNext}`} data-row={num} data-status="practice">
+      <div className={`${s.checkIcon} ${v.checkMuted}`} aria-hidden="true"><Icon name="dash" size={13} /></div>
+      <div className={v.checkBody}>
+        <div className={s.checkName}><span className={v.rowNum}>{num}</span> {name}</div>
+        <div className={s.checkDetail}><strong>Practice tasks</strong> · Not part of this check.</div>
+      </div>
+    </li>
+  );
+}
+
+/** The check's own test block (no rule of yours would act): what it's for, and how the agent coped. */
+function TestBlockLine({ part }: { part: CheckPart }) {
+  const waiting = part.status === 'pending';
+  const mark = MARK[part.status];
+  const tone = waiting ? v.checkMuted : mark.tone === 'pass' ? s.checkPass : mark.tone === 'fail' ? s.checkFail : v.checkMuted;
+  return (
+    <li className={`${s.check} ${waiting ? v.upNext : ''}`} data-check="test_block" data-status={part.status}>
+      <div className={`${s.checkIcon} ${tone}`} aria-hidden="true"><Icon name={waiting ? 'dash' : mark.icon} size={13} /></div>
+      <div className={v.checkBody}>
+        <div className={s.checkName}>Sandbox check: a test block from WhiteRoom. Your rules didn’t change.</div>
+        <div className={`${s.checkDetail} ${part.status === 'passed' ? s.checkDetailPass : ''}`}>
+          <strong>{waiting ? 'Up next' : STATUS_WORDS[part.status]}</strong>{part.detail && !waiting ? ` · ${part.detail}` : ''}
+        </div>
+      </div>
+    </li>
+  );
+}
 
 /** After a minute with no call (or when opened): the three usual reasons, with this Sandbox's provider and setting. */
 export function NothingHappening({ provider, open, onToggle, onChangeKey }: {
