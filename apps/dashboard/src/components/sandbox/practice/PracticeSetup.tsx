@@ -87,6 +87,8 @@ export function PracticeSetup({ fleet, data, busy, preview, previewCapabilities,
   useEffect(() => {
     if (previewCapabilities !== undefined) return;
     let live = true;
+    // Asking (again): Start waits with no message until the answer, never "not available".
+    setCaps(undefined);
     setCapsFailed(false);
     practiceCapabilities(fleet).then((c) => { if (live) setCaps(c); }, () => { if (live) { setCaps(null); setCapsFailed(true); } });
     return () => { live = false; };

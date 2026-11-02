@@ -57,7 +57,16 @@ describe('a practice test from the Sandbox', () => {
     expect(start().disabled).toBe(true);
     expect(el.textContent).toContain('Couldn’t reach practice tests just now.');
     ok = true;
+    // While asking again: no "aren't available yet", Start still off.
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => { release = r; });
+    const realFetch = globalThis.fetch;
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => { await gate; return realFetch(url, init); }));
     await act(async () => { [...el.querySelectorAll('button')].find((b) => b.textContent === 'Try again')!.click(); });
+    expect(el.textContent).not.toContain('aren’t available yet');
+    expect(start().disabled).toBe(true);
+    release();
+    await act(async () => { await Promise.resolve(); });
     await act(async () => { await Promise.resolve(); });
     expect(asks).toHaveLength(2);
     expect(start().disabled).toBe(false);
