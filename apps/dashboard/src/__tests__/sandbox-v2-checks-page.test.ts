@@ -278,8 +278,8 @@ describe('Check your agent', () => {
     await flush();
     expect(reads()).toBe(4);
     // The report: a verdict, a check never reached is among the ones that didn't run, and Check again.
-    expect(text()).toContain('No problems found · 4 checks didn’t run');
-    expect(row('long_task')?.textContent).toContain('Your agent didn’t reach this step.');
+    expect(text()).toContain('2 of 8 checked');
+    expect(document.querySelector('li[data-row="02"]')?.textContent).toContain('Your agent didn’t reach this step.');
     expect(button('Check again')).toBeDefined();
     expect(button('Finish now')).toBeUndefined();
   });
@@ -290,8 +290,8 @@ describe('Check your agent', () => {
     checks = checkAnswer({ stage: 'observe', endedAt: '2026-10-29T10:06:00.000Z' }, { long_task: 'passed' });
     await click('Finish now');
     expect(calls().some((c) => c.url.endsWith('/checks/stop'))).toBe(true);
-    expect(text()).toContain('No problems found · 5 checks didn’t run');
-    expect(document.activeElement?.textContent).toBe('No problems found · 5 checks didn’t run');
+    expect(text()).toContain('1 of 8 checked');
+    expect(document.activeElement?.textContent).toBe('Nothing to fix');
   });
 
   it('sends one sandbox_v2_report for a check that finishes while the page is open, and none for an old report on load', async () => {
@@ -344,7 +344,7 @@ describe('Check your agent', () => {
   it('Check again after a report starts a new check and shows it live', async () => {
     checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z' }, { long_task: 'passed' });
     await render(checksEl());
-    expect(text()).toContain('No problems found · 5 checks didn’t run');
+    expect(text()).toContain('1 of 8 checked');
     // Already there on load: the page doesn't take focus.
     expect(document.activeElement?.tagName).not.toBe('H3');
     checks = checkAnswer({ stage: 'observe', calls: 0 });
@@ -525,12 +525,12 @@ describe('Stale Sandbox vs state conflicts, overtaken answers, and parent re-ren
     checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z' }, { long_task: 'passed' });
     await act(async () => { answer(); });
     await flush();
-    expect(text()).toContain('No problems found · 5 checks didn’t run');
+    expect(text()).toContain('1 of 8 checked');
     // Polling carries on after the action, and the report stays.
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     await flush();
     expect(statusReads()).toBe(2);
-    expect(text()).toContain('No problems found · 5 checks didn’t run');
+    expect(text()).toContain('1 of 8 checked');
   });
 
   it('no refetch loop: a new onStale on every parent render reads once, even when the read is stale', async () => {

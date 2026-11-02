@@ -165,21 +165,20 @@ describe('the report on the page', () => {
     await act(async () => { root.render(h(SandboxHome, { fleet: 'prod-eu', preview: SANDBOX_V2_STATES['checks-report'] })); });
     const body = document.body.textContent ?? '';
     expect(document.querySelector('h3[data-tone]')?.textContent).toBe('1 thing to fix before going live');
-    expect(body).toContain('6 checks · ');
-    expect(body).not.toMatch(/of 7 passed|What we did|Nothing to do/);
-    // The failed check is a card with what happened and how to fix it.
-    const fix = document.querySelector('li[data-check="provider_errors"]')!;
+    // The eight rows, in number order and two groups; the headline counts them.
+    expect([...document.querySelectorAll('li[data-row]')].map((li) => li.getAttribute('data-row'))).toEqual(['01', '02', '03', '04', '05', '06', '07', '08']);
+    expect([...document.querySelectorAll('section[aria-label]')].map((x) => x.getAttribute('aria-label'))).toEqual(['The agent', 'The guardrails']);
+    expect(body).toMatch(/\d of 8 checked · 2 need practice tasks/);
+    // The failed row opens in place with what happened and how to fix it.
+    const fix = document.querySelector('li[data-row="03"]')!;
+    expect(fix.getAttribute('data-state')).toBe('failed');
     expect(fix.textContent).toContain('What happened');
     expect(fix.querySelector('[data-next]')?.textContent).toBe(FIX.provider_errors);
-    // Passed checks are one line each; one that didn't run is inside a closed section.
-    expect(document.querySelector('li[data-check="spend_cap"]')?.textContent).toMatch(/^Spend cap\. /);
-    const folded = document.querySelector('li[data-check="loop_rate"]')!;
-    expect(folded.closest('details')?.querySelector('summary')?.textContent).toBe('1 check didn’t run this time');
-    // Finishes the job correctly isn't scored; practice tasks is the next step (and the footer link stays).
-    expect(document.querySelector('li[data-check="finishes_correctly"]')).toBeNull();
-    expect(body).toContain('Next: check its answers too.');
-    // The Connect step's footer link isn't on Results: just the next step.
-    expect([...document.querySelectorAll('a[href="/sandbox/practice"]')].length).toBe(1);
+    // Rows 01 and 08 are checked in practice tasks: not run yet, a next step, linked.
+    expect(document.querySelector('li[data-row="01"]')?.getAttribute('data-state')).toBe('not_run_yet');
+    expect(document.querySelector('li[data-row="08"]')?.textContent).toContain('Not run yet: checks in practice tasks.');
+    expect(body).toContain('Next: Run practice tasks for 01, 08 and the rest of 03.');
+    expect([...document.querySelectorAll('a[href="/sandbox/practice"]')].length).toBe(3);
     // "Checked against N Sandbox rules · Change rules" opens the closed rules section.
     expect(body).toMatch(/Checked against \d+ Sandbox rules · Change rules/);
     const rules = document.getElementById('sandbox-rules') as HTMLDetailsElement;
@@ -196,12 +195,11 @@ describe('the report on the page', () => {
     expect(copy.textContent).toBe('Copied');
   });
 
-  it('all passed: Check again is secondary, and there is no "Passed" heading or folded section', () => {
+  it('all passed live: Nothing to fix, in the pass tone; Check again is secondary', () => {
     const html = renderToStaticMarkup(h(ReportView, { state: stateOf(all('passed')), checked: 'just now', calls: 30, onAgain: () => {} }));
-    expect(html).toContain('Your agent passed every check');
+    expect(html).toContain('Nothing to fix');
     expect(html).toContain('data-tone="pass"');
     expect(html).toMatch(/wr-btn--secondary[^>]*>Check again/);
-    expect(html).not.toMatch(/>Passed<|didn’t run this time/);
   });
 
   it('too few calls: says what the checks need, no score and no practice step', () => {
@@ -222,8 +220,18 @@ describe('the report on the page', () => {
     const html = renderToStaticMarkup(h(ReportView, { state: stateOf({ long_task: ['not_checked', 'Your agent stopped calling.'] }), checked: 'just now', calls: 12, onAgain: () => {} }));
     expect(html).toContain('Nothing was checked this time');
     expect(html).not.toContain('The checks need about 5 calls');
-    expect(html).toContain('6 checks didn’t run this time');
+    expect(html).toContain('0 of 8 checked');
     expect(html).toContain('Your agent stopped calling.');
+  });
+
+  it('lists other agents that called (not checked), and how a streaming agent’s rules treat its replies', () => {
+    const base = stateOf(all('passed'));
+    const html = renderToStaticMarkup(h(ReportView, { state: { ...base, window: { ...base.window!, otherAgents: ['billing-agent', 'ops-bot'] }, streaming: { streamed: true, lines: ['Tool list: in Watch, streamed replies aren’t checked; they pass and say so.'] } }, checked: 'just now', calls: 30 }));
+    expect(html).toContain('Also called during this check: billing-agent, ops-bot (not checked).');
+    expect(html).toContain('Your agent streams: how your rules treat its replies');
+    expect(html).toContain('Tool list: in Watch, streamed replies aren’t checked; they pass and say so.');
+    const quiet = renderToStaticMarkup(h(ReportView, { state: base, checked: 'just now', calls: 30 }));
+    expect(quiet).not.toMatch(/Also called during|Your agent streams/);
   });
 
   it('focuses the verdict when asked (a report that appears while the page is open)', async () => {

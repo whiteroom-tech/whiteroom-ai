@@ -51,6 +51,25 @@ export interface CheckWindow {
   stage: CheckStage;
   injectErrors: boolean;
   calls: number;
+  /** Eight checks (engine A2): the agent the window judges, and other agents that called during it (not judged). Absent from older engines. */
+  agentId?: string | null;
+  otherAgents?: string[];
+}
+
+/** A saved Sandbox rule judged at its limit for the window's agent (engine A2a). */
+export interface RuleProbe {
+  ruleId: string;
+  ruleType: string;
+  status: 'passed' | 'failed' | 'not_set_up';
+  acts: 'would_act' | 'notifies' | 'blocks' | 'pauses' | 'stops' | null;
+  detail: string;
+}
+
+/** Live parts outside the seven checks (engine A2c): the wait after the hand-over's 429, and the test block. */
+export interface CheckPart {
+  id: 'rate_limit_wait' | 'test_block';
+  status: CheckStatus;
+  detail: string;
 }
 
 export interface CheckResult {
@@ -76,6 +95,10 @@ export interface CheckState {
   rules: CheckRule[];
   /** The agent, live: its last call to the Sandbox and its calls outside a check. Absent from an older engine. */
   activity?: { lastCallAt: string | null; callsOutsideWindow24h: number };
+  /** Eight checks (engine A2): absent from an older engine, which the report then reads as before. */
+  probes?: RuleProbe[];
+  parts?: CheckPart[];
+  streaming?: { streamed: boolean; lines: string[] };
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -93,7 +116,29 @@ function windowOf(v: unknown): CheckWindow | null | undefined {
     stage: v.stage,
     injectErrors: v.injectErrors !== false,
     calls: typeof v.calls === 'number' && Number.isFinite(v.calls) && v.calls >= 0 ? Math.floor(v.calls) : 0,
+    ...('agentId' in v && { agentId: str(v.agentId, 128) ? v.agentId : null }),
+    ...(Array.isArray(v.otherAgents) && { otherAgents: v.otherAgents.filter((a): a is string => str(a, 128)).slice(0, 10) }),
   };
+}
+
+const PROBE_STATUSES = ['passed', 'failed', 'not_set_up'] as const;
+const PROBE_ACTS = ['would_act', 'notifies', 'blocks', 'pauses', 'stops'] as const;
+const PART_IDS = ['rate_limit_wait', 'test_block'] as const;
+
+function probesOf(v: unknown): RuleProbe[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  return v.slice(0, 50).flatMap((p): RuleProbe[] => (isObj(p) && str(p.ruleId, 128) && str(p.ruleType, 64) && oneOf(PROBE_STATUSES, p.status)
+    ? [{ ruleId: p.ruleId, ruleType: p.ruleType, status: p.status, acts: oneOf(PROBE_ACTS, p.acts) ? p.acts : null, detail: text(p.detail) }] : []));
+}
+
+function partsOf(v: unknown): CheckPart[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  return v.flatMap((p): CheckPart[] => (isObj(p) && oneOf(PART_IDS, p.id) && oneOf(CHECK_STATUSES, p.status) ? [{ id: p.id, status: p.status, detail: text(p.detail) }] : []));
+}
+
+function streamingOf(v: unknown): CheckState['streaming'] {
+  if (!isObj(v)) return undefined;
+  return { streamed: v.streamed === true, lines: Array.isArray(v.lines) ? v.lines.filter((l): l is string => str(l, 300)).slice(0, 5) : [] };
 }
 
 /**
@@ -133,7 +178,13 @@ export function checkStateOf(data: unknown): CheckState | null {
     lastCallAt: str(a.lastCallAt, 40) && Number.isFinite(Date.parse(a.lastCallAt)) ? a.lastCallAt : null,
     callsOutsideWindow24h: Number.isSafeInteger(a.callsOutsideWindow24h) && (a.callsOutsideWindow24h as number) >= 0 ? a.callsOutsideWindow24h as number : 0,
   } : undefined;
-  return activity ? { window, checks, rules, activity } : { window, checks, rules };
+  const probes = probesOf(data.probes);
+  const parts = partsOf(data.parts);
+  const streaming = streamingOf(data.streaming);
+  return {
+    window, checks, rules, ...(activity && { activity }),
+    ...(probes && { probes }), ...(parts && { parts }), ...(streaming && { streaming }),
+  };
 }
 
 /** A call this recent means the agent is calling now. */
