@@ -9,7 +9,7 @@ import { analytics } from '@/lib/analytics';
 import { governanceList } from '@/lib/whiteroom/client';
 import { endPractice, getPracticeResult, getPracticeRun, keyGone, listPracticeRuns, newRunCode, PracticeError, retryable, sourceModel, startPractice, unavailable } from '@/lib/sandbox/practice/api';
 import {
-  callEstimate, CATALOG, choiceOf, controlCalls, draftFromStart, headline, isOpen, KEY_REFUSALS, planOf, PREFLIGHT_STEPS, preflightStep, rerunConfirm, rerunKey, RUN_ID_RE, runKeyChoice, SAMPLE_AGENT, type PracticeKeyChoice,
+  callEstimate, CATALOG, choiceOf, controlCalls, draftFromStart, headline, isOpen, KEY_REFUSALS, planOf, PREFLIGHT_STEPS, preflightStep, rerunConfirm, rerunKey, rerunPlacement, RUN_ID_RE, runKeyChoice, SAMPLE_AGENT, type PracticeKeyChoice,
 } from '@/lib/sandbox/practice/model';
 import { practiceReportFileName, practiceReportHtml } from '@/lib/sandbox/practice/report';
 import type { PracticeCapabilities, PracticeControlCheck, PracticeProviderKey, PracticeResult, PracticeRun, PracticeRunRow, PracticeSource, PracticeSourceProvider, PracticeStart, RunCode } from '@/lib/sandbox/practice/types';
@@ -307,11 +307,14 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
     const r = result.report;
     const scope = a.kind === 'rerun' ? a.scope : null;
     const runs: 1 | 3 = a.kind === 'three' ? 3 : r.runs === 3 ? 3 : 1;
-    // A test on a Fleet key key: the run carries the key for reports from before the report did.
-    const used = { provider: r.tested.provider ?? run.provider, proxyKeyDisplayPrefix: r.tested.proxyKeyDisplayPrefix ?? run.proxyKeyDisplayPrefix };
-    const withControls = planOf(scope).includes('controls');
-    // What the rerun's agent would get, asked only when needed: its control checks (the engine's planner) and the Fleet key keys.
-    const src = used.proxyKeyDisplayPrefix || withControls ? await sourceModel(fleet, run.agentId) : null;
+    const placed = rerunPlacement(run, scope, runs);
+    const fromSandbox = placed.origin === 'sandbox';
+    const profile = placed.profile;
+    // A test on a Fleet key key: the run carries the key for reports from before the report did. From the Sandbox, the Sandbox's key.
+    const used = { provider: r.tested.provider ?? run.provider, proxyKeyDisplayPrefix: fromSandbox ? null : r.tested.proxyKeyDisplayPrefix ?? run.proxyKeyDisplayPrefix };
+    const withControls = planOf(scope, profile ?? null).includes('controls');
+    // What the rerun's agent would get, asked only when needed: its control checks (the engine's planner) and the Fleet key keys. Not from the Sandbox: its rules aren't production's.
+    const src = !fromSandbox && (used.proxyKeyDisplayPrefix || withControls) ? await sourceModel(fleet, run.agentId) : null;
     // The sample agent keeps its own model unless the test was started with one.
     const model = run.sample ? r.tested.modelRequested : r.tested.modelRequested ?? r.tested.modelsUsed[0] ?? null;
     // R7: a test on a Fleet key key reruns on that key, or the only usable one of its provider. With several, or none, setup asks.
@@ -326,10 +329,11 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
       ...(model && { model }),
       ...(scope && { scope }),
       ...(key && { proxyKeyDisplayPrefix: key.displayPrefix }),
+      ...placed,
     };
     const choice = key ? choiceOf(key) : runKeyChoice(run);
     const calls = !withControls ? 0 : src?.controls ? controlCalls(src.controls.checks, scope) : CATALOG.controlCallsMax;
-    setConfirm({ kind: 'rerun', start: st, key: choice, text: rerunConfirm(scope, runs, callEstimate({ runs, scope, controlCalls: calls, model: model ?? r.tested.modelsUsed[0] ?? null, provider: choice?.provider })) });
+    setConfirm({ kind: 'rerun', start: st, key: choice, text: rerunConfirm(scope, runs, callEstimate({ runs, scope, profile, controlCalls: calls, model: model ?? r.tested.modelsUsed[0] ?? null, provider: choice?.provider })) });
   });
 
   const download = () => {

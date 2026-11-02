@@ -15,10 +15,10 @@ const nav = vi.hoisted(() => { const replace = vi.fn(); return { params: new URL
 vi.mock('next/navigation', () => ({ useSearchParams: () => nav.params, useRouter: () => nav.router }));
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'unauthenticated' }) }));
 vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
-const engine = vi.hoisted(() => ({ list: vi.fn(), run: vi.fn(), result: vi.fn(), source: vi.fn(), gov: vi.fn() }));
+const engine = vi.hoisted(() => ({ list: vi.fn(), run: vi.fn(), result: vi.fn(), source: vi.fn(), gov: vi.fn(), start: vi.fn() }));
 vi.mock('@/lib/sandbox/practice/api', async (orig) => ({
   ...(await orig<typeof import('@/lib/sandbox/practice/api')>()),
-  listPracticeRuns: engine.list, getPracticeRun: engine.run, getPracticeResult: engine.result, sourceModel: engine.source,
+  listPracticeRuns: engine.list, getPracticeRun: engine.run, getPracticeResult: engine.result, sourceModel: engine.source, startPractice: engine.start,
 }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({ ...(await orig<typeof import('@/lib/whiteroom/client')>()), governanceList: engine.gov }));
 vi.mock('@/lib/sandbox/api', async (orig) => ({ ...(await orig<typeof import('@/lib/sandbox/api')>()), getHistory: async () => ({ sessions: [] }) }));
@@ -83,6 +83,24 @@ describe('the pre-flight follows the address', () => {
     expect(engine.run).toHaveBeenCalledWith('prod-eu', RUN_ID);
     expect(text()).toContain("Didn't pass · Fails gracefully");
     expect(el.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('a rerun of a quick test from the Sandbox starts from the Sandbox, deep, on its key: no Fleet key prefix, no production controls', async () => {
+    const prefix = 'sk-wr-0123456789abcdef';
+    engine.run.mockResolvedValue({ ...FINISHED.run, runs: 1, origin: 'sandbox', profile: 'quick', proxyKeyDisplayPrefix: prefix });
+    engine.result.mockResolvedValue({ ...FINISHED.result, report: { ...FINISHED.result!.report!, runs: 1, profile: 'quick', tested: { ...FINISHED.result!.report!.tested, proxyKeyDisplayPrefix: prefix } } });
+    engine.start.mockResolvedValue({ runId: 'r-22222222-2222-4222-8222-222222222222', code: 'CODE-1234', codeExpiresAt: '2026-11-02T12:00:00.000Z' });
+    await go(`run=${RUN_ID}`);
+    await act(async () => { [...el.querySelectorAll('button')].find((b) => b.textContent === 'Rerun failed checks')!.click(); });
+    await flush();
+    expect(engine.source).not.toHaveBeenCalled();
+    await act(async () => { [...el.querySelectorAll('button')].find((b) => b.textContent === 'Get run code')!.click(); });
+    await flush();
+    expect(engine.start).toHaveBeenCalledTimes(1);
+    const st = engine.start.mock.calls[0][0];
+    expect(st).toMatchObject({ fleet: 'prod-eu', origin: 'sandbox', profile: 'deep', runs: 1 });
+    expect(st.scope?.length).toBeGreaterThan(0);
+    expect(st).not.toHaveProperty('proxyKeyDisplayPrefix');
   });
 
   it('a named test stays on screen when the list then says practice tests are off', async () => {

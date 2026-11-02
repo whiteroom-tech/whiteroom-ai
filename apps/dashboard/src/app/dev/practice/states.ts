@@ -89,7 +89,7 @@ const INCOMPLETE = { ...swap(swap(REPORT, 'b.result', {
 const preview = (p: Partial<PracticePreview>): PracticePreview => ({ fleet: FLEET, now: NOW, ...p });
 
 /** What an engine with eight checks offers (GET /capabilities). */
-const CAPABILITIES: PracticeCapabilities = { testVersion: 3, profiles: ['quick', 'deep'], quick: { tasks: ['D', 'A', 'C_timeout', 'C_fail'], taskSeconds: { D: 35, A: 50, C_timeout: 32, C_fail: 32 }, overallSeconds: 180 } };
+const CAPABILITIES: PracticeCapabilities = { profiles: ['quick', 'deep'] };
 
 export const PRACTICE_STATES = {
   // What a person sees first: the guardrails test, no code.

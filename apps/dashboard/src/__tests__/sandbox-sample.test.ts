@@ -170,7 +170,7 @@ describe('Sandbox sample agent: the page', () => {
     });
     await render({ fleet: 'prod-eu' });
     await click('Finish now');
-    expect(capture).toHaveBeenCalledWith('sandbox_v2_report', expect.objectContaining({ sample: true }));
+    expect(capture).toHaveBeenCalledWith('sandbox_report_rows', expect.objectContaining({ sample: true }));
   });
 
   it('the sample’s report: its note, Check your own agent first, Run the sample again, and no practice line or Check again', async () => {

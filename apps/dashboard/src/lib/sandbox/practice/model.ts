@@ -50,20 +50,18 @@ export const ADAPTER_HELP_URL = 'https://www.npmjs.com/package/@whiteroom-ai/cli
 /** The one line that says what the adapter is, beside its link. */
 export const ADAPTER_EXPLAINER = 'A short script that passes each practice task to your agent. We give you a starter.';
 
-/** How thorough a test is (engine plan.ts): quick, deep, or null for a test started without one (today's plan). */
-export type { PracticeProfile };
-/** The quick test's tasks, in the order the engine plays them. */
+/** The quick test's tasks, in the order the engine plays them. Kept here, not read from capabilities: older reports and setup before capabilities load need it too. */
 export const QUICK_PLAN: readonly Scenario[] = ['D', 'A', 'C_timeout', 'C_fail'];
 /** Played only by a test with a profile: one started without one keeps today's plan. */
 const PROFILE_ONLY: readonly string[] = ['D'];
 
-/** One run's practice tasks, as the engine plans them: a quick test's; or all of them (a deep test adds D first), or those a rerun's checks are judged on. */
+/** One run's practice tasks, as the engine plans them: a quick test's; or all of them, or those a rerun's checks are judged on (a deep test adds D first when it's in scope). */
 export function planOf(scope: string[] | null, profile: PracticeProfile | null = null): (Scenario | 'controls')[] {
   if (profile === 'quick') return [...QUICK_PLAN];
   const today = (Object.keys(TASK_NAMES) as (Scenario | 'controls')[]).filter((s) => !PROFILE_ONLY.includes(s) && (!scope
     || (s === 'controls' ? scope.some((id) => id.startsWith('ctl')) : CATALOG.checks.some((c) => c.task === s && scope.includes(c.id)))));
-  // As the engine does (plan.ts): a deep pass plays D first, a scoped rerun's too.
-  return profile === 'deep' ? ['D', ...today] : today;
+  // As the engine does (plan.ts deepPlaysD): a deep pass plays D first, unless it's a rerun of other checks.
+  return profile === 'deep' && (!scope || scope.includes('d.injection')) ? ['D', ...today] : today;
 }
 
 // ── The CLI ──────────────────────────────────────────────────────────────
@@ -432,7 +430,7 @@ export const WILL_CHECK = 'Will be checked';
  * checks, the guardrails from the engine's planned control checks (null: they
  * couldn't be read). Empty keyword rules aren't planned by the engine.
  */
-export function planRows(controls: PracticeControlCheck[] | null, profile: PracticeProfile | null = null): RowPlan[] {
+export function planRows(controls: PracticeControlCheck[] | null, profile: PracticeProfile | null = null, sandbox = false): RowPlan[] {
   const plan = planOf(null, profile);
   return ROWS.map((row) => {
     const out = (status: RowPlan['status'], reason: string, members: string[]): RowPlan => ({ row, status, reason, members });
@@ -441,6 +439,8 @@ export function planRows(controls: PracticeControlCheck[] | null, profile: Pract
       const checks = membersOf(row, CATALOG.checks);
       return out('will_check', counted(checks.length, 'check'), checks.map((c) => c.label));
     }
+    // From the Sandbox the test runs on the Sandbox's rules, which production's planner can't list.
+    if (sandbox) return out('will_check', 'Your Sandbox rules', []);
     if (!controls) return out('not_checked', 'Couldn’t read this fleet’s controls just now.', []);
     const members = membersOf(row, controls);
     const names = members.map((c) => (c.mode ? `${c.label} · ${c.mode}` : c.label));
@@ -457,10 +457,10 @@ export function planRows(controls: PracticeControlCheck[] | null, profile: Pract
   });
 }
 
-/** Why a row isn't part of a test: the quick test leaves the guardrails to the Sandbox's live check and the long task to the deep test; a test without a profile has no planted-instruction task. */
+/** Why a row isn't part of a test: the quick test leaves the guardrails to the Sandbox's live check and the long task to the deep test; an engine without profiles has no planted-instruction task. */
 function notInThisTest(row: PreflightRow, profile: PracticeProfile | null): string {
-  if (isGuardrail(row)) return 'Checked live in your Sandbox.';
-  return profile ? 'In the deep test.' : 'In the quick and deep tests.';
+  if (isGuardrail(row)) return 'Check these in your Sandbox.';
+  return profile ? 'In the deep test.' : 'Not in this test.';
 }
 
 /** The pre-flight's five steps (§7 Phase 2). */
@@ -535,7 +535,8 @@ export function passCaveat(r: PracticeReport): string | null {
   const gaps = r.scope ? [] : notFullyChecked(r).names;
   const notAll = gaps.length ? `Not fully checked: ${gaps.join(', ')}. Each one below says why. ` : '';
   if (r.sample) return `${notAll}This was WhiteRoom’s sample agent: it checks your rules and this setup, not your own agent.`;
-  if (r.runs === 1) return `${notAll}One run shows your agent can pass. Run it 3 times to see that it passes every time.`;
+  // A quick test has no second run: the deep test is the one that runs 3 times.
+  if (r.runs === 1) return `${notAll}One run shows your agent can pass. ${r.profile === 'quick' ? 'A deep test can run 3 times to see' : 'Run it 3 times to see'} that it passes every time.`;
   return notAll.trim() || null;
 }
 
@@ -582,6 +583,16 @@ export function rerunKey(tested: Pick<PracticeReport['tested'], 'provider' | 'pr
   if (!tested.proxyKeyDisplayPrefix) return null;
   const usable = keys.filter((k) => k.eligible && k.provider === tested.provider);
   return usable.find((k) => k.displayPrefix === tested.proxyKeyDisplayPrefix) ?? (usable.length === 1 ? usable[0] : usable.length ? 'pick' : 'gone');
+}
+
+/**
+ * Where a rerun or "Run it 3 times" starts, and how thorough: as the test it
+ * reruns, so it fills the same report. A quick test takes no scope or second
+ * run, so those are deep (a deep rerun plays only the checks asked for).
+ */
+export function rerunPlacement(run: { profile?: PracticeProfile | null; origin?: 'sandbox' | null }, scope: string[] | null, runs: 1 | 3): Pick<PracticeStart, 'profile' | 'origin'> {
+  const profile = run.profile ? (scope || runs === 3 ? 'deep' : run.profile) : undefined;
+  return { ...(profile && { profile }), ...(run.origin === 'sandbox' && { origin: 'sandbox' as const }) };
 }
 
 /** "Rerun 1 check × 3 runs · usually 15–25 model calls (≈ $0.20–$0.35), never more than 40." (§10 fixed copy) */

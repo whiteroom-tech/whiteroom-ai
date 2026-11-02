@@ -75,15 +75,16 @@ describe('practice test screens', () => {
     expect(t).toContain('Quick · a few minutes');
     expect(t).toContain('Your guardrails are checked live in your Sandbox.');
     expect(t).not.toContain('3 runs show it passes every time');
-    expect(t).toContain('Checked live in your Sandbox.');
+    expect(t).toContain('Check these in your Sandbox.');
     expect(t).toContain('In the deep test.');
     expect(t).toContain('Ignores a planted instruction');
     // A quick test makes no control checks, so its cost line doesn't say they're included.
     expect(t).toMatch(/Never more than 42 calls\./);
     expect(t).not.toContain('including control checks');
     // Start waits for the answer, so a test never starts without the profile the engine offers.
-    const asking = text(renderToStaticMarkup(createElement(PracticeSetup, { fleet: 'prod-eu', data: PRACTICE_STATES['setup-quick'].setup!, busy: false, onStart: () => {} })));
-    expect(renderToStaticMarkup(createElement(PracticeSetup, { fleet: 'prod-eu', data: PRACTICE_STATES['setup-quick'].setup!, busy: false, onStart: () => {} }))).toMatch(/<button[^>]*disabled=""[^>]*>Start test<\/button>/);
+    const askingHtml = renderToStaticMarkup(createElement(PracticeSetup, { fleet: 'prod-eu', data: PRACTICE_STATES['setup-quick'].setup!, busy: false, onStart: () => {} }));
+    const asking = text(askingHtml);
+    expect(askingHtml).toMatch(/<button[^>]*disabled=""[^>]*>Start test<\/button>/);
     expect(asking).not.toContain('How thorough');
     // An engine without profiles: today's setup, runs and all.
     const old = text(renderToStaticMarkup(createElement(PracticeTest, { preview: PRACTICE_STATES.setup })));
@@ -206,6 +207,12 @@ describe('practice test screens', () => {
       'Call rate · Watch', 'Download report', 'What was tested', '(sent by the CLI, not verified)', 'Adapter (reported by the CLI)', DISCLAIMER,
       'Full details kept until', 'Test r-7f3a']) expect(passed).toContain(s);
     expect(text(render('passed-1run'))).toContain('Run it 3 times');
+    // A quick test takes no second run: no "Run it 3 times"; a deep one does.
+    const one = PRACTICE_STATES['passed-1run'];
+    const as = (profile: 'quick' | 'deep') => text(renderToStaticMarkup(createElement(PracticeTest, { preview: { ...one, result: { ...one.result!, report: { ...one.result!.report!, profile } } } })));
+    expect(as('quick')).not.toContain('Run it 3 times');
+    expect(as('quick')).toContain('A deep test can run 3 times to see that it passes every time.');
+    expect(as('deep')).toContain('Run it 3 times');
     const sample = text(render('passed-sample'));
     expect(sample).toContain('WhiteRoom’s sample agent, as support-bot');
     expect(sample).toContain('Download needs a test of your own agent.');

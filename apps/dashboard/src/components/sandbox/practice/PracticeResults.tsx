@@ -103,7 +103,7 @@ export function PracticeResults({ run, result, busy, heading, demo = false, onAc
           {scope && <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={() => onAction({ kind: 'rerun', scope })}>
             {r.verdict === 'not_passed' ? 'Rerun failed checks' : 'Rerun checks that didn’t run'}
           </button>}
-          {r.verdict === 'passed' && !r.sample && r.runs === 1 && <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={() => onAction({ kind: 'three' })}>Run it 3 times</button>}
+          {r.verdict === 'passed' && !r.sample && r.runs === 1 && r.profile !== 'quick' && <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={() => onAction({ kind: 'three' })}>Run it 3 times</button>}
           {canDownload(r) ? <button type="button" className={`${s.btn} ${s.btnSecondary}`} disabled={busy} onClick={onDownload}>Download report</button>
             : <span className={s.small} style={{ alignSelf: 'center' }}>{r.sample ? 'Download needs a test of your own agent.' : 'Download needs a full test, not a rerun.'}</span>}
         </div>}

@@ -27,8 +27,8 @@ function KeyLine({ choice, fleet, sample, className }: { choice: PracticeKeyChoi
 }
 
 /** Step 2's rows: what each of the eight will do, from the catalog and the engine's planned control checks (null: couldn't be read). */
-export function planItems(controls: PracticeControlCheck[] | null, profile: PracticeProfile | null = null): RowItem[] {
-  return planRows(controls, profile).map((x) => ({
+export function planItems(controls: PracticeControlCheck[] | null, profile: PracticeProfile | null = null, sandbox = false): RowItem[] {
+  return planRows(controls, profile, sandbox).map((x) => ({
     row: x.row,
     tone: 'muted',
     label: x.status === 'will_check' ? WILL_CHECK : ROW_STATUS_LABEL[x.status],
@@ -72,21 +72,29 @@ export function PracticeSetup({ fleet, data, busy, preview, previewCapabilities,
 }) {
   // Your agent needs an agent the fleet knows: one that has called through WhiteRoom.
   const noAgents = data.agents.length === 0;
-  // The guardrails test first: no code, and any key pays for it.
-  const [sample, setSample] = useState(!((ownAgent || !!sandboxAgent) && !noAgents));
+  // The guardrails test first: no code, and any key pays for it. From the Sandbox there's only your own agent: a sample run there would fill your agent's report.
+  const [sample, setSample] = useState(!sandboxAgent && !(ownAgent && !noAgents));
   // Step 1: the most recently active agent (§7), else the first by name.
   const recent = defaultAgent(data.agents, data.lastActiveAt);
   const [agent, setAgent] = useState(recent);
   const [runs, setRuns] = useState<1 | 3>(1);
   // Quick or deep, once the engine says it offers them (undefined while asking; null: an engine without profiles, today's plan).
   const [caps, setCaps] = useState<PracticeCapabilities | null | undefined>(previewCapabilities);
+  // Asking failed (not an engine without profiles): Try again asks once more.
+  const [capsFailed, setCapsFailed] = useState(false);
+  const [capsTry, setCapsTry] = useState(0);
   const [profile, setProfile] = useState<PracticeProfile>('quick');
   useEffect(() => {
-    if (previewCapabilities !== undefined) { setCaps(previewCapabilities); return; }
+    if (previewCapabilities !== undefined) return;
     let live = true;
-    practiceCapabilities(fleet).then((c) => { if (live) setCaps(c); }, () => { if (live) setCaps(null); });
+    // Asking (again): Start waits with no message until the answer, never "not available".
+    setCaps(undefined);
+    setCapsFailed(false);
+    practiceCapabilities(fleet).then((c) => { if (live) setCaps(c); }, () => { if (live) { setCaps(null); setCapsFailed(true); } });
     return () => { live = false; };
-  }, [fleet, previewCapabilities]);
+  }, [fleet, previewCapabilities, capsTry]);
+  // From the Sandbox a test needs a profile (the engine binds its report by one): without them, Start waits.
+  const sandboxNeedsCaps = !!sandboxAgent && caps === null;
   // The profile a Start sends: quick or deep where the engine offers them; a sample-agent test is quick.
   const sent: PracticeProfile | null = caps ? (sample ? 'quick' : profile) : null;
   const quick = sent === 'quick';
@@ -134,11 +142,13 @@ export function PracticeSetup({ fleet, data, busy, preview, previewCapabilities,
   // (The sample agent calls with the fleet's own key, so a cloud agent's fleet can still run it.)
   const blocked = src && !sandboxAgent ? practiceBlock(src, { sample, hasKey: !!key }) : null;
   // Unknown controls: list none, and estimate with the most control calls a test can make rather than none.
-  const controls = src === undefined ? [] : src.controls?.checks ?? null;
+  // From the Sandbox, production's controls aren't the ones tested: the Sandbox's rules, at the most calls.
+  const controls = src === undefined || sandboxAgent ? [] : src.controls?.checks ?? null;
   // The key the test runs on: the picked Fleet key key, else the fleet's own key's provider as its latest call showed.
   const keyChoice = sample ? null : choice ?? directChoice(src);
   const est = callEstimate({
-    runs: sample || quick ? 1 : runs, scope: null, profile: sent, controlCalls: src?.controls ? controlCalls(src.controls.checks) : src ? CATALOG.controlCallsMax : 0, provider: choice?.provider ?? null,
+    runs: sample || quick ? 1 : runs, scope: null, profile: sent,
+    controlCalls: sandboxAgent ? CATALOG.controlCallsMax : src?.controls ? controlCalls(src.controls.checks) : src ? CATALOG.controlCallsMax : 0, provider: choice?.provider ?? null,
     model: model ?? (sample && !cloudField ? SAMPLE_MODELS.anthropic : null),
   });
   const pick = (v: boolean) => { setSample(v); if (!cloudField) { setChanging(false); setTyped(''); } };
@@ -146,7 +156,6 @@ export function PracticeSetup({ fleet, data, busy, preview, previewCapabilities,
   const start = () => onStart({
     fleet, sample, runs: sample || quick ? 1 : runs,
     ...(sent && { profile: sent }),
-    // The sample-agent test too: the engine takes a Sandbox-started sample run's settings from the Sandbox, with any key paying for it.
     ...(sandboxAgent && { origin: 'sandbox' as const }),
     ...(agent && { agent }),
     ...(model && { model }),
@@ -174,10 +183,12 @@ export function PracticeSetup({ fleet, data, busy, preview, previewCapabilities,
 
       <div className={`${s.card} ${s.cardBrand}`}>
         <h3 className={s.sectionTitle}>1. Pick agent</h3>
-        <div className={s.formGroup}>
-          <SegmentedControl<'guardrails' | 'agent'> label="What to test" value={sample ? 'guardrails' : 'agent'} onChange={(v) => pick(v === 'guardrails')}
-            options={[{ value: 'guardrails', label: 'Test my guardrails · no code' }, { value: 'agent', label: 'Test my own agent', disabled: noAgents }]} />
-        </div>
+        {!sandboxAgent && (
+          <div className={s.formGroup}>
+            <SegmentedControl<'guardrails' | 'agent'> label="What to test" value={sample ? 'guardrails' : 'agent'} onChange={(v) => pick(v === 'guardrails')}
+              options={[{ value: 'guardrails', label: 'Test my guardrails · no code' }, { value: 'agent', label: 'Test my own agent', disabled: noAgents }]} />
+          </div>
+        )}
         {data.agents.length > 0 && (
           <div className={s.formGroup}>
             <label className={s.formLabel} htmlFor="practice-agent">Agent {sample ? <span className={s.formLabelHint}>· the sample agent runs with its name and guardrails</span>
@@ -250,13 +261,19 @@ export function PracticeSetup({ fleet, data, busy, preview, previewCapabilities,
 
       <section className={s.card} aria-labelledby="practice-plan-title">
         <h3 id="practice-plan-title" className={s.sectionTitle}>2. What we’ll test</h3>
-        <RowGroups items={planItems(controls, sent)} />
+        <RowGroups items={planItems(controls, sent, !!sandboxAgent)} />
         <p className={s.small} style={{ marginTop: 12 }}>{costLine(est, sample || quick ? 1 : runs)}</p>
         {sandboxAgent && !sample ? <p className={s.small}>Run it where your agent’s key is set: the same key you connected to your Sandbox.</p>
           : !blocked && <KeyLine choice={keyChoice} fleet={fleet} sample={sample} className={s.small} />}
         <div className={`${s.btnRow} ${p.desktopOnly}`} style={{ marginTop: 12 }}>
-          <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy || !!blocked || (!!cloudField && !model) || caps === undefined} onClick={start}>{busy ? 'Starting…' : 'Start test'}</button>
+          <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy || !!blocked || (!!cloudField && !model) || caps === undefined || sandboxNeedsCaps || (!sample && !agent)} onClick={start}>{busy ? 'Starting…' : 'Start test'}</button>
         </div>
+        {sandboxNeedsCaps && (
+          <p className={`${s.small} ${p.desktopOnly}`} role="status">
+            {capsFailed ? <>Couldn’t reach practice tests just now. <button type="button" className={s.linkBtn} onClick={() => setCapsTry((n) => n + 1)}>Try again</button></>
+              : 'Practice tests from your Sandbox aren’t available yet.'}
+          </p>
+        )}
         {cloudField && !model && !blocked && <p className={`${s.small} ${p.desktopOnly}`}>{cloudField.missing}</p>}
         <p className={`${s.notice} ${p.phoneOnly}`}>Start from your computer: open this page on the computer where your agent runs.</p>
       </section>

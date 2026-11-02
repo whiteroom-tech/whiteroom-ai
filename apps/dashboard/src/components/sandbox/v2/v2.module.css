@@ -128,10 +128,10 @@
 .sampleOr { display:grid; gap:8px; justify-items:start; border-top:1px solid var(--line); padding-top:14px; }
 .sampleOr > strong { font-size:var(--fs-sm); color:var(--tx); }
 
-/* Eight checks (C2): the report's rows, in number order and two groups. */
+/* The report's eight rows, in number order and two groups. */
 .rowGroup { display:grid; gap:6px; }
 .rowGroupHead { display:flex; justify-content:space-between; align-items:baseline; gap:8px; border-bottom:1px solid var(--line); padding-bottom:6px; margin-top:6px; }
-.rowGroupHead b { font-size:var(--fs-md); color:var(--tx); }
+.rowGroupHead h4 { margin:0; font-size:var(--fs-md); font-weight:700; color:var(--tx); }
 .rowGroupHead span { font-size:var(--fs-sm); color:var(--tx3); }
 .rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
 .row { display:grid; grid-template-columns:26px 18px minmax(0,1fr); gap:6px; font-size:var(--fs-sm); line-height:1.5; color:var(--tx2); align-items:baseline; overflow-wrap:anywhere; }
