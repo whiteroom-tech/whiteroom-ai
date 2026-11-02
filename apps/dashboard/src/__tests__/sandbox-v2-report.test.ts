@@ -224,6 +224,16 @@ describe('the report on the page', () => {
     expect(html).toContain('Your agent stopped calling.');
   });
 
+  it('lists other agents that called (not checked), and how a streaming agent’s rules treat its replies', () => {
+    const base = stateOf(all('passed'));
+    const html = renderToStaticMarkup(h(ReportView, { state: { ...base, window: { ...base.window!, otherAgents: ['billing-agent', 'ops-bot'] }, streaming: { streamed: true, lines: ['Tool list: in Watch, streamed replies aren’t checked; they pass and say so.'] } }, checked: 'just now', calls: 30 }));
+    expect(html).toContain('Also called during this check: billing-agent, ops-bot (not checked).');
+    expect(html).toContain('Your agent streams: how your rules treat its replies');
+    expect(html).toContain('Tool list: in Watch, streamed replies aren’t checked; they pass and say so.');
+    const quiet = renderToStaticMarkup(h(ReportView, { state: base, checked: 'just now', calls: 30 }));
+    expect(quiet).not.toMatch(/Also called during|Your agent streams/);
+  });
+
   it('focuses the verdict when asked (a report that appears while the page is open)', async () => {
     await act(async () => { root.render(h(ReportView, { state: stateOf({ spend_cap: ['failed'] }), checked: 'just now', calls: 8, focus: true })); });
     expect(document.activeElement?.tagName).toBe('H3');

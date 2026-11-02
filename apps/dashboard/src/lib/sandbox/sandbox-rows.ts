@@ -6,7 +6,7 @@
 
 import { RULE_LABELS } from '@/lib/governance';
 import { endedStatus, FIX, NOT_REACHED, scrub, TRIP_TIP } from './check-report';
-import type { CheckId, CheckPart, CheckResult, CheckState, CheckStatus, RuleProbe } from './checks';
+import type { CheckId, CheckPart, CheckResult, CheckState, RuleProbe } from './checks';
 
 export type RowState = 'failed' | 'not_checked' | 'not_run_yet' | 'passed' | 'partly' | 'not_set_up';
 
@@ -43,7 +43,6 @@ const ACTS: Record<NonNullable<RuleProbe['acts']>, string> = {
   would_act: 'would act (Watch)', notifies: 'notifies and lets it through', blocks: 'blocks', pauses: 'pauses the agent', stops: 'stops the agent',
 };
 const ruleName = (type: string) => (RULE_LABELS as Record<string, string>)[type] ?? type;
-const statusOf = (c: CheckResult | CheckPart | undefined): Exclude<CheckStatus, 'pending'> | 'pending' | null => (c ? c.status : null);
 const failText = (detail: string) => detail.replace(/([.!?])\s+Fix: [\s\S]*$/, '$1');
 
 /** The live checks' rows 04–06: their rule types and the engine check that says how the agent coped. */
@@ -80,8 +79,9 @@ function precedence(parts: RowPart[]): RowState {
   return 'passed';
 }
 
-const partState = (s: ReturnType<typeof statusOf>): RowPart['state'] =>
-  s === 'passed' ? 'passed' : s === 'failed' ? 'failed' : 'not_checked';
+/** A live result as a part: passed, failed, or (pending, not triggered, not reached) not checked. */
+const partState = (c: CheckResult | CheckPart | undefined): RowPart['state'] =>
+  c?.status === 'passed' ? 'passed' : c?.status === 'failed' ? 'failed' : 'not_checked';
 
 function ruleRow(state: CheckState, r: (typeof RULE_ROWS)[number], coped: ReturnType<typeof copes>): SandboxRow {
   const base = { num: r.num, name: r.name, group: 'guardrails' as const, note: null as string | null };
@@ -105,8 +105,10 @@ function ruleRow(state: CheckState, r: (typeof RULE_ROWS)[number], coped: Return
     { label: 'Your agent', text: agent.text, state: agent.status },
   ];
   const unset = probes.filter((p) => p.status === 'not_set_up').map((p) => ruleName(p.ruleType));
-  const fix = failedProbe ? { happened: ruleText, next: 'Check this rule in your Sandbox rules, then check again.' }
-    : agent.status === 'failed' ? { happened: agent.text, next: agentFailed ? FIX[r.check] : BLOCK_FIX } : null;
+  const agentFix = agent.status === 'failed' ? { happened: agent.text, next: agentFailed ? FIX[r.check] : BLOCK_FIX } : null;
+  const ruleFix = failedProbe ? { happened: ruleText, next: 'Check this rule in your Sandbox rules, then check again.' } : null;
+  // Both can fail at once: say both, the rule first.
+  const fix = ruleFix && agentFix ? { happened: `${ruleFix.happened} ${agentFix.happened}`, next: `${ruleFix.next} ${agentFix.next}` } : ruleFix ?? agentFix;
   return { ...base, state: precedence(parts), line: '', parts, fix, note: unset.length ? `Not set up: ${[...new Set(unset)].join(', ').toLowerCase()}.` : null };
 }
 
@@ -131,8 +133,8 @@ export function sandboxRows(state: CheckState): SandboxRow[] {
   // Row 03 here: the provider error, and the wait after a rate limit (an engine without parts: the error alone).
   const pe = check('provider_errors');
   const wait = state.parts?.find((p) => p.id === 'rate_limit_wait');
-  const peState = partState(statusOf(pe) === 'pending' ? 'not_checked' : statusOf(pe));
-  const waitState = wait ? partState(wait.status === 'pending' ? 'not_checked' : wait.status) : null;
+  const peState = partState(pe);
+  const waitState = wait ? partState(wait) : null;
   const here = [pe?.status === 'failed' ? failText(pe.detail) : pe?.detail || NOT_REACHED, ...(wait ? [wait.status === 'failed' ? failText(wait.detail) : wait.detail] : [])].filter(Boolean).join(' · ');
   const hereState: RowPart['state'] = peState === 'failed' || waitState === 'failed' ? 'failed' : peState === 'not_checked' || waitState === 'not_checked' ? 'not_checked' : 'passed';
   const p3: RowPart[] = [{ label: 'Here', text: here, state: hereState }, PRACTICE_PART];
@@ -190,9 +192,18 @@ export function rowsSummary(rows: SandboxRow[], when: { checked: string; calls: 
     for (const r of rows.filter((x) => x.group === g)) {
       lines.push(`- ${r.num} ${r.name}: ${STATE_WORDS[r.state]}${r.line ? `. ${r.line}` : ''}`);
       for (const p of r.parts) lines.push(`    ${p.label}: ${p.text}`);
-      if (r.fix) lines.push(`    How to fix: ${r.fix.next}`);
+      if (r.fix) lines.push(`    What happened: ${r.fix.happened}`, `    How to fix: ${r.fix.next}`);
       if (r.note) lines.push(`    ${r.note}`);
     }
   }
   return scrub(lines.join('\n'));
+}
+
+/** "01, 08 and the rest of 03": the rows practice tasks would check, from the rows themselves; null when none. */
+export function practiceRows(rows: SandboxRow[]): string | null {
+  const whole = rows.filter((r) => r.state === 'not_run_yet' && !r.parts.length).map((r) => r.num);
+  const rest = rows.filter((r) => r.parts.some((p) => p.state === 'not_run_yet')).map((r) => `the rest of ${r.num}`);
+  const all = [...whole, ...rest];
+  if (!all.length) return null;
+  return all.length === 1 ? all[0] : `${all.slice(0, -1).join(', ')} and ${all[all.length - 1]}`;
 }

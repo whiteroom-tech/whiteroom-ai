@@ -12,7 +12,7 @@ import {
   type CheckId, type CheckResult, type CheckRule, type CheckState, type CheckStatus,
 } from '@/lib/sandbox/checks';
 import { reportOf, reportSummary, SCORED_CHECKS, TOO_FEW_HELP } from '@/lib/sandbox/check-report';
-import { ROW_GROUP_NAMES, rowsHeadline, rowsSummary, sandboxRows, type RowPart, type SandboxRow } from '@/lib/sandbox/sandbox-rows';
+import { practiceRows, ROW_GROUP_NAMES, rowsHeadline, rowsSummary, sandboxRows, type RowPart, type SandboxRow } from '@/lib/sandbox/sandbox-rows';
 import { analytics } from '@/lib/analytics';
 import { SANDBOX_RULES_ID } from '@/lib/sandbox/rules';
 import s from '../guided.module.css';
@@ -367,7 +367,7 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
       <Button size={32} variant="ghost" onClick={copy}>{copied === 'copied' ? 'Copied' : 'Copy summary'}</Button>
       <span className={v.text} aria-live="polite">{copied === 'failed' ? 'Couldn’t copy. Try again.' : sample?.refusal ?? ''}</span>
     </div>
-    {!few && !sample && <p className={v.next}>Next: <Link href={ROUTES.practiceTest} className="wr-link">Run practice tasks</Link> for 01, 08 and the rest of 03.</p>}
+    {!few && !sample && practiceRows(rows) && <p className={v.next}>Next: <Link href={ROUTES.practiceTest} className="wr-link">Run practice tasks</Link> for {practiceRows(rows)}.</p>}
     <p className={v.text}>
       {judgedOn > 0 && <>Checked against {judgedOn === 1 ? '1 Sandbox rule' : `${judgedOn} Sandbox rules`} · </>}
       <button type="button" className={v.linkButton} onClick={openRules}>{judgedOn > 0 ? 'Change rules' : 'Sandbox rules'}</button>

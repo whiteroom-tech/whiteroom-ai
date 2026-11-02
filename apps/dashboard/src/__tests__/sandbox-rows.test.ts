@@ -1,8 +1,8 @@
 // The Sandbox report's eight rows (eight checks C2): rows from the live check's
 // results, its rule probes and its parts, with the headline counted over them.
 import { describe, expect, it } from 'vitest';
-import { CHECK_IDS, type CheckState, type CheckStatus, type RuleProbe } from '@/lib/sandbox/checks';
-import { rowsHeadline, sandboxRows } from '@/lib/sandbox/sandbox-rows';
+import { CHECK_IDS, checkStateOf, type CheckState, type CheckStatus, type RuleProbe } from '@/lib/sandbox/checks';
+import { practiceRows, rowsHeadline, rowsSummary, sandboxRows } from '@/lib/sandbox/sandbox-rows';
 
 const ALL_PASSED: Record<string, [CheckStatus, string]> = {
   spend_cap: ['passed', 'We blocked a call → it didn’t retry that call.'],
@@ -84,5 +84,59 @@ describe('the eight rows', () => {
     expect(r['04']).toMatchObject({ state: 'passed', parts: [] });
     expect(r['03'].parts[0].text).toBe('We returned a provider error (529) → it retried 1 time, backing off.');
     expect(by(state({ probes: undefined, checks: { loop_rate: ['not_triggered', ''] } }))['05']).toMatchObject({ state: 'not_checked' });
+  });
+});
+
+describe('the rows’ edges', () => {
+  it('a rule that failed its probe and an agent that hammered: both are said, the rule first', () => {
+    const r = by(state({ probes: [probe('spend_cap', 'failed')], checks: { spend_cap: ['failed', 'We blocked a call → your agent retried it 4 times within 5 s. Fix: stop.'] } }));
+    expect(r['04'].fix).toEqual({
+      happened: 'Spend cap: Didn’t act at its limit. We blocked a call → your agent retried it 4 times within 5 s.',
+      next: 'Check this rule in your Sandbox rules, then check again. Make your agent stop or back off when WhiteRoom blocks a call (it got a 4xx with a reason).',
+    });
+  });
+
+  it('Copy summary follows the rows: groups, parts, what happened and the fix; keys and IDs hidden', () => {
+    const s = state({ checks: { provider_errors: ['failed', 'We returned a provider error (529) to sk-ant-abcdefghijklmnop. Fix: back off.'] } });
+    const text = rowsSummary(sandboxRows(s), { checked: 'just now', calls: 17 });
+    expect(text.split('\n').slice(0, 2)).toEqual(['WhiteRoom Sandbox check: 1 thing to fix before going live', '6 of 8 checked · 2 need practice tasks · 17 calls · checked just now']);
+    expect(text).toContain('The agent:\n- 01 Finishes the job correctly: Not run yet. Not run yet: checks in practice tasks.');
+    expect(text).toContain('    What happened: We returned a provider error (529) to [hidden].');
+    expect(text).toContain('    How to fix: Retry with a back-off of at least 1 second, and give up after a few tries.');
+    expect(text).toContain('- 04 Spend cap: Passed\n    Your rule: would act (Watch) at its limit');
+    expect(text).not.toContain('sk-ant-');
+  });
+
+  it('names the rows practice tasks would check, from the rows themselves', () => {
+    expect(practiceRows(sandboxRows(state()))).toBe('01, 08 and the rest of 03');
+  });
+});
+
+describe('the status answer’s eight-checks fields', () => {
+  const answer = ({ window, ...rest }: Record<string, unknown>) => checkStateOf({
+    window: { id: 'sbc_1', startedAt: '2026-11-02T10:00:00Z', endedAt: null, stage: 'observe', injectErrors: true, calls: 3, ...((window as object) ?? {}) },
+    checks: [], rules: [], ...rest,
+  });
+  it('reads the agent, other agents, probes, parts and streaming, dropping anything malformed', () => {
+    const st = answer({
+      window: { agentId: 'support-bot', otherAgents: ['billing-agent', 7, '', 'x'.repeat(200)] },
+      probes: [{ ruleId: 'gr_1', ruleType: 'spend_cap', status: 'passed', acts: 'blocks', detail: 'ok' }, { ruleId: 'gr_2', ruleType: 'keyword', status: 'weird' }, { ruleId: 'gr_3', ruleType: 'tool_list', status: 'not_set_up', acts: 'explodes', detail: '' }],
+      parts: [{ id: 'rate_limit_wait', status: 'passed', detail: 'waited' }, { id: 'other', status: 'passed', detail: '' }],
+      streaming: { streamed: true, lines: ['a line', 42] },
+    })!;
+    expect(st.window).toMatchObject({ agentId: 'support-bot', otherAgents: ['billing-agent'] });
+    expect(st.probes).toEqual([
+      { ruleId: 'gr_1', ruleType: 'spend_cap', status: 'passed', acts: 'blocks', detail: 'ok' },
+      { ruleId: 'gr_3', ruleType: 'tool_list', status: 'not_set_up', acts: null, detail: '' },
+    ]);
+    expect(st.parts).toEqual([{ id: 'rate_limit_wait', status: 'passed', detail: 'waited' }]);
+    expect(st.streaming).toEqual({ streamed: true, lines: ['a line'] });
+  });
+  it('an older engine’s answer has none of them', () => {
+    const st = answer({})!;
+    expect(st).not.toHaveProperty('probes');
+    expect(st).not.toHaveProperty('parts');
+    expect(st).not.toHaveProperty('streaming');
+    expect(st.window).not.toHaveProperty('otherAgents');
   });
 });
