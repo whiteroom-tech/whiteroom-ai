@@ -46,7 +46,8 @@ const typeIn = async (el: HTMLTextAreaElement, value: string) => {
 };
 
 const bff = vi.fn();
-const calls = () => bff.mock.calls.map(([url, init]) => ({ url: String(url), body: JSON.parse(String((init as RequestInit).body)) }));
+// The Sandbox's own calls (all POSTs); the report's best-effort read of practice runs is a GET and isn't one of them.
+const calls = () => bff.mock.calls.filter(([url]) => !String(url).startsWith('/api/sandbox/practice')).map(([url, init]) => ({ url: String(url), body: JSON.parse(String((init as RequestInit).body)) }));
 let checks: unknown;
 let helper: unknown;
 
@@ -61,6 +62,7 @@ beforeEach(() => {
     if (url === '/api/sandbox/helper/code') return Response.json({ success: true, code: 'ABCD-1234', codeExpiresAt: '2026-10-29T10:10:00.000Z' });
     if (url === '/api/sandbox/helper/run') return Response.json({ success: true, taskId: 'task_1', duplicate: false });
     if (url.startsWith('/api/sandbox/helper/')) return Response.json(helper);
+    if (url.startsWith('/api/sandbox/practice')) return Response.json({ runs: [] });
     return Response.json({ error: 'unexpected' }, { status: 500 });
   });
   vi.stubGlobal('fetch', bff);

@@ -7,6 +7,18 @@
 import { RULE_LABELS } from '@/lib/governance';
 import { endedStatus, FIX, NOT_REACHED, scrub, TRIP_TIP } from './check-report';
 import type { CheckId, CheckPart, CheckResult, CheckState, RuleProbe } from './checks';
+import type { PracticeCheck } from './practice/types';
+
+/**
+ * A practice run bound to the report (eight checks §6): its checks fill rows
+ * 01, 08 and the rest of 03. Only runs of the window's agent are bound; one
+ * of another agent is shown apart and never counted.
+ */
+export interface BoundPractice {
+  runId: string;
+  endedAt: string | null;
+  checks: Pick<PracticeCheck, 'id' | 'status' | 'summary' | 'fix' | 'label'>[];
+}
 
 export type RowState = 'failed' | 'not_checked' | 'not_run_yet' | 'passed' | 'partly' | 'not_set_up';
 
@@ -112,13 +124,36 @@ function ruleRow(state: CheckState, r: (typeof RULE_ROWS)[number], coped: Return
   return { ...base, state: precedence(parts), line: '', parts, fix, note: unset.length ? `Not set up: ${[...new Set(unset)].join(', ').toLowerCase()}.` : null };
 }
 
-/** The eight rows for a window, in number order. */
-export function sandboxRows(state: CheckState): SandboxRow[] {
+/** A practice check as a part, or the not-run-yet part when no run is bound or the run didn't have it. */
+function practicePart(practice: BoundPractice | undefined, ids: string[]): { part: RowPart; failed: BoundPractice['checks'][number] | null } {
+  const checks = practice ? practice.checks.filter((c) => ids.includes(c.id)) : [];
+  if (!checks.length) return { part: PRACTICE_PART, failed: null };
+  const failed = checks.find((c) => c.status === 'failed') ?? null;
+  const open = checks.find((c) => c.status !== 'passed');
+  const state: RowPart['state'] = failed ? 'failed' : open ? 'not_checked' : 'passed';
+  // Passed: one check's own summary ("Passed 1 of 1 run."), never its name again; several are named, as row 03's two are.
+  const text = failed ? `${failed.label}: ${failed.summary}` : open ? `${open.label}: ${open.summary || 'Not checked.'}`
+    : checks.length === 1 ? checks[0].summary || 'Passed.' : checks.map((c) => c.label).join(' · ');
+  return { part: { label: 'Practice tasks', text, state }, failed };
+}
+
+/** A row checked only in practice tasks (01, 08): not run yet, or what the bound run found. */
+function practiceRow(num: string, name: string, group: SandboxRow['group'], practice: BoundPractice | undefined, ids: string[]): SandboxRow {
+  const { part, failed } = practicePart(practice, ids);
+  if (part === PRACTICE_PART) return { num, name, group, state: 'not_run_yet', line: NOT_RUN_YET, parts: [], fix: null, note: null };
+  return {
+    num, name, group, state: part.state === 'passed' ? 'passed' : part.state === 'failed' ? 'failed' : 'not_checked', line: part.text, parts: [],
+    fix: failed ? { happened: failed.summary, next: failed.fix ?? 'Fix it, then run practice tasks again.' } : null, note: null,
+  };
+}
+
+/** The eight rows for a window, in number order, with a bound practice run's results when there is one. */
+export function sandboxRows(state: CheckState, practice?: BoundPractice): SandboxRow[] {
   const check = (id: CheckId) => state.checks.find((c) => c.id === id);
   const coped = copes(state);
   const rows: SandboxRow[] = [];
 
-  rows.push({ num: '01', name: 'Finishes the job correctly', group: 'agent', state: 'not_run_yet', line: NOT_RUN_YET, parts: [], fix: null, note: null });
+  rows.push(practiceRow('01', 'Finishes the job correctly', 'agent', practice, ['a.result']));
 
   const long = check('long_task');
   const ls = endedStatus(long?.status ?? 'not_checked');
@@ -137,12 +172,14 @@ export function sandboxRows(state: CheckState): SandboxRow[] {
   const waitState = wait ? partState(wait) : null;
   const here = [pe?.status === 'failed' ? failText(pe.detail) : pe?.detail || NOT_REACHED, ...(wait ? [wait.status === 'failed' ? failText(wait.detail) : wait.detail] : [])].filter(Boolean).join(' · ');
   const hereState: RowPart['state'] = peState === 'failed' || waitState === 'failed' ? 'failed' : peState === 'not_checked' || waitState === 'not_checked' ? 'not_checked' : 'passed';
-  const p3: RowPart[] = [{ label: 'Here', text: here, state: hereState }, PRACTICE_PART];
+  const prac3 = practicePart(practice, ['c.timeout', 'c.keeps_failing']);
+  const p3: RowPart[] = [{ label: 'Here', text: here, state: hereState }, prac3.part];
   // Its live part checked and passed, its practice part not run yet: partly checked, as row 02 in a quick test.
   const s3 = precedence(p3);
   rows.push({
     num: '03', name: 'Fails gracefully', group: 'agent', state: s3 === 'not_run_yet' && hereState === 'passed' ? 'partly' : s3, line: '', parts: p3,
-    fix: peState === 'failed' ? { happened: failText(pe!.detail), next: FIX.provider_errors } : waitState === 'failed' ? { happened: failText(wait!.detail), next: WAIT_FIX } : null,
+    fix: peState === 'failed' ? { happened: failText(pe!.detail), next: FIX.provider_errors } : waitState === 'failed' ? { happened: failText(wait!.detail), next: WAIT_FIX }
+      : prac3.failed ? { happened: prac3.failed.summary, next: prac3.failed.fix ?? 'Fix it, then run practice tasks again.' } : null,
     note: null,
   });
 
@@ -157,7 +194,7 @@ export function sandboxRows(state: CheckState): SandboxRow[] {
     fix: pss === 'failed' ? { happened: failText(ps!.detail), next: FIX.pause_stop } : null, note: null,
   });
 
-  rows.push({ num: '08', name: 'Ignores a planted instruction', group: 'guardrails', state: 'not_run_yet', line: NOT_RUN_YET, parts: [], fix: null, note: null });
+  rows.push(practiceRow('08', 'Ignores a planted instruction', 'guardrails', practice, ['d.injection']));
   return rows;
 }
 
@@ -206,4 +243,23 @@ export function practiceRows(rows: SandboxRow[]): string | null {
   const all = [...whole, ...rest];
   if (!all.length) return null;
   return all.length === 1 ? all[0] : `${all.slice(0, -1).join(', ')} and ${all[all.length - 1]}`;
+}
+
+/** The practice runs a report can use: finished runs with a profile (test version 3), newest first. */
+type PracticeRunLike = { id: string; agentId: string; lifecycle: string; profile?: string | null; createdAt: string; endedAt: string | null };
+
+/**
+ * Which practice run a report shows (§6): the run already bound if it's still
+ * listed, else the newest eligible run of the window's agent. A newer one of
+ * that agent is offered, never swapped in; the newest of another agent is
+ * shown apart.
+ */
+export function practiceBinding(runs: PracticeRunLike[], agentId: string | null | undefined, bound: string | null): { bind: string | null; newer: string | null; other: PracticeRunLike | null } {
+  const eligible = runs.filter((r) => r.lifecycle === 'finished' && !!r.profile).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  const mine = agentId ? eligible.filter((r) => r.agentId === agentId) : [];
+  const keep = bound && mine.some((r) => r.id === bound) ? bound : null;
+  const bind = keep ?? mine[0]?.id ?? null;
+  const newer = keep && mine[0] && mine[0].id !== keep ? mine[0].id : null;
+  const other = !mine.length ? eligible.find((r) => r.agentId !== agentId) ?? null : null;
+  return { bind, newer, other };
 }

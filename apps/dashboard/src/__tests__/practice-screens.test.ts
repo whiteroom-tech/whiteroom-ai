@@ -62,6 +62,13 @@ describe('practice test screens', () => {
     expect(text(html)).not.toMatch(/around \d+ model calls/);
   });
 
+  it('opened from the Sandbox: the Sandbox’s agent and key, no Fleet key picker', () => {
+    const t = text(renderToStaticMarkup(createElement(PracticeTest, { preview: PRACTICE_STATES['setup-from-sandbox'] })));
+    expect(t).toContain('sbx-agent');
+    expect(t).toContain('the same key you connected to your Sandbox');
+    expect(t).not.toContain('Key to test with');
+  });
+
   it('an engine with quick and deep tests: setup offers How thorough, quick first, and its rows say where each check happens', () => {
     const t = text(renderToStaticMarkup(createElement(PracticeTest, { preview: PRACTICE_STATES['setup-quick'] })));
     expect(t).toContain('How thorough');

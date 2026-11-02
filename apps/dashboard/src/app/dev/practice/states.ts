@@ -95,6 +95,8 @@ export const PRACTICE_STATES = {
   // What a person sees first: the guardrails test, no code.
   'setup-guardrails': preview({ setup: SETUP, model: 'claude-haiku-4-5', provider: 'direct-anthropic', controls: CONTROLS }),
   setup: preview({ test: 'agent', setup: SETUP, model: 'claude-haiku-4-5', provider: 'direct-anthropic', controls: CONTROLS }),
+  /** Opened from the Sandbox's report for its agent: quick first, the Sandbox's key, no Fleet key picker. */
+  'setup-from-sandbox': preview({ test: 'agent', setup: { agents: ['sbx-agent'] }, model: null, provider: 'unknown', controls: CONTROLS, capabilities: CAPABILITIES, sandboxAgent: 'sbx-agent', keys: [ANTHROPIC_PROXY] }),
   /** An engine with quick and deep tests: setup offers How thorough, quick first. */
   'setup-quick': preview({ test: 'agent', setup: SETUP, model: 'claude-haiku-4-5', provider: 'direct-anthropic', controls: CONTROLS, capabilities: CAPABILITIES }),
   'setup-new-agent': preview({ test: 'agent', setup: SETUP, model: null }),
