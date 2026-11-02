@@ -1,5 +1,5 @@
 // The Sandbox report's shared pieces (eight checks spec Rev 7 §7): the live
-// check's fixes and tips, the too-few-calls case, and the scrub for Copy
+// check's fixes and tips, the too-few-calls line, and the scrub for Copy
 // summary. The eight rows themselves are sandbox-rows.ts. Pure, so the page
 // and the tests share it.
 
@@ -13,9 +13,9 @@ export type ScoredCheckId = (typeof SCORED_CHECKS)[number];
 /** About how many calls from one run the checks need (the engine observes 4, then moves on). */
 export const ENOUGH_CALLS = 5;
 
-/** What a too-few-calls report says, on the page and in Copy summary. */
-export const TOO_FEW_HEADLINE = 'Not enough calls to check your agent';
-export const TOO_FEW_HELP = `The checks need about ${ENOUGH_CALLS} calls from one run. Run a longer task, or run your agent again. Checks start by themselves.`;
+/** The line above a too-few-calls report's rows, on the page and in Copy summary: the rows still show. */
+export const tooFewNote = (calls: number) =>
+  `${calls === 0 ? 'No calls reached your Sandbox' : `Only ${calls === 1 ? '1 call' : `${calls} calls`}`} this time, so the live checks couldn’t run. Run a longer task, or run your agent again. Checks start by themselves.`;
 
 /** Whether an ended window saw too few calls to check anything: no live check passed or failed. */
 export function tooFewCalls(state: Pick<CheckState, 'checks'> & { window: { calls: number } | null }): boolean {
@@ -74,8 +74,3 @@ const SECRETS: RegExp[] = [
   /(?<![A-Za-z0-9+/_-])(?=[A-Za-z0-9+/_-]*\d)(?=[A-Za-z0-9+/_-]*[A-Za-z])[A-Za-z0-9+/_-]{24,}={0,2}/g,
 ];
 export const scrub = (t: string) => SECRETS.reduce((out, re) => out.replace(re, '[hidden]'), t);
-
-/** A too-few-calls report as plain text for the clipboard. */
-export function tooFewSummary(when: { when: string; calls: number }): string {
-  return scrub([`WhiteRoom Sandbox check: ${TOO_FEW_HEADLINE}`, `${plural(when.calls, 'call', 'calls')} · ${when.when}`, '', TOO_FEW_HELP].join('\n'));
-}

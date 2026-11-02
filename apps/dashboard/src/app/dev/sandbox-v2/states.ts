@@ -143,6 +143,11 @@ export const SANDBOX_V2_STATES = {
   'checks-observe': live({ checks: checkState('observe', OBSERVED, { calls: 6 }) }),
   /** Step 4: enforcing one rule at a time (spend cap passed, allowlist next). */
   'checks-enforce': live({ checks: checkState('enforce', { ...OBSERVED, spend_cap: ENFORCED.spend_cap }, { rules: RULES.slice(0, 1) }) }),
+  /** Step 4: no rule of yours would act, so the check uses its own test block; another agent called too (not checked). */
+  'checks-test-block': live({ checks: (() => {
+    const c = checkState('enforce', { ...OBSERVED, spend_cap: ['not_triggered', 'Your spend cap wouldn’t act on this run.'] });
+    return { ...c, state: { ...c.state!, window: { ...c.state!.window!, otherAgents: ['billing-agent'] }, parts: [{ id: 'test_block', status: 'pending', detail: '' }] } };
+  })() }),
   /** Step 4: the 10-second pause. */
   'checks-pause': live({ checks: checkState('pause', PAUSED, { rules: RULES }) }),
   /** Step 4: stopped for 5 seconds; the check lifts the stop itself. */
