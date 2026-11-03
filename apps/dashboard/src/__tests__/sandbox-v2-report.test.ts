@@ -115,12 +115,13 @@ describe('the report on the page', () => {
     // The Next card beside the report (mockup Rev 3): the fix, then practice tasks for the rows they check.
     const next = document.querySelector('section[aria-label="Next"]')!;
     expect([...next.querySelectorAll('li')].map((li) => li.textContent)).toEqual([
-      expect.stringMatching(/ Then check again\.$/),
+      'Add a back-off to your agent’s retries, then check again.',
       'Run practice tasks for 01, 08 and the rest of 03. A few minutes.',
     ]);
-    // Practice tasks open in the page: from rows 01 and 08, row 02's long-task note (that's in the deep test), Next, and the report's own button.
-    expect([...document.querySelectorAll('button')].filter((b) => b.textContent === 'Run practice tasks')).toHaveLength(5);
-    expect([...document.querySelectorAll('li[data-row="02"] button')].some((b) => b.textContent === 'Run practice tasks')).toBe(true);
+    // Practice tasks open in the page: from rows 01 and 08, Next, and the report's own button (row 02's note has no link, as in the mockup).
+    expect([...document.querySelectorAll('button')].filter((b) => b.textContent === 'Run practice tasks')).toHaveLength(4);
+    expect(document.querySelector('li[data-row="02"] button')).toBeNull();
+    expect(document.querySelector('li[data-row="02"]')?.textContent).toContain('The long-task result is in the Deep test.');
     expect(document.querySelector('a[href^="/sandbox/practice"]')).toBeNull();
     // The Sandbox rules card beside the report: Edit rules opens the editor under the step.
     expect(document.querySelector('section[aria-label="Sandbox rules"]')?.textContent).toContain('5 ready-made · all Watch');
@@ -196,8 +197,8 @@ describe('the report on the page', () => {
     expect(document.querySelector('li[data-row="01"]')?.getAttribute('data-state')).toBe('passed');
     expect(body).toMatch(/8 of 8 checked/);
     expect(body).toMatch(/Live check .+ · Practice tasks /);
-    // Only row 02 still points on: a quick run has no long task, that's in the deep test.
-    expect([...document.querySelectorAll('li[data-row] button')].filter((b) => b.textContent === 'Run practice tasks').map((b) => b.closest('li[data-row]')?.getAttribute('data-row'))).toEqual(['02']);
+    // No row points on: every practice row is filled (row 02's note names the Deep test; Next offers it).
+    expect([...document.querySelectorAll('li[data-row] button')].filter((b) => b.textContent === 'Run practice tasks')).toEqual([]);
     expect(body).not.toContain('Next: Run practice tasks');
   });
 
@@ -207,7 +208,8 @@ describe('the report on the page', () => {
     expect(body).toContain('Practice tasks (different agent): billing-agent');
     expect(body).toContain('These don’t count toward support-bot’s checks.');
     expect(body).toContain('01 ✓ · 03 ✓ · 08 ✕ Sent the file when the email asked');
-    expect(body).toContain('6 of 8 checked · 2 need practice tasks');
+    expect(body).toContain('Nothing to fix · 6 of 8 checked');
+    expect(body).toContain('2 need practice tasks · support-bot');
     // The practice rows say whose run they still wait for, and open practice tasks in the page.
     expect(document.querySelector('li[data-row="08"]')?.textContent).toContain('Not run yet for support-bot.');
     expect([...document.querySelectorAll('li[data-row="01"] button')].some((b) => b.textContent === 'Run practice tasks')).toBe(true);

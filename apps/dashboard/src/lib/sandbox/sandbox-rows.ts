@@ -87,9 +87,6 @@ const PRACTICE_FIX = 'Fix it, then run practice tasks again.';
 const PRACTICE_PART: RowPart = { label: 'Practice', text: 'Not run yet', state: 'not_run_yet' };
 
 /** What a probe says the rule does at its limit, as set. */
-const ACTS: Record<NonNullable<RuleProbe['acts']>, string> = {
-  would_act: 'would act (Watch)', notifies: 'notifies and lets it through', blocks: 'blocks', pauses: 'pauses the agent', stops: 'stops the agent',
-};
 
 /** The live checks' rows 04–06: their rule types and the engine check that says how the agent coped. */
 const RULE_ROWS = [
@@ -107,6 +104,61 @@ const partState = (c: CheckResult | CheckPart | undefined): 'passed' | 'failed' 
 
 /** A live result's text: a failure without the engine's own fix, else its detail, else not reached. */
 const liveText = (c: CheckResult | CheckPart | undefined) => (c?.status === 'failed' ? failText(c.detail) : c?.detail || NOT_REACHED);
+
+/** A passed live result in a few words (mockup Rev 3), by row: what a good agent did. */
+const PASSED_SHORT: Record<string, string> = {
+  '02': 'Carried on after a hand-over.',
+  '04': 'Didn’t retry the blocked call.',
+  '05': 'Changed course when stopped.',
+  '06': 'Backed off when refused.',
+  '07': 'Waited while held, then carried on.',
+};
+const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+/**
+ * A failed live result in a few words: what the agent did, from the engine's
+ * own words ("We blocked a call → your agent retried it 3 times within 5 s. Fix: …"
+ * reads "Retried it 3 times within 5 s."). The full words stay in What happened.
+ */
+export function failedShort(detail: string): string {
+  const after = failText(detail).split('→ ').pop() ?? '';
+  const first = (after.match(/^[^.]*\./)?.[0] ?? after).trim();
+  return cap(first.replace(/^your agent /i, ''));
+}
+/** A live result's short line: the passed words for its row, or the failure in a few words, else as before. */
+const shortText = (num: string, c: CheckResult | CheckPart | undefined) =>
+  c?.status === 'passed' && PASSED_SHORT[num] ? PASSED_SHORT[num] : c?.status === 'failed' ? failedShort(c.detail) || liveText(c) : liveText(c);
+
+/** What a rule does at its limit, as set, with the verb first ("Would act … (Watch)"). */
+const ACTS_VERB: Record<NonNullable<RuleProbe['acts']>, string> = {
+  would_act: 'would act', notifies: 'notifies and lets it through', blocks: 'blocks', pauses: 'pauses the agent', stops: 'stops the agent',
+};
+const watch = (acts: RuleProbe['acts']) => (acts === 'would_act' ? ' (Watch)' : '');
+
+/**
+ * A rule row's "Your rule" line (mockup Rev 3): "Would act at $0.02 a run (Watch)",
+ * "Both would act at your limits (Watch)", "Model allowlist and keywords would act (Watch)".
+ */
+function ruleLine(set: RuleProbe[], limits: RowLimits): string {
+  const sameActs = set.every((p) => p.acts === set[0].acts);
+  const acts = set[0].acts;
+  const verb = acts ? ACTS_VERB[acts] : 'acts';
+  if (set.length === 1) {
+    const limit = limits[set[0].ruleType];
+    const at = ['model_allowlist', 'tool_list', 'keyword'].includes(set[0].ruleType) ? '' : ` at ${limit ?? 'its limit'}`;
+    return `${cap(verb)}${at}${watch(acts)}`;
+  }
+  if (sameActs && set.every((p) => !['model_allowlist', 'tool_list', 'keyword'].includes(p.ruleType))) {
+    return `${set.length === 2 ? 'Both' : 'All'} ${verb} at your limits${watch(acts)}`;
+  }
+  if (sameActs) {
+    const names = set.map((p, i) => (i === 0 ? ruleName(p.ruleType) : ruleName(p.ruleType).toLowerCase()));
+    return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]} ${verb}${watch(acts)}`;
+  }
+  return set.map((p) => `${ruleName(p.ruleType)} ${p.acts ? ACTS_VERB[p.acts] : 'acts'}${watch(p.acts)}`).join(' · ');
+}
+
+/** A rule's own limit in words, by type ("$0.02 a run"), from the Sandbox's rules: what "Your rule" says it acts at. */
+export type RowLimits = Partial<Record<string, string>>;
 
 /** `testBlock`: the check's own test block decided it (not a rule row, and not "not reached"). */
 type Coped = { status: 'passed' | 'failed' | 'not_checked'; text: string; row: string | null; testBlock?: true };
@@ -143,7 +195,7 @@ function precedence(all: RowPart[]): RowState {
 /** A row with one live check (02, 07): its line, and its fix when it failed. */
 function liveRow(num: string, name: string, group: SandboxRow['group'], check: CheckResult | undefined, fix: string): SandboxRow {
   const state = partState(check);
-  return { num, name, group, state, line: liveText(check), parts: [], fix: state === 'failed' ? { happened: liveText(check), next: fix } : null, note: null };
+  return { num, name, group, state, line: shortText(num, check), parts: [], fix: state === 'failed' ? { happened: liveText(check), next: fix } : null, note: null };
 }
 
 /**
@@ -158,7 +210,7 @@ function copingRow(state: CheckState, coped: Coped): string | null {
   return (undecided ?? set[0])?.num ?? null;
 }
 
-function ruleRow(state: CheckState, r: (typeof RULE_ROWS)[number], coped: Coped, copingAt: string | null): SandboxRow {
+function ruleRow(state: CheckState, r: (typeof RULE_ROWS)[number], coped: Coped, copingAt: string | null, limits: RowLimits): SandboxRow {
   const base = { num: r.num, name: r.name, group: 'guardrails' as const, note: null as string | null };
   const check = state.checks.find((c) => c.id === r.check);
   // An engine without probes: the row is its check, as before.
@@ -171,14 +223,13 @@ function ruleRow(state: CheckState, r: (typeof RULE_ROWS)[number], coped: Coped,
   const set = probes.filter((p) => p.status !== 'not_set_up');
   if (!set.length) return { ...base, state: 'not_set_up', line: 'Not set up for this agent.', parts: [], fix: null };
   const failedProbe = set.find((p) => p.status === 'failed');
-  const ruleText = failedProbe ? `${ruleName(failedProbe.ruleType)}: ${failedProbe.detail}`
-    : set.map((p) => `${set.length > 1 ? `${ruleName(p.ruleType)} ` : ''}${p.acts ? ACTS[p.acts] : 'acts'} at its limit`).join(' · ');
+  const ruleText = failedProbe ? `${ruleName(failedProbe.ruleType)}: ${failedProbe.detail}` : ruleLine(set, limits);
   // The row's own check when it decided; else how the agent coped, shown in full on one row and pointed to from the others.
   const own = check?.status === 'passed' || check?.status === 'failed';
   const elsewhere = !own && copingAt !== null && copingAt !== r.num;
-  const agent: RowPart = own ? { label: 'Your agent', text: liveText(check), state: partState(check) }
+  const agent: RowPart = own ? { label: 'Your agent', text: shortText(r.num, check), state: partState(check) }
     : elsewhere ? { label: 'Your agent', text: `How it copes with a refusal: see row ${copingAt}.`, state: coped.status, seeRow: copingAt }
-    : { label: 'Your agent', text: coped.text, state: coped.status };
+    : { label: 'Your agent', text: coped.status === 'passed' ? PASSED_SHORT[r.num] : coped.status === 'failed' ? failedShort(coped.text) : coped.text, state: coped.status };
   // Every rule row decided its own check, and this one holds the test block's result: shown beside it, so it's never lost.
   const refusal: RowPart | null = own && copingAt === r.num && coped.testBlock ? { label: 'Refused call', text: coped.text, state: coped.status } : null;
   const parts: RowPart[] = [{ label: 'Your rule', text: ruleText, state: failedProbe ? 'failed' : 'passed' }, agent, ...(refusal ? [refusal] : [])];
@@ -186,7 +237,7 @@ function ruleRow(state: CheckState, r: (typeof RULE_ROWS)[number], coped: Coped,
   // What failed, the rule first: its probe, the row's own check or the coping it shows, and a refusal shown beside its own check.
   const fixes = [
     failedProbe && { happened: ruleText, next: 'Check this rule in your Sandbox rules, then check again.' },
-    agent.state === 'failed' && !agent.seeRow && { happened: agent.text, next: own ? FIX[r.check] : BLOCKED_FIX },
+    agent.state === 'failed' && !agent.seeRow && { happened: own ? liveText(check) : coped.text, next: own ? FIX[r.check] : BLOCKED_FIX },
     refusal?.state === 'failed' && { happened: refusal.text, next: BLOCKED_FIX },
   ].filter((f): f is { happened: string; next: string } => !!f);
   const fix = fixes.length ? { happened: fixes.map((f) => f.happened).join(' '), next: [...new Set(fixes.map((f) => f.next))].join(' ') } : null;
@@ -214,7 +265,7 @@ function practiceRow(num: string, name: string, group: SandboxRow['group'], prac
 }
 
 /** The eight rows for a window, in number order, with a bound practice run's results when there is one. */
-export function sandboxRows(state: CheckState, practice?: BoundPractice): SandboxRow[] {
+export function sandboxRows(state: CheckState, practice?: BoundPractice, limits: RowLimits = {}): SandboxRow[] {
   const check = (id: CheckId) => state.checks.find((c) => c.id === id);
   const coped = copes(state);
   const copingAt = copingRow(state, coped);
@@ -238,20 +289,25 @@ export function sandboxRows(state: CheckState, practice?: BoundPractice): Sandbo
   const wait = state.parts?.find((p) => p.id === 'rate_limit_wait');
   const peState = partState(pe);
   const waitState = wait ? partState(wait) : null;
-  const here = [liveText(pe), ...(wait ? [liveText(wait)] : [])].filter(Boolean).join(' · ');
+  // In a few words (mockup Rev 3): "Retried a 529 4 times in 5 s · waited as told after a rate limit".
+  const peShort = peState === 'passed' ? 'Backed off a 529' : pe?.status === 'failed'
+    ? failedShort(pe.detail).replace(/^Retried it /, 'Retried a 529 ').replace(' within ', ' in ').replace(/\.$/, '') : liveText(pe);
+  const waitShort = !wait ? null : waitState === 'passed' ? 'waited as told after a rate limit' : waitState === 'failed' ? 'called again too soon after a rate limit' : liveText(wait);
+  const here = [peShort, waitShort].filter(Boolean).join(' · ');
+  const line3 = peState === 'failed' ? 'Retried a provider error too fast.' : waitState === 'failed' ? 'Called again too soon after a rate limit.' : '';
   const hereState: RowPart['state'] = peState === 'failed' || waitState === 'failed' ? 'failed' : peState === 'not_checked' || waitState === 'not_checked' ? 'not_checked' : 'passed';
   const prac3 = practicePart(practice, ['c.timeout', 'c.keeps_failing']);
   const p3: RowPart[] = [{ label: 'Here', text: here, state: hereState }, prac3.part];
   // Its live part checked and passed, its practice part not run yet: partly checked, as row 02 in a quick test.
   const s3 = precedence(p3);
   rows.push({
-    num: '03', name: nameOf('03'), group: 'agent', state: s3 === 'not_run_yet' && hereState === 'passed' ? 'partly' : s3, line: '', parts: p3,
+    num: '03', name: nameOf('03'), group: 'agent', state: s3 === 'not_run_yet' && hereState === 'passed' ? 'partly' : s3, line: line3, parts: p3,
     fix: peState === 'failed' ? { happened: liveText(pe), next: FIX.provider_errors } : waitState === 'failed' ? { happened: liveText(wait), next: WAIT_FIX }
       : prac3.failed ? { happened: prac3.failed.summary, next: prac3.failed.fix ?? PRACTICE_FIX } : null,
     note: null,
   });
 
-  for (const r of RULE_ROWS) rows.push(ruleRow(state, r, coped, copingAt));
+  for (const r of RULE_ROWS) rows.push(ruleRow(state, r, coped, copingAt, limits));
   rows.push(liveRow('07', nameOf('07'), 'guardrails', check('pause_stop'), FIX.pause_stop));
 
   rows.push(practiceRow('08', nameOf('08'), 'guardrails', practice, ['d.injection']));
@@ -343,7 +399,7 @@ export function practiceBinding(runs: PracticeRunLike[], agentId: string | null 
  */
 export const LIVE_TRACK = [
   { check: 'long_task', num: '02', short: 'Long task' },
-  { check: 'spend_cap', num: '04', short: 'Spend cap' },
+  { check: 'spend_cap', num: '04', short: 'Spend' },
   { check: 'allowlists_keywords', num: '06', short: 'Allowlists' },
   { check: 'loop_rate', num: '05', short: 'Loops' },
   { check: 'pause_stop', num: '07', short: 'Pause, stop' },

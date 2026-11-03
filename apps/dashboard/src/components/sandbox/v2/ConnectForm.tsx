@@ -74,7 +74,8 @@ export function ConnectForm({ busy, onConnect, onRefused, onCancel }: {
   return (
     <form className={v.stack} onSubmit={(e) => { e.preventDefault(); void submit(); }} aria-label="Connect your provider key">
       <div className={s.formGroup} style={{ marginBottom: 0 }}>
-        <label className={s.formLabel} htmlFor="sandbox-v2-key">API key</label>
+        {/* The card's title says what to paste (mockup Rev 3); the field keeps its name for screen readers. */}
+        <label className={s.srOnly} htmlFor="sandbox-v2-key">API key</label>
         <div className={s.keyWrap}>
           <input
             id="sandbox-v2-key"
@@ -101,12 +102,12 @@ export function ConnectForm({ busy, onConnect, onRefused, onCancel }: {
         {cloud && provider && (
           <CloudEndpointField provider={provider} value={endpoint} error="" keyNote="" onChange={setEndpoint} onSubmit={() => void submit()} />
         )}
-      </> : (
-        <button type="button" className={v.linkButton} onClick={() => setChoosing(true)} disabled={busy}>Using Azure, Foundry or Bedrock?</button>
-      )}
-      <div className={v.actions}>
+      </> : null}
+      {/* Connect, with the cloud providers' link beside it (mockup Rev 3). */}
+      <div className={v.formRow}>
         <Button type="submit" variant="primary" size={36} busy={busy} busyLabel="Connecting…">Connect</Button>
         {onCancel && <Button variant="ghost" size={36} onClick={onCancel} disabled={busy}>Cancel</Button>}
+        {!showChoices && <button type="button" className={v.linkButton} onClick={() => setChoosing(true)} disabled={busy}>Using Azure, Foundry or Bedrock?</button>}
       </div>
     </form>
   );

@@ -7,9 +7,9 @@ import { SkeletonCard } from '@whiteroom/ui';
 import { PageHeader, PageLead } from '@/components/citadel/PageChrome';
 import { analytics } from '@/lib/analytics';
 import { governanceList } from '@/lib/whiteroom/client';
-import { endPractice, getPracticeResult, getPracticeRun, keyGone, listPracticeRuns, newRunCode, PracticeError, retryable, sourceModel, startPractice, unavailable } from '@/lib/sandbox/practice/api';
+import { endPractice, getPracticeResult, getPracticeRun, keyGone, listPracticeRuns, newRunCode, PracticeError, refusalText, sourceModel, startPractice, unavailable } from '@/lib/sandbox/practice/api';
 import {
-  callEstimate, CATALOG, choiceOf, controlCalls, draftFromStart, headline, isOpen, KEY_REFUSALS, planOf, PREFLIGHT_STEPS, preflightStep, rerunConfirm, rerunKey, rerunPlacement, RUN_ID_RE, runKeyChoice, SAMPLE_AGENT, type PracticeKeyChoice,
+  callEstimate, CATALOG, choiceOf, controlCalls, draftFromStart, headline, isOpen, planOf, PREFLIGHT_STEPS, preflightStep, rerunConfirm, rerunKey, rerunPlacement, RUN_ID_RE, runKeyChoice, SAMPLE_AGENT, type PracticeKeyChoice,
 } from '@/lib/sandbox/practice/model';
 import { practiceReportFileName, practiceReportHtml } from '@/lib/sandbox/practice/report';
 import type { PracticeCapabilities, PracticeControlCheck, PracticeProviderKey, PracticeResult, PracticeRun, PracticeRunRow, PracticeSource, PracticeSourceProvider, PracticeStart, RunCode } from '@/lib/sandbox/practice/types';
@@ -22,11 +22,10 @@ import { PracticeResults, type ResultAction } from './PracticeResults';
 import { PracticeRunView } from './PracticeRunView';
 import { saveBlob } from '@/lib/download';
 import { PracticeSetup, type SetupData } from './PracticeSetup';
+import { useClock, usePracticePoll } from './usePracticePoll';
 import s from '../guided.module.css';
 import p from './practice.module.css';
 
-/** §10 Polling: every 5 s while the page is visible, 30 s while hidden. */
-const POLL_MS = { visible: 5_000, hidden: 30_000 };
 
 /** `run`: owner_busy's open test, with its ID when it's on this fleet; `otherFleet` when it's on another fleet (this account's or another one). */
 type Refusal = { message: string; reason?: string; run?: { id?: string; lifecycle: string; otherFleet?: boolean } };
@@ -67,7 +66,7 @@ export interface PracticePreview {
 
 /** A refusal to show: the engine's or the BFF's own words (a key refusal in the catalog's), else `fallback`. */
 const fail = (e: unknown, fallback: Refusal): Refusal => e instanceof PracticeError
-  ? { message: (e.reason && Object.hasOwn(KEY_REFUSALS, e.reason) && KEY_REFUSALS[e.reason as keyof typeof KEY_REFUSALS]) || e.message, reason: e.reason, run: e.body?.run as Refusal['run'] }
+  ? { message: refusalText(e), reason: e.reason, run: e.body?.run as Refusal['run'] }
   : fallback;
 /** Key refusals fixed on Fleet key; the others mean the connection test is the way to test this fleet. */
 const FIX_ON_FLEET_KEY = new Set(['engine_access_key', 'short_term_key', 'key_not_found']);
@@ -189,52 +188,27 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
     }
   }, [askedRun, preview, demo, fleet, run, setup, showRun, loadSetup]);
 
-  // While a test is open: a clock for the countdown, and polling for progress.
-  useEffect(() => {
-    if (!open || preview) return;
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [open, preview]);
-
+  // While a test is open: a clock for the countdown, and polling for progress (shared with the Sandbox's practice card).
+  const clock = useClock(open && !preview, now);
+  useEffect(() => { if (open && !preview) setNow(clock); }, [clock, open, preview]);
   const lifecycle = run?.lifecycle;
-  const runId = run?.id;
-  useEffect(() => {
-    if (!open || preview || !fleet || !runId) return;
-    let live = true;
-    let timer: ReturnType<typeof setTimeout>;
-    // One read at a time: coming back to the tab polls now, unless a read is already on its way.
-    let pending = false;
-    // Set by a refusal that asking again won't fix: polling stops and the page says why.
-    let stopped = false;
-    const poll = async () => {
-      if (pending || stopped) return;
-      pending = true;
-      try {
-        const next = await getPracticeRun(fleet, runId);
-        if (!live) return;
-        if (isOpen(next.lifecycle)) { setRun(next); return; }
-        const res = await getPracticeResult(fleet, runId);
-        if (!live) return;
-        setResult(res);
-        setRun(next);
-        setCode(null);
-        history.replaceState(null, '', `${ROUTES.practiceTest}?run=${runId}`);
-        setSaid(`Practice test finished: ${res.report ? headline(res.report) : 'Didn’t finish'}.`);
-        track('practice_result', { verdict: res.verdict ?? 'ended', sample: next.sample, runs: next.runs });
-        requestAnimationFrame(() => heading.current?.focus());
-      } catch (e) {
-        if (!retryable(e)) { stopped = true; if (live) { if (unavailable(e)) setOff(true); else setRefusal(fail(e, ACTION_FAILED)); } }
-      } finally {
-        pending = false;
-        clearTimeout(timer);
-        if (live && !stopped) timer = setTimeout(poll, document.hidden ? POLL_MS.hidden : POLL_MS.visible);
-      }
-    };
-    timer = setTimeout(poll, POLL_MS.visible);
-    const onVisible = () => { if (!document.hidden && !pending) { clearTimeout(timer); void poll(); } };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => { live = false; clearTimeout(timer); document.removeEventListener('visibilitychange', onVisible); };
-  }, [open, preview, fleet, runId, track]);
+  usePracticePoll({
+    fleet, runId: run?.id, enabled: open && !preview,
+    onRead: async (next, live) => {
+      if (isOpen(next.lifecycle)) { setRun(next); return; }
+      const res = await getPracticeResult(fleet!, next.id);
+      if (!live()) return 'stop';
+      setResult(res);
+      setRun(next);
+      setCode(null);
+      history.replaceState(null, '', `${ROUTES.practiceTest}?run=${next.id}`);
+      setSaid(`Practice test finished: ${res.report ? headline(res.report) : 'Didn’t finish'}.`);
+      track('practice_result', { verdict: res.verdict ?? 'ended', sample: next.sample, runs: next.runs });
+      requestAnimationFrame(() => heading.current?.focus());
+      return 'stop';
+    },
+    onError: (e) => { if (unavailable(e)) setOff(true); else setRefusal(fail(e, ACTION_FAILED)); },
+  });
 
   // Spoken once per change: the test started.
   const was = useRef(lifecycle);

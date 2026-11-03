@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { RULE_LABELS } from '@/lib/governance';
-import { keptUntilText, lastCallText, providerLabel, type SandboxFleetStatus } from '@/lib/sandbox/fleet';
+import { lastCallText, providerLabel, type SandboxFleetStatus } from '@/lib/sandbox/fleet';
 import { rulesSummary, type SandboxRulesState } from '@/lib/sandbox/rules';
 import { CALLING_MS } from '@/lib/sandbox/checks';
 import { PRACTICE_COVERS, PRACTICE_COVERS_NOTE, WHAT_WE_CHECK, WHAT_WE_CHECK_SUB, WHERE_WORDS } from '@/lib/sandbox/what-we-check';
@@ -36,8 +36,8 @@ export function YourSandboxCard({ connected, lastCallAt, now, busy, onNewUrl, on
         {sample ? <b>Sample agent · run by WhiteRoom</b> : <><b>{providerLabel(key.provider)}</b> · key ending <span className={v.mono}>{key.keyHint}</span></>}
       </div>
       <div className={v.rrow}>Last call: {lastCallAt ? lastCallText(lastCallAt, now) : 'none yet'}</div>
-      {!sample && <div className={v.rrow}>URL starts <span className={v.mono}>{key.prefix.replace(/\.+$/, '')}…</span></div>}
-      <p className={v.rsub}>{keptUntilText(connected.expiresAt, now)}</p>
+      {/* The URL's start, short enough for one line (mockup Rev 3: "sk-wr-70d7…"). */}
+      {!sample && <div className={`${v.rrow} ${v.nowrap}`}>URL starts <span className={v.mono}>{key.prefix.replace(/\.+$/, '').slice(0, 10)}…</span></div>}
       <div className={v.ractions}>
         {!sample && <button type="button" className={v.sbtn} onClick={onNewUrl} disabled={busy}>New URL</button>}
         <button type="button" className={v.sbtn} onClick={onChangeKey} disabled={busy}>{sample ? 'Use your own key' : 'Change key'}</button>

@@ -25,7 +25,7 @@ export function SegmentedControl<V extends string>({ options, value, onChange, l
   onChange: (v: V) => void;
   /** Accessible name for the group, e.g. "Time range". */
   label: string;
-  size?: 24 | 26;
+  size?: 24 | 26 | 34 | 44;
 }) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const enabled = options.filter((o) => !o.disabled);

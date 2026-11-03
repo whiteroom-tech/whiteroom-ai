@@ -99,3 +99,9 @@ export const practiceCapabilities = (fleet: string) =>
 export const startPractice = (s: PracticeStart) => call<RunCode & { runId: string }>('/start', { body: { ...s } });
 export const newRunCode = (fleet: string, id: string) => call<RunCode>(`/${id}/code`, { body: { fleet } });
 export const endPractice = (fleet: string, id: string) => call<{ lifecycle: string }>(`/${id}/end`, { body: { fleet } });
+
+/** A refusal in words, for both practice pages: a key refusal in the catalog's words, else the engine's or the BFF's own. */
+export function refusalText(e: unknown, fallback = 'That didn’t work. Check your connection and try again.'): string {
+  if (!(e instanceof PracticeError)) return fallback;
+  return (e.reason && Object.hasOwn(KEY_REFUSALS, e.reason) && KEY_REFUSALS[e.reason as keyof typeof KEY_REFUSALS]) || e.message || fallback;
+}

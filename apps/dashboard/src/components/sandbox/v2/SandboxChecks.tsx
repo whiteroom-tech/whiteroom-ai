@@ -2,19 +2,21 @@
 
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Banner, Button, Icon, SkeletonCard, type IconName } from '@whiteroom/ui';
+import { Banner, Button, SkeletonCard } from '@whiteroom/ui';
 import { ROUTES } from '@/lib/routes';
-import { fmtWhen, timeAgo } from '@/lib/format';
-import { isStaleSandbox, providerLabel, sandboxSetting, SandboxFleetError } from '@/lib/sandbox/fleet';
+import { fmtTime, fmtWhen, timeAgo } from '@/lib/format';
+import { isStaleSandbox, sandboxSetting, SandboxFleetError } from '@/lib/sandbox/fleet';
 import {
   activityLine, checkAction, currentCheckOf, getCheckState, isQuiet, stageLine, STATUS_WORDS, type CheckState, type CheckStatus,
 } from '@/lib/sandbox/checks';
 import { SCORED_CHECKS, tooFewCalls, tooFewNote } from '@/lib/sandbox/check-report';
 import {
   callsText, LIVE_TRACK, liveRowName, nextSteps, notRunFor, nowExplained, practiceBinding, ROW_GROUP_NAMES, rowCounts, rowsHeadline, rowsSummary, sandboxRows, STATE_WORDS,
-  type BoundPractice, type NextStep, type SandboxRow,
+  type BoundPractice, type NextStep, type RowLimits, type SandboxRow,
 } from '@/lib/sandbox/sandbox-rows';
-import { getPracticeResult, listPracticeRuns } from '@/lib/sandbox/practice/api';
+import { getPracticeResult, getPracticeRun, listPracticeRuns } from '@/lib/sandbox/practice/api';
+import type { GovernanceRule } from '@/lib/whiteroom/types';
+import { ruleSentence } from '@/lib/controls-view';
 import { analytics } from '@/lib/analytics';
 import { NextCard, PracticeLink } from './SandboxAside';
 import { otherRunLine } from '@/lib/sandbox/sandbox-practice';
@@ -29,6 +31,8 @@ export interface SandboxChecksPreview {
   now?: number;
   /** The practice run bound to the report, a newer one of that agent, or another agent's (eight checks §6). */
   practice?: PracticeView;
+  /** When each decided live test was seen to finish, for the check's time left. */
+  seenAt?: (number | null)[];
 }
 
 /** What the report shows of practice tasks: the bound run's results, a newer run on offer, another agent's run apart. */
@@ -39,6 +43,8 @@ export interface PracticeView {
   newerAt?: string | null;
   /** `line`: its checks summed up ("01 ✓ · 03 ✓ · 08 ✕ …"), once read. */
   other: { agentId: string; endedAt: string | null; line?: string } | null;
+  /** A practice test of this agent still open: its progress, so the report says it's on its way. */
+  running?: { done: number; total: number } | null;
 }
 const NO_PRACTICE: PracticeView = { bound: null, newer: null, other: null };
 
@@ -47,6 +53,8 @@ export const practiceHref = (agentId: string | null | undefined) =>
   agentId ? `${ROUTES.practiceTest}?from=sandbox&agent=${encodeURIComponent(agentId)}` : ROUTES.practiceTest;
 
 const POLL_MS = { visible: 5_000, hidden: 30_000 };
+/** While a practice test of this agent is open, the report reads practice runs again this often. */
+const PRACTICE_REREAD_MS = 10_000;
 export const RUN_NOW = 'Run your agent as you normally do. Checks start by themselves.';
 /** The current step's card: the page moves focus to its heading when the step changes. */
 export const STEP_CARD_ID = 'sandbox-step';
@@ -62,7 +70,7 @@ const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : 'T
  * window ends. A check's stop lifts itself after 5 seconds, so there's no
  * Resume here.
  */
-export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState, setup, setupAlways = false, provider = 'anthropic', onChangeKey, sample, aside, below, onPractice, practiceRun = null }: {
+export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState, setup, setupAlways = false, provider = 'anthropic', sample, aside, below, onPractice, practiceRun = null, practiceOpen = false, rules = [] }: {
   fleet: string;
   sandboxFleetId: string;
   preview?: SandboxChecksPreview;
@@ -76,8 +84,6 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   setupAlways?: boolean;
   /** The Sandbox's provider, for "Nothing happening?". */
   provider?: string;
-  /** "Change key" in "Nothing happening?". */
-  onChangeKey?: () => void;
   /**
    * The sample agent's Sandbox (spec sandbox-sample-agent §5): WhiteRoom runs
    * the agent, so there's nothing to set up and no "Nothing happening?". Its
@@ -92,6 +98,10 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   onPractice?: (profile?: PracticeProfile) => void;
   /** A practice run just finished from this page: bind it to the report. */
   practiceRun?: string | null;
+  /** Practice tasks are open over the report: when they open, the last binding is let go (the report picks its run again). */
+  practiceOpen?: boolean;
+  /** The Sandbox's rules: "Your rule" says what each acts at ("$0.02 a run"). */
+  rules?: GovernanceRule[];
 }) {
   const [state, setState] = useState<CheckState | null>(preview ? preview.state : null);
   const [loading, setLoading] = useState(!preview);
@@ -106,6 +116,13 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   // The run bound so far (read, never a reason to fetch again), and the one the owner picked with Use it (a reason to).
   const boundRef = useRef<string | null>(null);
   const [picked, setPicked] = useState<string | null>(practiceRun);
+  // The report stays mounted under the practice card: a run finished there is bound when it comes back;
+  // opening practice tasks again lets that go, so a later report picks its run (newest first).
+  useEffect(() => { if (practiceRun) setPicked(practiceRun); }, [practiceRun]);
+  useEffect(() => { if (practiceOpen) { setPicked(null); boundRef.current = null; } }, [practiceOpen]);
+  const limits = rowLimits(rules);
+  // Bumped to read practice runs again while one of this agent's is open, until it finishes.
+  const [practiceTick, setPracticeTick] = useState(0);
   // The latest onStale, read when called: a new callback from the page never re-reads or restarts polling.
   const staleRef = useRef(onStale);
   useEffect(() => { staleRef.current = onStale; }, [onStale]);
@@ -216,23 +233,35 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
     let live = true;
     const key = `${reportWindow}|${reportAgent}`;
     const setPractice = (view: PracticeView) => setPracticeRead({ key, view });
+    let again: ReturnType<typeof setTimeout> | undefined;
     listPracticeRuns(fleet).then(async (runs) => {
+      // A practice test of this agent still open: its progress on the report, read again until it finishes (then bound below).
+      const openRun = reportAgent ? runs.find((r) => !r.sample && r.agentId === reportAgent && ['draft', 'active', 'finalizing'].includes(r.lifecycle)) : undefined;
+      const running = openRun && openRun.lifecycle !== 'draft'
+        ? await getPracticeRun(fleet, openRun.id).then((r) => ({ done: r.progress?.done ?? 0, total: r.progress?.total ?? r.plan?.tasks.length ?? 4 }), () => ({ done: 0, total: 4 }))
+        : null;
+      if (openRun && live) again = setTimeout(() => setPracticeTick((n) => n + 1), PRACTICE_REREAD_MS);
       const b = practiceBinding(runs, reportAgent, picked ?? boundRef.current);
-      // Another agent's run: summed up apart, from its own result (best effort: without it, just its name and date).
-      const otherRes = b.other ? await getPracticeResult(fleet, b.other.id).catch(() => null) : null;
-      const other = b.other && { agentId: b.other.agentId, endedAt: b.other.endedAt, ...(otherRes?.report && { line: otherRunLine(otherRes.report.checks) }) };
       const newerAt = b.newer ? runs.find((r) => r.id === b.newer)?.endedAt ?? null : null;
       // Gone from the list (or none yet): nothing bound, so no stale result is shown.
       boundRef.current = b.bind;
-      if (!b.bind) { if (live) setPractice({ bound: null, newer: null, other }); return; }
+      if (!b.bind) {
+        // Another agent's run (only when none of this agent's is bound): its name and date at once, its summary once read (best effort).
+        const other = b.other && { agentId: b.other.agentId, endedAt: b.other.endedAt };
+        if (live) setPractice({ bound: null, newer: null, other, running });
+        if (!b.other || !other) return;
+        const otherRes = await getPracticeResult(fleet, b.other.id).catch(() => null);
+        if (live && otherRes?.report) setPractice({ bound: null, newer: null, other: { ...other, line: otherRunLine(otherRes.report.checks) }, running });
+        return;
+      }
       const res = await getPracticeResult(fleet, b.bind);
       if (!live) return;
       const run = runs.find((r) => r.id === b.bind)!;
-      setPractice({ bound: res.report ? { runId: b.bind, endedAt: run.endedAt, profile: run.profile ?? null, checks: res.report.checks } : null, newer: b.newer, newerAt, other });
+      setPractice({ bound: res.report ? { runId: b.bind, endedAt: run.endedAt, profile: run.profile ?? null, checks: res.report.checks } : null, newer: b.newer, newerAt, other: null, running });
     // A failed read keeps what's on screen: a new report or agent never shows the last one's (practiceRead's key).
     }).catch(() => {}).finally(() => { if (live) setSettledKey(key); });
-    return () => { live = false; };
-  }, [preview, sample, reportWindow, reportAgent, fleet, picked]);
+    return () => { live = false; clearTimeout(again); };
+  }, [preview, sample, reportWindow, reportAgent, fleet, picked, practiceTick]);
   const ended = !!w?.endedAt;
   const isSample = !!sample;
   const quiet = !!state && isQuiet(state, now);
@@ -242,17 +271,17 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   const lastCallAt = state?.activity?.lastCallAt;
   // Not while quiet: the quiet box already says what to do.
   const noCallYet = !!state && !quiet && (!w || (!ended && w.calls === 0)) && (!lastCallAt || Date.parse(lastCallAt) < openedAt.current);
-  // The usual fixes show after a minute with no call (their heading says so); a preview shows them at once.
-  const [idle, setIdle] = useState(!!preview);
+  // The usual fixes show at once (mockup Rev 3, 2 · Waiting). A minute with no call still sends its event once, as the old auto-opening fold did.
+  const idleSent = useRef(false);
   useEffect(() => {
-    if (preview || !noCallYet || idle) return;
+    if (preview || !noCallYet || idleSent.current) return;
     const t = setTimeout(() => {
-      setIdle(true);
+      idleSent.current = true;
       analytics.capture('sandbox_v2_idle_help', { opened: 'auto' });
     }, IDLE_HELP_MS);
     return () => clearTimeout(t);
-  }, [preview, noCallYet, idle]);
-  const showTips = noCallYet && idle && !isSample;
+  }, [preview, noCallYet]);
+  const showTips = noCallYet && !isSample;
   const finish = () => {
     if (!preview && w) analytics.capture('sandbox_v2_finish_now', { stage: w.stage, quiet });
     void act('stop');
@@ -282,14 +311,14 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
     if (preview || !focusReport || !state || !w?.endedAt || !settled || reported.current === w.id) return;
     reported.current = w.id;
     // What the page shows: the rows' counts and tone, and whether too few calls held the live checks back.
-    const rows = sandboxRows(state, practice.bound ?? undefined);
+    const rows = sandboxRows(state, practice.bound ?? undefined, limits);
     const c = rowCounts(rows);
     analytics.capture('sandbox_report_rows', { tone: rowsHeadline(rows).tone, fewCalls: tooFewCalls(state), fix: c.fix, checked: c.checked, practice: c.practice, notSetUp: c.notSetUp, calls: w.calls, sample: isSample });
   }, [preview, focusReport, state, w, isSample, practice.bound, settledKey, reportKey]);
 
   const phase: CheckPhase = !w ? 'waiting' : ended ? 'results' : 'checking';
   const agentName = w?.agentId ?? (isSample ? 'the sample agent' : 'your agent');
-  const reportRows = state && w && ended ? sandboxRows(state, practice.bound ?? undefined) : null;
+  const reportRows = state && w && ended ? sandboxRows(state, practice.bound ?? undefined, limits) : null;
   const next = reportRows ? nextSteps(reportRows, { few: tooFewCalls(state!), sample: isSample }) : [];
   const href = practiceHref(w?.agentId);
   const live = state && !quiet ? activityLine(state, now, isSample) : null;
@@ -307,7 +336,7 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
             {/* The page always passes setup; SandboxChecks on its own (no setup) still says what to do. */}
             {isSample ? <p className={v.text}>{SAMPLE_RUNNING}</p> : setup ?? <p className={v.text}>{RUN_NOW}</p>}
             {live && <p className={`${v.live} ${live.calling ? v.liveOn : ''}`}>{live.text}</p>}
-            {showTips && <NothingHappening provider={provider} onChangeKey={onChangeKey} />}
+            {showTips && <NothingHappening provider={provider} />}
           </>}
 
           {state && w && phase === 'checking' && <>
@@ -330,15 +359,15 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
                 <Button size={28} variant="ghost" onClick={finish} disabled={busy}>Finish now</Button>
               </div>
             )}
-            <LiveChecks state={state} agent={agentName} />
+            <LiveChecks state={state} agent={agentName} now={now} seenAt={preview?.seenAt} />
             {w.calls === 0 && w.stage === 'observe' && !quiet && !isSample && <p className={v.text}>{RUN_NOW}</p>}
-            {showTips && <NothingHappening provider={provider} onChangeKey={onChangeKey} />}
+            {showTips && <NothingHappening provider={provider} />}
           </>}
 
           {state && w && phase === 'results' && <>
             <h2 className={s.srOnly}>Results</h2>
             {setup && setupAlways && <div className={`${v.stack} ${v.setup}`}>{setup}</div>}
-            <ReportView state={state} checked={fmtWhen(w.startedAt, now)} calls={w.calls} focus={focusReport}
+            <ReportView state={state} checked={whenWords(w.startedAt, now)} calls={w.calls} focus={focusReport} limits={limits}
               onAgain={isSample ? undefined : () => void act('start')} busy={busy} sample={sample}
               practice={practice} now={now} onUseNewer={practice.newer ? () => setPicked(practice.newer) : undefined} onPractice={onPractice} />
           </>}
@@ -353,8 +382,32 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   );
 }
 
+/** "today at 10:54 am", else the date: when the check ran (mockup Rev 3). */
+export const whenWords = (iso: string, now: number) => {
+  const today = fmtWhen(iso, now);
+  return today === fmtTime(iso) ? `today at ${today}` : today;
+};
+
+/** What the Sandbox's rules act at, for "Your rule": the spend cap's amount ("$0.02 a run"). */
+export function rowLimits(rules: GovernanceRule[]): RowLimits {
+  const cap = rules.find((r) => r.ruleType === 'spend_cap' && r.mode !== 'off');
+  if (!cap) return {};
+  const scope = (cap.params as { scope?: string }).scope;
+  return { spend_cap: `${ruleSentence(cap).val}${scope ? ` a ${scope}` : ''}` };
+}
+
 /** The step the checks card is on: waiting for a call, checking, or the report. */
 export type CheckPhase = 'waiting' | 'checking' | 'results';
+
+/** Each fix as a next step, in a few words (mockup Rev 3: "Add a back-off to your agent’s retries, then check again."). */
+const NEXT_SHORT: Record<string, string> = {
+  '02': 'Let your agent carry on after a hand-over, then check again.',
+  '03': 'Add a back-off to your agent’s retries, then check again.',
+  '04': 'Make your agent stop when a call is blocked, then check again.',
+  '05': 'Stop your agent repeating the same call, then check again.',
+  '06': 'Switch to an allowed model or change the request when refused, then check again.',
+  '07': 'Let your agent wait out a pause and a stop, then check again.',
+};
 
 const nextKey = (x: NextStep) => (x.kind === 'fix' ? `fix-${x.num}` : x.kind);
 
@@ -362,7 +415,7 @@ const nextKey = (x: NextStep) => (x.kind === 'fix' ? `fix-${x.num}` : x.kind);
 function NextLine({ step, href, onPractice }: { step: NextStep; href: string; onPractice?: (profile?: PracticeProfile) => void }) {
   switch (step.kind) {
     case 'again': return <>Run your agent again, with a longer task, so the live checks can run.</>;
-    case 'fix': return <>{step.text} Then check again.</>;
+    case 'fix': return <>{NEXT_SHORT[step.num] ?? `${step.text} Then check again.`}</>;
     case 'practice': return <><PracticeLink href={href} onPractice={onPractice && (() => onPractice())} /> for {step.rows}. A few minutes.</>;
     case 'live': return <>Ready for live traffic. Point your agent at WhiteRoom from <Link href={ROUTES.fleetKey} className="wr-link">Fleet key</Link>.</>;
     case 'deep': return <>Want more? Run the <PracticeLink href={href} onPractice={onPractice && (() => onPractice('deep'))}>Deep test</PracticeLink> for 02’s long-task result.</>;
@@ -405,7 +458,7 @@ export async function copyText(text: string): Promise<boolean> {
  * place. Copy summary puts the same on the clipboard as plain text, with
  * keys, URLs and IDs hidden.
  */
-export function ReportView({ state, checked, calls, onAgain, busy = false, focus = false, sample, practice = NO_PRACTICE, now, onUseNewer, onPractice }: {
+export function ReportView({ state, checked, calls, onAgain, busy = false, focus = false, sample, practice = NO_PRACTICE, now, onUseNewer, onPractice, limits = {} }: {
   state: CheckState; checked: string; calls: number;
   /** Practice tasks for this report (eight checks §6): bound results fill rows 01, 08 and the rest of 03. */
   practice?: PracticeView;
@@ -415,6 +468,8 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
   onUseNewer?: () => void;
   /** Run practice tasks in the page (none: links go to the practice page). */
   onPractice?: (profile?: PracticeProfile) => void;
+  /** What each rule acts at, by type, for "Your rule". */
+  limits?: RowLimits;
   /** The sample agent's report: a note on its flaw, and Check your own agent as the next step. */
   sample?: SampleActions;
   /** Check again; none hides the button. */
@@ -443,7 +498,7 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
   const few = tooFewCalls(state) ? tooFewNote(calls) : null;
   const agent = state.window?.agentId ?? null;
   // Only another agent's practice run: the practice rows say whose run they still wait for.
-  const base = sandboxRows(state, practice.bound ?? undefined);
+  const base = sandboxRows(state, practice.bound ?? undefined, limits);
   const rows = practice.other && agent ? notRunFor(base, agent) : base;
   const head = rowsHeadline(rows);
   const href = practiceHref(agent);
@@ -464,6 +519,14 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
       <p className={v.text}>{[head.sub, state.window?.agentId, callsText(calls), when].filter(Boolean).join(' · ')}</p>
     </div>
     {few && <p className={v.text} data-few>{few}</p>}
+    {/* A practice test of this agent on its way (it fills the rows once it finishes). */}
+    {practice.running && !sample && (
+      <div className={v.ptRunning} role="status">
+        <span className={v.pulse} aria-hidden="true" />
+        <span>Practice tasks running · {Math.min(practice.running.done + 1, practice.running.total)} of {practice.running.total}</span>
+        {onPractice && <button type="button" className={v.linkButton} onClick={() => onPractice()}>Open</button>}
+      </div>
+    )}
     {/* A newer run never replaces the bound one without asking (§6). */}
     {practice.newer && onUseNewer && (
       <div className={v.notice}>
@@ -505,9 +568,10 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
   </>;
 }
 
-const ROW_MARK: Record<SandboxRow['state'], { icon: IconName; cls: string }> = {
-  passed: { icon: 'check', cls: 'rowOk' }, partly: { icon: 'check', cls: 'rowOk' }, failed: { icon: 'x', cls: 'rowFail' },
-  not_checked: { icon: 'dash', cls: 'rowSkip' }, not_run_yet: { icon: 'dash', cls: 'rowSkip' }, not_set_up: { icon: 'dash', cls: 'rowSkip' },
+/** Each row's mark, bold (mockup Rev 3): ✓ passed or partly, ✕ didn't pass, – the rest. */
+const ROW_MARK: Record<SandboxRow['state'], { text: string; cls: string }> = {
+  passed: { text: '✓', cls: 'dOk' }, partly: { text: '✓', cls: 'dOk' }, failed: { text: '✕', cls: 'dBad' },
+  not_checked: { text: '–', cls: 'dSkip' }, not_run_yet: { text: '–', cls: 'dSkip' }, not_set_up: { text: '–', cls: 'dSkip' },
 };
 
 /** One of the eight rows: its number, mark and name, then its one line or its parts, a failure's fix in place, and a note. */
@@ -516,7 +580,7 @@ function RowLine({ row, sample, href, onPractice }: { row: SandboxRow; sample: b
   return (
     <li className={v.row} data-row={row.num} data-state={row.state}>
       <span className={v.rowNum}>{row.num}</span>
-      <span className={v[mark.cls]} aria-hidden="true"><Icon name={mark.icon} size={13} /></span>
+      <span className={`${v[mark.cls]} ${v.rowMark}`} aria-hidden="true">{mark.text}</span>
       <div className={v.rowBody}>
         <strong>{row.name}.</strong>{' '}
         {row.state !== 'partly' && <span className={s.srOnly}>{STATE_WORDS[row.state]}: </span>}
@@ -533,7 +597,7 @@ function RowLine({ row, sample, href, onPractice }: { row: SandboxRow; sample: b
             ))}
           </dl>
         )}
-        {row.note && <span className={v.rowNote}>{row.note}{row.noteLinksPractice && !sample && <> <PracticeLink href={href} onPractice={onPractice && (() => onPractice('deep'))} /></>}</span>}
+        {row.note && <span className={v.rowNote}>{row.note}</span>}
         {row.fix && (
           <dl className={`${v.cardFacts} ${v.rowFix}`}>
             <dt>What happened</dt><dd>{row.fix.happened}</dd>
@@ -543,6 +607,21 @@ function RowLine({ row, sample, href, onPractice }: { row: SandboxRow; sample: b
       </div>
     </li>
   );
+}
+
+/**
+ * "about 20 s left": the average time of the tests this page saw finish, times
+ * the tests still to go, less the time since the last one. Null until one
+ * test's time is known.
+ */
+export function timeLeft(seenAt: (number | null)[], startedAt: number | null, total: number, now: number): string | null {
+  const times = seenAt.map((at, i) => { const from = i === 0 ? startedAt : seenAt[i - 1]; return at !== null && from !== null && from !== undefined ? at - from : null; });
+  const known = times.filter((x): x is number => x !== null && x > 0);
+  const last = seenAt[seenAt.length - 1];
+  if (!known.length || last === null || last === undefined || seenAt.length >= total) return null;
+  const s = Math.round(((known.reduce((a, b) => a + b, 0) / known.length) * (total - seenAt.length) - (now - last)) / 1000);
+  if (s <= 5) return 'a few seconds left';
+  return s < 90 ? `about ${Math.round(s / 5) * 5} s left` : `about ${Math.round(s / 60)} min left`;
 }
 
 /** Checks decided so far, of the scored six. */
@@ -559,10 +638,28 @@ const markOf = (status: CheckStatus) => (status === 'passed' ? { text: '✓', tr
  * uses one, and other agents that called (not checked). Rows 01 and 08 are
  * practice tasks: the What we check card says so.
  */
-export function LiveChecks({ state, agent = 'your agent' }: { state: CheckState; agent?: string }) {
+export function LiveChecks({ state, agent = 'your agent', now: clock = Date.now(), seenAt: shown }: {
+  state: CheckState; agent?: string;
+  /** For the time left. */
+  now?: number;
+  /** /dev/sandbox-v2: when each decided test was seen to finish (ms; null: before the page opened). */
+  seenAt?: (number | null)[];
+}) {
   const current = currentCheckOf(state);
   const tests = LIVE_TRACK.map((t) => ({ ...t, name: liveRowName(t.num), result: state.checks.find((c) => c.id === t.check)! }));
   const done = tests.filter((t) => t.result.status !== 'pending');
+  // When each test was seen to finish, for "about N s left": from what this page saw only (the engine sends no timing).
+  const [seenAt, setSeenAt] = useState<(number | null)[]>(shown ?? []);
+  const windowId = state.window?.id ?? null;
+  const lastWindow = useRef<string | null>(shown ? windowId : null);
+  useEffect(() => {
+    if (shown || !windowId) return;
+    setSeenAt((was) => {
+      if (lastWindow.current !== windowId) { lastWindow.current = windowId; return Array.from({ length: done.length }, () => null); }
+      return was.length >= done.length ? was : [...was, ...Array.from({ length: done.length - was.length }, () => Date.now())];
+    });
+  }, [shown, windowId, done.length]);
+  const left = timeLeft(seenAt, state.window ? Date.parse(state.window.startedAt) : null, tests.length, clock);
   const now = tests.find((t) => t.check === current);
   const at = now ? done.length + 1 : done.length;
   const testBlock = state.parts?.find((p) => p.id === 'test_block');
@@ -571,6 +668,7 @@ export function LiveChecks({ state, agent = 'your agent' }: { state: CheckState;
   return <>
     <p className={v.prog} role="progressbar" aria-label="Tests done" aria-valuemin={0} aria-valuemax={tests.length} aria-valuenow={done.length} aria-valuetext={`${done.length} of ${tests.length} tests done`}>
       <span><b>{at} of {tests.length} tests</b>{now ? ` · ${now.num} ${now.name}` : ''}</span>
+      {left !== null && <span>{left}</span>}
     </p>
     {/* A list, so each test's label and result reach screen readers (a progressbar's children don't). */}
     <ol className={v.track} aria-label="Live tests">
@@ -617,9 +715,8 @@ export function LiveChecks({ state, agent = 'your agent' }: { state: CheckState;
   </>;
 }
 
-/** No call yet: the usual fixes, with this Sandbox's provider and setting (mockup Rev 3 "2 · Waiting"). */
-export function NothingHappening({ provider, onChangeKey }: { provider: string; onChangeKey?: () => void }) {
-  const name = providerLabel(provider);
+/** No call yet: the usual fixes, with this Sandbox's setting (mockup Rev 3 "2 · Waiting"). */
+export function NothingHappening({ provider }: { provider: string }) {
   const setting = sandboxSetting(provider, 'https://proxy.whiteroom.tech').name;
   return (
     <div className={v.tipsBlock}>
@@ -627,10 +724,7 @@ export function NothingHappening({ provider, onChangeKey }: { provider: string; 
       <ol className={v.tips}>
         <li>Restart your agent after changing .env.</li>
         <li>Check it reads <code>{setting}</code>, or pass the URL as <code>base_url</code>.</li>
-        <li>
-          Check it calls {name}. This Sandbox is set up for {/^[AEIOU]/i.test(name) ? 'an' : 'a'} {name} key.
-          {onChangeKey && <> <button type="button" className={v.linkButton} onClick={onChangeKey}>Change key</button></>}
-        </li>
+        <li>Check it sends a name: an <code>x-whiteroom-agent</code> header or a system prompt.</li>
       </ol>
     </div>
   );

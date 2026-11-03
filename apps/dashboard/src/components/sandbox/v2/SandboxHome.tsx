@@ -4,10 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Banner, Button, Icon, SkeletonCard } from '@whiteroom/ui';
 import { PageHeader } from '@/components/citadel/PageChrome';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
-import { CopyChip, useCopy } from '@/components/citadel/CopyChip';
+import { useCopy } from '@/components/citadel/CopyChip';
 import { analytics } from '@/lib/analytics';
-import { AgentNaming } from '@/components/citadel/AgentNaming';
-import { agentNamingFor } from '@/lib/provider-key-form';
 import {
   connectSandboxFleet, getSandboxFleetStatus, isUnavailable, outsideWindowText, sandboxSetting,
   resetSandboxFleet, rotateSandboxFleetKey, SAMPLE_REFUSALS, SandboxFleetError, startSandboxSample,
@@ -104,7 +102,14 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
     analytics.capture('sandbox_practice_opened', { profile });
     requestAnimationFrame(() => window.scrollTo?.({ top: 0 }));
   }, []);
-  const practiceDone = useCallback((runId: string) => { setPracticeRun(runId); setPractice(null); }, []);
+  /** Back on the report: its heading gets focus, where the page was before practice tasks opened. */
+  const focusReport = useCallback(() => requestAnimationFrame(() => {
+    // The verdict when there's a report, else the step card's heading.
+    const head = document.querySelector<HTMLElement>(`#${STEP_CARD_ID} h3[data-tone]`) ?? document.querySelector<HTMLElement>(`#${STEP_CARD_ID} h2`);
+    if (head) { if (!head.hasAttribute('tabindex')) head.tabIndex = -1; head.focus(); }
+  }), []);
+  const backToReport = useCallback(() => { setPractice(null); focusReport(); }, [focusReport]);
+  const practiceDone = useCallback((runId: string) => { setPracticeRun(runId); setPractice(null); focusReport(); }, [focusReport]);
   // A URL got from Get a new Sandbox URL on this page: it shows above the check or report too, so it's seen before the page is left.
   const [rotatedHere, setRotatedHere] = useState(false);
   // When a key was connected on this page (for the first-call event).
@@ -362,7 +367,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
             <div className={v.mainCol}>
               <SandboxPractice key={`practice-${practice.profile}`} fleet={fleet} agent={(checks ?? preview?.checks?.state)?.window?.agentId ?? null} provider={connected.key!.provider}
                 sandboxKey={connected.key!.prefix.replace(/\.+$/, '')} initialProfile={practice.profile} preview={preview?.practice && { now: preview.now, ...preview.practice }}
-                onBack={() => setPractice(null)} onFinished={practiceDone} />
+                onBack={backToReport} onFinished={practiceDone} />
             </div>
             <aside className={v.rcol} aria-label="About your Sandbox">
               <PracticeCoversCard />
@@ -371,7 +376,9 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
           </div>
         )}
 
-        {connected && !replacing && !(practice && !sample) && (
+        {/* The report stays mounted under the practice card (no reload or lost place on Back to results). */}
+        {connected && !replacing && (
+          <div hidden={!!practice && !sample}>
           <SandboxChecks
             key={`checks-${connected.sandboxFleetId}-${resets}`}
             fleet={fleet}
@@ -381,7 +388,6 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
             onState={setChecks}
             setupAlways={!sample && !!issued && rotatedHere}
             provider={connected.key!.provider}
-            onChangeKey={() => setReplacing(true)}
             // WhiteRoom runs the sample: nothing to set up, and its report leads to your own key.
             sample={sample ? { onOwnKey: () => setReplacing(true), onAgain: sampleAgain, busy: sampleBusy, refusal: sampleRefusal?.message } : undefined}
             setup={sample ? undefined : issued
@@ -390,6 +396,8 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
             aside={aside}
             onPractice={onPractice}
             practiceRun={practiceRun}
+            practiceOpen={!!practice}
+            rules={rules.state?.rules ?? []}
             below={<>
               {/* In the open: it says the agent ran with nothing checked or blocked. */}
               {outside && <Banner variant="warn">{outside}</Banner>}
@@ -405,6 +413,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
               />
             </>}
           />
+          </div>
         )}
       </div>
     </main>
@@ -437,12 +446,11 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
  * starts open beside the step; stacked under it, it starts closed.
  */
 export const TWO_COLUMNS_PX = 860;
-/** The sidebar and the page's padding beside the Sandbox column, for the first guess before it's measured. */
-const PAGE_CHROME_PX = 300;
 function useWide(ref: React.RefObject<HTMLElement | null>): boolean {
   // A first guess from the window (a phone starts closed, not open then closed), then the page's own width.
   // The page is the window less the sidebar and page padding (about 300 px), so the guess uses the same 860 px threshold.
-  const [wide, setWide] = useState(() => typeof window === 'undefined' || window.innerWidth - PAGE_CHROME_PX > TWO_COLUMNS_PX);
+  // Closed until measured: a phone never shows What we check open, then closed.
+  const [wide, setWide] = useState(false);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -487,18 +495,6 @@ export function RunSetup({ issued, onCopied }: { issued: IssuedSandboxKey; onCop
       <Button size={32} variant="primary" onClick={() => void copy()} aria-label="Copy the setting">{copied ? 'Copied' : 'Copy'}</Button>
     </div>
     <p className={v.copiedLine} aria-live="polite">{done ? <><Icon name="check" size={13} /> Copied. Now run your agent.</> : null}</p>
-    <p className={v.text}>
-      Your agent keeps its own API key{issued.keyHint ? <> (ending {issued.keyHint})</> : null}. This URL is shown only on this visit; you can get a new one any time.
-    </p>
-    <details className={v.members}>
-      <summary>Not using a .env file?</summary>
-      <div className={`${v.stack} ${v.reveal}`}>
-        <p className={v.text}>Set the Sandbox URL wherever your agent reads its settings, or pass it as the client’s base URL.</p>
-        <CopyChip text={setting.value} label="Copy the Sandbox URL" />
-        <CopyChip text={issued.proxyKey} label="Copy the Sandbox key" />
-        <AgentNaming {...agentNamingFor(issued.provider)} />
-      </div>
-    </details>
   </>;
 }
 

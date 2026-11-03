@@ -88,15 +88,20 @@ export const BETA_INSTALL = CLI_ON_NPM ? [] : [`shasum -a 256 ${BETA_TGZ}`, `npm
  * as a hidden paste failed in practice. The code works once and expires in
  * 30 minutes, so its copy in shell history is spent.
  */
-export function cliCommands(sample: boolean, lang: StarterLang, provider: PracticeProvider | null = null, code: string | null = null): { starter: string | null; run: string } {
+export function cliCommands(sample: boolean, lang: StarterLang, provider: PracticeProvider | null = null, code: string | null = null, adapter: string | null = null): { starter: string | null; run: string } {
   const keyEnv = provider ? ` --key-env ${CATALOG.providers[provider].keyVar}` : '';
   const pipe = code ? `echo ${code} | ` : '';
   const stdin = code ? ' --code-stdin' : '';
+  // The adapter is one shell word, single-quoted, whatever the command holds (the owner's own, or a starter's).
+  const run = shellQuote((adapter ?? STARTER_RUN[lang]).trim());
   return {
     starter: sample ? null : `${CLI} practice adapter --lang ${lang} > ${STARTER_FILE[lang]}`,
-    run: sample ? `${pipe}${CLI} practice run${stdin}${keyEnv}` : `${pipe}${CLI} practice run --adapter "${STARTER_RUN[lang]}"${stdin}${keyEnv}`,
+    run: sample ? `${pipe}${CLI} practice run${stdin}${keyEnv}` : `${pipe}${CLI} practice run --adapter ${run}${stdin}${keyEnv}`,
   };
 }
+
+/** One shell word, single-quoted: nothing inside is expanded. */
+export const shellQuote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
 /** Sets a key in the terminal without showing it or keeping it in shell history: paste once, then Enter. */
 export const setKeyCommand = (keyVar: string) => `read -s ${keyVar} && export ${keyVar}`;

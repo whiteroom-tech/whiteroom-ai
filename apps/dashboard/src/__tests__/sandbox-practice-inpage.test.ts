@@ -17,7 +17,7 @@ const { SandboxHome } = await import('@/components/sandbox/v2/SandboxHome');
 const { SandboxPractice } = await import('@/components/sandbox/v2/SandboxPractice');
 const { ReportView, SandboxChecks } = await import('@/components/sandbox/v2/SandboxChecks');
 const { SANDBOX_V2_STATES } = await import('@/app/dev/sandbox-v2/states');
-const { otherRunLine, practiceCommand, practiceRefusal, practiceTaskLines, shellQuote } = await import('@/lib/sandbox/sandbox-practice');
+const { endedWords, leftWords, otherRunLine, practiceCommand, practiceRefusal, practiceTaskLines, shellQuote, taskTimes } = await import('@/lib/sandbox/sandbox-practice');
 const { PracticeError } = await import('@/lib/sandbox/practice/api');
 const { notRunFor, rowsSummary, sandboxRows } = await import('@/lib/sandbox/sandbox-rows');
 const { checkStateOf, CHECK_IDS } = await import('@/lib/sandbox/checks');
@@ -33,7 +33,7 @@ const click = async (name: string) => { await act(async () => { button(name)!.cl
 
 const run = (over: Record<string, unknown> = {}) => ({
   id: RUN, lifecycle: 'draft', verdict: null, endReason: null, sourceFleetId: 'prod-eu', agentId: 'support-bot', sample: false, runs: 1, scope: null,
-  provider: 'anthropic', proxyKeyDisplayPrefix: 'sk-wr-0123456789abcdef', keyHint: 'AbCd', createdAt: '2026-10-29T14:00:00.000Z', startedAt: null, endedAt: null,
+  provider: 'anthropic', proxyKeyDisplayPrefix: 'sk-wr-0000000000000000', keyHint: 'AbCd', createdAt: '2026-10-29T14:00:00.000Z', startedAt: null, endedAt: null,
   codeExpiresAt: '2026-10-29T14:30:00.000Z', codeTriesLeft: 5, progress: null, profile: 'quick', origin: 'sandbox', plan: null, ...over,
 });
 let served: Record<string, unknown>;
@@ -45,6 +45,8 @@ let runRead: (() => Response) | null;
 /** The Sandbox's checks: support-bot's live check, ended. */
 const checksAnswer = { success: true, window: { id: 'chk_1', startedAt: '2026-10-29T14:00:00.000Z', endedAt: '2026-10-29T14:06:00.000Z', stage: 'done', injectErrors: true, calls: 20, agentId: 'support-bot' }, checks: [], rules: [] };
 const RUN2 = 'r-00000000-0000-4000-8000-0000000000bb';
+/** A new code for the same test (POST /:id/code). */
+const CODE2 = 'wrrt_placeholder-second-code-for-tests-only-111111111';
 const fetchMock = vi.fn();
 const posts = () => fetchMock.mock.calls.filter(([, i]) => (i as RequestInit | undefined)?.method === 'POST').map(([u, i]) => ({ url: String(u), body: JSON.parse(String((i as RequestInit).body)) }));
 
@@ -62,6 +64,7 @@ beforeEach(() => {
     const m = u.match(/^\/api\/sandbox\/practice\/(r-[0-9a-f-]+)(\/[a-z]+)?/);
     if (m && m[2] === '/end') { served = { ...served, lifecycle: 'cancelled' }; return Response.json({ lifecycle: 'cancelled' }); }
     if (m && m[2] === '/report') return report ? report() : Response.json({ error: 'none' }, { status: 404 });
+    if (m && m[2] === '/code') return Response.json({ code: CODE2, codeExpiresAt: '2026-10-29T15:00:00.000Z' });
     if (m) return runRead ? runRead() : Response.json({ ...served, id: m[1] });
     if (init?.method === 'POST') return Response.json({ success: true });
     return Response.json({ runs: listed });
@@ -75,19 +78,37 @@ afterEach(() => { act(() => root.unmount()); document.body.innerHTML = ''; vi.un
 
 describe('the line to paste', () => {
   it('pins the CLI, takes the code on stdin, quotes the adapter as one argument, and names the key', () => {
-    expect(practiceCommand({ code: CODE, adapter: 'python3 wr_adapter.py', keyVar: 'ANTHROPIC_API_KEY' }))
+    expect(practiceCommand({ code: CODE, adapter: 'python3 wr_adapter.py', provider: 'anthropic' }))
       .toBe(`echo ${CODE} | npx @whiteroom-ai/cli@${CLI_VERSION} practice run --adapter 'python3 wr_adapter.py' --code-stdin --key-env ANTHROPIC_API_KEY`);
     // The sample agent: no adapter. No code yet: dots.
-    expect(practiceCommand({ code: null, adapter: null, keyVar: 'OPENAI_API_KEY' })).toBe(`echo wrrt_••••••• | npx @whiteroom-ai/cli@${CLI_VERSION} practice run --code-stdin --key-env OPENAI_API_KEY`);
+    expect(practiceCommand({ code: null, adapter: null, provider: 'openai' })).toBe(`echo wrrt_••••••• | npx @whiteroom-ai/cli@${CLI_VERSION} practice run --code-stdin --key-env OPENAI_API_KEY`);
     // Whatever the command holds stays one shell word.
     expect(shellQuote(`node a.mjs --name 'x'; rm -rf /`)).toBe(`'node a.mjs --name '\\''x'\\''; rm -rf /'`);
   });
 
-  it('refusals are said plainly; a changed key offers a new code', () => {
-    expect(practiceRefusal(new PracticeError('x', 429, 'busy')).message).toBe('Busy, try again in a minute.');
-    expect(practiceRefusal(new PracticeError('x', 429, 'starts_today')).message).toBe('You can start more tomorrow.');
+  it('refusals use the engine’s own words, as on the practice page; a changed key offers a new code; an open test offers itself', () => {
+    expect(practiceRefusal(new PracticeError('You can start more tomorrow (00:00 UTC).', 429, 'starts_today')).message).toBe('You can start more tomorrow (00:00 UTC).');
     expect(practiceRefusal(new PracticeError('x', 409, 'sandbox_changed'))).toEqual({ message: 'Your Sandbox key changed since this code was made.', newCode: true });
+    expect(practiceRefusal(new PracticeError('You already have a practice test open.', 429, 'owner_busy', { run: { id: RUN, lifecycle: 'active' } })))
+      .toEqual({ message: 'You already have a practice test open.', openRun: { id: RUN, lifecycle: 'active' } });
+    expect(practiceRefusal(new PracticeError('x', 429, 'owner_busy', { run: { lifecycle: 'active', otherFleet: true } })).message)
+      .toBe('You already have a practice test open on another fleet. Finish or end it there, then start this one.');
     expect(practiceRefusal(new Error('offline')).message).toMatch(/Check your connection/);
+  });
+
+  it('a test that ended without finishing is said plainly: expired, cancelled, interrupted', () => {
+    expect(endedWords({ lifecycle: 'cancelled', endReason: 'code_expired', startedAt: null, sample: false }).message).toBe('The code expired. Get a new code.');
+    expect(endedWords({ lifecycle: 'interrupted', endReason: 'lost_contact', startedAt: 'x', sample: false }).message).toBe('The test was interrupted. Run it again.');
+    expect(endedWords({ lifecycle: 'cancelled', endReason: 'ended_by_owner', startedAt: 'x', sample: false }).message).toBe('The practice tasks ended before they finished.');
+  });
+
+  it('times and the estimate come from tasks the page saw finish', () => {
+    const t0 = 1_000_000;
+    // Task 1 seen 32 s after the start, 18 s ago: 3 to go at 32 s each, less the 18 s the next has had.
+    expect(taskTimes([t0 + 32_000], t0, 4, t0 + 50_000)).toEqual({ seconds: [32], left: 78 });
+    expect(leftWords(78)).toBe('about 1 min left');
+    // Done before the card opened: no time, no estimate.
+    expect(taskTimes([null], t0, 4, t0 + 50_000)).toEqual({ seconds: [null], left: null });
   });
 
   it('progress names each task by the row it checks, in the settled plan’s order', () => {
@@ -103,6 +124,12 @@ describe('the line to paste', () => {
       { id: 'a.result', status: 'passed', summary: '' }, { id: 'c.timeout', status: 'passed', summary: '' }, { id: 'c.keeps_failing', status: 'passed', summary: '' },
       { id: 'd.injection', status: 'failed', summary: 'Sent the file when the email asked' },
     ])).toBe('01 ✓ · 03 ✓ · 08 ✕ Sent the file when the email asked');
+    // ✓ only when every check in the row passed: one not checked (or a test problem) reads –.
+    expect(otherRunLine([
+      { id: 'a.result', status: 'passed', summary: '' },
+      { id: 'c.timeout', status: 'passed', summary: '' }, { id: 'c.keeps_failing', status: 'not_checked' as never, summary: '' },
+      { id: 'd.injection', status: 'error' as never, summary: '' },
+    ])).toBe('01 ✓ · 03 – · 08 –');
   });
 });
 
@@ -127,7 +154,7 @@ describe('the report’s words', () => {
 
 describe('practice tasks in the page', () => {
   const card = (over: Partial<Parameters<typeof SandboxPractice>[0]> = {}) => h(SandboxPractice, {
-    fleet: 'prod-eu', agent: 'support-bot', provider: 'anthropic', sandboxKey: 'sk-wr-0123456789abcdef', onBack: vi.fn(), onFinished: vi.fn(), ...over,
+    fleet: 'prod-eu', agent: 'support-bot', provider: 'anthropic', sandboxKey: 'sk-wr-0000000000000000', onBack: vi.fn(), onFinished: vi.fn(), ...over,
   });
 
   it('Run practice tasks on the report opens them in place, on Results; Back to results goes back', async () => {
@@ -137,10 +164,15 @@ describe('practice tasks in the page', () => {
     expect(document.querySelector('section[aria-label="Practice tasks"]')).not.toBeNull();
     expect(document.querySelector('[aria-current="step"]')?.textContent).toBe('3Results');
     expect(document.querySelector('section[aria-label="What practice tasks check"]')).not.toBeNull();
-    expect(document.getElementById('sandbox-step')).toBeNull();
+    // The report stays mounted, hidden, under the practice card.
+    expect(document.getElementById('sandbox-step')?.closest('[hidden]')).not.toBeNull();
     expect(capture).toHaveBeenCalledWith('sandbox_practice_opened', { profile: 'quick' });
     await click('Back to results');
+    expect(document.getElementById('sandbox-step')?.closest('[hidden]')).toBeNull();
     expect(document.getElementById('sandbox-step')?.getAttribute('aria-label')).toBe('Results');
+    // Focus back on the report's verdict.
+    await act(async () => { await new Promise((r) => requestAnimationFrame(() => r(null))); });
+    expect(document.activeElement?.tagName).toBe('H3');
   });
 
   it('Get the command starts from the Sandbox as the report’s agent, quick, and shows the line with the code and quoted adapter', async () => {
@@ -181,41 +213,122 @@ describe('practice tasks in the page', () => {
     expect(text()).toContain(`echo ${CODE} |`);
   });
 
-  it('a refused new code takes the ended draft’s code off the screen', async () => {
+  it('the same choices reuse the draft: Get a new code asks for a code, not a start', async () => {
     await act(async () => { root.render(card()); });
     await flush();
     await click('Get the command');
-    expect(text()).toContain(`echo ${CODE} |`);
-    startAnswer = () => Response.json({ error: 'Busy', reason: 'busy' }, { status: 429 });
+    expect(posts().filter((p) => p.url.endsWith('/start'))).toHaveLength(1);
     await click('Get a new code');
+    expect(posts().filter((p) => p.url.endsWith('/start'))).toHaveLength(1);
+    expect(posts().some((p) => p.url.endsWith(`${RUN}/code`))).toBe(true);
+    expect(text()).toContain(`echo ${CODE2} |`);
+  });
+
+  it('typing the adapter never starts a test: the line changes, the code stays', async () => {
+    await act(async () => { root.render(card()); });
+    await flush();
+    await click('Get the command');
+    const input = document.getElementById('sbx-pt-adapter') as HTMLInputElement;
+    for (const v of ['n', 'no', 'node a.mjs']) {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, v);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    }
+    expect(posts().filter((p) => p.url.endsWith('/start'))).toHaveLength(1);
+    expect(text()).toContain(`echo ${CODE} | npx @whiteroom-ai/cli@${CLI_VERSION} practice run --adapter 'node a.mjs'`);
+  });
+
+  it('a draft from before (Back to results and back) gets a fresh code at once, no start spent', async () => {
+    listed = [{ id: RUN, lifecycle: 'draft', agentId: 'support-bot', sample: false, createdAt: '', endedAt: null }];
+    await act(async () => { root.render(card()); });
+    await flush();
+    expect(posts().filter((p) => p.url.endsWith('/start'))).toHaveLength(0);
+    expect(text()).toContain(`echo ${CODE2} |`);
+    expect(button('Copy')).toBeDefined();
+  });
+
+  it('changing how thorough after a code ends that draft; a refused start leaves no dead code to copy', async () => {
+    await act(async () => { root.render(card()); });
+    await flush();
+    await click('Get the command');
+    await click('Deep (longer)');
+    startAnswer = () => Response.json({ error: 'Busy', reason: 'busy' }, { status: 429 });
+    await click('Get the command');
     expect(posts().some((p) => p.url.endsWith(`${RUN}/end`))).toBe(true);
-    expect(text()).toContain('Busy, try again in a minute.');
+    expect(text()).toContain('Busy');
     expect(text()).not.toContain(CODE);
     expect(button('Copy')).toBeUndefined();
     expect(text()).not.toContain('Waiting for your terminal');
   });
 
-  it('Deep starts a deep test; changing a choice after a code was made asks for a new one', async () => {
+  it('Deep starts a deep test of 3 runs (mockup Rev 3); Quick again needs a new code', async () => {
+    startAnswer = () => { served = run({ profile: 'deep', runs: 3 }); return Response.json({ runId: RUN, code: CODE, codeExpiresAt: '2026-10-29T14:30:00.000Z' }); };
     await act(async () => { root.render(card()); });
     await flush();
     await click('Deep (longer)');
-    expect(text()).toContain('Adds 02’s long-task result.');
+    expect(text()).toContain('Adds 02’s long-task result, and runs each task 3 times. Takes longer.');
     await click('Get the command');
-    expect(posts().find((p) => p.url.endsWith('/start'))?.body).toMatchObject({ profile: 'deep' });
+    expect(posts().find((p) => p.url.endsWith('/start'))?.body).toMatchObject({ profile: 'deep', runs: 3 });
     expect(text()).toContain(CODE);
     await click('Quick');
     expect(text()).not.toContain(CODE);
     expect(button('Get the command')).toBeDefined();
   });
 
-  it('a busy refusal says so', async () => {
+  it('a cloud key: the model goes with Start (the engine needs it), prefilled from the agent’s latest call', async () => {
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => (String(url).includes('/source-model')
+      ? Response.json({ model: 'my-gpt-4o-mini', provider: 'unknown', directKey: true, blocked: null, providerKeys: [], controls: null })
+      : base(url, init)));
+    await act(async () => { root.render(card({ provider: 'azure-openai' })); });
+    await flush();
+    expect((document.getElementById('sbx-pt-model') as HTMLInputElement).value).toBe('my-gpt-4o-mini');
+    await click('Get the command');
+    expect(posts().find((p) => p.url.endsWith('/start'))?.body).toMatchObject({ model: 'my-gpt-4o-mini', origin: 'sandbox' });
+  });
+
+  it('a cloud key with no known model: Get the command waits for one', async () => {
+    await act(async () => { root.render(card({ provider: 'bedrock-mantle' })); });
+    await flush();
+    expect(button('Get the command')!.disabled).toBe(true);
+    expect(text()).toContain('Enter the Bedrock model ID to start.');
+  });
+
+  it('a busy refusal says so, in the engine’s words', async () => {
     fetchMock.mockImplementation(async (url: string) => (String(url).endsWith('/start')
-      ? Response.json({ error: 'Busy', reason: 'busy' }, { status: 429 })
+      ? Response.json({ error: 'Busy right now. Try again in a minute.', reason: 'busy' }, { status: 429 })
       : Response.json(String(url).includes('capabilities') ? { profiles: ['quick'] } : { runs: [] })));
     await act(async () => { root.render(card()); });
     await flush();
     await click('Get the command');
-    expect(text()).toContain('Busy, try again in a minute.');
+    expect(text()).toContain('Busy right now. Try again in a minute.');
+  });
+
+  it('one open test already: Open it brings it into the card; End it ends it', async () => {
+    served = run({ lifecycle: 'active', startedAt: '2026-10-29T14:09:00.000Z', progress: { done: 0, total: 4, lastContactAt: '' } });
+    startAnswer = () => Response.json({ error: 'You already have a practice test open.', reason: 'owner_busy', run: { id: RUN, lifecycle: 'active' } }, { status: 429 });
+    await act(async () => { root.render(card()); });
+    await flush();
+    await click('Get the command');
+    expect(text()).toContain('You already have a practice test open.');
+    await click('Open it');
+    expect(text()).toContain('1 of 4 tasks');
+  });
+
+  it('I’ve run it looks now; not started yet says so', async () => {
+    await act(async () => { root.render(card()); });
+    await flush();
+    await click('Get the command');
+    await click('I’ve run it →');
+    expect(text()).toContain('Not started yet. Paste the line in your terminal, then try again.');
+  });
+
+  it('key changed: only the notice, no form or line to copy (mockup Rev 3)', async () => {
+    await act(async () => { root.render(card({ preview: { run: run({ proxyKeyDisplayPrefix: 'sk-wr-ffffffffffffffff' }) as never, code: null } })); });
+    expect(text()).toContain('Your Sandbox key changed since this code was made.');
+    expect(text()).not.toContain('Paste this in your terminal');
+    expect(document.getElementById('sbx-pt-adapter')).toBeNull();
   });
 
   it('while running: each task’s state; once your agent’s test ends, back to the report with that run', async () => {
@@ -252,14 +365,55 @@ describe('practice tasks in the page', () => {
   const active = (over: Record<string, unknown> = {}) => run({ lifecycle: 'active', startedAt: '2026-10-29T14:09:00.000Z', progress: { done: 1, total: 4, lastContactAt: '' }, plan: { tasks: ['D', 'A', 'C_timeout', 'C_fail'].map((scenario) => ({ scenario, runIndex: 0 })) }, ...over });
   const openRun = (r: Record<string, unknown>) => { served = r; listed = [{ id: RUN, lifecycle: r.lifecycle, agentId: r.agentId, sample: r.sample, createdAt: '', endedAt: null }]; };
 
-  it('End: ends your agent’s test and goes back to the report', async () => {
+  it('End: ends your agent’s test early; it isn’t bound to the report (it never finished), and a new code is offered', async () => {
     openRun(active());
     const onFinished = vi.fn();
     await act(async () => { root.render(card({ onFinished })); });
     await flush();
     await click('End');
     expect(posts().some((p) => p.url.endsWith(`${RUN}/end`))).toBe(true);
-    expect(onFinished).toHaveBeenCalledWith(RUN);
+    expect(onFinished).not.toHaveBeenCalled();
+    expect(text()).toContain('The practice tasks ended before they finished.');
+    expect(button('Get a new code')).toBeDefined();
+  });
+
+  it('a code that expires (or is cancelled elsewhere) while the card waits: said plainly, never bound, no result event', async () => {
+    vi.useFakeTimers();
+    openRun(run());
+    const onFinished = vi.fn();
+    await act(async () => { root.render(card({ onFinished })); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    capture.mockClear();
+    served = { ...served, lifecycle: 'cancelled', endReason: 'code_expired' };
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_100); });
+    expect(onFinished).not.toHaveBeenCalled();
+    expect(text()).toContain('The code expired. Get a new code.');
+    expect(capture.mock.calls.some(([n]) => n === 'practice_result')).toBe(false);
+    expect(button('Get a new code')).toBeDefined();
+  });
+
+  it('ending a sample run shows what it got done, in the card', async () => {
+    openRun(active({ sample: true, agentId: 'readiness-sample' }));
+    report = () => Response.json({ id: RUN, lifecycle: 'cancelled', verdict: null, detailsKeptUntil: null, summaryKeptUntil: null,
+      report: { verdict: 'failed', checks: [{ id: 'd.injection', label: 'Ignores a planted instruction', status: 'passed', summary: 'Passed 1 of 1 run.' }] } });
+    await act(async () => { root.render(card()); });
+    await flush();
+    await click('End');
+    expect(text()).toContain('Ignores a planted instruction. Passed 1 of 1 run.');
+  });
+
+  it('typing the adapter command keeps the code: the line updates, the code stays', async () => {
+    await act(async () => { root.render(card()); });
+    await flush();
+    await click('Get the command');
+    const input = document.getElementById('sbx-pt-adapter') as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'node wr-adapter.mjs');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(text()).toContain(`echo ${CODE} |`);
+    expect(text()).toContain(`--adapter 'node wr-adapter.mjs'`);
+    expect(button('Copy')).toBeDefined();
   });
 
   it('a finished sample run shows its result in the card, not in the report', async () => {
@@ -299,12 +453,12 @@ describe('practice tasks in the page', () => {
     expect(text()).toContain('Not your test.');
   });
 
-  it('row 02’s Deep-test note opens practice tasks on Deep', async () => {
-    await act(async () => { root.render(h(SandboxHome, { fleet: 'prod-eu', preview: SANDBOX_V2_STATES['checks-report-rows'] })); });
+  it('Next’s Deep test opens practice tasks on Deep', async () => {
+    await act(async () => { root.render(h(SandboxHome, { fleet: 'prod-eu', preview: SANDBOX_V2_STATES['checks-report-all8'] })); });
     await flush();
-    await act(async () => { (document.querySelector('li[data-row="02"] button') as HTMLButtonElement).click(); });
+    await act(async () => { ([...document.querySelectorAll('section[aria-label="Next"] button')].find((x) => x.textContent === 'Deep test') as HTMLButtonElement).click(); });
     await flush();
-    expect(document.querySelector('[aria-labelledby="sbx-pt-prof"] button[aria-pressed="true"]')?.textContent).toBe('Deep (longer)');
+    expect(document.querySelector('[role="radiogroup"][aria-label="How thorough?"] [aria-checked="true"]')?.textContent).toBe('Deep (longer)');
     expect(capture).toHaveBeenCalledWith('sandbox_practice_opened', { profile: 'deep' });
   });
 });
@@ -350,7 +504,7 @@ describe('the report after practice tasks', () => {
 describe('practice tasks and the page around them', () => {
   const SANDBOX = 'sandbox-00000000-0000-4000-8000-000000000000';
   const STATUS = { success: true, exists: true, sandboxFleetId: SANDBOX, createdAt: '2026-10-29T10:00:00.000Z', lastCallAt: null, expiresAt: '2026-11-12T10:00:00.000Z',
-    key: { prefix: 'sk-wr-0123456789abcdef...', provider: 'anthropic', keyHint: 'WXYZ' } };
+    key: { prefix: 'sk-wr-0000000000000000...', provider: 'anthropic', keyHint: 'WXYZ' } };
   const finished = (id: string, createdAt: string) => ({ id, lifecycle: 'finished', agentId: 'support-bot', sample: false, profile: 'quick', createdAt, endedAt: createdAt });
   const reportFor = (u: string) => Response.json({ id: u, lifecycle: 'finished', verdict: 'passed', detailsKeptUntil: null, summaryKeptUntil: null,
     report: { verdict: 'passed', checks: [{ id: 'd.injection', label: 'Ignores a planted instruction', status: 'passed', summary: u.includes(RUN2) ? 'Newer run.' : 'This run.' }] } });
@@ -401,5 +555,60 @@ describe('practice tasks and the page around them', () => {
     await act(async () => { (document.querySelector('aside details li details') as HTMLDetailsElement).open = true; });
     await act(async () => { ([...document.querySelectorAll('aside button')].find((b) => b.textContent === 'Run practice tasks') as HTMLButtonElement).click(); });
     expect(document.querySelector('section[aria-label="Practice tasks"]')).not.toBeNull();
+  });
+});
+
+describe('the report and the check, around practice tasks (final review)', () => {
+  it('a practice test of this agent still running shows on the report, and is read again until it finishes', async () => {
+    vi.useFakeTimers();
+    served = run({ lifecycle: 'active', startedAt: '2026-10-29T14:09:00.000Z', progress: { done: 1, total: 4, lastContactAt: '' } });
+    listed = [{ id: RUN, lifecycle: 'active', agentId: 'support-bot', sample: false, createdAt: '', endedAt: null }];
+    const onPractice = vi.fn();
+    await act(async () => { root.render(h(SandboxChecks, { fleet: 'prod-eu', sandboxFleetId: 'sandbox-00000000-0000-4000-8000-000000000000', onPractice })); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(text()).toContain('Practice tasks running · 2 of 4');
+    await act(async () => { button('Open')!.click(); });
+    expect(onPractice).toHaveBeenCalled();
+    const lists = () => fetchMock.mock.calls.filter(([u]) => String(u).startsWith('/api/sandbox/practice?')).length;
+    const before = lists();
+    served = { ...served, progress: { done: 3, total: 4, lastContactAt: '' } };
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_100); });
+    expect(lists()).toBeGreaterThan(before);
+    expect(text()).toContain('Practice tasks running · 4 of 4');
+  });
+
+  it('the running card reads progress at once on coming back to the tab', async () => {
+    vi.useFakeTimers();
+    served = run({ lifecycle: 'active', startedAt: '2026-10-29T14:09:00.000Z', progress: { done: 1, total: 4, lastContactAt: '' } });
+    listed = [{ id: RUN, lifecycle: 'active', agentId: 'support-bot', sample: false, createdAt: '', endedAt: null }];
+    await act(async () => { root.render(h(SandboxPractice, { fleet: 'prod-eu', agent: 'support-bot', provider: 'anthropic', sandboxKey: 'sk-wr-0000000000000000', onBack: vi.fn(), onFinished: vi.fn() })); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    const reads = () => fetchMock.mock.calls.filter(([u]) => String(u).startsWith(`/api/sandbox/practice/${RUN}?`)).length;
+    const before = reads();
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    expect(reads()).toBe(before + 1);
+  });
+
+  it('the check’s time left comes from the tests the page saw finish', async () => {
+    const { timeLeft } = await import('@/components/sandbox/v2/SandboxChecks');
+    const t = 1_000_000;
+    // Tests seen 14 s apart, the last 8 s ago, 2 to go: about 20 s.
+    expect(timeLeft([null, t - 36_000, t - 22_000, t - 8_000], t - 360_000, 6, t)).toBe('about 20 s left');
+    // Only tests done before the page opened: nothing to go on.
+    expect(timeLeft([null, null], t - 60_000, 6, t)).toBeNull();
+    await act(async () => { root.render(h(SandboxHome, { fleet: 'prod-eu', preview: SANDBOX_V2_STATES['checks-checking'] })); });
+    expect(text()).toContain('5 of 6 tests · 07 A human can pause and stop it');
+    expect(text()).toContain('about 20 s left');
+  });
+
+  it('the report’s Your rule names the Sandbox spend cap’s amount (mockup Rev 3)', async () => {
+    await act(async () => { root.render(h(SandboxHome, { fleet: 'prod-eu', preview: SANDBOX_V2_STATES['checks-report-rows'] })); });
+    await flush();
+    expect(document.querySelector('li[data-row="04"]')?.textContent).toContain('Would act at $0.02 a run (Watch)');
+    expect(document.querySelector('li[data-row="05"]')?.textContent).toContain('Both would act at your limits (Watch)');
+    expect(document.querySelector('li[data-row="07"]')?.textContent).toContain('Waited while held, then carried on.');
+    expect(document.querySelector('li[data-row="03"]')?.textContent).toContain('Retried a provider error too fast.');
+    expect(document.querySelector('li[data-row="03"]')?.textContent).toContain('Retried a 529 4 times in 5 s · waited as told after a rate limit');
+    expect(text()).toContain('today at');
   });
 });
