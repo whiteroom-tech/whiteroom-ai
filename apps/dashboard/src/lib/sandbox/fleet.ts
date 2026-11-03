@@ -8,7 +8,7 @@
 // valid answer look like. A Sandbox key (sk-wr-…) is shown once: it lives in
 // page state only, never in storage, logs or the status answer.
 
-import { fmtDay, timeAgo } from '@/lib/format';
+import { timeAgo } from '@/lib/format';
 import { issuedEnvHint } from '@/lib/provider-key-form';
 import { cloudStart, isCloudProvider, isSandboxProvider, SANDBOX_PROVIDER_LABELS, type SandboxProvider } from './providers';
 
@@ -195,13 +195,6 @@ export function providerLabel(provider: string): string {
 /** "No calls yet", or "5 min ago". */
 export function lastCallText(lastCallAt: string | null, now = Date.now()): string {
   return lastCallAt ? timeAgo(lastCallAt, now) || 'No calls yet' : 'No calls yet';
-}
-
-/** "Kept until Nov 12 — renewed each time your agent calls". */
-export function keptUntilText(expiresAt: string | null, now = Date.now()): string {
-  const day = expiresAt ? fmtDay(expiresAt, now) : '';
-  // 7 days: the engine keeps a Sandbox 7 days after its last call.
-  return day ? `Kept until ${day} — renewed each time your agent calls` : 'Kept for 7 days after your agent’s last call';
 }
 
 // ── Browser calls (through the BFF) ──

@@ -4,10 +4,10 @@ import { useState } from 'react';
 import { Button } from '@whiteroom/ui';
 import Link from 'next/link';
 import { RULE_LABELS } from '@/lib/governance';
-import { keptUntilText, lastCallText, providerLabel, type SandboxFleetStatus } from '@/lib/sandbox/fleet';
+import { lastCallText, providerLabel, type SandboxFleetStatus } from '@/lib/sandbox/fleet';
 import { rulesSummary, type SandboxRulesState } from '@/lib/sandbox/rules';
 import { CALLING_MS } from '@/lib/sandbox/checks';
-import { WHAT_WE_CHECK, WHAT_WE_CHECK_SUB, WHERE_WORDS } from '@/lib/sandbox/what-we-check';
+import { PRACTICE_COVERS, PRACTICE_COVERS_NOTE, WHAT_WE_CHECK, WHAT_WE_CHECK_SUB, WHERE_WORDS } from '@/lib/sandbox/what-we-check';
 import v from './v2.module.css';
 
 // The Sandbox page's right-hand column (eight checks mockup Rev 3): lighter
@@ -37,8 +37,8 @@ export function YourSandboxCard({ connected, lastCallAt, now, busy, onNewUrl, on
         {sample ? <b>Sample agent · run by WhiteRoom</b> : <><b>{providerLabel(key.provider)}</b> · key ending <span className={v.mono}>{key.keyHint}</span></>}
       </div>
       <div className={v.rrow}>Last call: {lastCallAt ? lastCallText(lastCallAt, now) : 'none yet'}</div>
-      {!sample && <div className={v.rrow}>URL starts <span className={v.mono}>{key.prefix.replace(/\.+$/, '')}…</span></div>}
-      <p className={v.rsub}>{keptUntilText(connected.expiresAt, now)}</p>
+      {/* The URL's start, short enough for one line (mockup Rev 3: "sk-wr-70d7…"). */}
+      {!sample && <div className={`${v.rrow} ${v.nowrap}`}>URL starts <span className={v.mono}>{key.prefix.replace(/\.+$/, '').slice(0, 10)}…</span></div>}
       <div className={v.ractions}>
         {!sample && <Button size={32} onClick={onNewUrl} disabled={busy}>New URL</Button>}
         <Button size={32} onClick={onChangeKey} disabled={busy}>{sample ? 'Use your own key' : 'Change key'}</Button>
@@ -65,7 +65,7 @@ export function SandboxRulesCard({ state, loadFailed = false, onEdit }: { state:
  * What we check: the eight rows in their groups, where each is checked, and
  * what it tests (opens per row). Rows checked in practice tasks link to them.
  */
-export function WhatWeCheckCard({ open: byDefault, practiceHref }: { open: boolean; practiceHref: string }) {
+export function WhatWeCheckCard({ open: byDefault, practiceHref, onPractice }: { open: boolean; practiceHref: string; onPractice?: () => void }) {
   // Open or closed by hand wins over the default (which follows the step and the page's width).
   const [chosen, setChosen] = useState<boolean | null>(null);
   const open = chosen ?? byDefault;
@@ -88,7 +88,7 @@ export function WhatWeCheckCard({ open: byDefault, practiceHref }: { open: boole
                     </span>
                   </summary>
                   <p>{r.short}</p>
-                  <p>{r.more}{r.where !== 'here' && <> <Link href={practiceHref} className="wr-link">Run practice tasks</Link></>}</p>
+                  <p>{r.more}{r.where !== 'here' && <> <PracticeLink href={practiceHref} onPractice={onPractice} /></>}</p>
                 </details>
               </li>
             ))}
@@ -99,6 +99,13 @@ export function WhatWeCheckCard({ open: byDefault, practiceHref }: { open: boole
   );
 }
 
+/** Run practice tasks: in the page when it can open them there, else the practice page. */
+export function PracticeLink({ href, onPractice, children = 'Run practice tasks' }: { href: string; onPractice?: () => void; children?: React.ReactNode }) {
+  return onPractice
+    ? <button type="button" className={v.linkButton} onClick={onPractice}>{children}</button>
+    : <Link href={href} className="wr-link">{children}</Link>;
+}
+
 /** Next: the report's next steps, numbered. */
 export function NextCard({ items }: { items: React.ReactNode[] }) {
   if (items.length === 0) return null;
@@ -106,6 +113,17 @@ export function NextCard({ items }: { items: React.ReactNode[] }) {
     <section className={v.rcard} aria-label="Next">
       <h3 className={v.rcardHead}>Next</h3>
       <ol className={v.tips}>{items.map((x, i) => <li key={i}>{x}</li>)}</ol>
+    </section>
+  );
+}
+
+/** What practice tasks check, beside their setup and progress. */
+export function PracticeCoversCard() {
+  return (
+    <section className={v.rcard} aria-label="What practice tasks check">
+      <h3 className={v.rcardHead}>What practice tasks check</h3>
+      <ul className={v.names}>{PRACTICE_COVERS.map((x) => <li key={x.num} className={v.coverRow}><span className={v.rowNum}>{x.num}</span> {x.text}</li>)}</ul>
+      <p className={v.rsub}>{PRACTICE_COVERS_NOTE}</p>
     </section>
   );
 }

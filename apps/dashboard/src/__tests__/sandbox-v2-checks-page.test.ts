@@ -207,7 +207,7 @@ describe('Check your agent', () => {
       .toEqual(['long_task', 'spend_cap', 'allowlists_keywords', 'loop_rate', 'pause_stop', 'provider_errors']);
     // Each test's label and result reach screen readers: a list, with the progressbar beside it (its children would be hidden).
     expect([...document.querySelectorAll('ol[aria-label="Live tests"] li')].map((e) => e.textContent))
-      .toEqual(['✕02 Long task: Failed', '✓04 Spend cap: Passed', '06 Allowlists: now', '–05 Loops: Not triggered by this run', '07 Pause, stop: Waiting', '03 Fails gracefully: Waiting']);
+      .toEqual(['✕02 Long task: Failed', '✓04 Spend: Passed', '06 Allowlists: now', '–05 Loops: Not triggered by this run', '07 Pause, stop: Waiting', '03 Fails gracefully: Waiting']);
     const bar = document.querySelector('[role="progressbar"]')!;
     expect(bar.getAttribute('aria-valuenow')).toBe('3');
     expect(bar.getAttribute('aria-valuetext')).toBe('3 of 6 tests done');
@@ -305,21 +305,17 @@ describe('Check your agent', () => {
     expect(capture).toHaveBeenCalledWith('sandbox_v2_finish_now', { stage: 'observe', quiet: false });
   });
 
-  it('no call yet: the usual fixes show at once, a minute later their event goes once, and Change key works', async () => {
+  it('no call yet: the usual fixes show at once (the mockup’s three), and a minute later their event goes once', async () => {
     vi.useFakeTimers();
     capture.mockClear();
     checks = checkAnswer(null);
-    const onChangeKey = vi.fn();
-    await render(h(SandboxChecks, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, provider: 'openai', onChangeKey }));
+    await render(h(SandboxChecks, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, provider: 'openai' }));
     // At once (mockup Rev 3, 2 · Waiting); the event waits for a minute with no call, as the old fold's auto-open did.
     expect(text()).toContain('Nothing after a minute? Usually one of these:');
-    expect(capture.mock.calls.some(([n]) => n === 'sandbox_v2_idle_help')).toBe(false);
-    await act(async () => { await vi.advanceTimersByTimeAsync(IDLE_HELP_MS); });
     expect(text()).toContain('Restart your agent after changing .env.');
     expect(text()).toContain('Check it reads OPENAI_BASE_URL, or pass the URL as base_url.');
-    expect(text()).toContain('Check it calls OpenAI. This Sandbox is set up for an OpenAI key.');
-    await act(async () => { button('Change key')!.click(); });
-    expect(onChangeKey).toHaveBeenCalledTimes(1);
+    expect(text()).toContain('Check it sends a name: an x-whiteroom-agent header or a system prompt.');
+    expect(capture.mock.calls.some(([n]) => n === 'sandbox_v2_idle_help')).toBe(false);
     await act(async () => { await vi.advanceTimersByTimeAsync(IDLE_HELP_MS * 3); });
     expect(capture.mock.calls.filter(([n]) => n === 'sandbox_v2_idle_help')).toEqual([['sandbox_v2_idle_help', { opened: 'auto' }]]);
   });
@@ -406,7 +402,7 @@ describe('Check your agent', () => {
     await click('Finish now');
     expect(calls().some((c) => c.url.endsWith('/checks/stop'))).toBe(true);
     expect(text()).toContain('1 of 8 checked');
-    expect(document.activeElement?.textContent).toBe('Nothing to fix');
+    expect(document.activeElement?.textContent).toBe('Nothing to fix · 1 of 8 checked');
   });
 
   it('sends one sandbox_report_rows for a check that finishes while the page is open, and none for an old report on load', async () => {

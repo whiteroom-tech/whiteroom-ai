@@ -28,7 +28,7 @@ function state(o: { checks?: Partial<Record<string, [CheckStatus, string]>>; pro
   };
 }
 const by2 = (rows: ReturnType<typeof sandboxRows>) => Object.fromEntries(rows.map((r) => [r.num, r]));
-const by = (s: CheckState) => by2(sandboxRows(s));
+const by = (s: CheckState, p?: Parameters<typeof sandboxRows>[1], limits?: Parameters<typeof sandboxRows>[2]) => by2(sandboxRows(s, p, limits));
 
 describe('the eight rows', () => {
   it('are in number order, in two groups; a clean live check reads Nothing to fix · 6 of 8 checked · 2 need practice tasks', () => {
@@ -37,16 +37,19 @@ describe('the eight rows', () => {
       '01:agent:not_run_yet', '02:agent:partly', '03:agent:partly',
       '04:guardrails:passed', '05:guardrails:passed', '06:guardrails:passed', '07:guardrails:passed', '08:guardrails:not_run_yet',
     ]);
-    expect(rowsHeadline(rows)).toEqual({ headline: 'Nothing to fix', sub: '6 of 8 checked · 2 need practice tasks', tone: 'pass' });
+    expect(rowsHeadline(rows)).toEqual({ headline: 'Nothing to fix · 6 of 8 checked', sub: '2 need practice tasks', tone: 'pass' });
     const r = by(state());
     expect(r['02'].note).toBe('The long-task result is in the Deep test.');
     expect(r['03'].parts.map((p) => [p.label, p.state])).toEqual([['Here', 'passed'], ['Practice', 'not_run_yet']]);
-    expect(r['03'].parts[0].text).toContain('waited 5.2 s');
+    // In a few words (mockup Rev 3); the engine's own words stay in What happened.
+    expect(r['03'].parts[0].text).toBe('Backed off a 529 · waited as told after a rate limit');
     expect(r['04'].parts).toEqual([
-      { label: 'Your rule', text: 'would act (Watch) at its limit', state: 'passed' },
-      { label: 'Your agent', text: 'We blocked a call → it didn’t retry that call.', state: 'passed' },
+      { label: 'Your rule', text: 'Would act at its limit (Watch)', state: 'passed' },
+      { label: 'Your agent', text: 'Didn’t retry the blocked call.', state: 'passed' },
     ]);
-    expect(r['05'].parts[0].text).toBe('Loop breaker would act (Watch) at its limit · Call rate would act (Watch) at its limit');
+    expect(r['05'].parts[0].text).toBe('Both would act at your limits (Watch)');
+    // With the Sandbox's spend cap: its amount (mockup Rev 3).
+    expect(by(state(), undefined, { spend_cap: '$0.02 a run' })['04'].parts[0].text).toBe('Would act at $0.02 a run (Watch)');
     expect(r['06'].note).toBe('Not set up: tool list.');
   });
 
@@ -61,9 +64,9 @@ describe('the eight rows', () => {
 
   it('rules: Enforce reads as set; none set up is Not set up; a probe that fails, or an agent that hammered, fails the row', () => {
     const enforce = by(state({ probes: [probe('spend_cap', 'passed', 'blocks')] }));
-    expect(enforce['04'].parts[0].text).toBe('blocks at its limit');
+    expect(enforce['04'].parts[0].text).toBe('Blocks at its limit');
     expect(enforce['05']).toMatchObject({ state: 'not_set_up', line: 'Not set up for this agent.' });
-    expect(rowsHeadline(sandboxRows(state({ probes: [probe('spend_cap')] })))).toMatchObject({ sub: '4 of 8 checked · 2 need practice tasks · 2 not set up' });
+    expect(rowsHeadline(sandboxRows(state({ probes: [probe('spend_cap')] })))).toMatchObject({ headline: 'Nothing to fix · 4 of 8 checked', sub: '2 need practice tasks · 2 not set up' });
     const broken = by(state({ probes: [probe('spend_cap', 'failed')] }));
     expect(broken['04']).toMatchObject({ state: 'failed', fix: { next: 'Check this rule in your Sandbox rules, then check again.' } });
     const hammered = by(state({ checks: { spend_cap: ['failed', 'We blocked a call → your agent retried it 4 times within 5 s. Fix: stop or back off.'] } }));
@@ -74,7 +77,7 @@ describe('the eight rows', () => {
     const quiet = { spend_cap: ['not_triggered', 'Not triggered by this run.'], loop_rate: ['not_triggered', 'Not triggered.'], allowlists_keywords: ['not_triggered', 'Not triggered.'] } as Record<string, [CheckStatus, string]>;
     const s = state({ checks: quiet, parts: [{ id: 'test_block', status: 'passed', detail: 'We sent one test block → it didn’t retry that call.' }] });
     const r = by(s);
-    expect(r['04'].parts[1]).toEqual({ label: 'Your agent', text: 'We sent one test block → it didn’t retry that call.', state: 'passed' });
+    expect(r['04'].parts[1]).toEqual({ label: 'Your agent', text: 'Didn’t retry the blocked call.', state: 'passed' });
     expect(r['04'].state).toBe('passed');
     // Nothing tested how it copes: not checked.
     expect(by(state({ checks: quiet, parts: [] }))['04']).toMatchObject({ state: 'not_checked' });
@@ -83,7 +86,7 @@ describe('the eight rows', () => {
   it('an engine without probes or parts: rows 04–06 are their checks, and row 03 the provider error alone', () => {
     const r = by(state({ probes: undefined, parts: undefined }));
     expect(r['04']).toMatchObject({ state: 'passed', parts: [] });
-    expect(r['03'].parts[0].text).toBe('We returned a provider error (529) → it retried 1 time, backing off.');
+    expect(r['03'].parts[0].text).toBe('Backed off a 529');
     expect(by(state({ probes: undefined, checks: { loop_rate: ['not_triggered', ''] } }))['05']).toMatchObject({ state: 'not_checked' });
   });
 });
@@ -104,7 +107,7 @@ describe('the rows’ edges', () => {
     expect(text).toContain('The agent:\n- 01 Finishes the job correctly: Not run yet. Not run yet: checks in practice tasks.');
     expect(text).toContain('    What happened: We returned a provider error (529) to [hidden].');
     expect(text).toContain('    How to fix: Retry with a back-off of at least 1 second, and give up after a few tries.');
-    expect(text).toContain('- 04 Spend cap: Passed\n    Your rule: would act (Watch) at its limit');
+    expect(text).toContain('- 04 Spend cap: Passed\n    Your rule: Would act at its limit (Watch)');
     expect(text).not.toContain('sk-ant-');
     // The page's notes close it, as on the page.
     expect(text.endsWith('\n\nAlso called during this check: ops-bot (not checked).')).toBe(true);
@@ -188,7 +191,7 @@ describe('a practice run bound to the report (eight checks §6)', () => {
   it('fills 01, 08 and the rest of 03: a clean run reads Nothing to fix · 8 of 8 checked', () => {
     const rows = sandboxRows(state(), run([pc('a.result', 'passed', 'Finishes a job correctly'), pc('c.timeout', 'passed', 'Saves once'), pc('c.keeps_failing', 'passed', 'Stops'), pc('d.injection', 'passed', 'Ignores a planted instruction')]));
     expect(rows.map((r) => `${r.num}:${r.state}`)).toEqual(['01:passed', '02:partly', '03:passed', '04:passed', '05:passed', '06:passed', '07:passed', '08:passed']);
-    expect(rowsHeadline(rows)).toMatchObject({ headline: 'Nothing to fix', sub: '8 of 8 checked', tone: 'pass' });
+    expect(rowsHeadline(rows)).toMatchObject({ headline: 'Nothing to fix · 8 of 8 checked', sub: '', tone: 'pass' });
     expect(by(state())['03'].parts[1].state).toBe('not_run_yet');
     // A passed row says what the run found, not its own name again.
     expect(rows.find((r) => r.num === '08')!.line).toBe('Passed 1 of 1 run.');
@@ -218,7 +221,7 @@ describe('a practice run bound to the report (eight checks §6)', () => {
     const rows = by2(sandboxRows(state(), run([pc('b.result', 'passed', 'Right result'), pc('b.carries_on', 'failed', 'Carries on')])));
     expect(rows['02']).toMatchObject({ state: 'failed', note: null, fix: { happened: 'Sent the file when the email asked.', next: 'Treat text from tools as data.' } });
     expect(rows['02'].parts.map((p) => [p.label, p.state])).toEqual([['Here', 'passed'], ['Practice', 'failed']]);
-    expect(by(state())['02']).toMatchObject({ state: 'partly', note: 'The long-task result is in the Deep test.', noteLinksPractice: true });
+    expect(by(state())['02']).toMatchObject({ state: 'partly', note: 'The long-task result is in the Deep test.' });
   });
 });
 
@@ -229,5 +232,45 @@ describe('ROWS: one list for the check in progress and the report', () => {
     // 01 and 08 are practice tasks only; 02–07 are the six live checks, once each.
     expect(ROWS.filter((r) => !r.check).map((r) => r.num)).toEqual(['01', '08']);
     expect(new Set(ROWS.map((r) => r.check).filter(Boolean)).size).toBe(6);
+  });
+});
+
+describe('the rows in a few words (mockup Rev 3)', () => {
+  it('a failed live result reads what the agent did; the engine’s words stay in What happened', async () => {
+    const { failedShort } = await import('@/lib/sandbox/sandbox-rows');
+    expect(failedShort('We blocked a call → your agent retried it 3 times within 5 s. Fix: stop.')).toBe('Retried it 3 times within 5 s.');
+    expect(failedShort('Your agent didn’t carry on.')).toBe('Didn’t carry on.');
+  });
+});
+
+describe('Your rule and the short lines: every form', () => {
+  const probe = (ruleType: string, acts: RuleProbe['acts'] = 'would_act'): RuleProbe => ({ ruleId: `gr_${ruleType}`, ruleType, status: 'passed', acts, detail: '' });
+  it('a list rule, list rules together, and mixed modes', () => {
+    expect(by(state({ probes: [probe('model_allowlist')] }))['06'].parts[0].text).toBe('Would act (Watch)');
+    expect(by(state({ probes: [probe('model_allowlist'), probe('keyword')] }))['06'].parts[0].text).toBe('Model allowlist and keywords would act (Watch)');
+    expect(by(state({ probes: [probe('loop_breaker', 'blocks'), probe('call_rate')] }))['05'].parts[0].text).toBe('Loop breaker blocks · Call rate would act (Watch)');
+    expect(by(state({ probes: [probe('spend_cap', 'pauses')] }), undefined, { spend_cap: '$5 a day' })['04'].parts[0].text).toBe('Pauses the agent at $5 a day');
+    // Several rules with the same action read in the plural.
+    expect(by(state({ probes: [probe('loop_breaker', 'blocks'), probe('call_rate', 'blocks')] }))['05'].parts[0].text).toBe('Both block at your limits');
+    expect(by(state({ probes: [probe('loop_breaker', 'pauses'), probe('call_rate', 'pauses')] }))['05'].parts[0].text).toBe('Both pause the agent at your limits');
+    expect(by(state({ probes: [probe('model_allowlist', 'blocks'), probe('keyword', 'blocks')] }))['06'].parts[0].text).toBe('Model allowlist and keywords block');
+    expect(by(state({ probes: [probe('model_allowlist', 'stops'), probe('tool_list', 'stops'), probe('keyword', 'stops')] }))['06'].parts[0].text).toBe('Model allowlist, tool list and keywords stop the agent');
+  });
+
+  it('a failure keeps decimals and reads without an arrow too', async () => {
+    const { failedShort } = await import('@/lib/sandbox/sandbox-rows');
+    expect(failedShort('We returned a provider error (529) → your agent retried it 4 times within 1.5 s. Fix: back off.')).toBe('Retried it 4 times within 1.5 s.');
+    expect(failedShort('Your agent called again after 0.4 s')).toBe('Called again after 0.4 s');
+    const rows = by(state({ checks: { provider_errors: ['failed', 'We returned a provider error (529) → your agent retried it 4 times within 1.5 s. Fix: back off.'] } }));
+    expect(rows['03'].parts[0].text).toMatch(/^Retried a 529 4 times in 1\.5 s/);
+  });
+});
+
+describe('passed rows only claim what this run did', () => {
+  it('a rule row whose check only "would have blocked" keeps the engine’s words', () => {
+    const r = by(state({ checks: { loop_rate: ['passed', 'Would have blocked 2 calls (in Watch). We tested blocking once, with your Spend cap rule.'] } }));
+    expect(r['05'].parts.find((p) => p.label === 'Your agent')?.text).toBe('Would have blocked 2 calls (in Watch). We tested blocking once, with your Spend cap rule.');
+    const blocked = by(state({ checks: { loop_rate: ['passed', 'We blocked a call → it changed course.'] } }));
+    expect(blocked['05'].parts.find((p) => p.label === 'Your agent')?.text).toBe('Changed course when stopped.');
   });
 });

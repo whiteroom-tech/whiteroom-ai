@@ -13,7 +13,7 @@ vi.mock('@/lib/analytics', () => ({ analytics: { capture } }));
 
 const { SandboxHome, SANDBOX_LEAD } = await import('@/components/sandbox/v2/SandboxHome');
 const { SANDBOX_V2_STATES } = await import('@/app/dev/sandbox-v2/states');
-const { connectCheck, keptUntilText, lastCallText, pointLine, sandboxSetting } = await import('@/lib/sandbox/fleet');
+const { connectCheck, lastCallText, pointLine, sandboxSetting } = await import('@/lib/sandbox/fleet');
 
 const PROVIDER_KEY = 'sk-ant-placeholder-not-a-real-key-WXYZ';
 const SANDBOX_ID = 'sandbox-00000000-0000-4000-8000-000000000000';
@@ -86,19 +86,18 @@ describe('Sandbox v2 page', () => {
     expect(calls()[1]).toEqual({ url: '/api/sandbox/fleet/connect', body: { fleet: 'prod-eu', provider: 'anthropic', api_key: PROVIDER_KEY } });
     // Copy first: the line, a full-size Copy button, then one quiet line instead of a warning.
     expect(text()).toContain('Add this to your agent’s .env, then run it as you normally do. The checks start on its first call.');
-    expect(text()).toContain('This URL is shown only on this visit; you can get a new one any time.');
+    // Only the line and Copy (mockup Rev 3, 2 · Waiting): Your Sandbox has New URL if it's lost.
+    expect(text()).not.toContain('Not using a .env file?');
     expect(text()).not.toContain('Copy this before you leave this page.');
     // Like production: one setting for the agent's .env, then run it as normal.
     expect(text()).toContain(`ANTHROPIC_BASE_URL=${ISSUED.proxyUrl}`);
     expect(document.querySelector('[aria-label="Copy the setting"]')).not.toBeNull();
     expect(document.getElementById('sandbox-start-command')).toBeNull();
-    expect(document.querySelector('[aria-label="Copy the Sandbox URL"]')).not.toBeNull();
+    // The URL carries the Sandbox key, so the line is all an agent needs (no separate URL and key, as in the mockup).
     expect(text()).toContain(ISSUED.proxyKey);
-    expect(document.querySelector('[aria-label="Copy the Sandbox key"]')).not.toBeNull();
     // The status card, and the provider key nowhere on the page or in storage.
     expect(text()).toContain('key ending WXYZ');
     expect(text()).toContain('Last call: none yet');
-    expect(text()).toContain('renewed each time your agent calls');
     expect(document.body.innerHTML).not.toContain(PROVIDER_KEY);
     expect(JSON.stringify({ ...localStorage })).not.toContain('sk-wr-placeholder');
     expect(JSON.stringify({ ...sessionStorage })).not.toContain('sk-wr-placeholder');
@@ -149,10 +148,11 @@ describe('Sandbox v2 page', () => {
     expect(JSON.stringify(capture.mock.calls)).not.toMatch(/sk-|https?:/);
   });
 
-  it('Change key in the usual fixes opens Connect for a different key', async () => {
+  it('the usual fixes are the mockup’s three; Change key lives in Your Sandbox', async () => {
     await render({ fleet: 'prod-eu', preview: SANDBOX_V2_STATES['run-help'] });
     expect(text()).toContain('Nothing after a minute? Usually one of these:');
-    await act(async () => { [...document.querySelectorAll<HTMLButtonElement>('ol button')].find((b) => b.textContent === 'Change key')!.click(); });
+    expect(text()).toContain('Check it sends a name: an x-whiteroom-agent header or a system prompt.');
+    await act(async () => { [...document.querySelectorAll<HTMLButtonElement>('section[aria-label="Your Sandbox"] button')].find((b) => b.textContent === 'Change key')!.click(); });
     expect(text()).toContain('Connect a different key');
   });
 
@@ -285,8 +285,7 @@ describe('Sandbox v2 page', () => {
     const card = document.querySelector('section[aria-label="Your Sandbox"]')!;
     expect(card.textContent).toContain('Anthropic · key ending');
     expect(card.textContent).toContain('Last call: 5 min ago');
-    expect(card.textContent).toContain('URL starts sk-wr-0123456789abcdef…');
-    expect(card.textContent).toContain('renewed each time your agent calls');
+    expect(card.textContent).toContain('URL starts sk-wr-0123…');
     expect(text()).not.toContain('Sandbox settings');
     expect(text()).not.toContain('Connected · Anthropic key ending');
     expect(text()).not.toContain('Connect your provider key');
@@ -501,12 +500,10 @@ describe('Sandbox v2 wording and checks', () => {
     expect(pointLine('azure-openai', 'https://proxy.example/sk-wr-x')).toBe('export AZURE_OPENAI_ENDPOINT=https://proxy.example/sk-wr-x');
   });
 
-  it('says when the agent last called and how long the Sandbox is kept', () => {
+  it('says when the agent last called', () => {
     const now = Date.parse('2026-10-29T15:00:00Z');
     expect(lastCallText(null, now)).toBe('No calls yet');
     expect(lastCallText('2026-10-29T14:55:00Z', now)).toBe('5 min ago');
-    expect(keptUntilText('2026-11-12T15:00:00Z', now)).toMatch(/^Kept until Nov 1[23] — renewed each time your agent calls$/);
-    expect(keptUntilText(null, now)).toBe('Kept for 7 days after your agent’s last call');
   });
 
   it('checks a key against its provider', () => {
