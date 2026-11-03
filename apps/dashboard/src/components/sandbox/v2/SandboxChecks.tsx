@@ -230,17 +230,17 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   const lastCallAt = state?.activity?.lastCallAt;
   // Not while quiet: the quiet box already says what to do.
   const noCallYet = !!state && !quiet && (!w || (!ended && w.calls === 0)) && (!lastCallAt || Date.parse(lastCallAt) < openedAt.current);
-  // The usual fixes show after a minute with no call (their heading says so); a preview shows them at once.
-  const [idle, setIdle] = useState(!!preview);
+  // The usual fixes show at once (mockup Rev 3, 2 · Waiting). A minute with no call still sends its event once, as the old auto-opening fold did.
+  const idleSent = useRef(false);
   useEffect(() => {
-    if (preview || !noCallYet || idle) return;
+    if (preview || !noCallYet || idleSent.current) return;
     const t = setTimeout(() => {
-      setIdle(true);
+      idleSent.current = true;
       analytics.capture('sandbox_v2_idle_help', { opened: 'auto' });
     }, IDLE_HELP_MS);
     return () => clearTimeout(t);
-  }, [preview, noCallYet, idle]);
-  const showTips = noCallYet && idle && !isSample;
+  }, [preview, noCallYet]);
+  const showTips = noCallYet && !isSample;
   const finish = () => {
     if (!preview && w) analytics.capture('sandbox_v2_finish_now', { stage: w.stage, quiet });
     void act('stop');

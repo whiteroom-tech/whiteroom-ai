@@ -305,16 +305,16 @@ describe('Check your agent', () => {
     expect(capture).toHaveBeenCalledWith('sandbox_v2_finish_now', { stage: 'observe', quiet: false });
   });
 
-  it('no call for a minute: the usual fixes show (once, with their event), name the setting and provider, and Change key works', async () => {
+  it('no call yet: the usual fixes show at once, a minute later their event goes once, and Change key works', async () => {
     vi.useFakeTimers();
     capture.mockClear();
     checks = checkAnswer(null);
     const onChangeKey = vi.fn();
     await render(h(SandboxChecks, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, provider: 'openai', onChangeKey }));
-    // Not at once: the heading says "after a minute".
-    expect(text()).not.toContain('Nothing after a minute?');
-    await act(async () => { await vi.advanceTimersByTimeAsync(IDLE_HELP_MS); });
+    // At once (mockup Rev 3, 2 · Waiting); the event waits for a minute with no call, as the old fold's auto-open did.
     expect(text()).toContain('Nothing after a minute? Usually one of these:');
+    expect(capture.mock.calls.some(([n]) => n === 'sandbox_v2_idle_help')).toBe(false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(IDLE_HELP_MS); });
     expect(text()).toContain('Restart your agent after changing .env.');
     expect(text()).toContain('Check it reads OPENAI_BASE_URL, or pass the URL as base_url.');
     expect(text()).toContain('Check it calls OpenAI. This Sandbox is set up for an OpenAI key.');
@@ -328,7 +328,6 @@ describe('Check your agent', () => {
     vi.useFakeTimers();
     checks = checkAnswer(null);
     await render(checksEl());
-    await act(async () => { await vi.advanceTimersByTimeAsync(IDLE_HELP_MS); });
     expect(text()).toContain('Nothing after a minute?');
     checks = { ...checkAnswer({ stage: 'observe', calls: 1 }), activity: { lastCallAt: new Date(Date.now() + 1000).toISOString(), callsOutsideWindow24h: 0 } };
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
