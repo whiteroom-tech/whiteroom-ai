@@ -12,7 +12,7 @@ import { CATALOG, cliCommands, CLOUD_MODEL_FIELD, isOpen, isPracticeProvider } f
 import { providerLabel } from '@/lib/sandbox/fleet';
 import type { PracticeCapabilities, PracticeProfile, PracticeResult, PracticeRun, RunCode } from '@/lib/sandbox/practice/types';
 import {
-  endedWords, leftWords, practiceCommand, practiceRefusal, practiceTaskLines, SANDBOX_PRACTICE_LEAD, taskTimes, type PracticeRefusalView,
+  endedWords, leftWords, practiceCommand, practiceRefusal, practiceTaskLines, SAMPLE_KEY_LINE, SANDBOX_PRACTICE_LEAD, taskTimes, tasksDone, type PracticeRefusalView,
 } from '@/lib/sandbox/sandbox-practice';
 import { useClock, usePracticePoll } from '../practice/usePracticePoll';
 import { useSeenAt } from './useSeenAt';
@@ -90,7 +90,8 @@ export function SandboxPractice({ fleet, agent, provider, sandboxKey, initialPro
   const cloud = isCloudProvider(provider);
   const modelField = cloud ? CLOUD_MODEL_FIELD[provider as keyof typeof CLOUD_MODEL_FIELD] : undefined;
   // Your agent's model: typed for a cloud key (prefilled with its latest), else its latest call's (none: the engine's own default).
-  const model = sample ? null : cloud ? (typedModel !== null ? typedModel.trim() || null : agentModel || null) : agentModel ?? null;
+  // Sent only for a cloud key (the engine needs it there); otherwise the agent's adapter picks its own model, as it does in the Sandbox.
+  const model = sample || !cloud ? null : typedModel !== null ? typedModel.trim() || null : agentModel || null;
   const needsModel = !sample && cloud && !model;
   const sentProfile: PracticeProfile | null = caps ? (sample ? 'quick' : profile) : null;
   // Deep runs each task 3 times (mockup Rev 3); quick and the sample run once.
@@ -99,7 +100,7 @@ export function SandboxPractice({ fleet, agent, provider, sandboxKey, initialPro
   const keyChanged = !!run && run.lifecycle === 'draft' && !run.sample && !!run.proxyKeyDisplayPrefix && !!sandboxKey && run.proxyKeyDisplayPrefix !== sandboxKey;
   const command = practiceCommand({ code: code?.code ?? null, adapter: sample ? null : adapter, provider });
   /** A draft made for exactly these choices and this Sandbox key: a new code for it costs no start. */
-  const sameDraft = (r: PracticeRun | null): boolean => !!r && r.lifecycle === 'draft' && r.sample === sample && (r.profile ?? null) === sentProfile && r.runs === runs
+  const sameDraft = (r: PracticeRun | null): boolean => !!r && r.lifecycle === 'draft' && r.origin === 'sandbox' && r.sample === sample && (r.profile ?? null) === sentProfile && r.runs === runs
     && (sample || (r.agentId === agent && (!sandboxKey || r.proxyKeyDisplayPrefix === sandboxKey) && sameModel(r)));
   /** A cloud key's model is part of Start: a draft started with another model (or, picked up from before, once the owner typed one) isn't reused. */
   const sameModel = (r: PracticeRun) => !cloud || (draftModel.current?.id === r.id ? draftModel.current.model === model : typedModel === null);
@@ -128,19 +129,18 @@ export function SandboxPractice({ fleet, agent, provider, sandboxKey, initialPro
     if (preview) return;
     let live = true;
     practiceCapabilities(fleet).then((c) => { if (live) setCaps(c); }, () => { if (live) setCaps(null); });
-    if (agent) sourceModel(fleet, agent).then((m) => { if (live) setAgentModel(m.model); }, () => { if (live) setAgentModel(null); });
+    // The agent's model as it calls the Sandbox (an older engine ignores origin and sends none: the field just starts empty).
+    if (agent && cloud) sourceModel(fleet, agent, 'sandbox').then((m) => { if (live) setAgentModel(m.model); }, () => { if (live) setAgentModel(null); });
     listPracticeRuns(fleet).then(async (rows) => {
       const found = rows.find((r) => isOpen(r.lifecycle as PracticeRun['lifecycle']));
       if (!found || !live) return;
       const r = await getPracticeRun(fleet, found.id);
-      if (!live) return;
+      // Only a test started from the Sandbox (one from the practice page has no Sandbox key behind it; Start says it's open).
+      if (!live || r.origin !== 'sandbox') return;
       setRun(r);
-      if (r.lifecycle === 'draft') {
-        setWho(r.sample ? 'sample' : 'mine');
-        if (r.profile) setProfile(r.profile);
-        const keyOk = r.sample || !sandboxKey || r.proxyKeyDisplayPrefix === sandboxKey;
-        if (keyOk && (r.sample || r.agentId === agent)) await renew(r).catch(() => {});
-      }
+      // A draft's agent comes along; its thoroughness only when it's the one asked for (a Deep link never lands on a quick code).
+      // Its code isn't renewed here: one already copied (or in another tab) keeps working until Get a new code.
+      if (r.lifecycle === 'draft') setWho(r.sample ? 'sample' : 'mine');
     }).catch(() => {});
     return () => { live = false; };
     // renew and track only read props this card keeps; re-running on them would pick the run up again.
@@ -215,7 +215,7 @@ export function SandboxPractice({ fleet, agent, provider, sandboxKey, initialPro
     onError: (e) => setRefusal(practiceRefusal(e)),
   });
   // Each finished task's time, noted as it's seen (only once the tasks have started).
-  const seenAt = useSeenAt(run?.startedAt ? run.id : null, run?.progress?.done ?? 0, preview?.seenAt);
+  const seenAt = useSeenAt(run?.startedAt ? run.id : null, run ? tasksDone(run) : 0, preview?.seenAt);
 
   const copy = async () => {
     try { await navigator.clipboard.writeText(command); setCopied(true); track('practice_command_copied', { from: 'sandbox' }); } catch { setCopied(false); }
@@ -238,7 +238,12 @@ export function SandboxPractice({ fleet, agent, provider, sandboxKey, initialPro
     else await settle(next);
   });
   /** owner_busy: the open test on this fleet, into the card (to carry on), or ended. */
-  const openThat = (id: string) => act(async () => { setRun(await getPracticeRun(fleet, id)); });
+  const openThat = (id: string) => act(async () => {
+    const r = await getPracticeRun(fleet, id);
+    // One started on the practice page belongs there (it has no Sandbox key behind it).
+    if (r.origin !== 'sandbox') { setRefusal({ message: 'That test was started on the practice page.', link: { href: `${ROUTES.practiceTest}?run=${r.id}`, text: 'Open it there' } }); return; }
+    setRun(r);
+  });
   const endThat = (id: string) => act(async () => { await endPractice(fleet, id); track('practice_ended', { from: 'sandbox' }); });
 
   const back = <button type="button" className={`${v.linkButton} ${v.backLink}`} onClick={onBack}>Back to results</button>;
@@ -366,7 +371,7 @@ export function SandboxPractice({ fleet, agent, provider, sandboxKey, initialPro
               : <Button size={32} variant="primary" onClick={() => void getCode()} busy={busy} busyLabel="Getting…" disabled={caps === undefined || needsModel || (!sample && !adapter.trim())}>{draftReady ? 'Get a new code' : 'Get the command'}</Button>}
           </div>
           <p className={v.rsub}>
-            Runs on your own {providerLabel(provider)} key ({keyVar}). The code works once and expires in 30 minutes.
+            {sample ? SAMPLE_KEY_LINE : <>Runs on your own {providerLabel(provider)} key ({keyVar}).</>} The code works once and expires in 30 minutes.
             {code && <> <button type="button" className={v.linkButton} onClick={() => void getCode()} disabled={busy}>Get a new code</button></>}
             {!code && !draftReady && ' Getting one uses one of today’s 10 practice starts.'}
           </p>

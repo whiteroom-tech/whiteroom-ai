@@ -1,7 +1,7 @@
 // Practice tests through the BFF (spec §4 Start, §7 owner routes):
 //
 //   GET  /api/sandbox/practice?fleet=                 Past tests rows for the fleet's owner
-//   GET  /api/sandbox/practice/source-model?fleet=&agent=
+//   GET  /api/sandbox/practice/source-model?fleet=&agent=&origin=sandbox?
 //   GET  /api/sandbox/practice/capabilities?fleet=    what the engine offers (quick and deep tests)
 //   GET  /api/sandbox/practice/<run>?fleet=           progress
 //   GET  /api/sandbox/practice/<run>/report?fleet=    result
@@ -53,7 +53,9 @@ export async function GET(req: Request, { params }: Params) {
   if (path.length === 1 && path[0] === 'source-model') {
     const agent = q.get('agent');
     if (!agent || agent.length > 128) return invalid();
-    return practiceEngine('GET', `source-model?fleet=${fleet}&agent=${encodeURIComponent(agent)}`, undefined, owner.userId);
+    // origin=sandbox: the agent's model as it calls the Sandbox (an engine without it ignores it: no model). Anything else isn't passed on.
+    const origin = q.get('origin') === 'sandbox' ? '&origin=sandbox' : '';
+    return practiceEngine('GET', `source-model?fleet=${fleet}&agent=${encodeURIComponent(agent)}${origin}`, undefined, owner.userId);
   }
   const [run, sub] = path;
   if (!RUN_ID_RE.test(run) || path.length > 2 || (sub !== undefined && sub !== 'report')) return notFound();

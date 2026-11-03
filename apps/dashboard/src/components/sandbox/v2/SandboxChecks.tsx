@@ -23,7 +23,7 @@ import { AgentNaming } from '@/components/citadel/AgentNaming';
 import { agentNamingFor } from '@/lib/provider-key-form';
 import { useSeenAt } from './useSeenAt';
 import { leftMs } from '@/lib/sandbox/seen-times';
-import { otherRunLine } from '@/lib/sandbox/sandbox-practice';
+import { otherRunLine, practiceTaskLines, tasksDone } from '@/lib/sandbox/sandbox-practice';
 import type { PracticeProfile, PracticeResult } from '@/lib/sandbox/practice/types';
 import s from '../guided.module.css';
 import v from './v2.module.css';
@@ -253,7 +253,8 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
       // A draft nobody has started isn't read again: only a test that's running.
       const openRun = reportAgent ? runs.find((r) => !r.sample && r.agentId === reportAgent && (r.lifecycle === 'active' || r.lifecycle === 'finalizing')) : undefined;
       const running = openRun
-        ? await getPracticeRun(fleet, openRun.id).then((r) => ({ done: r.progress?.done ?? 0, total: r.progress?.total ?? r.plan?.tasks.length ?? 4 }), () => ({ done: 0, total: 4 }))
+        // Counted as the practice card counts them: tasks, not the control-check step (so card and report agree).
+        ? await getPracticeRun(fleet, openRun.id).then((r) => ({ done: tasksDone(r), total: practiceTaskLines(r).length }), () => ({ done: 0, total: 4 }))
         : null;
       // Slower while the tab is hidden, as the other polls.
       if (openRun && live) again = setTimeout(() => setPracticeTick((n) => n + 1), document.hidden ? PRACTICE_REREAD_HIDDEN_MS : PRACTICE_REREAD_MS);

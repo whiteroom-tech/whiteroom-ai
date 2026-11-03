@@ -77,8 +77,8 @@ function providerKey(k: unknown): PracticeProviderKey | null {
 }
 
 /** The agent's latest model, where its calls go, the keys setup can pick from, and the control checks a test would make. */
-export const sourceModel = (fleet: string, agent: string) =>
-  call<Record<string, unknown>>(`/source-model${q(fleet)}&agent=${encodeURIComponent(agent)}`).then((r): PracticeSource => {
+export const sourceModel = (fleet: string, agent: string, origin?: 'sandbox') =>
+  call<Record<string, unknown>>(`/source-model${q(fleet)}&agent=${encodeURIComponent(agent)}${origin ? `&origin=${origin}` : ''}`).then((r): PracticeSource => {
     const controls = r.controls as { checks?: PracticeControlCheck[]; calls?: number } | undefined;
     return {
       model: str(r.model),

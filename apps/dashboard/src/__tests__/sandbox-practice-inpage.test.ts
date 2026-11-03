@@ -17,7 +17,7 @@ const { SandboxHome } = await import('@/components/sandbox/v2/SandboxHome');
 const { SandboxPractice } = await import('@/components/sandbox/v2/SandboxPractice');
 const { ReportView, SandboxChecks } = await import('@/components/sandbox/v2/SandboxChecks');
 const { SANDBOX_V2_STATES } = await import('@/app/dev/sandbox-v2/states');
-const { endedWords, leftWords, otherRunLine, practiceCommand, practiceRefusal, practiceTaskLines, shellQuote, taskTimes } = await import('@/lib/sandbox/sandbox-practice');
+const { endedWords, leftWords, otherRunLine, practiceCommand, practiceRefusal, practiceTaskLines, shellQuote, taskTimes, tasksDone } = await import('@/lib/sandbox/sandbox-practice');
 const { PracticeError } = await import('@/lib/sandbox/practice/api');
 const { notRunFor, rowsSummary, sandboxRows } = await import('@/lib/sandbox/sandbox-rows');
 const { checkStateOf, CHECK_IDS } = await import('@/lib/sandbox/checks');
@@ -81,7 +81,9 @@ describe('the line to paste', () => {
     expect(practiceCommand({ code: CODE, adapter: 'python3 wr_adapter.py', provider: 'anthropic' }))
       .toBe(`echo ${CODE} | npx @whiteroom-ai/cli@${CLI_VERSION} practice run --adapter 'python3 wr_adapter.py' --code-stdin --key-env ANTHROPIC_API_KEY`);
     // The sample agent: no adapter. No code yet: dots.
-    expect(practiceCommand({ code: null, adapter: null, provider: 'openai' })).toBe(`echo wrrt_••••••• | npx @whiteroom-ai/cli@${CLI_VERSION} practice run --code-stdin --key-env OPENAI_API_KEY`);
+    // The sample agent names no key (any Anthropic or OpenAI key of yours), whatever the Sandbox's provider: never a cloud one it can't use.
+    expect(practiceCommand({ code: null, adapter: null, provider: 'openai' })).toBe(`echo wrrt_••••••• | npx @whiteroom-ai/cli@${CLI_VERSION} practice run --code-stdin`);
+    expect(practiceCommand({ code: null, adapter: null, provider: 'azure-openai' })).not.toContain('--key-env');
     // Whatever the command holds stays one shell word.
     expect(shellQuote(`node a.mjs --name 'x'; rm -rf /`)).toBe(`'node a.mjs --name '\\''x'\\''; rm -rf /'`);
   });
@@ -241,13 +243,83 @@ describe('practice tasks in the page', () => {
     expect(text()).toContain(`echo ${CODE} | npx @whiteroom-ai/cli@${CLI_VERSION} practice run --adapter 'node a.mjs'`);
   });
 
-  it('a draft from before (Back to results and back) gets a fresh code at once, no start spent', async () => {
+  it('a draft from before (Back to results and back) isn’t renewed on its own: Get a new code, no start spent', async () => {
     listed = [{ id: RUN, lifecycle: 'draft', agentId: 'support-bot', sample: false, createdAt: '', endedAt: null }];
     await act(async () => { root.render(card()); });
     await flush();
-    expect(posts().filter((p) => p.url.endsWith('/start'))).toHaveLength(0);
+    // A code already copied (or in another tab) keeps working: nothing is asked of the engine yet.
+    expect(posts()).toHaveLength(0);
+    await click('Get a new code');
+    expect(posts().map((p) => p.url)).toEqual([`/api/sandbox/practice/${RUN}/code`]);
     expect(text()).toContain(`echo ${CODE2} |`);
-    expect(button('Copy')).toBeDefined();
+  });
+
+  it('a draft started on the practice page isn’t picked up or reused; Start’s "open test" sends you there', async () => {
+    served = run({ origin: null, proxyKeyDisplayPrefix: null });
+    listed = [{ id: RUN, lifecycle: 'draft', agentId: 'support-bot', sample: false, createdAt: '', endedAt: null }];
+    startAnswer = () => Response.json({ error: 'You already have a practice test open.', reason: 'owner_busy', run: { id: RUN, lifecycle: 'draft' } }, { status: 429 });
+    await act(async () => { root.render(card()); });
+    await flush();
+    expect(button('Get the command')).toBeDefined();
+    expect(posts()).toHaveLength(0);
+    await click('Get the command');
+    expect(posts().some((p) => p.url.endsWith(`${RUN}/code`) || p.url.endsWith(`${RUN}/end`))).toBe(false);
+    await click('Open it');
+    expect(text()).toContain('That test was started on the practice page.');
+    expect(document.querySelector(`a[href="/sandbox/practice?run=${RUN}"]`)).not.toBeNull();
+  });
+
+  it('a Deep link with a quick draft open stays Deep: its Get starts a deep test, never the quick code', async () => {
+    listed = [{ id: RUN, lifecycle: 'draft', agentId: 'support-bot', sample: false, createdAt: '', endedAt: null }];
+    await act(async () => { root.render(card({ initialProfile: 'deep' })); });
+    await flush();
+    expect(document.querySelector('[role="radiogroup"][aria-label="How thorough?"] [aria-checked="true"]')?.textContent).toBe('Deep (longer)');
+    await click('Get the command');
+    expect(posts().find((p) => p.url.endsWith('/start'))?.body).toMatchObject({ profile: 'deep', runs: 3 });
+    expect(posts().some((p) => p.url.endsWith(`${RUN}/end`))).toBe(true);
+  });
+
+  it('the sample agent on a cloud Sandbox: no --key-env, and the key line says any Anthropic or OpenAI key', async () => {
+    await act(async () => { root.render(card({ provider: 'azure-openai' })); });
+    await flush();
+    await click('Sample agent');
+    expect(text()).not.toContain('--key-env');
+    expect(text()).toContain('Set ANTHROPIC_API_KEY or OPENAI_API_KEY to any key of yours');
+    expect(text()).not.toContain('AZURE_OPENAI_API_KEY');
+  });
+
+  it('a non-cloud key: no model is sent, and source-model isn’t asked', async () => {
+    await act(async () => { root.render(card()); });
+    await flush();
+    await click('Get the command');
+    expect(posts().find((p) => p.url.endsWith('/start'))?.body).not.toHaveProperty('model');
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes('/source-model'))).toBe(false);
+  });
+
+  it('a cloud key asks source-model for the Sandbox’s calls; an engine that ignores it (no model) leaves the field empty', async () => {
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => (String(url).includes('/source-model')
+      ? Response.json({ model: null, provider: 'unknown', directKey: true, blocked: null, providerKeys: [], controls: null })
+      : base(url, init)));
+    await act(async () => { root.render(card({ provider: 'azure-openai' })); });
+    await flush();
+    const asked = fetchMock.mock.calls.map(([u]) => String(u)).find((u) => u.includes('/source-model'))!;
+    expect(asked).toContain('origin=sandbox');
+    expect((document.getElementById('sbx-pt-model') as HTMLInputElement).value).toBe('');
+    expect(button('Get the command')!.disabled).toBe(true);
+  });
+
+  it('a deep run’s progress counts tasks, not the control-check step: card and report agree', async () => {
+    const plan = { tasks: ['D', 'A', 'controls', 'C_timeout'].map((scenario) => ({ scenario, runIndex: 0 })) };
+    // Three steps done, one of them the control checks: two tasks done.
+    expect(tasksDone({ plan, profile: 'deep', scope: null, runs: 1, progress: { done: 3, total: 4, lastContactAt: '' } })).toBe(2);
+    expect(practiceTaskLines({ plan, profile: 'deep', scope: null, runs: 1, progress: { done: 3, total: 4, lastContactAt: '' } }).map((l) => l.state)).toEqual(['done', 'done', 'now']);
+    vi.useFakeTimers();
+    served = run({ lifecycle: 'active', startedAt: '2026-10-29T14:09:00.000Z', profile: 'deep', progress: { done: 3, total: 4, lastContactAt: '' }, plan });
+    listed = [{ id: RUN, lifecycle: 'active', agentId: 'support-bot', sample: false, createdAt: '', endedAt: null }];
+    await act(async () => { root.render(h(SandboxChecks, { fleet: 'prod-eu', sandboxFleetId: 'sandbox-00000000-0000-4000-8000-000000000000', onPractice: vi.fn() })); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(text()).toContain('Practice tasks running · 3 of 3');
   });
 
   it('changing how thorough after a code ends that draft; a refused start leaves no dead code to copy', async () => {

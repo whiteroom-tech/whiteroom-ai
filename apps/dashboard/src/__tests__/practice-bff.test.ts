@@ -126,6 +126,12 @@ describe('practice BFF', () => {
     expect((await get(['source-model'], `fleet=prod-eu&agent=${'a'.repeat(129)}`)).status).toBe(400);
     await get(['source-model'], 'fleet=prod-eu&agent=support%20bot');
     expect(sent().url).toMatch(/\/api\/readiness\/source-model\?fleet=prod-eu&agent=support%20bot$/);
+    // origin=sandbox goes on (the agent's Sandbox calls); any other origin is dropped.
+    const last = () => String(engine.mock.calls[engine.mock.calls.length - 1][0]);
+    await get(['source-model'], 'fleet=prod-eu&agent=support-bot&origin=sandbox');
+    expect(last()).toMatch(/\/api\/readiness\/source-model\?fleet=prod-eu&agent=support-bot&origin=sandbox$/);
+    await get(['source-model'], 'fleet=prod-eu&agent=support-bot&origin=elsewhere%26x=1');
+    expect(last()).toMatch(/\/api\/readiness\/source-model\?fleet=prod-eu&agent=support-bot$/);
   });
 
   it('never passes an unreadable engine answer on as a success, and bounds names like the engine', async () => {
