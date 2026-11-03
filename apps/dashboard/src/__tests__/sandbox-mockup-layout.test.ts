@@ -15,7 +15,7 @@ const { SANDBOX_V2_STATES } = await import('@/app/dev/sandbox-v2/states');
 const { CHECK_IDS, checkStateOf, currentCheckOf } = await import('@/lib/sandbox/checks');
 const { LIVE_TRACK, nextSteps, nowExplained, ROWS, sandboxRows } = await import('@/lib/sandbox/sandbox-rows');
 const { WHAT_WE_CHECK } = await import('@/lib/sandbox/what-we-check');
-const { NextCard } = await import('@/components/sandbox/v2/SandboxAside');
+const { NextCard, WhatWeCheckCard } = await import('@/components/sandbox/v2/SandboxAside');
 
 let root: Root;
 const text = () => document.body.textContent ?? '';
@@ -117,12 +117,26 @@ describe('the right-hand cards follow the step', () => {
     expect(document.querySelector('[aria-label="Copy the setting"]')).toBeNull();
   });
 
-  it('What we check: a choice made by hand stays when the step changes the default', async () => {
-    await render('just-connected');
-    const fold = () => document.querySelector('aside details') as HTMLDetailsElement;
+  it('What we check: a choice made by hand stays when the step or width changes the default', async () => {
+    const fold = () => document.querySelector('details') as HTMLDetailsElement;
+    const draw = (open: boolean) => act(async () => { root.render(h(WhatWeCheckCard, { open, practiceHref: '/sandbox/practice' })); });
+    await draw(true);
     expect(fold().open).toBe(true);
+    // Closed by hand: a default that changes (waiting → checking → waiting) doesn't reopen it.
     await act(async () => { fold().open = false; fold().dispatchEvent(new Event('toggle')); });
+    await draw(false);
+    await draw(true);
     expect(fold().open).toBe(false);
+    // Opened by hand: a default of closed doesn't shut it.
+    await act(async () => { fold().open = true; fold().dispatchEvent(new Event('toggle')); });
+    await draw(false);
+    expect(fold().open).toBe(true);
+  });
+
+  it('a failed checks read shows the error, not the waiting line', async () => {
+    await render('checks-error');
+    expect(text()).toContain('couldn’t do that');
+    expect(text()).not.toContain('Waiting for your agent’s first call');
   });
 });
 
