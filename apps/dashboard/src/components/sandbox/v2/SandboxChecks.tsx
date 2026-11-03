@@ -9,7 +9,7 @@ import { isStaleSandbox, sandboxSetting, SandboxFleetError } from '@/lib/sandbox
 import {
   activityLine, checkAction, currentCheckOf, getCheckState, isQuiet, stageLine, STATUS_WORDS, type CheckState, type CheckStatus,
 } from '@/lib/sandbox/checks';
-import { SCORED_CHECKS, tooFewCalls, tooFewNote } from '@/lib/sandbox/check-report';
+import { restartedCheck, restartNote, SCORED_CHECKS, tooFewCalls, tooFewNote } from '@/lib/sandbox/check-report';
 import {
   callsText, LIVE_TRACK, liveRowName, nextSteps, notRunFor, nowExplained, practiceBinding, ROW_GROUP_NAMES, rowCounts, rowsHeadline, rowsSummary, sandboxRows, STATE_WORDS,
   type BoundPractice, type NextStep, type RowLimits, type SandboxRow,
@@ -336,7 +336,7 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   const phase: CheckPhase = !w ? 'waiting' : ended ? 'results' : 'checking';
   const agentName = w?.agentId ?? (isSample ? 'the sample agent' : 'your agent');
   const reportRows = state && w && ended ? sandboxRows(state, practice.bound ?? undefined, limits) : null;
-  const next = reportRows ? nextSteps(reportRows, { few: tooFewCalls(state!), sample: isSample }) : [];
+  const next = reportRows ? nextSteps(reportRows, { few: tooFewCalls(state!), sample: isSample, restarted: restartedCheck(state!) }) : [];
   const href = practiceHref(w?.agentId);
   const live = state && !quiet ? activityLine(state, now, isSample) : null;
   return (
@@ -432,6 +432,7 @@ const nextKey = (x: NextStep) => (x.kind === 'fix' ? `fix-${x.num}` : x.kind);
 function NextLine({ step, href, onPractice }: { step: NextStep; href: string; onPractice?: (profile?: PracticeProfile) => void }) {
   switch (step.kind) {
     case 'again': return <>Run your agent again, with a longer task, so the live checks can run.</>;
+    case 'restarted': return <>WhiteRoom restarted during this check. Check again.</>;
     case 'fix': return <>{NEXT_SHORT[step.num] ?? `${step.text} Then check again.`}</>;
     case 'practice': return <><PracticeLink href={href} onPractice={onPractice && (() => onPractice())} /> for {step.rows}. A few minutes.</>;
     case 'live': return <>Ready for live traffic. Point your agent at WhiteRoom from <Link href={ROUTES.fleetKey} className="wr-link">Fleet key</Link>.</>;
@@ -512,7 +513,10 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
     void copyText(rowsSummary(rows, { when, calls, notes, lead: few })).then((ok) => show(ok ? 'copied' : 'failed'));
   };
   // The eight rows, in number order and their two groups, always; too few calls adds one line on what the live checks need.
-  const few = tooFewCalls(state) ? tooFewNote(calls) : null;
+  // A restart cut it short: say so (the agent's calls weren't the reason). Else too few calls: what the live checks need.
+  const decided = state.checks.some((c) => c.status === 'passed' || c.status === 'failed');
+  // The sample's report offers Run the sample again (not Check again): the note points there.
+  const few = restartedCheck(state) ? restartNote(decided, !!sample) : tooFewCalls(state) ? tooFewNote(calls) : null;
   const agent = state.window?.agentId ?? null;
   // Only another agent's practice run: the practice rows say whose run they still wait for.
   const base = sandboxRows(state, practice.bound ?? undefined, limits);

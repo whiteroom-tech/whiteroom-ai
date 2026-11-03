@@ -17,6 +17,26 @@ export const ENOUGH_CALLS = 5;
 export const tooFewNote = (calls: number) =>
   `${calls === 0 ? 'No calls reached your Sandbox' : `Only ${calls === 1 ? '1 call' : `${calls} calls`}`} this time, so the live checks couldn’t run. Run a longer task, or run your agent again. Checks start by themselves.`;
 
+/**
+ * How the engine words a check it couldn't finish because it restarted mid-check. Sync point: engine
+ * apps/engine/src/concepts/sandbox-check.ts, hydrateSandboxChecks ("Not checked: WhiteRoom restarted
+ * during the check. Start checking again."). The engine sends no reason on the window, so this is the
+ * signal; it's matched loosely (the phrase, any case, on a not-checked result) so a reworded sentence
+ * still counts.
+ */
+export const RESTARTED_DETAIL = /\brestarted during (the|this) check\b/i;
+/** The engine's sentence today (the sync point above), for fixtures and tests: one copy. */
+export const ENGINE_RESTARTED_SENTENCE = 'Not checked: WhiteRoom restarted during the check. Start checking again.';
+
+/** Whether the check was cut short by a WhiteRoom restart: a check, rule or part not checked for that reason. */
+export function restartedCheck(state: Pick<CheckState, 'checks' | 'rules' | 'parts'>): boolean {
+  return [...state.checks, ...state.rules, ...(state.parts ?? [])].some((c) => c.status === 'not_checked' && RESTARTED_DETAIL.test(c.detail));
+}
+
+/** The line above a report cut short by a restart: it says so, rather than blaming the agent's calls. */
+export const restartNote = (anyChecked: boolean, sample = false) =>
+  `WhiteRoom restarted during this check, so ${anyChecked ? 'some checks didn’t finish' : 'nothing was checked'}. ${sample ? 'Run the sample again.' : 'Check again.'}`;
+
 /** Whether an ended window saw too few calls to check anything: no live check passed or failed. */
 export function tooFewCalls(state: Pick<CheckState, 'checks'> & { window: { calls: number } | null }): boolean {
   const decided = state.checks.some((c) => (SCORED_CHECKS as readonly CheckId[]).includes(c.id) && (c.status === 'passed' || c.status === 'failed'));

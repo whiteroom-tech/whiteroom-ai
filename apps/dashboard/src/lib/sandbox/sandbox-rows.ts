@@ -305,7 +305,8 @@ export function sandboxRows(state: CheckState, practice?: BoundPractice, limits:
   const peShort = peState === 'passed' ? 'Backed off a 529' : pe?.status === 'failed'
     ? failedShort(pe.detail).replace(/^Retried it /, 'Retried a 529 ').replace(' within ', ' in ').replace(/\.$/, '') : liveText(pe);
   const waitShort = !wait ? null : waitState === 'passed' ? 'waited as told after a rate limit' : waitState === 'failed' ? 'called again too soon after a rate limit' : liveText(wait);
-  const here = [peShort, waitShort].filter(Boolean).join(' · ');
+  // The same words once: an error and a wait cut short by one cause (a restart) say it once, not twice.
+  const here = [...new Set([peShort, waitShort].filter(Boolean))].join(' · ');
   const line3 = peState === 'failed' ? 'Retried a provider error too fast.' : waitState === 'failed' ? 'Called again too soon after a rate limit.' : '';
   const hereState: RowPart['state'] = peState === 'failed' || waitState === 'failed' ? 'failed' : peState === 'not_checked' || waitState === 'not_checked' ? 'not_checked' : 'passed';
   const prac3 = practicePart(practice, ['c.timeout', 'c.keeps_failing']);
@@ -444,6 +445,7 @@ export type NextStep =
   | { kind: 'fix'; num: string; text: string }
   | { kind: 'practice'; rows: string }
   | { kind: 'again' }
+  | { kind: 'restarted' }
   | { kind: 'live' }
   | { kind: 'deep' };
 
@@ -452,10 +454,12 @@ export type NextStep =
  * rows they check; with too few calls, run the agent again first; with
  * nothing left, go live (and the Deep test for 02's long-task result).
  */
-export function nextSteps(rows: SandboxRow[], o: { few: boolean; sample: boolean }): NextStep[] {
+export function nextSteps(rows: SandboxRow[], o: { few: boolean; sample: boolean; restarted?: boolean }): NextStep[] {
   const out: NextStep[] = [];
-  // The sample agent is run by WhiteRoom: its report offers Run the sample again itself, so no run-again step.
-  if (o.few && !o.sample) out.push({ kind: 'again' });
+  // Cut short by a WhiteRoom restart: check again (not the agent's calls). The sample agent is run by WhiteRoom:
+  // its report offers Run the sample again itself, so no run-again step.
+  if (o.restarted && !o.sample) out.push({ kind: 'restarted' });
+  else if (o.few && !o.sample) out.push({ kind: 'again' });
   for (const r of rows) if (r.state === 'failed' && r.fix) out.push({ kind: 'fix', num: r.num, text: r.fix.next });
   if (o.sample) return out;
   const practice = practiceRows(rows);

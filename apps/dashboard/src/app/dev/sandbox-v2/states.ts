@@ -3,6 +3,7 @@ import type { SandboxRulesPreview } from '@/components/sandbox/v2/SandboxRules';
 import type { SandboxChecksPreview } from '@/components/sandbox/v2/SandboxChecks';
 import { CHECK_IDS, CHECK_NAMES, type CheckId, type CheckRule, type CheckStage, type CheckStatus, type RuleProbe } from '@/lib/sandbox/checks';
 import { previewReadyMade } from '@/lib/sandbox/rules';
+import { ENGINE_RESTARTED_SENTENCE } from '@/lib/sandbox/check-report';
 import type { PracticeRun } from '@/lib/sandbox/practice/types';
 import type { GovernanceRule } from '@/lib/whiteroom/types';
 
@@ -229,6 +230,13 @@ export const SANDBOX_V2_STATES = {
   'checks-report-rows': live({ checks: ROWS_CHECKS }),
   /** A URL from Connect still in page state when the report arrives: the report shows without it. */
   'connected-then-report': live({ issued: ISSUED, checks: ROWS_CHECKS }),
+  /** A check cut short by a WhiteRoom restart (the engine's wording on what it couldn't finish), with no calls counted. */
+  'checks-report-restarted': live({ checks: (() => {
+    const R = ENGINE_RESTARTED_SENTENCE;
+    // As the engine marks it: every check still pending at the restart reads the restart.
+    const c = checkState('done', { long_task: ['not_checked', R], spend_cap: ['not_checked', R], loop_rate: ['not_checked', R], allowlists_keywords: ['not_checked', R], pause_stop: ['not_checked', R], provider_errors: ['not_checked', R], finishes_correctly: ['not_checked', ''] }, { ended: true, calls: 0 });
+    return { ...c, state: { ...c.state!, window: { ...c.state!.window!, agentId: 'support-bot' }, parts: [{ id: 'rate_limit_wait', status: 'not_checked', detail: R }] } };
+  })() }),
   /** Step 4: the checks couldn't be read. */
   'checks-error': live({ checks: { state: null, error: 'The Sandbox couldn’t do that right now. Try again in a moment.', now: NOW } }),
   /** Connect, with the sample agent on offer. */

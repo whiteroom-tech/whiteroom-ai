@@ -34,7 +34,7 @@ export function YourSandboxCard({ connected, lastCallAt, now, busy, onNewUrl, on
       <h3 className={v.rcardHead}>Your Sandbox</h3>
       <div className={v.rrow}>
         <span className={`${v.rdot} ${live ? v.rdotLive : ''}`} aria-hidden="true" />
-        {sample ? <b>Sample agent · run by WhiteRoom</b> : <><b>{providerLabel(key.provider)}</b> · key ending <span className={v.mono}>{key.keyHint}</span></>}
+        {sample ? <b>Sample agent · run by WhiteRoom</b> : <><b>{providerLabel(key.provider)}</b> · <span className={v.nowrap}>key ending <span className={v.mono}>{key.keyHint}</span></span></>}
       </div>
       <div className={v.rrow}>Last call: {lastCallAt ? lastCallText(lastCallAt, now) : 'none yet'}</div>
       {/* The URL's start, short enough for one line (mockup Rev 3: "sk-wr-70d7…"). */}
