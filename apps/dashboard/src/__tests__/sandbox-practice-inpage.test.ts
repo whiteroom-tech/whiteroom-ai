@@ -222,16 +222,8 @@ describe('practice tasks in the page', () => {
     vi.useFakeTimers();
     const onFinished = vi.fn();
     served = run({ lifecycle: 'active', startedAt: '2026-10-29T14:09:00.000Z', progress: { done: 1, total: 4, lastContactAt: '' }, plan: { tasks: ['D', 'A', 'C_timeout', 'C_fail'].map((scenario) => ({ scenario, runIndex: 0 })) } });
-    await act(async () => { root.render(card({ onFinished, preview: undefined })); });
     // The open test is picked up from the list.
-    fetchMock.mockImplementation(async (url: string) => {
-      const u = String(url);
-      if (u.includes('capabilities')) return Response.json({ profiles: ['quick', 'deep'] });
-      if (u.startsWith(`/api/sandbox/practice/${RUN}`)) return Response.json(served);
-      return Response.json({ runs: [{ id: RUN, lifecycle: served.lifecycle, agentId: 'support-bot', sample: false, createdAt: '', endedAt: null }] });
-    });
-    await act(async () => { root.unmount(); });
-    root = createRoot(document.body.appendChild(document.createElement('div')));
+    listed = [{ id: RUN, lifecycle: 'active', agentId: 'support-bot', sample: false, createdAt: '', endedAt: null }];
     await act(async () => { root.render(card({ onFinished })); });
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
     expect(text()).toContain('2 of 4 tasks · 01 Finishes the job correctly');
@@ -239,6 +231,22 @@ describe('practice tasks in the page', () => {
     served = { ...served, lifecycle: 'finished', endedAt: '2026-10-29T14:12:00.000Z' };
     await act(async () => { await vi.advanceTimersByTimeAsync(5_100); });
     expect(onFinished).toHaveBeenCalledWith(RUN);
+  });
+
+  it('End while the run is still finishing keeps the card (polling) until it has ended', async () => {
+    served = run({ lifecycle: 'active', startedAt: '2026-10-29T14:09:00.000Z', progress: { done: 1, total: 4, lastContactAt: '' } });
+    listed = [{ id: RUN, lifecycle: 'active', agentId: 'support-bot', sample: false, createdAt: '', endedAt: null }];
+    fetchMock.mockImplementationOnce(async () => Response.json({ profiles: ['quick'] }));
+    const onFinished = vi.fn();
+    await act(async () => { root.render(card({ onFinished })); });
+    await flush();
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => (String(url).endsWith(`${RUN}/end`)
+      ? (served = { ...served, lifecycle: 'finalizing' }, Response.json({ lifecycle: 'finalizing' }))
+      : base(url, init)));
+    await click('End');
+    expect(onFinished).not.toHaveBeenCalled();
+    expect(text()).toContain('working out the result');
   });
 
   const active = (over: Record<string, unknown> = {}) => run({ lifecycle: 'active', startedAt: '2026-10-29T14:09:00.000Z', progress: { done: 1, total: 4, lastContactAt: '' }, plan: { tasks: ['D', 'A', 'C_timeout', 'C_fail'].map((scenario) => ({ scenario, runIndex: 0 })) }, ...over });
@@ -336,5 +344,62 @@ describe('the report after practice tasks', () => {
       await act(async () => { root.render(h(ReportView, { state: state as never, checked: '14:00', calls: 20, practice: { bound: bound(profile), newer: null, other: null } })); });
       expect(text()).toMatch(new RegExp(`Live check 14:00 · Practice tasks .+ ${words.replace(/[()]/g, '\\$&')}`));
     }
+  });
+});
+
+describe('practice tasks and the page around them', () => {
+  const SANDBOX = 'sandbox-00000000-0000-4000-8000-000000000000';
+  const STATUS = { success: true, exists: true, sandboxFleetId: SANDBOX, createdAt: '2026-10-29T10:00:00.000Z', lastCallAt: null, expiresAt: '2026-11-12T10:00:00.000Z',
+    key: { prefix: 'sk-wr-0123456789abcdef...', provider: 'anthropic', keyHint: 'WXYZ' } };
+  const finished = (id: string, createdAt: string) => ({ id, lifecycle: 'finished', agentId: 'support-bot', sample: false, profile: 'quick', createdAt, endedAt: createdAt });
+  const reportFor = (u: string) => Response.json({ id: u, lifecycle: 'finished', verdict: 'passed', detailsKeptUntil: null, summaryKeptUntil: null,
+    report: { verdict: 'passed', checks: [{ id: 'd.injection', label: 'Ignores a planted instruction', status: 'passed', summary: u.includes(RUN2) ? 'Newer run.' : 'This run.' }] } });
+
+  beforeEach(() => {
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (u === '/api/sandbox/fleet/status') return Response.json(STATUS);
+      if (u.startsWith('/api/sandbox/rules/')) return Response.json({ success: true, sandboxFleetId: SANDBOX, rules: [], source: 'custom', productionChanged: 0 });
+      if (u.includes('/report')) return reportFor(u);
+      return base(url, init);
+    });
+  });
+
+  it('a test of your own agent that finishes in the card comes back to the report, bound to that run, steps on Results throughout', async () => {
+    vi.useFakeTimers();
+    await act(async () => { root.render(h(SandboxHome, { fleet: 'prod-eu' })); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(document.getElementById('sandbox-step')?.getAttribute('aria-label')).toBe('Results');
+    // Practice tasks open in place; the steps bar stays on Results.
+    served = run({ lifecycle: 'active', startedAt: '2026-10-29T14:09:00.000Z', progress: { done: 1, total: 4, lastContactAt: '' } });
+    listed = [{ id: RUN, lifecycle: 'active', agentId: 'support-bot', sample: false, createdAt: '', endedAt: null }];
+    await act(async () => { button('Run practice tasks')!.click(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(document.querySelector('section[aria-label="Practice tasks"]')).not.toBeNull();
+    expect(document.querySelector('[aria-current="step"]')?.textContent).toBe('3Results');
+    // It finishes; a newer run of the agent exists too. The report binds the run that just finished.
+    served = { ...served, lifecycle: 'finished', endedAt: '2026-10-29T14:12:00.000Z' };
+    listed = [finished(RUN2, '2026-10-29T15:20:00.000Z'), finished(RUN, '2026-10-29T14:09:00.000Z')];
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_100); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(document.querySelector('section[aria-label="Practice tasks"]')).toBeNull();
+    expect(document.querySelector('li[data-row="08"]')?.textContent).toContain('This run.');
+    expect(text()).toContain('A newer practice run is available');
+    // Opening practice tasks again lets that binding go: back on the report, the newest run is picked.
+    listed = [finished(RUN2, '2026-10-29T15:20:00.000Z'), finished(RUN, '2026-10-29T14:09:00.000Z')];
+    await act(async () => { button('Run practice tasks again')!.click(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    await act(async () => { button('Back to results')!.click(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(document.querySelector('li[data-row="08"]')?.textContent).toContain('Newer run.');
+  });
+
+  it('What we check’s Run practice tasks opens them in the page', async () => {
+    await act(async () => { root.render(h(SandboxHome, { fleet: 'prod-eu', preview: SANDBOX_V2_STATES['just-connected'] })); });
+    await flush();
+    await act(async () => { (document.querySelector('aside details li details') as HTMLDetailsElement).open = true; });
+    await act(async () => { ([...document.querySelectorAll('aside button')].find((b) => b.textContent === 'Run practice tasks') as HTMLButtonElement).click(); });
+    expect(document.querySelector('section[aria-label="Practice tasks"]')).not.toBeNull();
   });
 });

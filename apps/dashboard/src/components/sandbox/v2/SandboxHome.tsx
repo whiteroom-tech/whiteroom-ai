@@ -98,6 +98,8 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   const [practice, setPractice] = useState<{ profile: PracticeProfile } | null>(preview?.practice ? { profile: preview.practice.profile ?? 'quick' } : null);
   const [practiceRun, setPracticeRun] = useState<string | null>(null);
   const openPractice = useCallback((profile: PracticeProfile = 'quick') => {
+    // A run bound from the last visit to the card is done with: the report picks its run again (newest first).
+    setPracticeRun(null);
     setPractice({ profile });
     analytics.capture('sandbox_practice_opened', { profile });
     requestAnimationFrame(() => window.scrollTo?.({ top: 0 }));
@@ -155,6 +157,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
       setChecks(null);
       // Over the sample, the engine cleared its results: the checks card starts over.
       if (afterSample) setResets((n) => n + 1);
+      setPracticeRun(null);
       setSampleRefusal(null);
       connectedAt.current = Date.now();
       analytics.capture('sandbox_v2_connected', { provider: req.provider, detected, after_sample: afterSample });
@@ -187,6 +190,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
       setReplacing(false);
       setStatus(next);
       setResets((n) => n + 1);
+      setPracticeRun(null);
       analytics.capture('sandbox_v2_sample_started');
     } catch (e) {
       const known = e instanceof SandboxFleetError && SAMPLE_REFUSALS.includes(e.reason as SampleRefusal);
@@ -220,6 +224,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
         setChecks(null);
         // The checks card starts over: its old report is gone too.
         setResets((n) => n + 1);
+        setPracticeRun(null);
         setNotice(RESET_NOTICE);
       }
     } catch (e) {

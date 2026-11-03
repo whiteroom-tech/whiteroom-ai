@@ -166,7 +166,8 @@ export function SandboxPractice({ fleet, agent, provider, sandboxKey, initialPro
     track('practice_ended', { from: 'sandbox' });
     const next = await getPracticeRun(fleet, run.id);
     setRun(next);
-    if (!next.sample) onFinished(run.id);
+    // Back to the report only once the run has ended there: still finishing, the card keeps polling until it has.
+    if (!next.sample && !isOpen(next.lifecycle)) onFinished(run.id);
   });
 
   const running = !!run && (run.lifecycle === 'active' || run.lifecycle === 'finalizing');
@@ -206,7 +207,7 @@ export function SandboxPractice({ fleet, agent, provider, sandboxKey, initialPro
         </div>
         <h2 ref={heading} tabIndex={-1} className={s.srOnly}>Practice tasks running</h2>
         {refusal && <div className={v.notice} role="alert"><span>{refusal.message}</span></div>}
-        <p className={v.prog}><span><b>{run.lifecycle === 'finalizing' ? `${lines.length} of ${lines.length} tasks` : `${Math.min(done + 1, lines.length)} of ${lines.length} tasks`}</b>{at ? ` · ${at.label}` : run.lifecycle === 'finalizing' ? ' · working out the result' : ''}</span></p>
+        <p className={v.prog}><span><b>{run.lifecycle === 'finalizing' ? `${lines.length} of ${lines.length} tasks` : `${Math.min(done + 1, lines.length)} of ${lines.length} tasks`}</b>{run.lifecycle === 'finalizing' ? ' · working out the result' : at ? ` · ${at.label}` : ''}</span></p>
         <ul className={v.ptasks} role="status" aria-live="polite">
           {lines.map((l, i) => (
             <li key={i} className={l.state === 'done' ? v.ptDone : l.state === 'now' ? v.ptNow : undefined} data-state={l.state}>
