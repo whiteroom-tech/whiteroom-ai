@@ -15,6 +15,7 @@ vi.mock('@/lib/analytics', () => ({ analytics: { capture } }));
 
 const { SandboxHome } = await import('@/components/sandbox/v2/SandboxHome');
 const { SandboxPractice } = await import('@/components/sandbox/v2/SandboxPractice');
+const { ReportView, SandboxChecks } = await import('@/components/sandbox/v2/SandboxChecks');
 const { SANDBOX_V2_STATES } = await import('@/app/dev/sandbox-v2/states');
 const { otherRunLine, practiceCommand, practiceRefusal, practiceTaskLines, shellQuote } = await import('@/lib/sandbox/sandbox-practice');
 const { PracticeError } = await import('@/lib/sandbox/practice/api');
@@ -41,6 +42,8 @@ let listed: Record<string, unknown>[];
 let startAnswer: () => Response;
 let report: (() => Response) | null;
 let runRead: (() => Response) | null;
+/** The Sandbox's checks: support-bot's live check, ended. */
+const checksAnswer = { success: true, window: { id: 'chk_1', startedAt: '2026-10-29T14:00:00.000Z', endedAt: '2026-10-29T14:06:00.000Z', stage: 'done', injectErrors: true, calls: 20, agentId: 'support-bot' }, checks: [], rules: [] };
 const RUN2 = 'r-00000000-0000-4000-8000-0000000000bb';
 const fetchMock = vi.fn();
 const posts = () => fetchMock.mock.calls.filter(([, i]) => (i as RequestInit | undefined)?.method === 'POST').map(([u, i]) => ({ url: String(u), body: JSON.parse(String((i as RequestInit).body)) }));
@@ -53,6 +56,7 @@ beforeEach(() => {
   startAnswer = () => Response.json({ runId: RUN, code: CODE, codeExpiresAt: '2026-10-29T14:30:00.000Z' });
   fetchMock.mockReset().mockImplementation(async (url: string, init?: RequestInit) => {
     const u = String(url);
+    if (u.startsWith('/api/sandbox/checks/')) return Response.json(checksAnswer);
     if (u.startsWith('/api/sandbox/practice/capabilities')) return Response.json({ profiles: ['quick', 'deep'] });
     if (u.startsWith('/api/sandbox/practice/start')) return startAnswer();
     const m = u.match(/^\/api\/sandbox\/practice\/(r-[0-9a-f-]+)(\/[a-z]+)?/);
@@ -294,5 +298,43 @@ describe('practice tasks in the page', () => {
     await flush();
     expect(document.querySelector('[aria-labelledby="sbx-pt-prof"] button[aria-pressed="true"]')?.textContent).toBe('Deep (longer)');
     expect(capture).toHaveBeenCalledWith('sandbox_practice_opened', { profile: 'deep' });
+  });
+});
+
+describe('the report after practice tasks', () => {
+  const finished = (id: string, createdAt: string, profile = 'quick') => ({ id, lifecycle: 'finished', agentId: 'support-bot', sample: false, profile, createdAt, endedAt: createdAt });
+  const reportOf = (summary: string) => Response.json({ id: RUN, lifecycle: 'finished', verdict: 'passed', detailsKeptUntil: null, summaryKeptUntil: null,
+    report: { verdict: 'passed', checks: [{ id: 'd.injection', label: 'Ignores a planted instruction', status: 'passed', summary }] } });
+
+  it('a run that finished in the page is the one bound, even with a newer one listed', async () => {
+    // RUN finished in the card; a newer run of the same agent exists (another tab). The report binds RUN, and offers the newer one.
+    listed = [finished(RUN2, '2026-10-29T15:20:00.000Z'), finished(RUN, '2026-10-29T14:09:00.000Z')];
+    report = () => reportOf('Passed 1 of 1 run.');
+    await act(async () => { root.render(h(SandboxChecks, { fleet: 'prod-eu', sandboxFleetId: 'sandbox-00000000-0000-4000-8000-000000000000', practiceRun: RUN, onPractice: vi.fn() })); });
+    await flush();
+    const reads = fetchMock.mock.calls.map(([u]) => String(u)).filter((u) => u.endsWith('/report') || u.includes('/report?'));
+    expect(reads.some((u) => u.includes(`/${RUN}/report`))).toBe(true);
+    expect(reads.some((u) => u.includes(`/${RUN2}/report`))).toBe(false);
+    expect(document.querySelector('li[data-row="08"]')?.getAttribute('data-state')).toBe('passed');
+    expect(text()).toContain('A newer practice run is available');
+  });
+
+  const state = { window: { id: 'chk_1', startedAt: '2026-10-29T14:00:00.000Z', endedAt: '2026-10-29T14:06:00.000Z', stage: 'done' as const, injectErrors: true, calls: 20, agentId: 'support-bot' }, checks: [], rules: [] };
+  const bound = (profile: string) => ({ runId: RUN, endedAt: '2026-10-29T14:09:00.000Z', profile, checks: [{ id: 'd.injection', label: 'x', status: 'passed' as const, summary: 'Passed.', fix: null }] });
+
+  it('the newer-run notice gives its time, and Use it binds it', async () => {
+    const onUseNewer = vi.fn();
+    await act(async () => { root.render(h(ReportView, { state: state as never, checked: '14:00', calls: 20, now: Date.parse('2026-10-29T16:00:00.000Z'), onUseNewer,
+      practice: { bound: bound('quick'), newer: RUN2, newerAt: '2026-10-29T15:20:00.000Z', other: null } })); });
+    expect(text()).toMatch(/A newer practice run is available \(.+\)\./);
+    await click('Use it');
+    expect(onUseNewer).toHaveBeenCalledTimes(1);
+  });
+
+  it('the when-line says how thorough the bound run was', async () => {
+    for (const [profile, words] of [['quick', '(Quick, your adapter)'], ['deep', '(Deep, your adapter)']] as const) {
+      await act(async () => { root.render(h(ReportView, { state: state as never, checked: '14:00', calls: 20, practice: { bound: bound(profile), newer: null, other: null } })); });
+      expect(text()).toMatch(new RegExp(`Live check 14:00 · Practice tasks .+ ${words.replace(/[()]/g, '\\$&')}`));
+    }
   });
 });
