@@ -53,13 +53,15 @@ export const SANDBOX_RULES_ID = 'sandbox-rules';
  * from, and their modes. "5 ready-made rules · all Watch", "3 rules copied from
  * production · 2 in Enforce", "No rules".
  */
-export function rulesSummary(state: Pick<SandboxRulesState, 'rules' | 'source'> | null): string {
+export function rulesSummary(state: Pick<SandboxRulesState, 'rules' | 'source'> | null, short = false): string {
   if (!state) return 'Loading…';
   const n = state.rules.length;
   if (n === 0) return 'No rules';
-  const count = state.source === 'ready_made' ? `${n} ready-made ${n === 1 ? 'rule' : 'rules'}`
-    : state.source === 'production_copy' ? `${n} ${n === 1 ? 'rule' : 'rules'} copied from production`
-    : `${n} ${n === 1 ? 'rule' : 'rules'}`;
+  // Short (the rules card, under its chips): "5 ready-made · all Watch".
+  const word = n === 1 ? 'rule' : 'rules';
+  const count = state.source === 'ready_made' ? (short ? `${n} ready-made` : `${n} ready-made ${word}`)
+    : state.source === 'production_copy' ? (short ? `${n} copied from production` : `${n} ${word} copied from production`)
+    : `${n} ${word}`;
   const enforced = state.rules.filter((r) => r.mode === 'enforce').length;
   const mode = state.rules.every((r) => r.mode === 'watch') ? 'all Watch' : enforced ? `${enforced} in Enforce` : null;
   return mode ? `${count} · ${mode}` : count;

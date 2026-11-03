@@ -71,7 +71,7 @@ describe('Sandbox sample agent: the page', () => {
     expect(document.querySelector('#sandbox-step h2')?.textContent).toBe('Our sample agent is running');
     expect(text()).toContain(SAMPLE_RUNNING);
     expect(text()).toContain('Sample agent · run by WhiteRoom');
-    expect(text()).toContain('The sample agent is calling the Sandbox');
+    expect(text()).toContain('The sample agent is calling ·');
     // Nothing of the owner's to set up or fix.
     expect(text()).not.toContain('.env');
     expect(text()).not.toContain('Nothing happening?');
@@ -185,9 +185,10 @@ describe('Sandbox sample agent: the page', () => {
     expect(actions.indexOf('Check your own agent')).toBeLessThan(actions.indexOf('Run the sample again'));
     expect(button('Check again')).toBeUndefined();
     expect(text()).not.toContain('Next: check its answers too.');
-    // Settings: no URL or key to change, only Use your own key and Reset.
-    expect(text()).toContain('Sample agent (WhiteRoom)');
-    expect(button('Get a new Sandbox URL')).toBeUndefined();
+    // Your Sandbox: no URL or key to change, only Use your own key and Reset.
+    expect(document.querySelector('section[aria-label="Your Sandbox"]')?.textContent).toContain('Sample agent · run by WhiteRoom');
+    expect(button('New URL')).toBeUndefined();
+    expect(button('Reset Sandbox…')).toBeDefined();
     expect(button('Use your own key')).toBeDefined();
   });
 
@@ -275,8 +276,10 @@ describe('Sandbox sample agent: wording and status', () => {
   it('the live and stage lines name the sample agent, and the live line goes once its check ends', () => {
     const now = Date.parse('2026-10-29T10:01:00.000Z');
     const state = { window: WINDOW, checks: [], rules: [], activity: { lastCallAt: '2026-10-29T10:00:58.000Z', callsOutsideWindow24h: 0 } };
-    expect(activityLine(state as never, now, true)?.text).toMatch(/^The sample agent is calling the Sandbox/);
-    expect(activityLine(state as never, now)?.text).toMatch(/^Your agent is calling the Sandbox/);
+    expect(activityLine(state as never, now, true)?.text).toMatch(/^The sample agent is calling · last call/);
+    expect(activityLine(state as never, now)?.text).toMatch(/^Your agent is calling · last call/);
+    // The agent the check judges, by name, when the engine says (mockup Rev 3).
+    expect(activityLine({ ...state, window: { ...WINDOW, agentId: 'support-bot' } } as never, now)?.text).toMatch(/^support-bot is calling · /);
     expect(activityLine({ ...state, window: { ...WINDOW, endedAt: '2026-10-29T10:00:59.000Z' } } as never, now, true)).toBeNull();
     // No check at all (the run hasn't opened one, or it's gone): nothing to say about the sample.
     expect(activityLine({ ...state, window: null } as never, now, true)).toBeNull();

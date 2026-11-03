@@ -12,7 +12,7 @@ import { createRoot, type Root } from 'react-dom/client';
 const capture = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/analytics', () => ({ analytics: { capture } }));
 
-const { IDLE_HELP_MS, SandboxChecks } = await import('@/components/sandbox/v2/SandboxChecks');
+const { SandboxChecks } = await import('@/components/sandbox/v2/SandboxChecks');
 const { SandboxHelper } = await import('@/components/sandbox/v2/SandboxHelper');
 const { SandboxHome } = await import('@/components/sandbox/v2/SandboxHome');
 const { SANDBOX_V2_STATES } = await import('@/app/dev/sandbox-v2/states');
@@ -71,6 +71,9 @@ afterEach(() => { act(() => root.unmount()); document.body.innerHTML = ''; vi.un
 
 const checksEl = () => h(SandboxChecks, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID });
 const row = (id: string) => document.querySelector(`[data-check="${id}"]`);
+/** A live test on the check's track, and its line among the tests done. */
+const seg = (id: string) => document.querySelector(`[role="progressbar"] [data-check="${id}"]`);
+const doneLine = (id: string) => document.querySelector(`ul[aria-label="Done"] [data-check="${id}"]`);
 
 describe('practice tasks on the report (eight checks C3)', () => {
   const runRow = (id: string, agentId: string, minute: number) => ({ id, agentId, lifecycle: 'finished', profile: 'quick', createdAt: `2026-10-29T10:${String(minute).padStart(2, '0')}:00.000Z`, endedAt: `2026-10-29T10:${String(minute + 3).padStart(2, '0')}:00.000Z` });
@@ -175,7 +178,7 @@ describe('Check your agent', () => {
       activity: { lastCallAt, callsOutsideWindow24h: 0 },
     });
     expect(activityLine(st(null, false, null), now)).toBeNull();
-    expect(activityLine(st('observe', false, at(4_000)), now)).toEqual({ calling: true, text: 'Your agent is calling the Sandbox · last call 4 s ago · 12 calls checked' });
+    expect(activityLine(st('observe', false, at(4_000)), now)).toEqual({ calling: true, text: 'Your agent is calling · last call 4 s ago · 12 calls checked' });
     expect(activityLine(st('enforce', false, at(5 * 60_000)), now)).toEqual({ calling: false, text: 'Your agent stopped calling · last call 5 min ago · 12 calls checked. The check carries on when it calls again.' });
     expect(activityLine(st('done', true, at(3_000)), now)?.text).toBe('Your agent is calling the Sandbox · last call 3 s ago. This check has finished; its next run starts a new one.');
     expect(activityLine(st('done', true, at(10 * 60_000)), now)?.text).toBe('Your agent’s last call 10 min ago. A new check starts on its next run.');
@@ -191,46 +194,47 @@ describe('Check your agent', () => {
   it('shows the live line on the page while the agent calls', async () => {
     checks = { ...checkAnswer({ stage: 'observe', calls: 3 }), activity: { lastCallAt: new Date(Date.now() - 2_000).toISOString(), callsOutsideWindow24h: 0 } };
     await render(checksEl());
-    expect(text()).toMatch(/Your agent is calling the Sandbox · last call \d+ s ago · 3 calls checked/);
+    expect(text()).toMatch(/Your agent is calling · last call \d+ s ago · 3 calls checked/);
   });
 
-  it('renders each check with its status and detail, and the rules under it', async () => {
+  it('shows the six live tests in the order the engine runs them, the one now with what it does, and the ones done with their results', async () => {
     checks = checkAnswer({ stage: 'enforce' }, { spend_cap: 'passed', loop_rate: 'not_triggered', long_task: 'failed', finishes_correctly: 'not_checked' }, [
       { ruleId: 'gr_1', ruleType: 'spend_cap', check: 'spend_cap', wouldAct: true, acted: true, status: 'passed', detail: 'Blocked at $0.02.' },
     ]);
     await render(checksEl());
-    // The same eight rows as the report, in number order and two groups: 02–07 are the six live checks, 01 and 08 practice tasks.
-    expect([...document.querySelectorAll('[data-row]')].map((e) => e.getAttribute('data-row'))).toEqual(['01', '02', '03', '04', '05', '06', '07', '08']);
-    expect([...document.querySelectorAll('[data-check]')].map((e) => e.getAttribute('data-check'))).toEqual(['long_task', 'provider_errors', 'spend_cap', 'loop_rate', 'allowlists_keywords', 'pause_stop']);
-    expect([...document.querySelectorAll('h4')].map((e) => e.textContent)).toEqual(['The agent', 'The guardrails']);
-    expect(row('finishes_correctly')).toBeNull();
-    for (const n of ['01', '08']) {
-      expect(document.querySelector(`[data-row="${n}"]`)?.getAttribute('data-status')).toBe('practice');
-      expect(document.querySelector(`[data-row="${n}"]`)?.textContent).toContain('Practice tasks · Not part of this check.');
-    }
-    expect(document.querySelector('[data-row="04"]')?.textContent).toContain('04 Spend cap');
-    expect(text()).toContain('3 of 6 checked here · 01 and 08 need practice tasks');
+    // Mockup Rev 3 "2 · Checking": a track of the six live tests in the engine's order, labelled with their rows.
+    expect([...document.querySelectorAll('[role="progressbar"] [data-check]')].map((e) => e.getAttribute('data-check')))
+      .toEqual(['long_task', 'spend_cap', 'allowlists_keywords', 'loop_rate', 'pause_stop', 'provider_errors']);
+    expect([...document.querySelectorAll('[role="progressbar"] li')].map((e) => e.textContent))
+      .toEqual(['✕02 Long task', '✓04 Spend cap', '06 Allowlists', '–05 Loops', '07 Pause, stop', '03 Fails gracefully']);
     expect(document.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('3');
-    expect(row('spend_cap')?.textContent).toContain('Passed · Detail spend_cap');
-    expect(row('loop_rate')?.textContent).toContain('Not triggered by this run');
-    expect(row('long_task')?.textContent).toContain('Failed');
-    // The check being tested now, and the ones still to come.
-    expect(row('allowlists_keywords')?.getAttribute('data-status')).toBe('now');
-    expect(row('allowlists_keywords')?.textContent).toContain('Now');
-    expect(row('pause_stop')?.textContent).toContain('Up next');
-    expect(row('spend_cap')?.querySelector('details')?.textContent).toContain('Spend cap · Passed');
-    expect(row('spend_cap')?.textContent).toContain('Blocked at $0.02.');
+    // Practice-task rows aren't on the track: 01 and 08 aren't checked here.
+    expect(document.querySelector('[data-row]')).toBeNull();
+    expect(row('finishes_correctly')).toBeNull();
+    // Which test it's on, and the Now box: what this test does and what a good agent does.
+    expect(text()).toContain('4 of 6 tests · 06 Allowlists and keyword rules');
+    expect(seg('allowlists_keywords')?.getAttribute('data-status')).toBe('now');
+    expect(seg('pause_stop')?.getAttribute('data-status')).toBe('pending');
+    const nowBox = document.querySelector('[role="status"]')!;
+    expect(nowBox.textContent).toContain('Now · 06');
+    expect(nowBox.textContent).toContain('Allowlists and keyword rules');
+    expect(nowBox.textContent).toContain('A good agent backs off when refused.');
+    // The tests done, in the order they ran, with the engine's result.
+    expect([...document.querySelectorAll('ul[aria-label="Done"] [data-check]')].map((e) => e.getAttribute('data-check'))).toEqual(['long_task', 'spend_cap', 'loop_rate']);
+    expect(doneLine('spend_cap')?.textContent).toContain('04 Spend cap. Passed: Detail spend_cap');
+    expect(doneLine('loop_rate')?.textContent).toContain('Not triggered by this run');
+    expect(doneLine('long_task')?.textContent).toContain('Failed');
     // The enforce stage names the first rule still to test, in order: spend cap, then allowlists and keywords.
     expect(text()).toContain('Testing Label allowlists_keywords…');
     expect(button('Resume')).toBeUndefined();
     expect(button('Finish now')).toBeDefined();
   });
 
-  it('shows the test block after the rule rows when the check uses one, and names other agents as not checked', async () => {
+  it('shows the test block after the tests done when the check uses one, and names other agents as not checked', async () => {
     checks = { ...checkAnswer({ stage: 'enforce', otherAgents: ['billing-agent'] }, { long_task: 'passed' }), parts: [{ id: 'test_block', status: 'pending', detail: '' }] };
     await render(checksEl());
-    const rowsInOrder = [...document.querySelectorAll('[data-row], [data-check="test_block"]')].map((e) => e.getAttribute('data-row') ?? e.getAttribute('data-check'));
-    expect(rowsInOrder).toEqual(['01', '02', '03', '04', '05', '06', 'test_block', '07', '08']);
+    const inOrder = [...document.querySelectorAll('ul[aria-label="Done"] [data-check], [data-check="test_block"]')].map((e) => e.getAttribute('data-check'));
+    expect(inOrder).toEqual(['long_task', 'test_block']);
     expect(row('test_block')?.textContent).toContain('Sandbox check: a test block from WhiteRoom. Your rules didn’t change.');
     expect(row('test_block')?.textContent).toContain('Up next');
     expect(text()).toContain('Also called during this check: billing-agent (not checked).');
@@ -286,7 +290,7 @@ describe('Check your agent', () => {
     checks = { ...checkAnswer({ stage: 'observe', calls: 0 }), activity: { lastCallAt: new Date(Date.now() - 10 * QUIET_MS).toISOString(), callsOutsideWindow24h: 0 } };
     await render(checksEl());
     expect(text()).toContain('Your agent stopped calling');
-    expect(text()).not.toContain('Nothing happening?');
+    expect(text()).not.toContain('Nothing after a minute?');
   });
 
   it('Finish now sends the stop with the stage, and whether the agent had gone quiet', async () => {
@@ -297,37 +301,30 @@ describe('Check your agent', () => {
     expect(capture).toHaveBeenCalledWith('sandbox_v2_finish_now', { stage: 'observe', quiet: false });
   });
 
-  it('Nothing happening? opens itself once after a minute with no call, names the setting and provider, and Change key works', async () => {
-    vi.useFakeTimers();
+  it('no call yet: the usual fixes show at once, name the setting and provider, and Change key works', async () => {
     capture.mockClear();
     checks = checkAnswer(null);
     const onChangeKey = vi.fn();
     await render(h(SandboxChecks, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, provider: 'openai', onChangeKey }));
-    const help = () => [...document.querySelectorAll('details')].find((d) => d.querySelector('summary')?.textContent === 'Nothing happening?') as HTMLDetailsElement;
-    expect(help().open).toBe(false);
-    await act(async () => { await vi.advanceTimersByTimeAsync(IDLE_HELP_MS); });
-    expect(help().open).toBe(true);
-    expect(capture).toHaveBeenCalledWith('sandbox_v2_idle_help', { opened: 'auto' });
-    expect(help().textContent).toContain('Check it reads OPENAI_BASE_URL.');
-    expect(help().textContent).toContain('Check it calls OpenAI. This Sandbox is set up for an OpenAI key.');
-    await act(async () => { [...help().querySelectorAll('button')].find((b) => b.textContent === 'Change key')!.click(); });
+    // Mockup Rev 3 "2 · Waiting": always on screen under the line to copy, not a fold.
+    expect(text()).toContain('Nothing after a minute? Usually one of these:');
+    expect(text()).toContain('Restart your agent after changing .env.');
+    expect(text()).toContain('Check it reads OPENAI_BASE_URL, or pass the URL as base_url.');
+    expect(text()).toContain('Check it calls OpenAI. This Sandbox is set up for an OpenAI key.');
+    await click('Change key');
     expect(onChangeKey).toHaveBeenCalledTimes(1);
-    // Closed by hand: it doesn't open itself again.
-    await act(async () => { help().open = false; help().dispatchEvent(new Event('toggle')); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(IDLE_HELP_MS * 3); });
-    expect(help().open).toBe(false);
-    expect(capture.mock.calls.filter(([n]) => n === 'sandbox_v2_idle_help')).toHaveLength(1);
+    expect(capture.mock.calls.filter(([n]) => n === 'sandbox_v2_idle_help')).toHaveLength(0);
   });
 
-  it('Nothing happening? goes once a call arrives', async () => {
+  it('the usual fixes go once a call arrives', async () => {
     vi.useFakeTimers();
     checks = checkAnswer(null);
     await render(checksEl());
-    expect(text()).toContain('Nothing happening?');
+    expect(text()).toContain('Nothing after a minute?');
     checks = { ...checkAnswer({ stage: 'observe', calls: 1 }), activity: { lastCallAt: new Date(Date.now() + 1000).toISOString(), callsOutsideWindow24h: 0 } };
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     await flush();
-    expect(text()).not.toContain('Nothing happening?');
+    expect(text()).not.toContain('Nothing after a minute?');
   });
 
   it('no Resume at any stage: the check lifts its own stop after 5 seconds', async () => {
@@ -769,7 +766,7 @@ describe('Sandbox page', () => {
     // In the open, not inside the closed Sandbox settings.
     const warn = [...document.querySelectorAll('.wr-banner, [role="alert"], [class*="banner"]')].find((e) => e.textContent?.includes('42 times outside'));
     expect(warn?.closest('details')).toBeNull();
-    expect(document.querySelector('#sandbox-step h2')?.textContent).toBe('Run your agent');
+    expect(document.querySelector('#sandbox-step')?.getAttribute('aria-label')).toBe('Run your agent');
     // Like production: no Run agent helper on the page.
     expect(text()).not.toContain('Run agent');
     expect(document.body.innerHTML).not.toContain('href="/controls');
@@ -781,7 +778,7 @@ describe('Sandbox page', () => {
       await render(h(SandboxHome, { fleet: 'prod-eu', preview: SANDBOX_V2_STATES[state] }));
       expect(bff).not.toHaveBeenCalled();
       const ended = !!(SANDBOX_V2_STATES[state] as { checks?: { state: { window: { endedAt: string | null } | null } | null } }).checks?.state?.window?.endedAt;
-      expect(document.querySelector('#sandbox-step h2')?.textContent).toBe(ended ? 'Results' : 'Run your agent');
+      expect(document.querySelector('#sandbox-step')?.getAttribute('aria-label')).toBe(ended ? 'Results' : 'Run your agent');
       expect(document.body.innerHTML).not.toContain('href="/controls');
       expect(button('Resume')).toBeUndefined();
     },

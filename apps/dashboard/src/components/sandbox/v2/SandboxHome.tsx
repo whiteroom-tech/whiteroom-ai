@@ -1,25 +1,25 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
-import { Banner, Button, Icon, Panel, SkeletonCard } from '@whiteroom/ui';
-import { PageHeader, PageLead } from '@/components/citadel/PageChrome';
+import { Banner, Button, Icon, SkeletonCard } from '@whiteroom/ui';
+import { PageHeader } from '@/components/citadel/PageChrome';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { CopyChip, useCopy } from '@/components/citadel/CopyChip';
 import { analytics } from '@/lib/analytics';
 import { AgentNaming } from '@/components/citadel/AgentNaming';
 import { agentNamingFor } from '@/lib/provider-key-form';
-import { ROUTES } from '@/lib/routes';
 import {
-  connectSandboxFleet, getSandboxFleetStatus, isUnavailable, keptUntilText, lastCallText, outsideWindowText, providerLabel, sandboxSetting,
+  connectSandboxFleet, getSandboxFleetStatus, isUnavailable, outsideWindowText, sandboxSetting,
   resetSandboxFleet, rotateSandboxFleetKey, SAMPLE_REFUSALS, SandboxFleetError, startSandboxSample,
   type ConnectRefusal, type IssuedSandboxKey, type SampleRefusal, type SandboxFleetStatus,
 } from '@/lib/sandbox/fleet';
 import { ConnectForm, type ConnectRequest } from './ConnectForm';
-import { SandboxChecks, STEP_CARD_ID, type SandboxChecksPreview } from './SandboxChecks';
+import { practiceHref, SandboxChecks, STEP_CARD_ID, type CheckPhase, type SandboxChecksPreview } from './SandboxChecks';
+import { SandboxRulesCard, WhatWeCheckCard, YourSandboxCard } from './SandboxAside';
 import { SANDBOX_STEPS, sandboxStepOf, type SandboxStep } from '@/lib/sandbox/steps';
 import { checkStateOf, type CheckState } from '@/lib/sandbox/checks';
 import { SandboxRules, type SandboxRulesPreview } from './SandboxRules';
+import { SANDBOX_RULES_ID, type SandboxRulesState } from '@/lib/sandbox/rules';
 import s from '../guided.module.css';
 import v from './v2.module.css';
 
@@ -27,10 +27,10 @@ import v from './v2.module.css';
 export const RESET_NOTICE = 'Sandbox reset. Its calls and check results are cleared.';
 
 /** The one line under the title, on the Connect step. */
-export const SANDBOX_LEAD = 'Test your agent before it goes live. It runs on your own API key, and nothing here touches your live agents.';
+export const SANDBOX_LEAD = 'Test your agent before it goes live. Nothing here touches your live agents.';
 
 /** Under "Try a sample agent" on the Connect step (spec sandbox-sample-agent §5.1). */
-export const SAMPLE_OFFER = 'Watch our sample agent go through the checks. It takes about a minute and runs on our key.';
+export const SAMPLE_OFFER = 'Watch our sample agent go through the checks. About a minute, on our key.';
 /** Connecting your own key over the sample. */
 export const SAMPLE_REPLACE = 'This replaces the sample. Its calls and results are cleared; your rules stay.';
 
@@ -48,6 +48,8 @@ export interface SandboxHomePreview {
   replacing?: boolean;
   /** A refused sample start, as the engine words it. */
   sampleRefusal?: { reason: SampleRefusal; message: string };
+  /** The rules editor, already open (Edit rules). */
+  rulesOpen?: boolean;
 }
 
 type Confirm = 'rotate' | 'reset' | null;
@@ -84,6 +86,12 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   const [checks, setChecks] = useState<CheckState | null>(null);
   // Bumped when the checks card must start over (a reset, a sample run, your key over the sample).
   const [resets, setResets] = useState(0);
+  // The rules, for the card beside the step; and the editor, open from Edit rules.
+  const [rules, setRules] = useState<{ state: SandboxRulesState | null; failed: boolean }>({ state: null, failed: false });
+  const [rulesOpen, setRulesOpen] = useState(!!preview?.rulesOpen);
+  const onRules = useCallback((state: SandboxRulesState | null, failed: boolean) => setRules({ state, failed }), []);
+  // A URL got from Get a new Sandbox URL on this page: it shows above the check or report too, so it's seen before the page is left.
+  const [rotatedHere, setRotatedHere] = useState(false);
   // When a key was connected on this page (for the first-call event).
   const connectedAt = useRef<number | null>(null);
   const copiedEvent = useCallback(() => analytics.capture('sandbox_v2_setting_copied'), []);
@@ -186,6 +194,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
         const done = await rotateSandboxFleetKey(fleet, id);
         setStatus(done.status);
         setIssued(done.issued);
+        setRotatedHere(true);
       } else {
         setStatus(await resetSandboxFleet(fleet, id));
         // A refusal from before the reset (the day's limit, busy) no longer describes what Run the sample again would do.
@@ -235,6 +244,19 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
     analytics.capture('sandbox_v2_first_call', { seconds_since_connect: Math.max(0, Math.round((Date.parse(lastCallAt) - at) / 1000)) });
   }, [preview, lastCallAt]);
 
+  // Edit rules: open the editor under the step and bring it into view.
+  const editRules = useCallback(() => {
+    setRulesOpen(true);
+    requestAnimationFrame(() => {
+      const el = document.getElementById(SANDBOX_RULES_ID);
+      if (!el) return;
+      el.querySelector<HTMLElement>('h2')?.setAttribute('tabindex', '-1');
+      el.querySelector<HTMLElement>('h2')?.focus({ preventScroll: true });
+      const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      el.scrollIntoView({ block: 'start', behavior: still ? 'auto' : 'smooth' });
+    });
+  }, []);
+
   // A new step: focus its card's heading (not on the first render).
   const shownStep = useRef<SandboxStep | null>(null);
   useEffect(() => {
@@ -247,11 +269,25 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
     shownStep.current = step;
   }, [step, loading, status]);
 
+  const wide = useWide();
+  const href = practiceHref(checks?.window?.agentId);
+  const yourSandbox = connected && (
+    <YourSandboxCard connected={connected} lastCallAt={lastCallAt} now={now} busy={busy}
+      onNewUrl={() => setConfirm('rotate')} onChangeKey={() => setReplacing(true)} onReset={() => setConfirm('reset')} />
+  );
+  const rulesCard = <SandboxRulesCard state={rules.state} loadFailed={rules.failed} onEdit={editRules} />;
+  // The right-hand cards for each phase of the check (mockup Rev 3): What we check open while waiting (closed on a phone, where it stacks under the step).
+  const aside = (phase: CheckPhase) => <>
+    {yourSandbox}
+    {phase !== 'results' && <WhatWeCheckCard open={phase === 'waiting' && wide} practiceHref={href} />}
+    {rulesCard}
+  </>;
+
   return <>
     <PageHeader title="Sandbox" />
     <main className={s.content}>
       <div className={v.page}>
-        {step === 'connect' && <PageLead>{SANDBOX_LEAD}</PageLead>}
+        {step === 'connect' && <p className={v.lead2}>{SANDBOX_LEAD}</p>}
         {error && <Banner variant="error" actions={status === null && !loading && !preview ? <Button size={28} onClick={() => void load()}>Try again</Button> : undefined}>{error}</Banner>}
         {notice && <Banner variant="info" icon="check">{notice}</Banner>}
 
@@ -259,35 +295,33 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
 
         {status !== null && <SandboxSteps current={step} />}
 
-        {connected && !replacing && (
-          <p className={v.done}>
-            <span className={v.doneMark} aria-hidden="true"><Icon name="check" size={13} /></span>
-            {sample
-              ? <span>Sample agent · run by WhiteRoom</span>
-              : <span>Connected · {providerLabel(connected.key!.provider)} key ending <span className={v.mono}>{connected.key!.keyHint}</span></span>}
-            <button type="button" className={`${v.linkButton} ${v.push}`} onClick={() => setReplacing(true)} disabled={busy}>{sample ? 'Use your own key' : 'Change key'}</button>
-          </p>
-        )}
-
         {showForm && (
-          <Panel id={CONNECT_CARD_ID} title={sample ? 'Connect your own key' : connected ? 'Connect a different key' : 'Paste your agent’s API key'}>
-            <div className={v.stack}>
-              {connected && <p className={v.text}>{sample ? SAMPLE_REPLACE : 'Your Sandbox URL changes when you connect a new provider key. Update your agent after.'}</p>}
-              <ConnectForm busy={busy || sampleBusy} onConnect={connect} onRefused={preview ? undefined : refusedEvent} onCancel={connected ? () => setReplacing(false) : undefined} />
-              {sampleOffered && (
-                <div className={v.sampleOr}>
-                  {sampleLimit
-                    ? <p className={v.text} role="status">{sampleRefusal!.message}</p>
-                    : <>
-                      <strong>No key handy?</strong>
-                      <Button size={32} onClick={() => void startSample()} busy={sampleBusy} busyLabel="Starting…" disabled={busy}>Try a sample agent</Button>
-                      <p className={v.text}>{SAMPLE_OFFER}</p>
-                      {sampleRefusal && <p className={v.text} role="alert">{sampleRefusal.message}</p>}
-                    </>}
+          <div className={v.cols}>
+            <div className={v.mainCol}>
+              <section id={CONNECT_CARD_ID} className={v.card}>
+                <h2 className={v.cardTitle}>{sample ? 'Connect your own key' : connected ? 'Connect a different key' : 'Paste your agent’s API key'}</h2>
+                <div className={v.stack}>
+                  {connected && <p className={v.text}>{sample ? SAMPLE_REPLACE : 'Your Sandbox URL changes when you connect a new provider key. Update your agent after.'}</p>}
+                  <ConnectForm busy={busy || sampleBusy} onConnect={connect} onRefused={preview ? undefined : refusedEvent} onCancel={connected ? () => setReplacing(false) : undefined} />
+                  {sampleOffered && (
+                    <div className={v.sampleOr}>
+                      {sampleLimit
+                        ? <p className={v.text} role="status">{sampleRefusal!.message}</p>
+                        : <>
+                          <strong>No key handy?</strong>
+                          <Button size={32} onClick={() => void startSample()} busy={sampleBusy} busyLabel="Starting…" disabled={busy}>Try a sample agent</Button>
+                          <p className={v.text}>{SAMPLE_OFFER}</p>
+                          {sampleRefusal && <p className={v.text} role="alert">{sampleRefusal.message}</p>}
+                        </>}
+                    </div>
+                  )}
                 </div>
-              )}
+              </section>
             </div>
-          </Panel>
+            <aside className={v.rcol} aria-label="About your Sandbox">
+              <WhatWeCheckCard open={wide} practiceHref={href} />
+            </aside>
+          </div>
         )}
 
         {connected && !replacing && (
@@ -298,8 +332,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
             preview={preview ? preview.checks ?? { state: checkStateOf({ window: null, checks: [] }), now } : undefined}
             onStale={reload}
             onState={setChecks}
-            // A URL issued on this page (connect, or Get a new Sandbox URL on Results) shows even above a report.
-            setupAlways={!sample && !!issued}
+            setupAlways={!sample && !!issued && rotatedHere}
             provider={connected.key!.provider}
             onChangeKey={() => setReplacing(true)}
             // WhiteRoom runs the sample: nothing to set up, and its report leads to your own key.
@@ -307,53 +340,22 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
             setup={sample ? undefined : issued
               ? <RunSetup issued={issued} onCopied={preview ? undefined : copiedEvent} />
               : <ReturnSetup prefix={connected.key!.prefix} busy={busy} onNewUrl={() => setConfirm('rotate')} />}
+            aside={aside}
+            below={<>
+              {/* In the open: it says the agent ran with nothing checked or blocked. */}
+              {outside && <Banner variant="warn">{outside}</Banner>}
+              <SandboxRules
+                key={connected.sandboxFleetId}
+                fleet={fleet}
+                sandboxFleetId={connected.sandboxFleetId}
+                preview={preview ? preview.rules ?? { state: null, productionRules: 0, now } : undefined}
+                onStale={reload}
+                open={rulesOpen}
+                onClose={() => setRulesOpen(false)}
+                onState={onRules}
+              />
+            </>}
           />
-        )}
-
-        {/* In the open, not in settings: it says the agent ran with nothing checked or blocked. */}
-        {connected && !replacing && outside && <Banner variant="warn">{outside}</Banner>}
-
-        {connected && !replacing && (
-          <SandboxRules
-            key={connected.sandboxFleetId}
-            fleet={fleet}
-            sandboxFleetId={connected.sandboxFleetId}
-            preview={preview ? preview.rules ?? { state: null, productionRules: 0, now } : undefined}
-            onStale={reload}
-          />
-        )}
-
-        {connected && !replacing && (
-          <details className={v.fold}>
-            <summary className={v.foldHead}>
-              <span className={v.foldTitle}>Sandbox settings</span>
-              <span className={v.foldSub}>{sample ? 'Sample agent' : providerLabel(connected.key!.provider)} · {lastCallAt ? `last call ${lastCallText(lastCallAt, now)}` : 'no calls yet'}</span>
-            </summary>
-            <div className={`${v.stack} ${v.foldBody}`}>
-              <dl className={v.facts}>
-                <dt>Provider</dt>
-                <dd>{sample ? 'Sample agent (WhiteRoom)' : <>{providerLabel(connected.key!.provider)} · key ending <span className={v.mono}>{connected.key!.keyHint}</span></>}</dd>
-                {!sample && <>
-                  <dt>Sandbox URL</dt>
-                  <dd className={v.mono}>…/{connected.key!.prefix.replace(/\.+$/, '')}…</dd>
-                </>}
-                <dt>Last call</dt>
-                <dd>{lastCallText(lastCallAt, now)}</dd>
-              </dl>
-              <p className={v.text}>{keptUntilText(connected.expiresAt, now)}</p>
-              <div className={v.actions}>
-                {!sample && <Button size={32} onClick={() => setConfirm('rotate')} disabled={busy}>Get a new Sandbox URL</Button>}
-                <Button size={32} onClick={() => setReplacing(true)} disabled={busy}>{sample ? 'Use your own key' : 'Change API key'}</Button>
-                <Button size={32} variant="danger" onClick={() => setConfirm('reset')} disabled={busy}>Reset Sandbox</Button>
-              </div>
-            </div>
-          </details>
-        )}
-
-        {step === 'connect' && (
-          <p className={v.secondary}>
-            Want scripted tasks with known answers? <Link href={ROUTES.practiceTest} className="wr-link">Run practice tasks</Link>
-          </p>
         )}
       </div>
     </main>
@@ -378,6 +380,21 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
       onCancel={() => setConfirm(null)}
     />
   </>;
+}
+
+/** Two columns fit (a laptop): What we check starts open beside the step; on a phone it stacks under the step, closed. */
+function useWide(): boolean {
+  const query = '(min-width: 1100px)';
+  const [wide, setWide] = useState(() => typeof window === 'undefined' || !window.matchMedia || window.matchMedia(query).matches);
+  useEffect(() => {
+    const m = window.matchMedia?.(query);
+    if (!m) return;
+    const on = () => setWide(m.matches);
+    on();
+    m.addEventListener?.('change', on);
+    return () => m.removeEventListener?.('change', on);
+  }, []);
+  return wide;
 }
 
 /** The steps bar: Connect, Run your agent, Results. Done steps are ticked; the current one is marked for screen readers. */
@@ -405,12 +422,12 @@ export function RunSetup({ issued, onCopied }: { issued: IssuedSandboxKey; onCop
   const [done, setDone] = useState(false);
   useEffect(() => { if (copied && !done) { setDone(true); onCopied?.(); } }, [copied, done, onCopied]);
   return <>
-    <p className={v.setupTitle}>Add this line to your agent’s .env, then run it</p>
+    <p className={v.text}>Add this to your agent’s .env, then run it as you normally do. The checks start on its first call.</p>
     <div className={v.codeRow}>
       <code className={v.codeLine}>{line}</code>
       <Button size={32} variant="primary" onClick={() => void copy()} aria-label="Copy the setting">{copied ? 'Copied' : 'Copy'}</Button>
     </div>
-    <p className={v.copiedLine} aria-live="polite">{done ? <><Icon name="check" size={13} /> Copied. Now run your agent as you normally do.</> : null}</p>
+    <p className={v.copiedLine} aria-live="polite">{done ? <><Icon name="check" size={13} /> Copied. Now run your agent.</> : null}</p>
     <p className={v.text}>
       Your agent keeps its own API key{issued.keyHint ? <> (ending {issued.keyHint})</> : null}. This URL is shown only on this visit; you can get a new one any time.
     </p>

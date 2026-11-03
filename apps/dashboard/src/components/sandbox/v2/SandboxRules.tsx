@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Banner, Button, SkeletonCard, Tag } from '@whiteroom/ui';
+import { Banner, Button, Panel, SkeletonCard, Tag } from '@whiteroom/ui';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { AddRuleDialog } from '@/app/(citadel)/controls/_components/AddRuleDialog';
 import { ruleSentenceText } from '@/lib/controls-view';
@@ -36,18 +36,27 @@ const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : 'T
 const stale = (e: unknown) => e instanceof SandboxFleetError && (e.status === 404 || e.status === 409);
 
 /**
- * Sandbox rules, a closed section under the current step (spec sandbox-v2 §1
- * decision 3, §4; first-run UX spec §8.1). It stays mounted while closed, so the
- * ready-made set by default (applied once, when the Sandbox has no rules
- * yet), "Copy my production rules" when production has any, and an editor.
- * Rules change only on the Sandbox fleet; there's no link to Controls (§8.2).
+ * Sandbox rules (spec sandbox-v2 §1 decision 3, §4; first-run UX spec §8.1;
+ * eight checks mockup Rev 3): the right-hand card shows them, and Edit rules
+ * opens this editor under the current step. It stays mounted while closed, so
+ * the ready-made set is applied by default (once, when the Sandbox has no
+ * rules yet) and the card always has the rules. The editor offers the
+ * ready-made set, "Copy my production rules" when production has any, and an
+ * editor per rule. Rules change only on the Sandbox fleet; there's no link to
+ * Controls (§8.2).
  */
-export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
+export function SandboxRules({ fleet, sandboxFleetId, preview, onStale, open = false, onClose, onState }: {
   fleet: string;
   sandboxFleetId: string;
   preview?: SandboxRulesPreview;
   /** The Sandbox changed under the page: reload its status. */
   onStale?: () => void;
+  /** The editor is open (Edit rules); closed, only the rules' state is kept. */
+  open?: boolean;
+  /** Done: close the editor. */
+  onClose?: () => void;
+  /** Every new rules state, for the right-hand card. */
+  onState?: (state: SandboxRulesState | null, loadFailed: boolean) => void;
 }) {
   const [state, setState] = useState<SandboxRulesState | null>(preview ? preview.state : null);
   const [productionRules, setProductionRules] = useState(preview?.productionRules ?? 0);
@@ -194,6 +203,11 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
     });
   }
 
+  // The card beside the step shows these rules: the latest onState, read when called.
+  const onStateRef = useRef(onState);
+  useEffect(() => { onStateRef.current = onState; }, [onState]);
+  useEffect(() => { onStateRef.current?.(state, loadFailed); }, [state, loadFailed]);
+
   const line = state ? sourceLine(state, now) : null;
   const rules = state?.rules ?? [];
   const canCopy = productionRules > 0;
@@ -202,9 +216,9 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
 
   return (
     <>
-      <details id={SANDBOX_RULES_ID} className={v.fold}>
-        <summary className={v.foldHead}><span className={v.foldTitle}>Sandbox rules</span><span className={v.foldSub}>{loadFailed && !state ? 'Couldn’t load. Open to try again.' : rulesSummary(state)}</span></summary>
-        <div className={`${v.stack} ${v.foldBody}`}>
+      {open && <Panel id={SANDBOX_RULES_ID} title="Sandbox rules" count={loadFailed && !state ? 'Couldn’t load' : rulesSummary(state)}
+        actions={onClose && <Button size={28} variant="ghost" onClick={onClose}>Done</Button>}>
+        <div className={v.stack}>
           <p className={v.text}>{SANDBOX_RULES_ONLY} {RULES_DURING_CHECK}</p>
           {loading && <SkeletonCard label="Loading your Sandbox rules…" lines={['60%', '45%']} heights={[12, 12]} />}
           {error && <Banner variant="error" actions={loadFailed && !loading && !preview ? <Button size={28} onClick={() => void load()} disabled={busy}>Try again</Button> : undefined}>{error}</Banner>}
@@ -250,7 +264,7 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale }: {
             </ul>
           )}
         </div>
-      </details>
+      </Panel>}
 
       <ConfirmDialog
         open={replace === 'ready-made'}

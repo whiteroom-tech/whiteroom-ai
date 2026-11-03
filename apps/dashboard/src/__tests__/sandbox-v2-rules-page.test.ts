@@ -81,7 +81,7 @@ afterEach(() => { act(() => root.unmount()); document.body.innerHTML = ''; vi.un
 describe('Sandbox rules', () => {
   it('applies the ready-made set once when the Sandbox has no rules yet', async () => {
     listAnswer = state({ rules: [], source: null });
-    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, open: true }));
     const applied = calls().filter((c) => c.url.endsWith('/rules/ready-made'));
     expect(applied).toHaveLength(1);
     expect(applied[0].body).toEqual({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID });
@@ -91,14 +91,14 @@ describe('Sandbox rules', () => {
 
   it('doesn’t apply anything when the Sandbox already has a source', async () => {
     listAnswer = state({ rules: [], source: 'custom' });
-    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, open: true }));
     expect(calls().some((c) => c.url.endsWith('/rules/ready-made'))).toBe(false);
     expect(text()).toContain('No rules in your Sandbox');
   });
 
   it('never replaces rules whose source it doesn’t know, or rules that are there with no source', async () => {
     listAnswer = state({ source: 'some_future_source' });
-    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, open: true }));
     expect(calls().some((c) => c.url.endsWith('/rules/ready-made'))).toBe(false);
     expect(text()).toContain('Your own Sandbox rules.');
     expect(text()).toContain('Spend cap');
@@ -106,14 +106,14 @@ describe('Sandbox rules', () => {
     act(() => root.unmount());
     root = createRoot(document.body.appendChild(document.createElement('div')));
     listAnswer = state({ source: null });
-    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, open: true }));
     expect(calls().some((c) => c.url.endsWith('/rules/ready-made'))).toBe(false);
     expect(text()).toContain('Spend cap');
   });
 
   it('never applies the ready-made set over rules this page can’t read, and says they are there', async () => {
     listAnswer = state({ source: null, rules: [{ id: 'gr_future', ruleType: 'some_future_type', mode: 'watch', params: {}, version: 1 }] });
-    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, open: true }));
     expect(calls().some((c) => c.url.endsWith('/rules/ready-made'))).toBe(false);
     expect(text()).toContain('1 rule this page can’t show yet.');
     expect(text()).not.toContain('No rules in your Sandbox');
@@ -127,19 +127,19 @@ describe('Sandbox rules', () => {
   });
 
   it('hides Copy my production rules when production has no rules, shows it when it has', async () => {
-    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, open: true }));
     expect(button('Copy my production rules')).toBeUndefined();
     expect(button('Use the ready-made set')).toBeDefined();
     act(() => root.unmount());
     root = createRoot(document.body.appendChild(document.createElement('div')));
     productionRules = [READY[0]];
-    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, open: true }));
     expect(button('Copy my production rules')).toBeDefined();
   });
 
   it('copies production rules only after a confirm, through the Sandbox route', async () => {
     productionRules = [READY[0]];
-    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, open: true }));
     await click('Copy my production rules');
     expect(calls().some((c) => c.url.endsWith('/rules/copy-production'))).toBe(false);
     expect(text()).toContain('Copy your production rules?');
@@ -149,7 +149,7 @@ describe('Sandbox rules', () => {
   });
 
   it('edits, adds and removes through Sandbox rule actions only', async () => {
-    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, open: true }));
     await act(async () => { (document.querySelector('button[aria-label="Edit Spend cap"]') as HTMLButtonElement).click(); });
     await flush();
     await act(async () => { ([...document.querySelectorAll('[role=radio]')].find((r) => r.textContent === 'Enforce') as HTMLElement).click(); });
@@ -175,7 +175,7 @@ describe('Sandbox rules', () => {
 
   it('says the rules are Sandbox-only and never links to Controls', async () => {
     productionRules = [READY[0]];
-    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, open: true }));
     expect(text()).toContain(SANDBOX_RULES_ONLY);
     // A rule in Watch can still block during a check: the page says so once.
     expect(text()).toContain(RULES_DURING_CHECK);
@@ -197,7 +197,7 @@ describe('Sandbox rules: failures and races', () => {
       // list
       refuse = { '/rules/list': { status } };
       const onStale = vi.fn();
-      await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, onStale }));
+      await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, onStale, open: true }));
       expect(onStale).toHaveBeenCalledTimes(1);
       expect(text()).toContain(`Refused ${status}.`);
 
@@ -206,7 +206,7 @@ describe('Sandbox rules: failures and races', () => {
       act(() => root.unmount());
       root = createRoot(document.body.appendChild(document.createElement('div')));
       onStale.mockClear();
-      await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, onStale }));
+      await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, onStale, open: true }));
       refuse = { '/rules/create': { status } };
       await click('Add a rule');
       await act(async () => { ([...document.querySelectorAll('button.gov-template')].find((b) => b.textContent?.includes('Block tools')) as HTMLButtonElement).click(); });
@@ -234,7 +234,7 @@ describe('Sandbox rules: failures and races', () => {
 
   it('shows the editor error and reloads the rules when an update conflicts', async () => {
     const onStale = vi.fn();
-    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, onStale }));
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, onStale, open: true }));
     const lists = count('/rules/list');
     refuse = { '/rules/update': { status: 409 } };
     // Changed elsewhere: the engine now has Spend cap at version 2, in Enforce.
@@ -250,11 +250,11 @@ describe('Sandbox rules: failures and races', () => {
   it('applies the ready-made set on Try again after the first apply failed', async () => {
     listAnswer = state({ rules: [], source: null });
     refuse = { '/rules/ready-made': { status: 500, once: true } };
-    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, open: true }));
     expect(text()).toContain('Refused 500.');
     expect(text()).not.toContain('No rules in your Sandbox');
-    // The section is closed by default: its summary says it failed, not "Loading…".
-    expect(document.querySelector('#sandbox-rules summary')?.textContent).toBe('Sandbox rulesCouldn’t load. Open to try again.');
+    // Its header says it failed, not "Loading…" (the card beside the step says so too: SandboxRulesCard).
+    expect(document.querySelector('#sandbox-rules .wr-panel__count')?.textContent).toBe('Couldn’t load');
     await click('Try again');
     expect(count('/rules/ready-made')).toBe(2);
     expect(text()).toContain('Ready-made set — easy to trip on a short run.');
@@ -264,13 +264,13 @@ describe('Sandbox rules: failures and races', () => {
   it('hides Copy my production rules when production’s rules can’t be read', async () => {
     productionRules = [READY[0]];
     govFails = true;
-    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, open: true }));
     expect(button('Use the ready-made set')).toBeDefined();
     expect(button('Copy my production rules')).toBeUndefined();
   });
 
   it('doesn’t let an older quiet re-read overwrite a newer replace', async () => {
-    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, open: true }));
     // The save's quiet re-read is held; it would answer "custom, no rules".
     const release = holdNextList();
     listAnswer = state({ rules: [], source: 'custom' });
@@ -302,7 +302,7 @@ describe('Sandbox rules: loading and retry', () => {
   };
 
   it('keeps loading while a newer load runs, and stops when that one lands', async () => {
-    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, open: true }));
     expect(text()).not.toContain(LOADING);
     refuse = { '/rules/update': { status: 409 } };
     const releaseOld = holdNextList();
@@ -323,7 +323,7 @@ describe('Sandbox rules: loading and retry', () => {
   });
 
   it('offers Try again when a reload fails with rules still shown', async () => {
-    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, open: true }));
     refuse = { '/rules/update': { status: 409 }, '/rules/list': { status: 500, once: true } };
     await saveConflict();
     expect(text()).toContain('Refused 500.');
@@ -337,7 +337,7 @@ describe('Sandbox rules: loading and retry', () => {
   });
 
   it('doesn’t offer Try again for a failed edit', async () => {
-    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, open: true }));
     refuse = { '/rules/delete': { status: 500 } };
     await act(async () => { (document.querySelector('button[aria-label="Edit Spend cap"]') as HTMLButtonElement).click(); });
     await flush();
@@ -348,7 +348,7 @@ describe('Sandbox rules: loading and retry', () => {
   });
 
   it('is never stuck loading when a replace overtakes a load', async () => {
-    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, open: true }));
     refuse = { '/rules/update': { status: 409 } };
     const release = holdNextList();
     listAnswer = state({ rules: [], source: 'custom' });
@@ -367,7 +367,7 @@ describe('Sandbox rules: loading and retry', () => {
   });
 
   it('is never stuck loading when a quiet re-read overtakes a load, even if that read fails', async () => {
-    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID }));
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, open: true }));
     refuse = { '/rules/update': { status: 409 } };
     const release = holdNextList();
     await saveConflict();
@@ -403,10 +403,11 @@ describe('Sandbox rules: preview states', () => {
     for (const name of ['rules-ready-made', 'rules-copy', 'rules-custom', 'rules-empty', 'rules-editing', 'rules-error'] as const) {
       await renderState(name);
       expect(bff).not.toHaveBeenCalled();
-      const section = document.getElementById('sandbox-rules') as HTMLDetailsElement;
-      expect(section.tagName).toBe('DETAILS');
-      expect(section.open).toBe(false);
-      expect(section.querySelector('summary')?.textContent).toMatch(/^Sandbox rules/);
+      // Edit rules opened it: the editor card under the step, titled, with Done.
+      const section = document.getElementById('sandbox-rules')!;
+      expect(section.querySelector('h2')?.textContent).toBe('Sandbox rules');
+      expect(button('Done')).toBeDefined();
+      expect(document.querySelector('section[aria-label="Sandbox rules"]')).not.toBeNull();
       expect([...document.querySelectorAll('a')].some((a) => a.getAttribute('href')?.includes('/controls'))).toBe(false);
       if (name === 'rules-ready-made') expect(text()).toContain('Ready-made set');
       if (name === 'rules-copy') { expect(text()).toContain('Production has 2 newer changes'); expect(button('Copy again')).toBeDefined(); }
@@ -423,7 +424,7 @@ describe('Sandbox rules: preview states', () => {
   });
 });
 
-describe('Sandbox rules: the closed section’s summary', () => {
+describe('Sandbox rules: the summary line', () => {
   const rule = (mode: 'watch' | 'enforce' | 'off') => ({ ...previewReadyMade('sandbox-x')[0], mode });
   it('counts the rules, says where they came from and their modes', () => {
     expect(rulesSummary(null)).toBe('Loading…');
@@ -431,5 +432,8 @@ describe('Sandbox rules: the closed section’s summary', () => {
     expect(rulesSummary({ rules: [rule('watch'), rule('watch')], source: 'ready_made' })).toBe('2 ready-made rules · all Watch');
     expect(rulesSummary({ rules: [rule('enforce'), rule('watch'), rule('enforce')], source: 'production_copy' })).toBe('3 rules copied from production · 2 in Enforce');
     expect(rulesSummary({ rules: [rule('off')], source: 'custom' })).toBe('1 rule');
+    // Short, under the rules card's chips (mockup Rev 3): "5 ready-made · all Watch".
+    expect(rulesSummary({ rules: [rule('watch'), rule('watch')], source: 'ready_made' }, true)).toBe('2 ready-made · all Watch');
+    expect(rulesSummary({ rules: [rule('enforce'), rule('watch'), rule('enforce')], source: 'production_copy' }, true)).toBe('3 copied from production · 2 in Enforce');
   });
 });

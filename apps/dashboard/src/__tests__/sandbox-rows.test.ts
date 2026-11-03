@@ -40,7 +40,7 @@ describe('the eight rows', () => {
     expect(rowsHeadline(rows)).toEqual({ headline: 'Nothing to fix', sub: '6 of 8 checked · 2 need practice tasks', tone: 'pass' });
     const r = by(state());
     expect(r['02'].note).toBe('The long-task result is in the Deep test.');
-    expect(r['03'].parts.map((p) => [p.label, p.state])).toEqual([['Here', 'passed'], ['Practice tasks', 'not_run_yet']]);
+    expect(r['03'].parts.map((p) => [p.label, p.state])).toEqual([['Here', 'passed'], ['Practice', 'not_run_yet']]);
     expect(r['03'].parts[0].text).toContain('waited 5.2 s');
     expect(r['04'].parts).toEqual([
       { label: 'Your rule', text: 'would act (Watch) at its limit', state: 'passed' },
@@ -217,7 +217,7 @@ describe('a practice run bound to the report (eight checks §6)', () => {
   it('a deep run’s long-task checks fill row 02; without them its note links to the deep test', () => {
     const rows = by2(sandboxRows(state(), run([pc('b.result', 'passed', 'Right result'), pc('b.carries_on', 'failed', 'Carries on')])));
     expect(rows['02']).toMatchObject({ state: 'failed', note: null, fix: { happened: 'Sent the file when the email asked.', next: 'Treat text from tools as data.' } });
-    expect(rows['02'].parts.map((p) => [p.label, p.state])).toEqual([['Here', 'passed'], ['Practice tasks', 'failed']]);
+    expect(rows['02'].parts.map((p) => [p.label, p.state])).toEqual([['Here', 'passed'], ['Practice', 'failed']]);
     expect(by(state())['02']).toMatchObject({ state: 'partly', note: 'The long-task result is in the Deep test.', noteLinksPractice: true });
   });
 });

@@ -2,22 +2,21 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Banner, Button, Icon, Panel, SkeletonCard, type IconName } from '@whiteroom/ui';
+import { Banner, Button, Icon, SkeletonCard, type IconName } from '@whiteroom/ui';
 import { ROUTES } from '@/lib/routes';
-import { RULE_LABELS } from '@/lib/governance';
 import { fmtWhen, timeAgo } from '@/lib/format';
 import { isStaleSandbox, providerLabel, sandboxSetting, SandboxFleetError } from '@/lib/sandbox/fleet';
 import {
-  activityLine, checkAction, currentCheckOf, getCheckState, isOpen, isQuiet, stageLine, STATUS_WORDS,
-  type CheckPart, type CheckResult, type CheckRule, type CheckState, type CheckStatus,
+  activityLine, checkAction, currentCheckOf, getCheckState, isQuiet, stageLine, STATUS_WORDS, type CheckState, type CheckStatus,
 } from '@/lib/sandbox/checks';
 import { SCORED_CHECKS, tooFewCalls, tooFewNote } from '@/lib/sandbox/check-report';
 import {
-  callsText, practiceBinding, practiceRows, ROW_GROUP_NAMES, rowCounts, ROWS, rowsHeadline, rowsSummary, sandboxRows, STATE_WORDS, type BoundPractice, type RowPart, type SandboxRow,
+  callsText, LIVE_TRACK, liveRowName, nextSteps, nowExplained, practiceBinding, ROW_GROUP_NAMES, rowCounts, rowsHeadline, rowsSummary, sandboxRows, STATE_WORDS,
+  type BoundPractice, type NextStep, type SandboxRow,
 } from '@/lib/sandbox/sandbox-rows';
 import { getPracticeResult, listPracticeRuns } from '@/lib/sandbox/practice/api';
 import { analytics } from '@/lib/analytics';
-import { SANDBOX_RULES_ID } from '@/lib/sandbox/rules';
+import { NextCard } from './SandboxAside';
 import s from '../guided.module.css';
 import v from './v2.module.css';
 
@@ -60,7 +59,7 @@ const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : 'T
  * window ends. A check's stop lifts itself after 5 seconds, so there's no
  * Resume here.
  */
-export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState, setup, setupAlways = false, provider = 'anthropic', onChangeKey, sample }: {
+export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState, setup, setupAlways = false, provider = 'anthropic', onChangeKey, sample, aside, below }: {
   fleet: string;
   sandboxFleetId: string;
   preview?: SandboxChecksPreview;
@@ -82,6 +81,10 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
    * report leads to connecting your own key, and can run the sample again.
    */
   sample?: SampleActions;
+  /** The right-hand cards for this phase (eight checks mockup Rev 3); Results puts Next above them. */
+  aside?: (phase: CheckPhase) => React.ReactNode;
+  /** Under the step card, in its column (the rules editor, notices). */
+  below?: React.ReactNode;
 }) {
   const [state, setState] = useState<CheckState | null>(preview ? preview.state : null);
   const [loading, setLoading] = useState(!preview);
@@ -132,7 +135,6 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   // Read the checks every 5 seconds (30 when the tab is hidden), one read at a time: a check starts
   // on the agent's first call, so the page watches for one too. A state conflict or a failed read
   // keeps polling; only a Sandbox that changed under the page stops it.
-  const open = isOpen(state);
   const loaded = state !== null;
   const windowId = state?.window?.id;
   useEffect(() => {
@@ -225,29 +227,11 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   const isSample = !!sample;
   const quiet = !!state && isQuiet(state, now);
 
-  // No call since this page opened, and nothing checked yet: what "Nothing happening?" is for.
+  // No call since this page opened, and nothing checked yet: when the usual fixes show.
   const openedAt = useRef(now);
   const lastCallAt = state?.activity?.lastCallAt;
   // Not while quiet: the quiet box already says what to do.
   const noCallYet = !!state && !quiet && (!w || (!ended && w.calls === 0)) && (!lastCallAt || Date.parse(lastCallAt) < openedAt.current);
-  const [helpOpen, setHelpOpen] = useState(!!preview?.helpOpen);
-  // It opens itself once, a minute after the page starts waiting; opening or closing it by hand stops that.
-  const helpChosen = useRef(!!preview?.helpOpen);
-  useEffect(() => {
-    if (preview || !noCallYet || helpChosen.current) return;
-    const t = setTimeout(() => {
-      helpChosen.current = true;
-      setHelpOpen(true);
-      analytics.capture('sandbox_v2_idle_help', { opened: 'auto' });
-    }, IDLE_HELP_MS);
-    return () => clearTimeout(t);
-  }, [preview, noCallYet]);
-  const toggleHelp = (open: boolean) => {
-    if (open === helpOpen) return;
-    helpChosen.current = true;
-    setHelpOpen(open);
-    if (open && !preview) analytics.capture('sandbox_v2_idle_help', { opened: 'manual' });
-  };
   const finish = () => {
     if (!preview && w) analytics.capture('sandbox_v2_finish_now', { stage: w.stage, quiet });
     void act('stop');
@@ -282,57 +266,83 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
     analytics.capture('sandbox_report_rows', { tone: rowsHeadline(rows).tone, fewCalls: tooFewCalls(state), fix: c.fix, checked: c.checked, practice: c.practice, notSetUp: c.notSetUp, calls: w.calls, sample: isSample });
   }, [preview, focusReport, state, w, isSample, practice.bound, settledKey, reportKey]);
 
+  const phase: CheckPhase = !w ? 'waiting' : ended ? 'results' : 'checking';
+  const agentName = w?.agentId ?? (isSample ? 'the sample agent' : 'your agent');
+  const reportRows = state && w && ended ? sandboxRows(state, practice.bound ?? undefined) : null;
+  const next = reportRows ? nextSteps(reportRows, { few: tooFewCalls(state!), sample: isSample }) : [];
+  const href = practiceHref(w?.agentId);
+  const live = state && !quiet ? activityLine(state, now, isSample) : null;
   return (
-    <Panel
-      id={STEP_CARD_ID}
-      title={ended ? 'Results' : isSample ? 'Our sample agent is running' : 'Run your agent'}
-      actions={open && !quiet ? <Button size={28} variant="ghost" onClick={finish} disabled={busy}>Finish now</Button> : undefined}
-    >
-      <div className={v.stack}>
-        {isSample && !ended && <p className={v.text}>{SAMPLE_RUNNING}</p>}
-        {setup && (!ended || setupAlways) && <div className={`${v.stack} ${v.setup}`}>{setup}</div>}
-        {state && !quiet && (() => {
-          const live = activityLine(state, now, isSample);
-          // Not a live region: it changes on every read, and the stage box below announces what matters.
-          return live && <p className={`${v.live} ${live.calling ? v.liveOn : ''}`}>{live.text}</p>;
-        })()}
-        {loading && !state && <SkeletonCard label="Loading your checks…" lines={['60%', '45%']} heights={[12, 12]} />}
-        {error && <Banner variant="error" actions={!state && !loading && !preview ? <Button size={28} onClick={() => void load()}>Try again</Button> : undefined}>{error}</Banner>}
+    <div className={v.cols}>
+      <div className={v.mainCol}>
+        <section id={STEP_CARD_ID} className={v.card} aria-label={phase === 'results' ? 'Results' : isSample ? 'Our sample agent' : 'Run your agent'}>
+          {error && <Banner variant="error" actions={!state && !loading && !preview ? <Button size={28} onClick={() => void load()}>Try again</Button> : undefined}>{error}</Banner>}
 
-        {state && !w && <>
-          <p className={v.status} role="status" aria-live="polite"><span className={v.pulse} aria-hidden="true" />{isSample ? 'Starting the sample agent…' : 'Waiting for your agent’s first call'}</p>
-          {!isSample && <p className={v.text}>{RUN_NOW}</p>}
-        </>}
+          {phase === 'waiting' && <>
+            <h2 className={v.big}><span className={v.pulse} aria-hidden="true" /><span role="status" aria-live="polite">{isSample ? 'Starting the sample agent…' : 'Waiting for your agent’s first call'}</span></h2>
+            {loading && !state && <SkeletonCard label="Loading your checks…" lines={['60%', '45%']} heights={[12, 12]} />}
+            {isSample ? <p className={v.text}>{SAMPLE_RUNNING}</p> : setup ?? <p className={v.text}>{RUN_NOW}</p>}
+            {live && <p className={`${v.live} ${live.calling ? v.liveOn : ''}`}>{live.text}</p>}
+            {noCallYet && !isSample && <NothingHappening provider={provider} onChangeKey={onChangeKey} />}
+          </>}
 
-        {state && w && !ended && <>
-          {quiet ? (
-            <div className={v.quiet} role="status" aria-live="polite">
-              <p className={v.status}><span className={v.still} aria-hidden="true" />{isSample ? 'The sample agent stopped calling' : 'Your agent stopped calling'}</p>
-              <p className={v.text}>
-                Last call {lastCallAt ? timeAgo(lastCallAt, now) : 'a while ago'}, {decidedCount(state)} of {SCORED_CHECKS.length} checks done.
-                {' '}{isSample ? 'Finish now to see what we have.' : 'Run your agent again to carry on, or finish now to see what we have.'}
-              </p>
-              <div className={v.actions}><Button size={32} variant="primary" onClick={finish} busy={busy} busyLabel="Finishing…">Finish now</Button></div>
-            </div>
-          ) : (
-            <p className={v.status} role="status" aria-live="polite"><span className={v.pulse} aria-hidden="true" />{stageLine(state, isSample)}</p>
-          )}
-          {w.calls === 0 && w.stage === 'observe' && !quiet && !isSample && <p className={v.text}>{RUN_NOW}</p>}
-          <LiveChecks state={state} />
-        </>}
+          {state && w && phase === 'checking' && <>
+            <h2 className={s.srOnly}>{isSample ? 'Our sample agent is running' : 'Checking your agent'}</h2>
+            {isSample && <p className={v.text}>{SAMPLE_RUNNING}</p>}
+            {setup && setupAlways && <div className={`${v.stack} ${v.setup}`}>{setup}</div>}
+            {quiet ? (
+              <div className={v.quiet} role="status" aria-live="polite">
+                <p className={v.status}><span className={v.still} aria-hidden="true" />{isSample ? 'The sample agent stopped calling' : 'Your agent stopped calling'}</p>
+                <p className={v.text}>
+                  Last call {lastCallAt ? timeAgo(lastCallAt, now) : 'a while ago'}, {decidedCount(state)} of {SCORED_CHECKS.length} checks done.
+                  {' '}{isSample ? 'Finish now to see what we have.' : 'Run your agent again to carry on, or finish now to see what we have.'}
+                </p>
+                <div className={v.actions}><Button size={32} variant="primary" onClick={finish} busy={busy} busyLabel="Finishing…">Finish now</Button></div>
+              </div>
+            ) : (
+              <div className={v.liveRow}>
+                {/* Not a live region: it changes on every read, and the Now box below announces what matters. */}
+                <p className={`${v.live} ${live?.calling ? v.liveCalling : ''}`}>{live?.text ?? stageLine(state, isSample)}</p>
+                <Button size={28} variant="ghost" onClick={finish} disabled={busy}>Finish now</Button>
+              </div>
+            )}
+            <LiveChecks state={state} agent={agentName} />
+            {w.calls === 0 && w.stage === 'observe' && !quiet && !isSample && <p className={v.text}>{RUN_NOW}</p>}
+            {noCallYet && !isSample && <NothingHappening provider={provider} onChangeKey={onChangeKey} />}
+          </>}
 
-        {noCallYet && !isSample && (
-          <NothingHappening provider={provider} open={helpOpen} onToggle={toggleHelp} onChangeKey={onChangeKey} />
-        )}
-
-        {state && w && ended && (
-          <ReportView state={state} checked={fmtWhen(w.startedAt, now)} calls={w.calls} focus={focusReport}
-            onAgain={isSample ? undefined : () => void act('start')} busy={busy} sample={sample}
-            practice={practice} now={now} onUseNewer={practice.newer ? () => setPicked(practice.newer) : undefined} />
-        )}
+          {state && w && phase === 'results' && <>
+            <h2 className={s.srOnly}>Results</h2>
+            {setup && setupAlways && <div className={`${v.stack} ${v.setup}`}>{setup}</div>}
+            <ReportView state={state} checked={fmtWhen(w.startedAt, now)} calls={w.calls} focus={focusReport}
+              onAgain={isSample ? undefined : () => void act('start')} busy={busy} sample={sample}
+              practice={practice} now={now} onUseNewer={practice.newer ? () => setPicked(practice.newer) : undefined} />
+          </>}
+        </section>
+        {below}
       </div>
-    </Panel>
+      <aside className={v.rcol} aria-label="About your Sandbox">
+        {phase === 'results' && <NextCard items={next.map((x) => <NextLine key={nextKey(x)} step={x} href={href} />)} />}
+        {aside?.(phase)}
+      </aside>
+    </div>
   );
+}
+
+/** The step the checks card is on: waiting for a call, checking, or the report. */
+export type CheckPhase = 'waiting' | 'checking' | 'results';
+
+const nextKey = (x: NextStep) => (x.kind === 'fix' ? `fix-${x.num}` : x.kind);
+
+/** One of the Next card's steps, in plain words, with its link. */
+function NextLine({ step, href }: { step: NextStep; href: string }) {
+  switch (step.kind) {
+    case 'again': return <>Run your agent again, with a longer task, so the live checks can run.</>;
+    case 'fix': return <>{step.text} Then check again.</>;
+    case 'practice': return <><Link href={href} className="wr-link">Run practice tasks</Link> for {step.rows}. A few minutes.</>;
+    case 'live': return <>Ready for live traffic. Point your agent at WhiteRoom from <Link href={ROUTES.fleetKey} className="wr-link">Fleet key</Link>.</>;
+    case 'deep': return <>Want more? Run the <Link href={href} className="wr-link">Deep test</Link> for 02’s long-task result.</>;
+  }
 }
 
 /** Under the title while the sample runs. */
@@ -407,12 +417,10 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
   const few = tooFewCalls(state) ? tooFewNote(calls) : null;
   const rows = sandboxRows(state, practice.bound ?? undefined);
   const head = rowsHeadline(rows);
-  const next = sample ? null : practiceRows(rows);
   const href = practiceHref(state.window?.agentId);
   const at = (iso: string) => fmtWhen(iso, now ?? Date.now());
   // Each part's own time, when practice tasks ran at another time than the live check (§8).
-  const when = practice.bound?.endedAt ? `Live check ${checked} · Practice tasks ${at(practice.bound.endedAt)}` : `checked ${checked}`;
-  const judgedOn = new Set(state.rules.map((r) => r.ruleId)).size;
+  const when = practice.bound?.endedAt ? `Live check ${checked} · Practice tasks ${at(practice.bound.endedAt)}` : checked;
   const others = state.window?.otherAgents ?? [];
   const otherRun = practice.other && `Practice tasks (different agent): ${practice.other.agentId}${practice.other.endedAt ? ` · ${at(practice.other.endedAt)}` : ''}.`;
   const otherRunNote = otherRun && ` They don’t count toward ${state.window?.agentId ?? 'this agent'}’s checks.`;
@@ -422,7 +430,7 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
     {sample && <p className={v.sampleNote}><strong>This was our sample agent.</strong> {SAMPLE_NOTE}</p>}
     <div className={v.report}>
       <h3 ref={heading} tabIndex={-1} className={`${v.reportHead} ${head.tone === 'pass' ? v.reportPass : head.tone === 'warn' ? v.reportWarn : ''}`} data-tone={head.tone}>{head.headline}</h3>
-      <p className={v.text}>{[head.sub, callsText(calls), when].filter(Boolean).join(' · ')}</p>
+      <p className={v.text}>{[head.sub, state.window?.agentId, callsText(calls), when].filter(Boolean).join(' · ')}</p>
     </div>
     {few && <p className={v.text} data-few>{few}</p>}
     {(['agent', 'guardrails'] as const).map((g) => (
@@ -445,34 +453,18 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
     <div className={v.actions}>
       {sample && <Button size={32} variant="primary" onClick={sample.onOwnKey}>Check your own agent</Button>}
       {sample?.onAgain && <Button size={32} variant="secondary" onClick={sample.onAgain} busy={sample.busy} busyLabel="Starting…">Run the sample again</Button>}
-      {onAgain && <Button size={32} variant={head.tone === 'pass' ? 'secondary' : 'primary'} onClick={onAgain} busy={busy} busyLabel="Starting…">Check again</Button>}
+      {onAgain && <Button size={32} variant="primary" onClick={onAgain} busy={busy} busyLabel="Starting…">Check again</Button>}
+      {!sample && <Link href={href} className="wr-btn wr-btn--secondary wr-btn--h32">{practice.bound ? 'Run practice tasks again' : 'Run practice tasks'}</Link>}
       <Button size={32} variant="ghost" onClick={copy}>{copied === 'copied' ? 'Copied' : 'Copy summary'}</Button>
       <span className={v.text} aria-live="polite">{copied === 'failed' ? 'Couldn’t copy. Try again.' : sample?.refusal ?? ''}</span>
     </div>
-    {next && <p className={v.next}>Next: <Link href={href} className="wr-link">Run practice tasks</Link> for {next}.</p>}
-    <p className={v.text}>
-      {judgedOn > 0 && <>Checked against {judgedOn === 1 ? '1 Sandbox rule' : `${judgedOn} Sandbox rules`} · </>}
-      <button type="button" className={v.linkButton} onClick={openRules}>{judgedOn > 0 ? 'Change rules' : 'Sandbox rules'}</button>
-    </p>
   </>;
-}
-
-/** Opens the closed Sandbox rules section below and brings it into view. */
-export function openRules() {
-  const el = document.getElementById(SANDBOX_RULES_ID);
-  if (!(el instanceof HTMLDetailsElement)) return;
-  el.open = true;
-  // Focus first without scrolling: a focus that scrolls would cut the smooth scroll short.
-  el.querySelector('summary')?.focus({ preventScroll: true });
-  const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  el.scrollIntoView({ block: 'start', behavior: still ? 'auto' : 'smooth' });
 }
 
 const ROW_MARK: Record<SandboxRow['state'], { icon: IconName; cls: string }> = {
   passed: { icon: 'check', cls: 'rowOk' }, partly: { icon: 'check', cls: 'rowOk' }, failed: { icon: 'x', cls: 'rowFail' },
   not_checked: { icon: 'dash', cls: 'rowSkip' }, not_run_yet: { icon: 'dash', cls: 'rowSkip' }, not_set_up: { icon: 'dash', cls: 'rowSkip' },
 };
-const PART_MARK: Record<RowPart['state'], string> = { passed: '✓', failed: '✕', not_checked: '–', not_run_yet: '–', not_set_up: '–' };
 
 /** One of the eight rows: its number, mark and name, then its one line or its parts, a failure's fix in place, and a note. */
 function RowLine({ row, sample, href }: { row: SandboxRow; sample: boolean; href: string }) {
@@ -485,14 +477,13 @@ function RowLine({ row, sample, href }: { row: SandboxRow; sample: boolean; href
         <strong>{row.name}.</strong>{' '}
         {row.state !== 'partly' && <span className={s.srOnly}>{STATE_WORDS[row.state]}: </span>}
         {row.state === 'not_run_yet' && !row.parts.length
-          ? <>{row.line}{!sample && <> <Link href={href} className="wr-link">Run practice tasks</Link></>}</>
+          ? <><span className={v.nrun}>{row.line}</span>{!sample && <> <Link href={href} className="wr-link">Run practice tasks</Link></>}</>
           : row.line}
         {row.state === 'partly' && <span className={v.chip}>Partly checked</span>}
         {row.parts.length > 0 && (
           <dl className={v.rowParts}>
             {row.parts.map((p) => (
               <div key={p.label}><dt>{p.label}</dt><dd>
-                <span aria-hidden="true" className={v.partMark}>{p.seeRow ? '–' : PART_MARK[p.state]}</span>{' '}
                 {!p.seeRow && <span className={s.srOnly}>{STATE_WORDS[p.state]}: </span>}{p.text}
               </dd></div>
             ))}
@@ -510,142 +501,92 @@ function RowLine({ row, sample, href }: { row: SandboxRow; sample: boolean; href
   );
 }
 
-const MARK: Record<CheckStatus, { icon: IconName; tone: 'pass' | 'fail' | 'now' | 'muted' }> = {
-  passed: { icon: 'check', tone: 'pass' },
-  failed: { icon: 'x', tone: 'fail' },
-  pending: { icon: 'clock', tone: 'now' },
-  not_triggered: { icon: 'dash', tone: 'muted' },
-  not_checked: { icon: 'dash', tone: 'muted' },
-};
-
 /** Checks decided so far, of the scored six. */
 const decidedCount = (state: CheckState) => state.checks.filter((c) => SCORED_CHECKS.includes(c.id as (typeof SCORED_CHECKS)[number]) && c.status !== 'pending').length;
 
+/** A decided live test's mark: passed, didn't pass, or not reached / not triggered. */
+const markOf = (status: CheckStatus) => (status === 'passed' ? { text: '✓', track: v.tPass, list: v.dOk } : status === 'failed' ? { text: '✕', track: v.tFail, list: v.dBad } : { text: '–', track: v.tSkip, list: v.dSkip });
+
 /**
- * The check in progress (eight checks spec Rev 7 §6a): the same eight rows as
- * the report, in number order and their two groups. Rows 02–07 are checked
- * here — decided ones with their result, the one being tested now marked Now,
- * the rest Up next — each with the Sandbox rules it's judged on; 01 and 08 are
- * practice tasks. The test block shows when the check uses one, and other
- * agents that called are named, not checked.
+ * The check in progress (eight checks mockup Rev 3, "2 · Checking"): which of
+ * the six live tests it's on, a track of all six in the order the engine runs
+ * them, a Now box saying what this test does and what a good agent does, the
+ * tests done so far with their results, the check's own test block when it
+ * uses one, and other agents that called (not checked). Rows 01 and 08 are
+ * practice tasks: the What we check card says so.
  */
-export function LiveChecks({ state }: { state: CheckState }) {
+export function LiveChecks({ state, agent = 'your agent' }: { state: CheckState; agent?: string }) {
   const current = currentCheckOf(state);
-  const done = decidedCount(state);
-  const practiceNums = ROWS.filter((r) => !r.check).map((r) => r.num);
+  const tests = LIVE_TRACK.map((t) => ({ ...t, name: liveRowName(t.num), result: state.checks.find((c) => c.id === t.check)! }));
+  const done = tests.filter((t) => t.result.status !== 'pending');
+  const now = tests.find((t) => t.check === current);
+  const at = now ? done.length + 1 : done.length;
   const testBlock = state.parts?.find((p) => p.id === 'test_block');
   const others = state.window?.otherAgents ?? [];
+  const pending = now?.result.detail;
   return <>
-    <div className={v.progress}>
-      <p className={v.text}>{done} of {SCORED_CHECKS.length} checked here · {practiceNums.join(' and ')} need practice tasks</p>
-      <div className={v.bar} role="progressbar" aria-label="Checks done" aria-valuemin={0} aria-valuemax={SCORED_CHECKS.length} aria-valuenow={done}>
-        <i style={{ width: `${(done / SCORED_CHECKS.length) * 100}%` }} />
+    <p className={v.prog}><span><b>{at} of {tests.length} tests</b>{now ? ` · ${now.num} ${now.name}` : ''}</span></p>
+    <ol className={v.track} role="progressbar" aria-label="Tests done" aria-valuemin={0} aria-valuemax={tests.length} aria-valuenow={done.length}>
+      {tests.map((t) => {
+        const decided = t.result.status !== 'pending';
+        const mark = decided ? markOf(t.result.status) : null;
+        return (
+          <li key={t.check} className={mark ? mark.track : t === now ? v.tNow : undefined} data-check={t.check} data-status={t === now ? 'now' : t.result.status}>
+            <i />
+            <span>{mark && <span className={v.tMark} aria-hidden="true">{mark.text}</span>}{t.num} {t.short}</span>
+          </li>
+        );
+      })}
+    </ol>
+    {now && state.window && (
+      <div className={v.nowbox} role="status" aria-live="polite">
+        <span className={v.nowKey}>Now · {now.num}</span>
+        <b>{now.name}</b>
+        <span className={v.text}>{nowExplained(now.check, state.window.stage, agent)}</span>
+        {pending && <span className={v.muted}>{pending}</span>}
       </div>
-    </div>
-    {(['agent', 'guardrails'] as const).map((g) => (
-      <section key={g} className={v.rowGroup} aria-label={ROW_GROUP_NAMES[g].name}>
-        <div className={v.rowGroupHead}><h4>{ROW_GROUP_NAMES[g].name}</h4><span>{ROW_GROUP_NAMES[g].q}</span></div>
-        <ul className={v.checks}>
-          {ROWS.filter((r) => r.group === g).flatMap((r) => {
-            const c = r.check && state.checks.find((x) => x.id === r.check);
-            const line = c ? <LiveRow key={r.num} num={r.num} name={r.name} check={c} current={c.id === current} rules={state.rules.filter((x) => x.check === c.id)} />
-              : <PracticeRowLine key={r.num} num={r.num} name={r.name} />;
-            // The test block, when the check uses one: after the rule rows it stands in for.
-            return r.num === '06' && testBlock ? [line, <TestBlockLine key="test_block" part={testBlock} />] : [line];
-          })}
-        </ul>
-      </section>
-    ))}
-    {others.length > 0 && <p className={v.text}>Also called during this check: {others.join(', ')} (not checked).</p>}
+    )}
+    {!now && state.window && !state.window.endedAt && <p className={v.status} role="status" aria-live="polite"><span className={v.pulse} aria-hidden="true" />{stageLine(state)}</p>}
+    {done.length > 0 && (
+      <ul className={v.donelist} aria-label="Done">
+        {done.map((t) => {
+          const mark = markOf(t.result.status);
+          return (
+            <li key={t.check} data-check={t.check} data-status={t.result.status}>
+              <span className={mark.list} aria-hidden="true">{mark.text}</span>
+              <span><b>{t.num} {t.name}.</b> <span className={s.srOnly}>{STATUS_WORDS[t.result.status]}: </span>{t.result.detail}</span>
+            </li>
+          );
+        })}
+      </ul>
+    )}
+    {testBlock && (
+      <p className={v.muted} data-check="test_block" data-status={testBlock.status}>
+        Sandbox check: a test block from WhiteRoom. Your rules didn’t change.{' '}
+        <strong>{testBlock.status === 'pending' ? 'Up next' : STATUS_WORDS[testBlock.status]}</strong>{testBlock.detail && testBlock.status !== 'pending' ? ` · ${testBlock.detail}` : ''}
+      </p>
+    )}
+    {others.length > 0 && <p className={v.muted}>Also called during this check: {others.join(', ')} (not checked).</p>}
   </>;
 }
 
-/** One live row: its number and name, Now / Up next / its result, and the rules it's judged on. */
-function LiveRow({ num, name, check: c, current, rules }: { num: string; name: string; check: CheckResult; current: boolean; rules: CheckRule[] }) {
-  const status: CheckStatus = c.status;
-  const upNext = status === 'pending' && !current;
-  const mark = current ? { icon: 'clock' as IconName, tone: 'now' } : MARK[status];
-  const tone = upNext ? v.checkMuted : mark.tone === 'pass' ? s.checkPass : mark.tone === 'fail' ? s.checkFail : mark.tone === 'now' ? s.checkWait : v.checkMuted;
-  return (
-    <li className={`${s.check} ${upNext ? v.upNext : ''}`} data-row={num} data-check={c.id} data-status={current ? 'now' : status}>
-      <div className={`${s.checkIcon} ${tone}`} aria-hidden="true"><Icon name={upNext ? 'dash' : mark.icon} size={13} /></div>
-      <div className={v.checkBody}>
-        <div className={s.checkName}><span className={v.rowNum}>{num}</span> {name}</div>
-        <div className={`${s.checkDetail} ${status === 'passed' ? s.checkDetailPass : ''}`}>
-          <strong>{current ? 'Now' : upNext ? 'Up next' : STATUS_WORDS[status]}</strong>{c.detail && !upNext ? ` · ${c.detail}` : ''}
-        </div>
-        {rules.length > 0 && (
-          <details className={v.members}>
-            <summary>{rules.length === 1 ? '1 rule' : `${rules.length} rules`}</summary>
-            {rules.map((r) => (
-              <div key={r.ruleId} className={v.member}>
-                <div className={v.memberName}>{(RULE_LABELS as Record<string, string>)[r.ruleType] ?? r.ruleType} · {ruleWords(r)}</div>
-                {r.detail && <div className={v.text}>{r.detail}</div>}
-              </div>
-            ))}
-          </details>
-        )}
-      </div>
-    </li>
-  );
-}
-
-/** Rows 01 and 08 during a check: checked in practice tasks, not here. */
-function PracticeRowLine({ num, name }: { num: string; name: string }) {
-  return (
-    <li className={`${s.check} ${v.upNext}`} data-row={num} data-status="practice">
-      <div className={`${s.checkIcon} ${v.checkMuted}`} aria-hidden="true"><Icon name="dash" size={13} /></div>
-      <div className={v.checkBody}>
-        <div className={s.checkName}><span className={v.rowNum}>{num}</span> {name}</div>
-        <div className={s.checkDetail}><strong>Practice tasks</strong> · Not part of this check.</div>
-      </div>
-    </li>
-  );
-}
-
-/** The check's own test block (no rule of yours would act): what it's for, and how the agent coped. */
-function TestBlockLine({ part }: { part: CheckPart }) {
-  const waiting = part.status === 'pending';
-  const mark = MARK[part.status];
-  const tone = waiting ? v.checkMuted : mark.tone === 'pass' ? s.checkPass : mark.tone === 'fail' ? s.checkFail : v.checkMuted;
-  return (
-    <li className={`${s.check} ${waiting ? v.upNext : ''}`} data-check="test_block" data-status={part.status}>
-      <div className={`${s.checkIcon} ${tone}`} aria-hidden="true"><Icon name={waiting ? 'dash' : mark.icon} size={13} /></div>
-      <div className={v.checkBody}>
-        <div className={s.checkName}>Sandbox check: a test block from WhiteRoom. Your rules didn’t change.</div>
-        <div className={`${s.checkDetail} ${part.status === 'passed' ? s.checkDetailPass : ''}`}>
-          <strong>{waiting ? 'Up next' : STATUS_WORDS[part.status]}</strong>{part.detail && !waiting ? ` · ${part.detail}` : ''}
-        </div>
-      </div>
-    </li>
-  );
-}
-
-/** After a minute with no call (or when opened): the three usual reasons, with this Sandbox's provider and setting. */
-export function NothingHappening({ provider, open, onToggle, onChangeKey }: {
-  provider: string; open: boolean; onToggle: (open: boolean) => void; onChangeKey?: () => void;
-}) {
+/** No call yet: the usual fixes, with this Sandbox's provider and setting (mockup Rev 3 "2 · Waiting"). */
+export function NothingHappening({ provider, onChangeKey }: { provider: string; onChangeKey?: () => void }) {
   const name = providerLabel(provider);
   const setting = sandboxSetting(provider, 'https://proxy.whiteroom.tech').name;
   return (
-    <details className={v.help} open={open} onToggle={(e) => onToggle((e.currentTarget as HTMLDetailsElement).open)}>
-      <summary className={v.helpHead}>Nothing happening?</summary>
-      <ol className={v.helpList}>
-        <li><strong>Restart your agent</strong> after changing .env, so it picks up the new line.</li>
-        <li><strong>Check it reads <code className={v.mono}>{setting}</code>.</strong> The {name} SDKs do. If yours doesn’t, pass the Sandbox URL as the base URL when you create the client.</li>
+    <div className={v.tipsBlock}>
+      <b>Nothing after a minute? Usually one of these:</b>
+      <ol className={v.tips}>
+        <li>Restart your agent after changing .env.</li>
+        <li>Check it reads <code>{setting}</code>, or pass the URL as <code>base_url</code>.</li>
         <li>
-          <strong>Check it calls {name}.</strong> This Sandbox is set up for {/^[AEIOU]/i.test(name) ? 'an' : 'a'} {name} key.
+          Check it calls {name}. This Sandbox is set up for {/^[AEIOU]/i.test(name) ? 'an' : 'a'} {name} key.
           {onChangeKey && <> <button type="button" className={v.linkButton} onClick={onChangeKey}>Change key</button></>}
         </li>
       </ol>
-    </details>
+    </div>
   );
-}
-
-/** A rule's line during a check: what it did so far, or its result. */
-function ruleWords(r: CheckRule): string {
-  if (r.status === 'pending') return r.acted ? 'Acted' : r.wouldAct ? 'Would have acted' : 'Checking…';
-  return STATUS_WORDS[r.status];
 }
 
 /** /dev/sandbox-v2 only: what Check again and Finish now would show next. */

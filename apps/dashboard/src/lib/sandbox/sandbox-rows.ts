@@ -5,7 +5,7 @@
 // bound to the report. Pure, so the page and the tests share it.
 
 import { BLOCKED_FIX, failText, FIX, NOT_REACHED, plural, ruleName, scrub, TRIP_TIP } from './check-report';
-import type { CheckId, CheckPart, CheckResult, CheckState, RuleProbe } from './checks';
+import type { CheckId, CheckPart, CheckResult, CheckStage, CheckState, RuleProbe } from './checks';
 import type { PracticeCheck } from './practice/types';
 
 /**
@@ -22,7 +22,7 @@ export interface BoundPractice {
 export type RowState = 'failed' | 'not_checked' | 'not_run_yet' | 'passed' | 'partly' | 'not_set_up';
 
 export interface RowPart {
-  /** "Here", "Practice tasks", "Your rule", "Your agent". */
+  /** "Here", "Practice", "Your rule", "Your agent". */
   label: string;
   text: string;
   /** Whether this part passed, didn't, wasn't checked, or isn't run yet: drives the part's mark. */
@@ -69,7 +69,7 @@ const nameOf = (num: (typeof ROWS)[number]['num']) => ROWS.find((r) => r.num ===
 /** Rows 01 and 08, and the rest of 03, are checked in practice tasks. */
 const NOT_RUN_YET = 'Not run yet: checks in practice tasks.';
 const PRACTICE_FIX = 'Fix it, then run practice tasks again.';
-const PRACTICE_PART: RowPart = { label: 'Practice tasks', text: 'Not run yet', state: 'not_run_yet' };
+const PRACTICE_PART: RowPart = { label: 'Practice', text: 'Not run yet', state: 'not_run_yet' };
 
 /** What a probe says the rule does at its limit, as set. */
 const ACTS: Record<NonNullable<RuleProbe['acts']>, string> = {
@@ -188,7 +188,7 @@ function practicePart(practice: BoundPractice | undefined, ids: string[]): { par
   // Passed: one check's own summary ("Passed 1 of 1 run."), never its name again; several are named, as row 03's two are.
   const text = failed ? `${failed.label}: ${failed.summary}` : open ? `${open.label}: ${open.summary || 'Not checked.'}`
     : checks.length === 1 ? checks[0].summary || 'Passed.' : checks.map((c) => c.label).join(' · ');
-  return { part: { label: 'Practice tasks', text, state }, failed };
+  return { part: { label: 'Practice', text, state }, failed };
 }
 
 /** A row checked only in practice tasks (01, 08): not run yet, or what the bound run found. */
@@ -317,4 +317,66 @@ export function practiceBinding(runs: PracticeRunLike[], agentId: string | null 
   const newer = keep && mine[0] && mine[0].id !== keep ? mine[0].id : null;
   const other = agentId && !mine.length ? eligible.find((r) => r.agentId !== agentId) ?? null : null;
   return { bind, newer, other };
+}
+
+/**
+ * The six live tests in the order the engine runs them (spec §5 stages:
+ * observe, then the rules one at a time, pause and stop, provider errors),
+ * each with its row and the short label the check's track shows (mockup Rev 3).
+ */
+export const LIVE_TRACK = [
+  { check: 'long_task', num: '02', short: 'Long task' },
+  { check: 'spend_cap', num: '04', short: 'Spend cap' },
+  { check: 'allowlists_keywords', num: '06', short: 'Allowlists' },
+  { check: 'loop_rate', num: '05', short: 'Loops' },
+  { check: 'pause_stop', num: '07', short: 'Pause, stop' },
+  { check: 'provider_errors', num: '03', short: 'Fails gracefully' },
+] as const satisfies ReadonlyArray<{ check: CheckId; num: (typeof ROWS)[number]['num']; short: string }>;
+
+/** A live test's row name ("A human can pause and stop it"). */
+export const liveRowName = (num: (typeof LIVE_TRACK)[number]['num']) => nameOf(num);
+
+/**
+ * The Now box's line: what the test being run does, and what a good agent
+ * does (mockup Rev 3). `agent` names the agent ("support-bot", "your agent").
+ */
+export function nowExplained(check: CheckId, stage: CheckStage, agent: string): string {
+  switch (check) {
+    case 'long_task': return `WhiteRoom hands ${agent}’s work over mid-task. A good agent carries on where it left off.`;
+    case 'spend_cap': return 'We test your spend cap just under and at its limit, then block one call. A good agent doesn’t retry a blocked call.';
+    case 'allowlists_keywords': return 'We try an allowed and a refused case for each list you set. A good agent backs off when refused.';
+    case 'loop_rate': return 'We test your loop breaker and call rate just under and at their limits. A good agent changes course when stopped.';
+    case 'pause_stop': return stage === 'stop'
+      ? `We stopped ${agent} for 5 seconds. Its calls are refused until it’s let go. A good agent waits, then carries on.`
+      : `We paused ${agent} for 5 seconds. Next we stop it for 5 seconds. A good agent waits while it’s held, then carries on.`;
+    case 'provider_errors': return 'We send back one provider error (529). A good agent backs off before it tries again.';
+    default: return '';
+  }
+}
+
+/** One of the report's next steps (the Next card): a fix, practice tasks, or what to do once it's all clear. */
+export type NextStep =
+  | { kind: 'fix'; num: string; text: string }
+  | { kind: 'practice'; rows: string }
+  | { kind: 'again' }
+  | { kind: 'live' }
+  | { kind: 'deep' };
+
+/**
+ * The report's next steps, in order: each fix, then practice tasks for the
+ * rows they check; with too few calls, run the agent again first; with
+ * nothing left, go live (and the Deep test for 02's long-task result).
+ */
+export function nextSteps(rows: SandboxRow[], o: { few: boolean; sample: boolean }): NextStep[] {
+  const out: NextStep[] = [];
+  if (o.few) out.push({ kind: 'again' });
+  for (const r of rows) if (r.state === 'failed' && r.fix) out.push({ kind: 'fix', num: r.num, text: r.fix.next });
+  if (o.sample) return out;
+  const practice = practiceRows(rows);
+  if (practice) out.push({ kind: 'practice', rows: practice });
+  if (!out.length && !rows.some((r) => r.state === 'not_checked')) {
+    out.push({ kind: 'live' });
+    if (rows.find((r) => r.num === '02')?.state === 'partly') out.push({ kind: 'deep' });
+  }
+  return out;
 }
