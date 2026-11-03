@@ -265,3 +265,12 @@ describe('Your rule and the short lines: every form', () => {
     expect(rows['03'].parts[0].text).toMatch(/^Retried a 529 4 times in 1\.5 s/);
   });
 });
+
+describe('passed rows only claim what this run did', () => {
+  it('a rule row whose check only "would have blocked" keeps the engine’s words', () => {
+    const r = by(state({ checks: { loop_rate: ['passed', 'Would have blocked 2 calls (in Watch). We tested blocking once, with your Spend cap rule.'] } }));
+    expect(r['05'].parts.find((p) => p.label === 'Your agent')?.text).toBe('Would have blocked 2 calls (in Watch). We tested blocking once, with your Spend cap rule.');
+    const blocked = by(state({ checks: { loop_rate: ['passed', 'We blocked a call → it changed course.'] } }));
+    expect(blocked['05'].parts.find((p) => p.label === 'Your agent')?.text).toBe('Changed course when stopped.');
+  });
+});

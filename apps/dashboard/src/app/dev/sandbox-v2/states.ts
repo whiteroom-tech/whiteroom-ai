@@ -113,7 +113,7 @@ const withRows = (c: SandboxChecksPreview, extra: Partial<NonNullable<SandboxChe
 
 /** Mockup Rev 3 "3 · Results (live only)": one fix (03), another agent not checked, and a streaming agent (spec §6a's streaming line). */
 const ROWS_CHECKS: SandboxChecksPreview = (() => {
-  const c = withRows(checkState('done', { ...FINISHED, loop_rate: ['passed', 'Would have blocked 2 calls (in Watch). We tested blocking once, with your Spend cap rule.'] }, { ended: true, rules: RULES, calls: 17 }));
+  const c = withRows(checkState('done', { ...FINISHED, spend_cap: ['passed', 'We blocked a call → it didn’t retry that call.'], allowlists_keywords: ['passed', 'We blocked a call → it backed off.'], loop_rate: ['passed', 'We blocked a call → it changed course.'] }, { ended: true, rules: RULES, calls: 17 }));
   return { ...c, state: { ...c.state!, window: { ...c.state!.window!, otherAgents: ['billing-agent'] },
     streaming: { streamed: true, lines: ['Reply keywords: streamed replies are checked after your agent gets them, so a match is reported, not stopped.'] } } };
 })();

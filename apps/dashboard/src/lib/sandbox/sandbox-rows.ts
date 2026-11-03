@@ -122,9 +122,16 @@ export function failedShort(detail: string): string {
   const first = (after.match(/^.*?\.(?=\s|$)/)?.[0] ?? after).trim();
   return cap(first.replace(/^your agent /i, ''));
 }
-/** A live result's short line: the passed words for its row, or the failure in a few words, else as before. */
+/**
+ * Whether a passed result exercised what its short line says. Rows 02 and 07 can only pass by doing it
+ * (a hand-over, a pause and stop). The rule rows (04–06) only when the engine blocked a call and watched
+ * the agent cope ("We blocked a call → …", "We sent one test block → …"); "Would have blocked 2 calls
+ * (in Watch)" didn't stop anything, so it keeps the engine's words.
+ */
+const exercised = (num: string, c: CheckResult | CheckPart) => num === '02' || num === '07' || /^We (blocked a call|sent one test block)\b/.test(c.detail);
+/** A live result's short line: the passed words for its row when they're true of this run, or the failure in a few words, else the engine's own. */
 const shortText = (num: string, c: CheckResult | CheckPart | undefined) =>
-  c?.status === 'passed' && PASSED_SHORT[num] ? PASSED_SHORT[num] : c?.status === 'failed' ? failedShort(c.detail) || liveText(c) : liveText(c);
+  c?.status === 'passed' && PASSED_SHORT[num] && exercised(num, c) ? PASSED_SHORT[num] : c?.status === 'failed' ? failedShort(c.detail) || liveText(c) : liveText(c);
 
 /** What a rule does at its limit, as set, with the verb first ("Would act … (Watch)"). */
 const ACTS_VERB: Record<NonNullable<RuleProbe['acts']>, string> = {
@@ -234,7 +241,7 @@ function ruleRow(state: CheckState, r: (typeof RULE_ROWS)[number], coped: Coped,
   const elsewhere = !own && copingAt !== null && copingAt !== r.num;
   const agent: RowPart = own ? { label: 'Your agent', text: shortText(r.num, check), state: partState(check) }
     : elsewhere ? { label: 'Your agent', text: `How it copes with a refusal: see row ${copingAt}.`, state: coped.status, seeRow: copingAt }
-    : { label: 'Your agent', text: coped.status === 'passed' ? PASSED_SHORT[r.num] : coped.status === 'failed' ? failedShort(coped.text) : coped.text, state: coped.status };
+    : { label: 'Your agent', text: coped.status === 'passed' && /^We (blocked a call|sent one test block)\b/.test(coped.text) ? PASSED_SHORT[r.num] : coped.status === 'failed' ? failedShort(coped.text) : coped.text, state: coped.status };
   // Every rule row decided its own check, and this one holds the test block's result: shown beside it, so it's never lost.
   const refusal: RowPart | null = own && copingAt === r.num && coped.testBlock ? { label: 'Refused call', text: coped.text, state: coped.status } : null;
   const parts: RowPart[] = [{ label: 'Your rule', text: ruleText, state: failedProbe ? 'failed' : 'passed' }, agent, ...(refusal ? [refusal] : [])];

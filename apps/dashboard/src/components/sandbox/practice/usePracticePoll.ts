@@ -58,6 +58,8 @@ export function useClock(enabled: boolean, start: number): number {
   const [now, setNow] = useState(start);
   useEffect(() => {
     if (!enabled) return;
+    // Now, not the time the page opened: the first second's "started …" and time left are right too.
+    setNow(Date.now());
     const t = setInterval(() => { if (!document.hidden) setNow(Date.now()); }, 1000);
     const onVisible = () => { if (!document.hidden) setNow(Date.now()); };
     document.addEventListener('visibilitychange', onVisible);

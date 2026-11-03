@@ -108,12 +108,12 @@ const rowOf = (id: string) => (id === 'a.result' ? '01' : id.startsWith('b.') ? 
  */
 export function otherRunLine(checks: Pick<PracticeCheck, 'id' | 'status' | 'summary'>[]): string {
   // ✓ only when every check in the row passed, ✕ with the first failure's words, else – (not checked, a test problem, …).
-  const rows = new Map<string, { all: boolean; failed: string | null; seen: boolean }>();
+  const rows = new Map<string, { all: boolean; failed: string | null }>();
   for (const c of checks) {
     const n = rowOf(c.id);
     if (!n) continue;
-    const r = rows.get(n) ?? { all: true, failed: null, seen: false };
-    rows.set(n, { seen: true, all: r.all && c.status === 'passed', failed: r.failed ?? (c.status === 'failed' ? c.summary || '' : null) });
+    const r = rows.get(n) ?? { all: true, failed: null };
+    rows.set(n, { all: r.all && c.status === 'passed', failed: r.failed ?? (c.status === 'failed' ? c.summary || '' : null) });
   }
   return [...rows.entries()].sort(([a], [b]) => a.localeCompare(b))
     .map(([n, r]) => (r.failed !== null ? `${n} ✕${r.failed ? ` ${r.failed}` : ''}` : r.all ? `${n} ✓` : `${n} –`)).join(' · ');
