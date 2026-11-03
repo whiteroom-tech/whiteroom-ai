@@ -11,7 +11,7 @@ vi.mock('@/lib/analytics', () => ({ analytics: { capture: vi.fn() } }));
 
 const { SandboxHome } = await import('@/components/sandbox/v2/SandboxHome');
 const { SANDBOX_V2_STATES } = await import('@/app/dev/sandbox-v2/states');
-const { restartedCheck, restartNote, tooFewNote } = await import('@/lib/sandbox/check-report');
+const { ENGINE_RESTARTED_SENTENCE, restartedCheck, restartNote, tooFewNote } = await import('@/lib/sandbox/check-report');
 const { nextSteps, sandboxRows } = await import('@/lib/sandbox/sandbox-rows');
 const { CHECK_IDS, checkStateOf } = await import('@/lib/sandbox/checks');
 
@@ -20,7 +20,7 @@ const text = () => document.body.textContent ?? '';
 beforeEach(() => { root = createRoot(document.body.appendChild(document.createElement('div'))); });
 afterEach(() => { act(() => root.unmount()); document.body.innerHTML = ''; });
 
-const R = 'Not checked: WhiteRoom restarted during the check. Start checking again.';
+const R = ENGINE_RESTARTED_SENTENCE;
 const ended = (statuses: Record<string, [string, string]>, parts: unknown[] = []) => checkStateOf({
   window: { id: 'chk_1', startedAt: '2026-11-02T10:00:00.000Z', endedAt: '2026-11-02T10:06:00.000Z', stage: 'done', injectErrors: true, calls: 0 },
   checks: CHECK_IDS.map((id) => ({ id, label: id, status: statuses[id]?.[0] ?? 'not_checked', detail: statuses[id]?.[1] ?? '' })),
@@ -67,6 +67,15 @@ describe('a check cut short by a WhiteRoom restart', () => {
     await act(async () => { root.render(h(ReportView, { state, checked: 'today', calls: 0, sample: { onOwnKey: vi.fn(), onAgain: vi.fn() } })); });
     expect(text()).toContain('Run the sample again.');
     expect(text()).not.toContain('Check again.');
+  });
+
+  it('without the restart wording (another engine release), the report falls back to the too-few-calls note: the known limit of matching words', async () => {
+    const { ReportView } = await import('@/components/sandbox/v2/SandboxChecks');
+    const state = ended({ long_task: ['not_checked', 'Not checked.'] });
+    expect(restartedCheck(state)).toBe(false);
+    await act(async () => { root.render(h(ReportView, { state, checked: 'today', calls: 0 })); });
+    expect(text()).toContain(tooFewNote(0));
+    expect(text()).not.toContain('WhiteRoom restarted');
   });
 
   it('some checks done before the restart: says some didn’t finish', () => {

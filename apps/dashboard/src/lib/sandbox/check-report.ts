@@ -25,6 +25,8 @@ export const tooFewNote = (calls: number) =>
  * still counts.
  */
 export const RESTARTED_DETAIL = /\brestarted during (the|this) check\b/i;
+/** The engine's sentence today (the sync point above), for fixtures and tests: one copy. */
+export const ENGINE_RESTARTED_SENTENCE = 'Not checked: WhiteRoom restarted during the check. Start checking again.';
 
 /** Whether the check was cut short by a WhiteRoom restart: a check, rule or part not checked for that reason. */
 export function restartedCheck(state: Pick<CheckState, 'checks' | 'rules' | 'parts'>): boolean {
