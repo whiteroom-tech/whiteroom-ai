@@ -366,16 +366,14 @@ describe('Sandbox v2 page', () => {
     bff.mockImplementation(async () => Response.json(STATUS));
     await render({ fleet: 'prod-eu' });
     expect(document.querySelector('section[aria-label="Your Sandbox"]')?.textContent).toContain('Anthropic · key ending');
-    for (const label of ['Change key']) {
-      await click(label);
-      expect(text()).toContain('Connect a different key');
-      expect(document.querySelector('[aria-current="step"]')?.textContent).toBe('1Connect');
-      expect(document.getElementById('sandbox-step')).toBeNull();
-      const cancel = [...document.querySelectorAll<HTMLButtonElement>('#sandbox-connect button')].find((b) => b.textContent === 'Cancel')!;
-      await act(async () => { cancel.click(); });
-      expect(text()).not.toContain('Connect a different key');
-      expect(document.querySelector('[aria-current="step"]')?.textContent).toBe('2Run your agent');
-    }
+    await click('Change key');
+    expect(text()).toContain('Connect a different key');
+    expect(document.querySelector('[aria-current="step"]')?.textContent).toBe('1Connect');
+    expect(document.getElementById('sandbox-step')).toBeNull();
+    const cancel = [...document.querySelectorAll<HTMLButtonElement>('#sandbox-connect button')].find((b) => b.textContent === 'Cancel')!;
+    await act(async () => { cancel.click(); });
+    expect(text()).not.toContain('Connect a different key');
+    expect(document.querySelector('[aria-current="step"]')?.textContent).toBe('2Run your agent');
   });
 
   it('on Results, Get a new Sandbox URL shows the new URL above the report', async () => {
