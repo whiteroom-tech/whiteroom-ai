@@ -37,7 +37,7 @@ describe('the eight rows', () => {
       '01:agent:not_run_yet', '02:agent:partly', '03:agent:partly',
       '04:guardrails:passed', '05:guardrails:passed', '06:guardrails:passed', '07:guardrails:passed', '08:guardrails:not_run_yet',
     ]);
-    expect(rowsHeadline(rows)).toEqual({ headline: 'Nothing to fix', sub: '6 of 8 checked · 2 need practice tasks', tone: 'pass' });
+    expect(rowsHeadline(rows)).toEqual({ headline: 'Nothing to fix · 6 of 8 checked', sub: '2 need practice tasks', tone: 'pass' });
     const r = by(state());
     expect(r['02'].note).toBe('The long-task result is in the Deep test.');
     expect(r['03'].parts.map((p) => [p.label, p.state])).toEqual([['Here', 'passed'], ['Practice', 'not_run_yet']]);
@@ -63,7 +63,7 @@ describe('the eight rows', () => {
     const enforce = by(state({ probes: [probe('spend_cap', 'passed', 'blocks')] }));
     expect(enforce['04'].parts[0].text).toBe('blocks at its limit');
     expect(enforce['05']).toMatchObject({ state: 'not_set_up', line: 'Not set up for this agent.' });
-    expect(rowsHeadline(sandboxRows(state({ probes: [probe('spend_cap')] })))).toMatchObject({ sub: '4 of 8 checked · 2 need practice tasks · 2 not set up' });
+    expect(rowsHeadline(sandboxRows(state({ probes: [probe('spend_cap')] })))).toMatchObject({ headline: 'Nothing to fix · 4 of 8 checked', sub: '2 need practice tasks · 2 not set up' });
     const broken = by(state({ probes: [probe('spend_cap', 'failed')] }));
     expect(broken['04']).toMatchObject({ state: 'failed', fix: { next: 'Check this rule in your Sandbox rules, then check again.' } });
     const hammered = by(state({ checks: { spend_cap: ['failed', 'We blocked a call → your agent retried it 4 times within 5 s. Fix: stop or back off.'] } }));
@@ -188,7 +188,7 @@ describe('a practice run bound to the report (eight checks §6)', () => {
   it('fills 01, 08 and the rest of 03: a clean run reads Nothing to fix · 8 of 8 checked', () => {
     const rows = sandboxRows(state(), run([pc('a.result', 'passed', 'Finishes a job correctly'), pc('c.timeout', 'passed', 'Saves once'), pc('c.keeps_failing', 'passed', 'Stops'), pc('d.injection', 'passed', 'Ignores a planted instruction')]));
     expect(rows.map((r) => `${r.num}:${r.state}`)).toEqual(['01:passed', '02:partly', '03:passed', '04:passed', '05:passed', '06:passed', '07:passed', '08:passed']);
-    expect(rowsHeadline(rows)).toMatchObject({ headline: 'Nothing to fix', sub: '8 of 8 checked', tone: 'pass' });
+    expect(rowsHeadline(rows)).toMatchObject({ headline: 'Nothing to fix · 8 of 8 checked', sub: '', tone: 'pass' });
     expect(by(state())['03'].parts[1].state).toBe('not_run_yet');
     // A passed row says what the run found, not its own name again.
     expect(rows.find((r) => r.num === '08')!.line).toBe('Passed 1 of 1 run.');

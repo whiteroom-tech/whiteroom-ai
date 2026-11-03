@@ -16,6 +16,8 @@ import type { PracticeCheck } from './practice/types';
 export interface BoundPractice {
   runId: string;
   endedAt: string | null;
+  /** How thorough, for the report's when-line ("Practice tasks 14:09 (Quick, your adapter)"). */
+  profile?: string | null;
   checks: Pick<PracticeCheck, 'id' | 'status' | 'summary' | 'fix' | 'label'>[];
 }
 
@@ -68,6 +70,19 @@ const nameOf = (num: (typeof ROWS)[number]['num']) => ROWS.find((r) => r.num ===
 
 /** Rows 01 and 08, and the rest of 03, are checked in practice tasks. */
 const NOT_RUN_YET = 'Not run yet: checks in practice tasks.';
+
+/**
+ * With only another agent's practice run (§6 mismatch), the practice rows say
+ * whose run they're still waiting for: "Not run yet for support-bot."
+ */
+export function notRunFor(rows: SandboxRow[], agent: string): SandboxRow[] {
+  const words = `Not run yet for ${agent}`;
+  return rows.map((r) => ({
+    ...r,
+    line: r.state === 'not_run_yet' && !r.parts.length ? `${words}.` : r.line,
+    parts: r.parts.map((p) => (p.state === 'not_run_yet' ? { ...p, text: words } : p)),
+  }));
+}
 const PRACTICE_FIX = 'Fix it, then run practice tasks again.';
 const PRACTICE_PART: RowPart = { label: 'Practice', text: 'Not run yet', state: 'not_run_yet' };
 
@@ -252,8 +267,10 @@ export function rowCounts(rows: SandboxRow[]) {
 /** "1 thing to fix before going live" / "Nothing to fix", and "6 of 8 checked · 2 need practice tasks · 1 not set up". */
 export function rowsHeadline(rows: SandboxRow[]): { headline: string; sub: string; tone: 'pass' | 'warn' | 'neutral' } {
   const c = rowCounts(rows);
-  const headline = c.fix ? `${plural(c.fix, 'thing', 'things')} to fix before going live` : c.checked ? 'Nothing to fix' : 'Nothing was checked this time';
-  const sub = [`${c.checked} of ${c.total} checked`, c.practice && `${c.practice} need practice tasks`, c.notSetUp && `${c.notSetUp} not set up`].filter(Boolean).join(' · ');
+  // Nothing to fix carries its count in the headline (spec T19, mockup Rev 3: "Nothing to fix · 8 of 8 checked"); a fix leaves it to the line under.
+  const count = `${c.checked} of ${c.total} checked`;
+  const headline = c.fix ? `${plural(c.fix, 'thing', 'things')} to fix before going live` : c.checked ? `Nothing to fix · ${count}` : 'Nothing was checked this time';
+  const sub = [!c.fix && c.checked ? null : count, c.practice && `${c.practice} need practice tasks`, c.notSetUp && `${c.notSetUp} not set up`].filter(Boolean).join(' · ');
   // Green only when nothing failed and nothing that was tried went unchecked: rows for practice tasks or with no rule don't hold it back.
   const clean = !c.fix && c.checked > 0 && !rows.some((r) => r.state === 'not_checked');
   return { headline, sub, tone: c.fix ? 'warn' : clean ? 'pass' : 'neutral' };

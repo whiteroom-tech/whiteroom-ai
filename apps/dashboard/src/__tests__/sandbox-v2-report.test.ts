@@ -118,9 +118,10 @@ describe('the report on the page', () => {
       expect.stringMatching(/ Then check again\.$/),
       'Run practice tasks for 01, 08 and the rest of 03. A few minutes.',
     ]);
-    // Linked from rows 01 and 08, row 02's long-task note (that's in the deep test), Next, and the report's own button.
-    expect([...document.querySelectorAll('a[href="/sandbox/practice"]')].length).toBe(5);
-    expect(document.querySelector('li[data-row="02"] a[href="/sandbox/practice"]')).not.toBeNull();
+    // Practice tasks open in the page: from rows 01 and 08, row 02's long-task note (that's in the deep test), Next, and the report's own button.
+    expect([...document.querySelectorAll('button')].filter((b) => b.textContent === 'Run practice tasks')).toHaveLength(5);
+    expect([...document.querySelectorAll('li[data-row="02"] button')].some((b) => b.textContent === 'Run practice tasks')).toBe(true);
+    expect(document.querySelector('a[href^="/sandbox/practice"]')).toBeNull();
     // The Sandbox rules card beside the report: Edit rules opens the editor under the step.
     expect(document.querySelector('section[aria-label="Sandbox rules"]')?.textContent).toContain('5 ready-made · all Watch');
     expect(document.getElementById('sandbox-rules')).toBeNull();
@@ -196,7 +197,7 @@ describe('the report on the page', () => {
     expect(body).toMatch(/8 of 8 checked/);
     expect(body).toMatch(/Live check .+ · Practice tasks /);
     // Only row 02 still points on: a quick run has no long task, that's in the deep test.
-    expect([...document.querySelectorAll('li[data-row] a[href^="/sandbox/practice?from=sandbox"]')].map((a) => a.closest('li[data-row]')?.getAttribute('data-row'))).toEqual(['02']);
+    expect([...document.querySelectorAll('li[data-row] button')].filter((b) => b.textContent === 'Run practice tasks').map((b) => b.closest('li[data-row]')?.getAttribute('data-row'))).toEqual(['02']);
     expect(body).not.toContain('Next: Run practice tasks');
   });
 
@@ -204,9 +205,15 @@ describe('the report on the page', () => {
     await act(async () => { root.render(h(SandboxHome, { fleet: 'prod-eu', preview: SANDBOX_V2_STATES['checks-report-other-agent'] })); });
     const body = document.body.textContent ?? '';
     expect(body).toContain('Practice tasks (different agent): billing-agent');
-    expect(body).toContain('They don’t count toward support-bot’s checks.');
+    expect(body).toContain('These don’t count toward support-bot’s checks.');
+    expect(body).toContain('01 ✓ · 03 ✓ · 08 ✕ Sent the file when the email asked');
     expect(body).toContain('6 of 8 checked · 2 need practice tasks');
-    expect(document.querySelector('a[href="/sandbox/practice?from=sandbox&agent=support-bot"]')).not.toBeNull();
+    // The practice rows say whose run they still wait for, and open practice tasks in the page.
+    expect(document.querySelector('li[data-row="08"]')?.textContent).toContain('Not run yet for support-bot.');
+    expect([...document.querySelectorAll('li[data-row="01"] button')].some((b) => b.textContent === 'Run practice tasks')).toBe(true);
+    // Apart, between the two groups (mockup Rev 3).
+    const apart = document.querySelector('[data-other-run]')!;
+    expect(apart.previousElementSibling?.getAttribute('aria-label')).toBe('The agent');
   });
 
   it('focuses the verdict when asked (a report that appears while the page is open)', async () => {

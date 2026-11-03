@@ -204,3 +204,31 @@
 .tipsBlock > b { font-size:var(--fs-md); color:var(--tx); }
 .nrun { color:var(--tx3); }
 .liveCalling::before { background:var(--ok); }
+
+/* Practice tasks in the Sandbox page (mockup Rev 3 states 4–6). */
+.field { display:grid; gap:6px; min-width:0; }
+.flbl { margin:0; font-size:var(--fs-sm); font-weight:600; color:var(--tx); }
+.seg { display:inline-flex; justify-self:start; border:1px solid var(--line2); border-radius:8px; overflow:hidden; max-width:100%; }
+.seg > button { border:0; background:transparent; color:var(--tx2); padding:7px 12px; font:inherit; font-size:var(--fs-sm); font-weight:600; cursor:pointer; min-height:34px; }
+.seg > button[aria-pressed="true"] { background:var(--brand-dim); color:var(--tx); }
+.seg > button:disabled { opacity:.5; cursor:default; }
+.seg > button:focus-visible { outline:2px solid var(--brand); outline-offset:-2px; }
+@container (max-width: 560px) { .seg > button { min-height:44px; } }
+.notice { border:1px solid var(--warn-line, var(--warn)); background:var(--warn-bg); border-radius:8px; padding:12px 14px; display:grid; gap:8px; font-size:var(--fs-sm); color:var(--tx); }
+.codeDim { color:var(--tx3); }
+.ptasks { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+.ptasks > li { display:grid; grid-template-columns:22px minmax(0,1fr) auto; gap:8px; align-items:baseline; font-size:var(--fs-md); color:var(--tx3); }
+.ptasks > li b { color:var(--tx2); font-weight:600; }
+.ptDone { color:var(--tx2) !important; }
+.ptDone .ptIc { color:var(--ok); }
+.ptNow b { color:var(--tx) !important; }
+.ptNow .ptIc { color:var(--brand); }
+.ptIc { font-weight:700; text-align:center; }
+.when { font-family:var(--font-mono); font-size:var(--fs-sm); color:var(--tx3); }
+.apart { border:1px dashed var(--line2); border-radius:8px; padding:12px 14px; display:grid; gap:6px; font-size:var(--fs-sm); color:var(--tx2); }
+.apart b { color:var(--tx); }
+/* A narrow page: the line to copy gets the full width, its button under it. */
+@container (max-width: 560px) {
+  .codeRow { flex-wrap:wrap; padding:8px 12px; }
+  .codeRow > button { width:100%; }
+}

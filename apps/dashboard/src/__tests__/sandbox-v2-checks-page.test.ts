@@ -398,7 +398,7 @@ describe('Check your agent', () => {
     await click('Finish now');
     expect(calls().some((c) => c.url.endsWith('/checks/stop'))).toBe(true);
     expect(text()).toContain('1 of 8 checked');
-    expect(document.activeElement?.textContent).toBe('Nothing to fix');
+    expect(document.activeElement?.textContent).toBe('Nothing to fix · 1 of 8 checked');
   });
 
   it('sends one sandbox_report_rows for a check that finishes while the page is open, and none for an old report on load', async () => {

@@ -3,6 +3,7 @@ import type { SandboxRulesPreview } from '@/components/sandbox/v2/SandboxRules';
 import type { SandboxChecksPreview } from '@/components/sandbox/v2/SandboxChecks';
 import { CHECK_IDS, CHECK_NAMES, type CheckId, type CheckRule, type CheckStage, type CheckStatus, type RuleProbe } from '@/lib/sandbox/checks';
 import { previewReadyMade } from '@/lib/sandbox/rules';
+import type { PracticeRun } from '@/lib/sandbox/practice/types';
 import type { GovernanceRule } from '@/lib/whiteroom/types';
 
 // /dev/sandbox-v2 sample states. Keys are placeholders, never real ones.
@@ -111,6 +112,33 @@ const ROWS_CHECKS: SandboxChecksPreview = (() => {
     } };
   })();
 
+/** A practice run of support-bot from the Sandbox (quick: four tasks), as the engine would send it. Placeholder IDs only. */
+const practiceRun = (over: Partial<PracticeRun>): PracticeRun => ({
+  id: 'r-00000000-0000-4000-8000-000000000001', lifecycle: 'draft', verdict: null, endReason: null, sourceFleetId: 'prod-eu', agentId: 'support-bot',
+  sample: false, runs: 1, scope: null, provider: 'anthropic', proxyKeyDisplayPrefix: 'sk-wr-0123456789abcdef', keyHint: 'AbCd',
+  createdAt: new Date(NOW - 8 * 60_000).toISOString(), startedAt: null, endedAt: null, codeExpiresAt: new Date(NOW + 25 * 60_000).toISOString(), codeTriesLeft: 5,
+  progress: null, profile: 'quick', origin: 'sandbox', plan: null, ...over,
+});
+/** Every live test passed for support-bot. */
+const ALL_LIVE: Results = {
+  long_task: ['passed', 'Carried on after a hand-over.'],
+  spend_cap: ['passed', 'Didn’t retry the blocked call.'],
+  allowlists_keywords: ['passed', 'Backed off when refused.'],
+  loop_rate: ['passed', 'Changed course when stopped.'],
+  pause_stop: ['passed', 'Waited while held, then carried on.'],
+  provider_errors: ['passed', 'Backed off a 529.'],
+};
+const ALL_PRACTICE = [
+  { id: 'a.result', label: 'Finishes a job correctly', status: 'passed' as const, summary: 'Right records and values, and said what it changed.', fix: null },
+  { id: 'c.timeout', label: 'Saved once on a timeout', status: 'passed' as const, summary: 'Passed 1 of 1 run.', fix: null },
+  { id: 'c.keeps_failing', label: 'stopped when a tool kept failing', status: 'passed' as const, summary: 'Passed 1 of 1 run.', fix: null },
+  { id: 'd.injection', label: 'Ignores a planted instruction', status: 'passed' as const, summary: 'Passed this injection test: summarised all 3 emails and didn’t send the file.', fix: null },
+];
+const support = (c: SandboxChecksPreview, extra: Partial<NonNullable<SandboxChecksPreview['state']>> = {}): SandboxChecksPreview =>
+  ({ ...c, state: { ...c.state!, window: { ...c.state!.window!, agentId: 'support-bot' }, ...extra } });
+/** The report the practice states sit on: support-bot's live check, ended. */
+const PRACTICE_REPORT = support(checkState('done', FINISHED, { ended: true, rules: RULES, calls: 17 }));
+
 export const SANDBOX_V2_STATES = {
   /** No Sandbox yet: step 1. */
   'not-connected': { status: { exists: false }, now: NOW },
@@ -179,8 +207,18 @@ export const SANDBOX_V2_STATES = {
     { id: 'c.keeps_failing', label: 'Stops when a tool keeps failing', status: 'passed', summary: 'Passed 1 of 1 run.', fix: null },
     { id: 'd.injection', label: 'Ignores a planted instruction', status: 'passed', summary: 'Passed 1 of 1 run.', fix: null },
   ] }, newer: null, other: null } } }),
+  /** Mockup Rev 3 "4 · Set up": Run practice tasks opened in the page, your agent, quick, the adapter command. */
+  'practice-setup': live({ checks: PRACTICE_REPORT, practice: { who: 'mine', profile: 'quick', adapter: 'python3 wr_adapter.py' } }),
+  /** "4 · Key changed": a code made for the Sandbox's old key. */
+  'practice-changed': live({ checks: PRACTICE_REPORT, practice: { run: practiceRun({ proxyKeyDisplayPrefix: 'sk-wr-ffffffffffffffff' }), code: null } }),
+  /** "4 · Set up" refused: busy. */
+  'practice-busy': live({ checks: PRACTICE_REPORT, practice: { refusal: { message: 'Busy, try again in a minute.' } } }),
+  /** "5 · Running": the planted-instruction task done, the next one running. */
+  'practice-running': live({ checks: PRACTICE_REPORT, practice: { run: practiceRun({ lifecycle: 'active', startedAt: new Date(NOW - 50_000).toISOString(), progress: { done: 1, total: 4, lastContactAt: new Date(NOW - 2_000).toISOString() }, plan: { tasks: ['D', 'A', 'C_timeout', 'C_fail'].map((scenario) => ({ scenario, runIndex: 0 })) } }) } }),
+  /** "6 · Results (all 8)": fixed and rerun, practice tasks bound. */
+  'checks-report-all8': live({ checks: { ...support(checkState('done', ALL_LIVE, { ended: true, calls: 24 })), practice: { bound: { runId: 'r-1', endedAt: new Date(NOW - 60_000).toISOString(), profile: 'quick', checks: ALL_PRACTICE }, newer: null, other: null } } }),
   /** Practice tasks of another agent only: shown apart, not counted. */
-  'checks-report-other-agent': live({ checks: { ...ROWS_CHECKS, practice: { bound: null, newer: null, other: { agentId: 'billing-agent', endedAt: new Date(NOW - 26 * 60 * 60_000).toISOString() } } } }),
+  'checks-report-other-agent': live({ checks: { ...ROWS_CHECKS, practice: { bound: null, newer: null, other: { agentId: 'billing-agent', endedAt: new Date(NOW - 26 * 60 * 60_000).toISOString(), line: '01 ✓ · 03 ✓ · 08 ✕ Sent the file when the email asked' } } } }),
   'checks-report-rows': live({ checks: ROWS_CHECKS }),
   /** Step 4: the checks couldn't be read. */
   'checks-error': live({ checks: { state: null, error: 'The Sandbox couldn’t do that right now. Try again in a moment.', now: NOW } }),

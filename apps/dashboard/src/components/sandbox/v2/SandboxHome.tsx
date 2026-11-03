@@ -15,7 +15,9 @@ import {
 } from '@/lib/sandbox/fleet';
 import { ConnectForm, type ConnectRequest } from './ConnectForm';
 import { practiceHref, SandboxChecks, STEP_CARD_ID, type CheckPhase, type SandboxChecksPreview } from './SandboxChecks';
-import { SandboxRulesCard, WhatWeCheckCard, YourSandboxCard } from './SandboxAside';
+import { PracticeCoversCard, SandboxRulesCard, WhatWeCheckCard, YourSandboxCard } from './SandboxAside';
+import { SandboxPractice, type SandboxPracticePreview } from './SandboxPractice';
+import type { PracticeProfile } from '@/lib/sandbox/practice/types';
 import { SANDBOX_STEPS, sandboxStepOf, type SandboxStep } from '@/lib/sandbox/steps';
 import { checkStateOf, type CheckState } from '@/lib/sandbox/checks';
 import { SandboxRules, type SandboxRulesPreview } from './SandboxRules';
@@ -50,6 +52,8 @@ export interface SandboxHomePreview {
   sampleRefusal?: { reason: SampleRefusal; message: string };
   /** The rules editor, already open (Edit rules). */
   rulesOpen?: boolean;
+  /** Practice tasks open in the page, as they'd show. */
+  practice?: SandboxPracticePreview;
 }
 
 type Confirm = 'rotate' | 'reset' | null;
@@ -90,6 +94,15 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   const [rules, setRules] = useState<{ state: SandboxRulesState | null; failed: boolean }>({ state: null, failed: false });
   const [rulesOpen, setRulesOpen] = useState(!!preview?.rulesOpen);
   const onRules = useCallback((state: SandboxRulesState | null, failed: boolean) => setRules({ state, failed }), []);
+  // Practice tasks open in the page (Run practice tasks), and the run that just finished there, for the report to bind.
+  const [practice, setPractice] = useState<{ profile: PracticeProfile } | null>(preview?.practice ? { profile: preview.practice.profile ?? 'quick' } : null);
+  const [practiceRun, setPracticeRun] = useState<string | null>(null);
+  const openPractice = useCallback((profile: PracticeProfile = 'quick') => {
+    setPractice({ profile });
+    analytics.capture('sandbox_practice_opened', { profile });
+    requestAnimationFrame(() => window.scrollTo?.({ top: 0 }));
+  }, []);
+  const practiceDone = useCallback((runId: string) => { setPracticeRun(runId); setPractice(null); }, []);
   // A URL got from Get a new Sandbox URL on this page: it shows above the check or report too, so it's seen before the page is left.
   const [rotatedHere, setRotatedHere] = useState(false);
   // When a key was connected on this page (for the first-call event).
@@ -223,7 +236,8 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   // Run the sample again goes once a start is refused for the limit.
   const sampleAgain = sampleLimit ? undefined : () => void startSample();
   const showForm = !loading && status !== null && (!connected || replacing);
-  const step = sandboxStepOf({ connected: !!connected, replacing, checks });
+  // Practice tasks open from a report, so the steps bar stays on Results while they're open.
+  const step = practice && connected && !replacing && !sample ? 'results' : sandboxStepOf({ connected: !!connected, replacing, checks });
 
   // Once per page, when the Sandbox has loaded: someone opened it, and on which step. Never ids or names.
   const openedSent = useRef(false);
@@ -277,9 +291,11 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   );
   const rulesCard = <SandboxRulesCard state={rules.state} loadFailed={rules.failed} onEdit={editRules} />;
   // The right-hand cards for each phase of the check (mockup Rev 3): What we check open while waiting (closed on a phone, where it stacks under the step).
+  // Run practice tasks opens them in the page (not for the sample agent's Sandbox: its report leads to your own key).
+  const onPractice = connected && !sample ? openPractice : undefined;
   const aside = (phase: CheckPhase) => <>
     {yourSandbox}
-    {phase !== 'results' && <WhatWeCheckCard open={phase === 'waiting' && wide} practiceHref={href} />}
+    {phase !== 'results' && <WhatWeCheckCard open={phase === 'waiting' && wide} practiceHref={href} onPractice={onPractice && (() => onPractice())} />}
     {rulesCard}
   </>;
 
@@ -324,7 +340,21 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
           </div>
         )}
 
-        {connected && !replacing && (
+        {connected && !replacing && practice && !sample && (
+          <div className={v.cols}>
+            <div className={v.mainCol}>
+              <SandboxPractice key={`practice-${practice.profile}`} fleet={fleet} agent={(checks ?? preview?.checks?.state)?.window?.agentId ?? null} provider={connected.key!.provider}
+                sandboxKey={connected.key!.prefix.replace(/\.+$/, '')} initialProfile={practice.profile} preview={preview?.practice && { now: preview.now, ...preview.practice }}
+                onBack={() => setPractice(null)} onFinished={practiceDone} />
+            </div>
+            <aside className={v.rcol} aria-label="About your Sandbox">
+              <PracticeCoversCard />
+              {yourSandbox}
+            </aside>
+          </div>
+        )}
+
+        {connected && !replacing && !(practice && !sample) && (
           <SandboxChecks
             key={`checks-${connected.sandboxFleetId}-${resets}`}
             fleet={fleet}
@@ -341,6 +371,8 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
               ? <RunSetup issued={issued} onCopied={preview ? undefined : copiedEvent} />
               : <ReturnSetup prefix={connected.key!.prefix} busy={busy} onNewUrl={() => setConfirm('rotate')} />}
             aside={aside}
+            onPractice={onPractice}
+            practiceRun={practiceRun}
             below={<>
               {/* In the open: it says the agent ran with nothing checked or blocked. */}
               {outside && <Banner variant="warn">{outside}</Banner>}

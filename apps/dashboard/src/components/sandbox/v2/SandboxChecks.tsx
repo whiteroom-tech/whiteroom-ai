@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Banner, Button, Icon, SkeletonCard, type IconName } from '@whiteroom/ui';
 import { ROUTES } from '@/lib/routes';
@@ -11,12 +11,14 @@ import {
 } from '@/lib/sandbox/checks';
 import { SCORED_CHECKS, tooFewCalls, tooFewNote } from '@/lib/sandbox/check-report';
 import {
-  callsText, LIVE_TRACK, liveRowName, nextSteps, nowExplained, practiceBinding, ROW_GROUP_NAMES, rowCounts, rowsHeadline, rowsSummary, sandboxRows, STATE_WORDS,
+  callsText, LIVE_TRACK, liveRowName, nextSteps, notRunFor, nowExplained, practiceBinding, ROW_GROUP_NAMES, rowCounts, rowsHeadline, rowsSummary, sandboxRows, STATE_WORDS,
   type BoundPractice, type NextStep, type SandboxRow,
 } from '@/lib/sandbox/sandbox-rows';
 import { getPracticeResult, listPracticeRuns } from '@/lib/sandbox/practice/api';
 import { analytics } from '@/lib/analytics';
-import { NextCard } from './SandboxAside';
+import { NextCard, PracticeLink } from './SandboxAside';
+import { otherRunLine } from '@/lib/sandbox/sandbox-practice';
+import type { PracticeProfile } from '@/lib/sandbox/practice/types';
 import s from '../guided.module.css';
 import v from './v2.module.css';
 
@@ -35,7 +37,10 @@ export interface SandboxChecksPreview {
 export interface PracticeView {
   bound: BoundPractice | null;
   newer: string | null;
-  other: { agentId: string; endedAt: string | null } | null;
+  /** When the newer run ended, for "A newer practice run is available (15:20)". */
+  newerAt?: string | null;
+  /** `line`: its checks summed up ("01 ✓ · 03 ✓ · 08 ✕ …"), once read. */
+  other: { agentId: string; endedAt: string | null; line?: string } | null;
 }
 const NO_PRACTICE: PracticeView = { bound: null, newer: null, other: null };
 
@@ -59,7 +64,7 @@ const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : 'T
  * window ends. A check's stop lifts itself after 5 seconds, so there's no
  * Resume here.
  */
-export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState, setup, setupAlways = false, provider = 'anthropic', onChangeKey, sample, aside, below }: {
+export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState, setup, setupAlways = false, provider = 'anthropic', onChangeKey, sample, aside, below, onPractice, practiceRun = null }: {
   fleet: string;
   sandboxFleetId: string;
   preview?: SandboxChecksPreview;
@@ -85,6 +90,10 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   aside?: (phase: CheckPhase) => React.ReactNode;
   /** Under the step card, in its column (the rules editor, notices). */
   below?: React.ReactNode;
+  /** Run practice tasks in the page (none: links go to the practice page). */
+  onPractice?: (profile?: PracticeProfile) => void;
+  /** A practice run just finished from this page: bind it to the report. */
+  practiceRun?: string | null;
 }) {
   const [state, setState] = useState<CheckState | null>(preview ? preview.state : null);
   const [loading, setLoading] = useState(!preview);
@@ -98,7 +107,7 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   const [settledKey, setSettledKey] = useState<string | null>(null);
   // The run bound so far (read, never a reason to fetch again), and the one the owner picked with Use it (a reason to).
   const boundRef = useRef<string | null>(null);
-  const [picked, setPicked] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(practiceRun);
   // The latest onStale, read when called: a new callback from the page never re-reads or restarts polling.
   const staleRef = useRef(onStale);
   useEffect(() => { staleRef.current = onStale; }, [onStale]);
@@ -211,14 +220,17 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
     const setPractice = (view: PracticeView) => setPracticeRead({ key, view });
     listPracticeRuns(fleet).then(async (runs) => {
       const b = practiceBinding(runs, reportAgent, picked ?? boundRef.current);
-      const other = b.other && { agentId: b.other.agentId, endedAt: b.other.endedAt };
+      // Another agent's run: summed up apart, from its own result (best effort: without it, just its name and date).
+      const otherRes = b.other ? await getPracticeResult(fleet, b.other.id).catch(() => null) : null;
+      const other = b.other && { agentId: b.other.agentId, endedAt: b.other.endedAt, ...(otherRes?.report && { line: otherRunLine(otherRes.report.checks) }) };
+      const newerAt = b.newer ? runs.find((r) => r.id === b.newer)?.endedAt ?? null : null;
       // Gone from the list (or none yet): nothing bound, so no stale result is shown.
       boundRef.current = b.bind;
       if (!b.bind) { if (live) setPractice({ bound: null, newer: null, other }); return; }
       const res = await getPracticeResult(fleet, b.bind);
       if (!live) return;
       const run = runs.find((r) => r.id === b.bind)!;
-      setPractice({ bound: res.report ? { runId: b.bind, endedAt: run.endedAt, checks: res.report.checks } : null, newer: b.newer, other });
+      setPractice({ bound: res.report ? { runId: b.bind, endedAt: run.endedAt, profile: run.profile ?? null, checks: res.report.checks } : null, newer: b.newer, newerAt, other });
     // A failed read keeps what's on screen: a new report or agent never shows the last one's (practiceRead's key).
     }).catch(() => {}).finally(() => { if (live) setSettledKey(key); });
     return () => { live = false; };
@@ -316,13 +328,13 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
             {setup && setupAlways && <div className={`${v.stack} ${v.setup}`}>{setup}</div>}
             <ReportView state={state} checked={fmtWhen(w.startedAt, now)} calls={w.calls} focus={focusReport}
               onAgain={isSample ? undefined : () => void act('start')} busy={busy} sample={sample}
-              practice={practice} now={now} onUseNewer={practice.newer ? () => setPicked(practice.newer) : undefined} />
+              practice={practice} now={now} onUseNewer={practice.newer ? () => setPicked(practice.newer) : undefined} onPractice={onPractice} />
           </>}
         </section>
         {below}
       </div>
       <aside className={v.rcol} aria-label="About your Sandbox">
-        {phase === 'results' && <NextCard items={next.map((x) => <NextLine key={nextKey(x)} step={x} href={href} />)} />}
+        {phase === 'results' && <NextCard items={next.map((x) => <NextLine key={nextKey(x)} step={x} href={href} onPractice={onPractice} />)} />}
         {aside?.(phase)}
       </aside>
     </div>
@@ -335,13 +347,13 @@ export type CheckPhase = 'waiting' | 'checking' | 'results';
 const nextKey = (x: NextStep) => (x.kind === 'fix' ? `fix-${x.num}` : x.kind);
 
 /** One of the Next card's steps, in plain words, with its link. */
-function NextLine({ step, href }: { step: NextStep; href: string }) {
+function NextLine({ step, href, onPractice }: { step: NextStep; href: string; onPractice?: (profile?: PracticeProfile) => void }) {
   switch (step.kind) {
     case 'again': return <>Run your agent again, with a longer task, so the live checks can run.</>;
     case 'fix': return <>{step.text} Then check again.</>;
-    case 'practice': return <><Link href={href} className="wr-link">Run practice tasks</Link> for {step.rows}. A few minutes.</>;
+    case 'practice': return <><PracticeLink href={href} onPractice={onPractice && (() => onPractice())} /> for {step.rows}. A few minutes.</>;
     case 'live': return <>Ready for live traffic. Point your agent at WhiteRoom from <Link href={ROUTES.fleetKey} className="wr-link">Fleet key</Link>.</>;
-    case 'deep': return <>Want more? Run the <Link href={href} className="wr-link">Deep test</Link> for 02’s long-task result.</>;
+    case 'deep': return <>Want more? Run the <PracticeLink href={href} onPractice={onPractice && (() => onPractice('deep'))}>Deep test</PracticeLink> for 02’s long-task result.</>;
   }
 }
 
@@ -381,7 +393,7 @@ export async function copyText(text: string): Promise<boolean> {
  * place. Copy summary puts the same on the clipboard as plain text, with
  * keys, URLs and IDs hidden.
  */
-export function ReportView({ state, checked, calls, onAgain, busy = false, focus = false, sample, practice = NO_PRACTICE, now, onUseNewer }: {
+export function ReportView({ state, checked, calls, onAgain, busy = false, focus = false, sample, practice = NO_PRACTICE, now, onUseNewer, onPractice }: {
   state: CheckState; checked: string; calls: number;
   /** Practice tasks for this report (eight checks §6): bound results fill rows 01, 08 and the rest of 03. */
   practice?: PracticeView;
@@ -389,6 +401,8 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
   now?: number;
   /** Bind the newer practice run on offer. */
   onUseNewer?: () => void;
+  /** Run practice tasks in the page (none: links go to the practice page). */
+  onPractice?: (profile?: PracticeProfile) => void;
   /** The sample agent's report: a note on its flaw, and Check your own agent as the next step. */
   sample?: SampleActions;
   /** Check again; none hides the button. */
@@ -415,17 +429,21 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
   };
   // The eight rows, in number order and their two groups, always; too few calls adds one line on what the live checks need.
   const few = tooFewCalls(state) ? tooFewNote(calls) : null;
-  const rows = sandboxRows(state, practice.bound ?? undefined);
+  const agent = state.window?.agentId ?? null;
+  // Only another agent's practice run: the practice rows say whose run they still wait for.
+  const base = sandboxRows(state, practice.bound ?? undefined);
+  const rows = practice.other && agent ? notRunFor(base, agent) : base;
   const head = rowsHeadline(rows);
-  const href = practiceHref(state.window?.agentId);
+  const href = practiceHref(agent);
   const at = (iso: string) => fmtWhen(iso, now ?? Date.now());
-  // Each part's own time, when practice tasks ran at another time than the live check (§8).
-  const when = practice.bound?.endedAt ? `Live check ${checked} · Practice tasks ${at(practice.bound.endedAt)}` : checked;
+  // Each part's own time, when practice tasks ran at another time than the live check (§8), and how thorough they were.
+  const how = practice.bound?.profile === 'deep' ? ' (Deep, your adapter)' : practice.bound?.profile === 'quick' ? ' (Quick, your adapter)' : '';
+  const when = practice.bound?.endedAt ? `Live check ${checked} · Practice tasks ${at(practice.bound.endedAt)}${how}` : checked;
   const others = state.window?.otherAgents ?? [];
-  const otherRun = practice.other && `Practice tasks (different agent): ${practice.other.agentId}${practice.other.endedAt ? ` · ${at(practice.other.endedAt)}` : ''}.`;
-  const otherRunNote = otherRun && ` They don’t count toward ${state.window?.agentId ?? 'this agent'}’s checks.`;
+  const otherRun = practice.other && `Practice tasks (different agent): ${practice.other.agentId}${practice.other.endedAt ? ` · ${at(practice.other.endedAt)}` : ''}`;
+  const otherRunNote = otherRun && `These don’t count toward ${agent ?? 'this agent'}’s checks.`;
   const othersNote = others.length > 0 ? `Also called during this check: ${others.join(', ')} (not checked).` : null;
-  const notes = [otherRun && `${otherRun}${otherRunNote}`, othersNote].filter((x): x is string => !!x);
+  const notes = [otherRun && `${otherRun}. ${otherRunNote}${practice.other?.line ? ` ${practice.other.line}` : ''}`, othersNote].filter((x): x is string => !!x);
   return <>
     {sample && <p className={v.sampleNote}><strong>This was our sample agent.</strong> {SAMPLE_NOTE}</p>}
     <div className={v.report}>
@@ -433,16 +451,27 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
       <p className={v.text}>{[head.sub, state.window?.agentId, callsText(calls), when].filter(Boolean).join(' · ')}</p>
     </div>
     {few && <p className={v.text} data-few>{few}</p>}
-    {(['agent', 'guardrails'] as const).map((g) => (
-      <section key={g} className={v.rowGroup} aria-label={ROW_GROUP_NAMES[g].name}>
-        <div className={v.rowGroupHead}><h4>{ROW_GROUP_NAMES[g].name}</h4><span>{ROW_GROUP_NAMES[g].q}</span></div>
-        <ul className={v.rows}>{rows.filter((r) => r.group === g).map((r) => <RowLine key={r.num} row={r} sample={!!sample} href={href} />)}</ul>
-      </section>
-    ))}
+    {/* A newer run never replaces the bound one without asking (§6). */}
     {practice.newer && onUseNewer && (
-      <p className={v.text}>A newer practice run is available. <button type="button" className={v.linkButton} onClick={onUseNewer}>Use it</button></p>
+      <div className={v.notice}>
+        <span>A newer practice run is available{practice.newerAt ? ` (${at(practice.newerAt)})` : ''}.</span>
+        <div className={v.actions}><Button size={32} variant="secondary" onClick={onUseNewer}>Use it</Button></div>
+      </div>
     )}
-    {otherRun && <p className={v.next}><strong>{otherRun}</strong>{otherRunNote}</p>}
+    {(['agent', 'guardrails'] as const).map((g) => <Fragment key={g}>
+      <section className={v.rowGroup} aria-label={ROW_GROUP_NAMES[g].name}>
+        <div className={v.rowGroupHead}><h4>{ROW_GROUP_NAMES[g].name}</h4><span>{ROW_GROUP_NAMES[g].q}</span></div>
+        <ul className={v.rows}>{rows.filter((r) => r.group === g).map((r) => <RowLine key={r.num} row={r} sample={!!sample} href={href} onPractice={onPractice} />)}</ul>
+      </section>
+      {/* Another agent's practice run, apart and not counted (§6), between the groups as in the mockup. */}
+      {g === 'agent' && otherRun && (
+        <div className={v.apart} data-other-run>
+          <b>{otherRun}</b>
+          <span>{otherRunNote}</span>
+          {practice.other?.line && <span>{practice.other.line}</span>}
+        </div>
+      )}
+    </Fragment>)}
     {othersNote && <p className={v.text}>{othersNote}</p>}
     {state.streaming?.streamed && state.streaming.lines.length > 0 && (
       <details className={v.members}>
@@ -454,7 +483,9 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
       {sample && <Button size={32} variant="primary" onClick={sample.onOwnKey}>Check your own agent</Button>}
       {sample?.onAgain && <Button size={32} variant="secondary" onClick={sample.onAgain} busy={sample.busy} busyLabel="Starting…">Run the sample again</Button>}
       {onAgain && <Button size={32} variant="primary" onClick={onAgain} busy={busy} busyLabel="Starting…">Check again</Button>}
-      {!sample && <Link href={href} className="wr-btn wr-btn--secondary wr-btn--h32">{practice.bound ? 'Run practice tasks again' : 'Run practice tasks'}</Link>}
+      {!sample && (onPractice
+        ? <Button size={32} variant="secondary" onClick={() => onPractice()}>{practice.bound ? 'Run practice tasks again' : 'Run practice tasks'}</Button>
+        : <Link href={href} className="wr-btn wr-btn--secondary wr-btn--h32">{practice.bound ? 'Run practice tasks again' : 'Run practice tasks'}</Link>)}
       <Button size={32} variant="ghost" onClick={copy}>{copied === 'copied' ? 'Copied' : 'Copy summary'}</Button>
       <span className={v.text} aria-live="polite">{copied === 'failed' ? 'Couldn’t copy. Try again.' : sample?.refusal ?? ''}</span>
     </div>
@@ -467,7 +498,7 @@ const ROW_MARK: Record<SandboxRow['state'], { icon: IconName; cls: string }> = {
 };
 
 /** One of the eight rows: its number, mark and name, then its one line or its parts, a failure's fix in place, and a note. */
-function RowLine({ row, sample, href }: { row: SandboxRow; sample: boolean; href: string }) {
+function RowLine({ row, sample, href, onPractice }: { row: SandboxRow; sample: boolean; href: string; onPractice?: (profile?: PracticeProfile) => void }) {
   const mark = ROW_MARK[row.state];
   return (
     <li className={v.row} data-row={row.num} data-state={row.state}>
@@ -477,7 +508,7 @@ function RowLine({ row, sample, href }: { row: SandboxRow; sample: boolean; href
         <strong>{row.name}.</strong>{' '}
         {row.state !== 'partly' && <span className={s.srOnly}>{STATE_WORDS[row.state]}: </span>}
         {row.state === 'not_run_yet' && !row.parts.length
-          ? <><span className={v.nrun}>{row.line}</span>{!sample && <> <Link href={href} className="wr-link">Run practice tasks</Link></>}</>
+          ? <><span className={v.nrun}>{row.line}</span>{!sample && <> <PracticeLink href={href} onPractice={onPractice && (() => onPractice())} /></>}</>
           : row.line}
         {row.state === 'partly' && <span className={v.chip}>Partly checked</span>}
         {row.parts.length > 0 && (
@@ -489,7 +520,7 @@ function RowLine({ row, sample, href }: { row: SandboxRow; sample: boolean; href
             ))}
           </dl>
         )}
-        {row.note && <span className={v.rowNote}>{row.note}{row.noteLinksPractice && !sample && <> <Link href={href} className="wr-link">Run practice tasks</Link></>}</span>}
+        {row.note && <span className={v.rowNote}>{row.note}{row.noteLinksPractice && !sample && <> <PracticeLink href={href} onPractice={onPractice && (() => onPractice('deep'))} /></>}</span>}
         {row.fix && (
           <dl className={`${v.cardFacts} ${v.rowFix}`}>
             <dt>What happened</dt><dd>{row.fix.happened}</dd>
