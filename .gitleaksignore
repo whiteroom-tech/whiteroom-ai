@@ -10,8 +10,8 @@ e04e7e26e3ce3b0a3a9102336b57ffe079e4f312:apps/dashboard/src/__tests__/fixtures/p
 e04e7e26e3ce3b0a3a9102336b57ffe079e4f312:packages/cli/test/fixtures/contract.json:aws-amazon-bedrock-api-key-short-lived:282
 # Same contract, now the single copy (engine de2084a4): placeholder "bedrock-api-key-0123456789abcdef". Not a credential.
 935eae1549fdddc5f1861e32325946fe3cb0e9d0:packages/cli/contract/contract.json:generic-api-key:282
-# False positives: placeholder Sandbox key prefixes ("sk-wr-" + 0123456789abcdef / ffff…) in the
-# Sandbox practice dev state and tests (PR #367, first commit). Not credentials: obvious test values.
+# False positives: placeholder Sandbox key prefixes ("sk-wr-" + 0123456789abcdef) in the stacked PR #367
+# (first commit: dev state and tests). Checked: obvious test values, not credentials. Here because CI scans every branch, so #366's scan sees them.
 fa71527e8949fbe43fd7eaa6334e912cb22f2f06:apps/dashboard/src/__tests__/sandbox-practice-inpage.test.ts:generic-api-key:33
 fa71527e8949fbe43fd7eaa6334e912cb22f2f06:apps/dashboard/src/__tests__/sandbox-practice-inpage.test.ts:generic-api-key:94
 fa71527e8949fbe43fd7eaa6334e912cb22f2f06:apps/dashboard/src/app/dev/sandbox-v2/states.ts:generic-api-key:118

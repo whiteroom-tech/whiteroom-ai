@@ -268,9 +268,16 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   }, [preview, lastCallAt]);
 
   // Edit rules: open the editor under the step and bring it into view.
+  // The frame that focuses the editor: cancelled if the page goes first.
+  const rulesFrame = useRef<number | null>(null);
+  useEffect(() => () => { if (rulesFrame.current !== null) cancelAnimationFrame(rulesFrame.current); }, []);
+  // Changing the key closes the editor: back from Connect, the step shows as it was, not an editor left open.
+  useEffect(() => { if (replacing) setRulesOpen(false); }, [replacing]);
   const editRules = useCallback(() => {
     setRulesOpen(true);
-    requestAnimationFrame(() => {
+    if (rulesFrame.current !== null) cancelAnimationFrame(rulesFrame.current);
+    rulesFrame.current = requestAnimationFrame(() => {
+      rulesFrame.current = null;
       const el = document.getElementById(SANDBOX_RULES_ID);
       if (!el) return;
       el.querySelector<HTMLElement>('h2')?.setAttribute('tabindex', '-1');

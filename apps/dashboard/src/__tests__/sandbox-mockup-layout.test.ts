@@ -133,6 +133,30 @@ describe('the right-hand cards follow the step', () => {
     expect(fold().open).toBe(true);
   });
 
+  it('What we check follows the page’s width as it changes (ResizeObserver), across 860 px', async () => {
+    let fire = () => {};
+    vi.stubGlobal('ResizeObserver', class { constructor(cb: () => void) { fire = cb; } observe() {} disconnect() {} });
+    await render('just-connected');
+    const fold = () => document.querySelector('aside details') as HTMLDetailsElement;
+    expect(fold().open).toBe(true);
+    wide = false;
+    await act(async () => { fire(); });
+    expect(fold().open).toBe(false);
+    wide = true;
+    await act(async () => { fire(); });
+    expect(fold().open).toBe(true);
+  });
+
+  it('Change key closes the rules editor: back from Connect, it isn’t left open', async () => {
+    await render('checks-report-rows');
+    await act(async () => { [...document.querySelectorAll('button')].find((b) => b.textContent === 'Edit rules')!.click(); });
+    expect(document.getElementById('sandbox-rules')).not.toBeNull();
+    await act(async () => { [...document.querySelectorAll('button')].find((b) => b.textContent === 'Change key')!.click(); });
+    await act(async () => { [...document.querySelectorAll<HTMLButtonElement>('#sandbox-connect button')].find((b) => b.textContent === 'Cancel')!.click(); });
+    expect(document.getElementById('sandbox-step')).not.toBeNull();
+    expect(document.getElementById('sandbox-rules')).toBeNull();
+  });
+
   it('a failed checks read shows the error, not the waiting line', async () => {
     await render('checks-error');
     expect(text()).toContain('couldn’t do that');
