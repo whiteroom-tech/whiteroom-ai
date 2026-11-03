@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
+import { ROUTES } from '@/lib/routes';
 import { Button } from '@whiteroom/ui';
 import { analytics } from '@/lib/analytics';
 import { fmtWhen } from '@/lib/format';
@@ -101,7 +103,12 @@ export function SandboxPractice({ fleet, agent, provider, sandboxKey, initialPro
   /** A new test: ends a draft made for other choices (or another Sandbox key) first, then gets its code. */
   const getCode = () => act(async () => {
     if (preview) return;
-    if (run && run.lifecycle === 'draft') await endPractice(fleet, run.id).catch(() => {});
+    if (run && run.lifecycle === 'draft') {
+      await endPractice(fleet, run.id).catch(() => {});
+      // That code no longer works: off the screen before asking for a new one, so a refused start never leaves it to copy.
+      setCode(null);
+      setRun(null);
+    }
     if (!sample) saveAdapter(adapter);
     const made = await startPractice({
       fleet, sample, runs: 1, origin: 'sandbox',
@@ -129,13 +136,18 @@ export function SandboxPractice({ fleet, agent, provider, sandboxKey, initialPro
       try {
         const next = await getPracticeRun(fleet, runId);
         if (!live) return;
-        setRun(next);
         if (!isOpen(next.lifecycle)) {
           track('practice_result', { sample: next.sample, from: 'sandbox' });
-          if (next.sample) setResult(await getPracticeResult(fleet, runId));
-          else onFinished(runId);
+          if (!next.sample) { setRun(next); onFinished(runId); return; }
+          // The sample's result is read before the run is shown as ended: once ended, this poll stops.
+          const res = await getPracticeResult(fleet, runId).catch(() => null);
+          if (!live) return;
+          if (res) setResult(res);
+          else setRefusal({ message: 'The sample run finished, but its result couldn’t be read just now.', link: { href: `${ROUTES.practiceTest}?run=${runId}`, text: 'See it on the practice page' } });
+          setRun(next);
           return;
         }
+        setRun(next);
       } catch (e) {
         if (!retryable(e)) { if (live) setRefusal(practiceRefusal(e)); return; }
       }
@@ -193,6 +205,7 @@ export function SandboxPractice({ fleet, agent, provider, sandboxKey, initialPro
           {run.lifecycle !== 'finalizing' && <Button size={28} variant="ghost" onClick={() => void end()} disabled={busy}>End</Button>}
         </div>
         <h2 ref={heading} tabIndex={-1} className={s.srOnly}>Practice tasks running</h2>
+        {refusal && <div className={v.notice} role="alert"><span>{refusal.message}</span></div>}
         <p className={v.prog}><span><b>{run.lifecycle === 'finalizing' ? `${lines.length} of ${lines.length} tasks` : `${Math.min(done + 1, lines.length)} of ${lines.length} tasks`}</b>{at ? ` · ${at.label}` : run.lifecycle === 'finalizing' ? ' · working out the result' : ''}</span></p>
         <ul className={v.ptasks} role="status" aria-live="polite">
           {lines.map((l, i) => (
@@ -217,7 +230,7 @@ export function SandboxPractice({ fleet, agent, provider, sandboxKey, initialPro
         <div className={v.notice} role="alert">
           {keyChanged
             ? <><b>Your Sandbox key changed since this code was made.</b><span>The code wasn’t used. Get a new one and paste the new line.</span></>
-            : <span>{refusal!.message}</span>}
+            : <span>{refusal!.message}{refusal!.link && <> <Link href={refusal!.link.href} className="wr-link">{refusal!.link.text}</Link></>}</span>}
           {(keyChanged || refusal?.newCode) && <div className={v.actions}><Button size={32} variant="primary" onClick={() => void getCode()} busy={busy} busyLabel="Getting…">Get a new code</Button></div>}
         </div>
       )}

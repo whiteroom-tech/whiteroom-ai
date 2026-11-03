@@ -431,6 +431,7 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
   const rows = practice.other && agent ? notRunFor(base, agent) : base;
   const head = rowsHeadline(rows);
   const href = practiceHref(agent);
+  const practiceLabel = practice.bound ? 'Run practice tasks again' : 'Run practice tasks';
   const at = (iso: string) => fmtWhen(iso, now ?? Date.now());
   // Each part's own time, when practice tasks ran at another time than the live check (§8), and how thorough they were.
   const how = practice.bound?.profile === 'deep' ? ' (Deep, your adapter)' : practice.bound?.profile === 'quick' ? ' (Quick, your adapter)' : '';
@@ -480,8 +481,8 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
       {sample?.onAgain && <Button size={32} variant="secondary" onClick={sample.onAgain} busy={sample.busy} busyLabel="Starting…">Run the sample again</Button>}
       {onAgain && <Button size={32} variant="primary" onClick={onAgain} busy={busy} busyLabel="Starting…">Check again</Button>}
       {!sample && (onPractice
-        ? <Button size={32} variant="secondary" onClick={() => onPractice()}>{practice.bound ? 'Run practice tasks again' : 'Run practice tasks'}</Button>
-        : <Link href={href} className="wr-btn wr-btn--secondary wr-btn--h32">{practice.bound ? 'Run practice tasks again' : 'Run practice tasks'}</Link>)}
+        ? <Button size={32} variant="secondary" onClick={() => onPractice()}>{practiceLabel}</Button>
+        : <Link href={href} className="wr-btn wr-btn--secondary wr-btn--h32">{practiceLabel}</Link>)}
       <Button size={32} variant="ghost" onClick={copy}>{copied === 'copied' ? 'Copied' : 'Copy summary'}</Button>
       <span className={v.text} aria-live="polite">{copied === 'failed' ? 'Couldn’t copy. Try again.' : sample?.refusal ?? ''}</span>
     </div>

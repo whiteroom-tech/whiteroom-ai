@@ -289,7 +289,7 @@ export const STATE_WORDS: Record<RowState, string> = {
  */
 export function rowsSummary(rows: SandboxRow[], o: { when: string; calls: number; notes?: string[]; lead?: string | null }): string {
   const h = rowsHeadline(rows);
-  const lines = [`WhiteRoom Sandbox check: ${h.headline}`, [h.sub, callsText(o.calls), o.when].join(' · '), ...(o.lead ? [o.lead] : [])];
+  const lines = [`WhiteRoom Sandbox check: ${h.headline}`, [h.sub, callsText(o.calls), o.when].filter(Boolean).join(' · '), ...(o.lead ? [o.lead] : [])];
   for (const g of ['agent', 'guardrails'] as const) {
     lines.push('', `${ROW_GROUP_NAMES[g].name}:`);
     for (const r of rows.filter((x) => x.group === g)) {

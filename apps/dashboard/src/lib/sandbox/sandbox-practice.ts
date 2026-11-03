@@ -23,7 +23,7 @@ export function practiceCommand(o: { code: string | null; adapter: string | null
 }
 
 /** A refusal in the page's words, and whether a new code is the way on. */
-export interface PracticeRefusalView { message: string; newCode?: boolean }
+export interface PracticeRefusalView { message: string; newCode?: boolean; link?: { href: string; text: string } }
 
 /** The engine's refusals Start can give from the Sandbox, said plainly (§6a refusals). */
 export function practiceRefusal(e: unknown): PracticeRefusalView {
