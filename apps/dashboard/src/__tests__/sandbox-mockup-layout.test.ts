@@ -237,3 +237,36 @@ describe('What we check', () => {
       .toEqual(['01:practice', '02:both', '03:both', '04:here', '05:here', '06:here', '07:here', '08:practice']);
   });
 });
+
+describe('helpers behind the page (final review)', () => {
+  it('rowLimits: the spend cap’s amount and scope; off or none says nothing', async () => {
+    const { rowLimits } = await import('@/components/sandbox/v2/SandboxChecks');
+    const { previewReadyMade } = await import('@/lib/sandbox/rules');
+    const cap = previewReadyMade('sandbox-x').find((r) => r.ruleType === 'spend_cap')!;
+    expect(rowLimits([cap])).toEqual({ spend_cap: '$0.02 a run' });
+    expect(rowLimits([{ ...cap, params: { ...cap.params, dailyCap: 5, scope: 'day' } }])).toEqual({ spend_cap: '$5 a day' });
+    expect(rowLimits([{ ...cap, mode: 'off' }])).toEqual({});
+    expect(rowLimits([])).toEqual({});
+  });
+
+  it('useSeenAt: steps done before it saw them are unseen; new ones get their time; a new key starts over', async () => {
+    const { useSeenAt } = await import('@/components/sandbox/v2/useSeenAt');
+    let out: (number | null)[] = [];
+    const Probe = ({ k, done }: { k: string; done: number }) => { out = useSeenAt(k, done); return null; };
+    await act(async () => { root.render(h(Probe, { k: 'a', done: 2 })); });
+    expect(out).toEqual([null, null]);
+    await act(async () => { root.render(h(Probe, { k: 'a', done: 3 })); });
+    expect(out).toHaveLength(3);
+    expect(typeof out[2]).toBe('number');
+    await act(async () => { root.render(h(Probe, { k: 'b', done: 1 })); });
+    expect(out).toEqual([null]);
+  });
+
+  it('the name tip opens the per-provider naming guide', async () => {
+    await render('just-connected');
+    expect(text()).toContain('Check it sends a name');
+    await act(async () => { [...document.querySelectorAll('button')].find((b) => b.textContent === 'How?')!.click(); });
+    expect(text()).toContain('x-whiteroom-agent');
+    expect(document.querySelector('button[aria-expanded="true"]')?.textContent).toBe('How?');
+  });
+});

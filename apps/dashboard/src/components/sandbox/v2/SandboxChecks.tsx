@@ -19,6 +19,8 @@ import type { GovernanceRule } from '@/lib/whiteroom/types';
 import { ruleSentence } from '@/lib/controls-view';
 import { analytics } from '@/lib/analytics';
 import { NextCard, PracticeLink } from './SandboxAside';
+import { AgentNaming } from '@/components/citadel/AgentNaming';
+import { agentNamingFor } from '@/lib/provider-key-form';
 import { useSeenAt } from './useSeenAt';
 import { leftMs } from '@/lib/sandbox/seen-times';
 import { otherRunLine } from '@/lib/sandbox/sandbox-practice';
@@ -721,6 +723,7 @@ export function LiveChecks({ state, agent = 'your agent', now: clock = Date.now(
 
 /** No call yet: the usual fixes, with this Sandbox's setting (mockup Rev 3 "2 · Waiting"). */
 export function NothingHappening({ provider }: { provider: string }) {
+  const [howName, setHowName] = useState(false);
   const setting = sandboxSetting(provider, 'https://proxy.whiteroom.tech').name;
   return (
     <div className={v.tipsBlock}>
@@ -728,7 +731,12 @@ export function NothingHappening({ provider }: { provider: string }) {
       <ol className={v.tips}>
         <li>Restart your agent after changing .env.</li>
         <li>Check it reads <code>{setting}</code>, or pass the URL as <code>base_url</code>.</li>
-        <li>Check it sends a name: an <code>x-whiteroom-agent</code> header or a system prompt.</li>
+        <li>
+          Check it sends a name: an <code>x-whiteroom-agent</code> header or a system prompt.{' '}
+          <button type="button" className={v.linkButton} aria-expanded={howName} onClick={() => setHowName((x) => !x)}>How?</button>
+          {/* Per provider, the same guide as Fleet key: without a name, the report can't say which agent it checked. */}
+          {howName && <div className={v.reveal}><AgentNaming {...agentNamingFor(provider)} /></div>}
+        </li>
       </ol>
     </div>
   );

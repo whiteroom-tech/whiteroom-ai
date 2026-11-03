@@ -221,7 +221,7 @@ describe('a practice run bound to the report (eight checks §6)', () => {
     const rows = by2(sandboxRows(state(), run([pc('b.result', 'passed', 'Right result'), pc('b.carries_on', 'failed', 'Carries on')])));
     expect(rows['02']).toMatchObject({ state: 'failed', note: null, fix: { happened: 'Sent the file when the email asked.', next: 'Treat text from tools as data.' } });
     expect(rows['02'].parts.map((p) => [p.label, p.state])).toEqual([['Here', 'passed'], ['Practice', 'failed']]);
-    expect(by(state())['02']).toMatchObject({ state: 'partly', note: 'The long-task result is in the Deep test.', noteLinksPractice: true });
+    expect(by(state())['02']).toMatchObject({ state: 'partly', note: 'The long-task result is in the Deep test.' });
   });
 });
 
@@ -250,6 +250,11 @@ describe('Your rule and the short lines: every form', () => {
     expect(by(state({ probes: [probe('model_allowlist'), probe('keyword')] }))['06'].parts[0].text).toBe('Model allowlist and keywords would act (Watch)');
     expect(by(state({ probes: [probe('loop_breaker', 'blocks'), probe('call_rate')] }))['05'].parts[0].text).toBe('Loop breaker blocks · Call rate would act (Watch)');
     expect(by(state({ probes: [probe('spend_cap', 'pauses')] }), undefined, { spend_cap: '$5 a day' })['04'].parts[0].text).toBe('Pauses the agent at $5 a day');
+    // Several rules with the same action read in the plural.
+    expect(by(state({ probes: [probe('loop_breaker', 'blocks'), probe('call_rate', 'blocks')] }))['05'].parts[0].text).toBe('Both block at your limits');
+    expect(by(state({ probes: [probe('loop_breaker', 'pauses'), probe('call_rate', 'pauses')] }))['05'].parts[0].text).toBe('Both pause the agent at your limits');
+    expect(by(state({ probes: [probe('model_allowlist', 'blocks'), probe('keyword', 'blocks')] }))['06'].parts[0].text).toBe('Model allowlist and keywords block');
+    expect(by(state({ probes: [probe('model_allowlist', 'stops'), probe('tool_list', 'stops'), probe('keyword', 'stops')] }))['06'].parts[0].text).toBe('Model allowlist, tool list and keywords stop the agent');
   });
 
   it('a failure keeps decimals and reads without an arrow too', async () => {

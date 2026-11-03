@@ -45,8 +45,6 @@ export interface SandboxRow {
   fix: { happened: string; next: string } | null;
   /** A short note under the row ("The long-task result is in the Deep test."). */
   note: string | null;
-  /** The note is a next step in practice tasks: the page links it. */
-  noteLinksPractice?: boolean;
 }
 
 export const ROW_GROUP_NAMES = { agent: { name: 'The agent', q: 'Does it do the job?' }, guardrails: { name: 'The guardrails', q: 'Does it stay in bounds?' } } as const;
@@ -133,6 +131,10 @@ const shortText = (num: string, c: CheckResult | CheckPart | undefined) =>
 const ACTS_VERB: Record<NonNullable<RuleProbe['acts']>, string> = {
   would_act: 'would act', notifies: 'notifies and lets it through', blocks: 'blocks', pauses: 'pauses the agent', stops: 'stops the agent',
 };
+/** The same, for several rules together ("Both block at your limits"). */
+const ACTS_PLURAL: Record<NonNullable<RuleProbe['acts']>, string> = {
+  would_act: 'would act', notifies: 'notify and let it through', blocks: 'block', pauses: 'pause the agent', stops: 'stop the agent',
+};
 const watch = (acts: RuleProbe['acts']) => (acts === 'would_act' ? ' (Watch)' : '');
 
 /**
@@ -148,12 +150,13 @@ function ruleLine(set: RuleProbe[], limits: RowLimits): string {
     const at = ['model_allowlist', 'tool_list', 'keyword'].includes(set[0].ruleType) ? '' : ` at ${limit ?? 'its limit'}`;
     return `${cap(verb)}${at}${watch(acts)}`;
   }
+  const verbs = acts ? ACTS_PLURAL[acts] : 'act';
   if (sameActs && set.every((p) => !['model_allowlist', 'tool_list', 'keyword'].includes(p.ruleType))) {
-    return `${set.length === 2 ? 'Both' : 'All'} ${verb} at your limits${watch(acts)}`;
+    return `${set.length === 2 ? 'Both' : 'All'} ${verbs} at your limits${watch(acts)}`;
   }
   if (sameActs) {
     const names = set.map((p, i) => (i === 0 ? ruleName(p.ruleType) : ruleName(p.ruleType).toLowerCase()));
-    return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]} ${verb}${watch(acts)}`;
+    return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]} ${verbs}${watch(acts)}`;
   }
   return set.map((p) => `${ruleName(p.ruleType)} ${p.acts ? ACTS_VERB[p.acts] : 'acts'}${watch(p.acts)}`).join(' · ');
 }
@@ -282,7 +285,7 @@ export function sandboxRows(state: CheckState, practice?: BoundPractice, limits:
     const p2: RowPart[] = [{ label: 'Here', text: long.line, state: long.state as RowPart['state'] }, prac2.part];
     rows.push({ ...long, state: precedence(p2), line: '', parts: p2, fix: long.fix ?? (prac2.failed ? { happened: prac2.failed.summary, next: prac2.failed.fix ?? PRACTICE_FIX } : null) });
   } else {
-    rows.push(long.state === 'passed' ? { ...long, state: 'partly', note: 'The long-task result is in the Deep test.', noteLinksPractice: true } : long);
+    rows.push(long.state === 'passed' ? { ...long, state: 'partly', note: 'The long-task result is in the Deep test.' } : long);
   }
 
   // Row 03 here: the provider error, and the wait after a rate limit (an engine without parts: the error alone).

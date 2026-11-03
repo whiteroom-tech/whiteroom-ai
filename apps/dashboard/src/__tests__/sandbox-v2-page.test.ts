@@ -13,7 +13,7 @@ vi.mock('@/lib/analytics', () => ({ analytics: { capture } }));
 
 const { SandboxHome, SANDBOX_LEAD } = await import('@/components/sandbox/v2/SandboxHome');
 const { SANDBOX_V2_STATES } = await import('@/app/dev/sandbox-v2/states');
-const { connectCheck, keptUntilText, lastCallText, pointLine, sandboxSetting } = await import('@/lib/sandbox/fleet');
+const { connectCheck, lastCallText, pointLine, sandboxSetting } = await import('@/lib/sandbox/fleet');
 
 const PROVIDER_KEY = 'sk-ant-placeholder-not-a-real-key-WXYZ';
 const SANDBOX_ID = 'sandbox-00000000-0000-4000-8000-000000000000';
@@ -500,12 +500,10 @@ describe('Sandbox v2 wording and checks', () => {
     expect(pointLine('azure-openai', 'https://proxy.example/sk-wr-x')).toBe('export AZURE_OPENAI_ENDPOINT=https://proxy.example/sk-wr-x');
   });
 
-  it('says when the agent last called and how long the Sandbox is kept', () => {
+  it('says when the agent last called', () => {
     const now = Date.parse('2026-10-29T15:00:00Z');
     expect(lastCallText(null, now)).toBe('No calls yet');
     expect(lastCallText('2026-10-29T14:55:00Z', now)).toBe('5 min ago');
-    expect(keptUntilText('2026-11-12T15:00:00Z', now)).toMatch(/^Kept until Nov 1[23] — renewed each time your agent calls$/);
-    expect(keptUntilText(null, now)).toBe('Kept for 7 days after your agent’s last call');
   });
 
   it('checks a key against its provider', () => {
