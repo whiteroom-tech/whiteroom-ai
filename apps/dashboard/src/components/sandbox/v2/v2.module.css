@@ -149,8 +149,7 @@
 .wgrp { display:grid; gap:2px; }
 .wgrpHead { display:flex; justify-content:space-between; gap:8px; align-items:baseline; border-bottom:1px solid var(--line); padding:6px 0 4px; font-size:var(--fs-sm); }
 .wgrpHead b { color:var(--tx); white-space:nowrap; }
-.wgrpHead span { text-align:right; }
-.wgrpHead span { color:var(--tx3); }
+.wgrpHead span { color:var(--tx3); text-align:right; }
 .names { list-style:none; margin:0; padding:0; display:grid; }
 .names > li { border-top:1px solid var(--line); }
 .names > li:first-child { border-top:0; }
@@ -162,7 +161,6 @@
 .rowt { display:grid; grid-template-columns:24px minmax(0,1fr); gap:6px; align-items:baseline; }
 .where { display:block; font-family:var(--font-mono); font-size:var(--fs-sm); font-weight:500; letter-spacing:.03em; color:var(--tx3); margin-top:2px; }
 .wherePractice { color:var(--tx2); }
-.coverRow { padding:8px 0; font-size:var(--fs-md); color:var(--tx); }
 
 /* The step card (no title bar): a big status line, the check's track, its Now box. */
 .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:20px; display:grid; gap:14px; min-width:0; }
@@ -189,7 +187,8 @@
 .tMark { margin-right:3px; }
 .tPass .tMark { color:var(--ok); }
 .tFail .tMark { color:var(--bad); }
-@container (max-width: 560px) { .track > li > span { display:none; } }
+/* Narrow: the labels go from sight (the bars stay), not from screen readers. */
+@container (max-width: 560px) { .track > li > span { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; } }
 .nowbox { border:1px solid var(--brand); background:var(--brand-dim); border-radius:8px; padding:14px 16px; display:grid; gap:6px; }
 .nowKey { font-family:var(--font-mono); font-size:var(--fs-sm); font-weight:500; letter-spacing:.07em; text-transform:uppercase; color:var(--brand); }
 .nowbox > b { font-size:var(--fs-md); color:var(--tx); }

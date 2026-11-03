@@ -160,6 +160,8 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
       analytics.capture('sandbox_v2_connected', { provider: req.provider, detected, after_sample: afterSample });
       setStatus(done.status);
       setIssued(done.issued);
+      // A URL from Connect shows while waiting, not above a later report (only a rotate on this page does).
+      setRotatedHere(false);
       setReplacing(false);
       setError('');
       return null;
@@ -181,6 +183,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
       // A new run: its own check, so the card and the steps start over.
       setChecks(null);
       setIssued(null);
+      setRotatedHere(false);
       setReplacing(false);
       setStatus(next);
       setResets((n) => n + 1);
@@ -210,6 +213,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
         setRotatedHere(true);
       } else {
         setStatus(await resetSandboxFleet(fleet, id));
+        setRotatedHere(false);
         // A refusal from before the reset (the day's limit, busy) no longer describes what Run the sample again would do.
         setSampleRefusal(null);
         // The old results are gone: the steps bar goes back to Run your agent now, not on the next read.
@@ -283,7 +287,8 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
     shownStep.current = step;
   }, [step, loading, status]);
 
-  const wide = useWide();
+  const pageRef = useRef<HTMLDivElement>(null);
+  const wide = useWide(pageRef);
   const href = practiceHref(checks?.window?.agentId);
   const yourSandbox = connected && (
     <YourSandboxCard connected={connected} lastCallAt={lastCallAt} now={now} busy={busy}
@@ -302,7 +307,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   return <>
     <PageHeader title="Sandbox" />
     <main className={s.content}>
-      <div className={v.page}>
+      <div className={v.page} ref={pageRef}>
         {step === 'connect' && <p className={v.lead2}>{SANDBOX_LEAD}</p>}
         {error && <Banner variant="error" actions={status === null && !loading && !preview ? <Button size={28} onClick={() => void load()}>Try again</Button> : undefined}>{error}</Banner>}
         {notice && <Banner variant="info" icon="check">{notice}</Banner>}
@@ -414,18 +419,24 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   </>;
 }
 
-/** Two columns fit (a laptop): What we check starts open beside the step; on a phone it stacks under the step, closed. */
-function useWide(): boolean {
-  const query = '(min-width: 1100px)';
-  const [wide, setWide] = useState(() => typeof window === 'undefined' || !window.matchMedia || window.matchMedia(query).matches);
+/**
+ * Two columns fit: the page's own width, measured, at the same 860 px the
+ * layout's container query stacks at (v2.module.css .cols). What we check
+ * starts open beside the step; stacked under it, it starts closed.
+ */
+export const TWO_COLUMNS_PX = 860;
+function useWide(ref: React.RefObject<HTMLElement | null>): boolean {
+  const [wide, setWide] = useState(true);
   useEffect(() => {
-    const m = window.matchMedia?.(query);
-    if (!m) return;
-    const on = () => setWide(m.matches);
+    const el = ref.current;
+    if (!el) return;
+    const on = () => setWide(el.getBoundingClientRect().width > TWO_COLUMNS_PX);
     on();
-    m.addEventListener?.('change', on);
-    return () => m.removeEventListener?.('change', on);
-  }, []);
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(on);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
   return wide;
 }
 

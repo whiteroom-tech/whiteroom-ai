@@ -72,7 +72,7 @@ afterEach(() => { act(() => root.unmount()); document.body.innerHTML = ''; vi.un
 const checksEl = () => h(SandboxChecks, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID });
 const row = (id: string) => document.querySelector(`[data-check="${id}"]`);
 /** A live test on the check's track, and its line among the tests done. */
-const seg = (id: string) => document.querySelector(`[role="progressbar"] [data-check="${id}"]`);
+const seg = (id: string) => document.querySelector(`ol[aria-label="Live tests"] [data-check="${id}"]`);
 const doneLine = (id: string) => document.querySelector(`ul[aria-label="Done"] [data-check="${id}"]`);
 
 describe('practice tasks on the report (eight checks C3)', () => {
@@ -203,11 +203,15 @@ describe('Check your agent', () => {
     ]);
     await render(checksEl());
     // Mockup Rev 3 "2 · Checking": a track of the six live tests in the engine's order, labelled with their rows.
-    expect([...document.querySelectorAll('[role="progressbar"] [data-check]')].map((e) => e.getAttribute('data-check')))
+    expect([...document.querySelectorAll('ol[aria-label="Live tests"] [data-check]')].map((e) => e.getAttribute('data-check')))
       .toEqual(['long_task', 'spend_cap', 'allowlists_keywords', 'loop_rate', 'pause_stop', 'provider_errors']);
-    expect([...document.querySelectorAll('[role="progressbar"] li')].map((e) => e.textContent))
-      .toEqual(['✕02 Long task', '✓04 Spend cap', '06 Allowlists', '–05 Loops', '07 Pause, stop', '03 Fails gracefully']);
-    expect(document.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('3');
+    // Each test's label and result reach screen readers: a list, with the progressbar beside it (its children would be hidden).
+    expect([...document.querySelectorAll('ol[aria-label="Live tests"] li')].map((e) => e.textContent))
+      .toEqual(['✕02 Long task: Failed', '✓04 Spend cap: Passed', '06 Allowlists: now', '–05 Loops: Not triggered by this run', '07 Pause, stop: Waiting', '03 Fails gracefully: Waiting']);
+    const bar = document.querySelector('[role="progressbar"]')!;
+    expect(bar.getAttribute('aria-valuenow')).toBe('3');
+    expect(bar.getAttribute('aria-valuetext')).toBe('3 of 6 tests done');
+    expect(bar.querySelector('li')).toBeNull();
     // Practice-task rows aren't on the track: 01 and 08 aren't checked here.
     expect(document.querySelector('[data-row]')).toBeNull();
     expect(row('finishes_correctly')).toBeNull();
