@@ -85,7 +85,7 @@ describe('Sandbox v2 page', () => {
     await click('Connect');
     expect(calls()[1]).toEqual({ url: '/api/sandbox/fleet/connect', body: { fleet: 'prod-eu', provider: 'anthropic', api_key: PROVIDER_KEY } });
     // Copy first: the line, a full-size Copy button, then one quiet line instead of a warning.
-    expect(text()).toContain('Add this line to your agent’s .env, then run it');
+    expect(text()).toContain('Add this to your agent’s .env, then run it as you normally do. The checks start on its first call.');
     expect(text()).toContain('This URL is shown only on this visit; you can get a new one any time.');
     expect(text()).not.toContain('Copy this before you leave this page.');
     // Like production: one setting for the agent's .env, then run it as normal.
@@ -97,7 +97,7 @@ describe('Sandbox v2 page', () => {
     expect(document.querySelector('[aria-label="Copy the Sandbox key"]')).not.toBeNull();
     // The status card, and the provider key nowhere on the page or in storage.
     expect(text()).toContain('key ending WXYZ');
-    expect(text()).toContain('No calls yet');
+    expect(text()).toContain('Last call: none yet');
     expect(text()).toContain('renewed each time your agent calls');
     expect(document.body.innerHTML).not.toContain(PROVIDER_KEY);
     expect(JSON.stringify({ ...localStorage })).not.toContain('sk-wr-placeholder');
@@ -143,17 +143,16 @@ describe('Sandbox v2 page', () => {
     await act(async () => { copy.click(); });
     await flush();
     expect(writeText).toHaveBeenCalledWith(`ANTHROPIC_BASE_URL=${ISSUED.proxyUrl}`);
-    expect(text()).toContain('Copied. Now run your agent as you normally do.');
+    expect(text()).toContain('Copied. Now run your agent.');
     expect(capture).toHaveBeenCalledWith('sandbox_v2_setting_copied');
     // Never a key or URL in an event.
     expect(JSON.stringify(capture.mock.calls)).not.toMatch(/sk-|https?:/);
   });
 
-  it('Change key in Nothing happening? opens Connect for a different key', async () => {
+  it('Change key in the usual fixes opens Connect for a different key', async () => {
     await render({ fleet: 'prod-eu', preview: SANDBOX_V2_STATES['run-help'] });
-    const help = [...document.querySelectorAll('details')].find((d) => d.querySelector('summary')?.textContent === 'Nothing happening?')!;
-    expect(help.open).toBe(true);
-    await act(async () => { [...help.querySelectorAll('button')].find((b) => b.textContent === 'Change key')!.click(); });
+    expect(text()).toContain('Nothing after a minute? Usually one of these:');
+    await act(async () => { [...document.querySelectorAll<HTMLButtonElement>('ol button')].find((b) => b.textContent === 'Change key')!.click(); });
     expect(text()).toContain('Connect a different key');
   });
 
@@ -277,19 +276,24 @@ describe('Sandbox v2 page', () => {
     expect((document.getElementById('sandbox-v2-key') as HTMLInputElement).value).toBe('');
   });
 
-  it('connected: Sandbox settings is closed, holds the facts, and Get a new Sandbox URL confirms then shows the new key once', async () => {
+  it('connected: Your Sandbox holds the facts, and New URL confirms then shows the new key once', async () => {
     bff.mockImplementation(async (url: string) => url.endsWith('/rotate')
       ? Response.json({ ...STATUS, ...ISSUED, proxyKey: 'sk-wr-placeholder-rotated', proxyUrl: 'https://proxy.whiteroom.tech/sk-wr-placeholder-rotated' })
       : Response.json({ ...STATUS, lastCallAt: new Date(Date.now() - 5 * 60_000).toISOString() }));
     await render({ fleet: 'prod-eu' });
-    const settings = [...document.querySelectorAll('details')].find((d) => d.querySelector('summary')?.textContent?.startsWith('Sandbox settings'))!;
-    expect(settings.open).toBe(false);
-    expect(settings.querySelector('summary')?.textContent).toBe('Sandbox settingsAnthropic · last call 5 min ago');
+    // Mockup Rev 3: a Your Sandbox card beside the step, not a closed settings section or a connected row.
+    const card = document.querySelector('section[aria-label="Your Sandbox"]')!;
+    expect(card.textContent).toContain('Anthropic · key ending');
+    expect(card.textContent).toContain('Last call: 5 min ago');
+    expect(card.textContent).toContain('URL starts sk-wr-0123456789abcdef…');
+    expect(card.textContent).toContain('renewed each time your agent calls');
+    expect(text()).not.toContain('Sandbox settings');
+    expect(text()).not.toContain('Connected · Anthropic key ending');
     expect(text()).not.toContain('Connect your provider key');
     // One name per action: no Rotate key, no Use a different key.
     expect(button('Rotate key')).toBeUndefined();
     expect(button('Use a different key')).toBeUndefined();
-    await click('Get a new Sandbox URL');
+    await click('New URL');
     expect(text()).toContain('Get a new Sandbox URL?');
     await click('Get a new URL');
     const rotate = calls().find((c) => c.url.endsWith('/rotate'));
@@ -302,7 +306,7 @@ describe('Sandbox v2 page', () => {
     await render({ fleet: 'prod-eu' });
     const checkReads = () => calls().filter((c) => c.url.endsWith('/checks/status')).length;
     const before = checkReads();
-    await click('Reset Sandbox');
+    await click('Reset Sandbox…');
     expect(text()).toContain('This clears its calls and check results. Your rules and key stay, so your agent keeps working.');
     await click('Reset Sandbox');
     expect(calls().find((c) => c.url.endsWith('/reset'))?.body).toEqual({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID });
@@ -312,7 +316,7 @@ describe('Sandbox v2 page', () => {
     expect(checkReads()).toBeGreaterThan(before);
   });
 
-  it.each([['rotate', 'Get a new Sandbox URL', 'Get a new URL', 409], ['reset', 'Reset Sandbox', 'Reset Sandbox', 404]] as const)('a refused %s shows why and reads the Sandbox again', async (action, label, confirmLabel, code) => {
+  it.each([['rotate', 'New URL', 'Get a new URL', 409], ['reset', 'Reset Sandbox…', 'Reset Sandbox', 404]] as const)('a refused %s shows why and reads the Sandbox again', async (action, label, confirmLabel, code) => {
     bff.mockImplementation(async (url: string) => url.endsWith(`/${action}`)
       ? Response.json({ error: 'Your Sandbox changed since this page loaded.' }, { status: code })
       : Response.json(STATUS));
@@ -332,10 +336,10 @@ describe('Sandbox v2 page', () => {
       return Response.json(changed ? { ...STATUS, sandboxFleetId: 'sandbox-11111111-1111-4111-8111-111111111111' } : STATUS);
     });
     await render({ fleet: 'prod-eu' });
-    await click('Get a new Sandbox URL');
+    await click('New URL');
     await click('Get a new URL');
     expect(text()).toContain('sk-wr-placeholder-rotated');
-    await click('Reset Sandbox');
+    await click('Reset Sandbox…');
     await click('Reset Sandbox');
     expect(text()).toContain('Your Sandbox changed since this page loaded.');
     expect(text()).not.toContain('sk-wr-placeholder-rotated');
@@ -358,20 +362,18 @@ describe('Sandbox v2 page', () => {
     expect(button('Lost the URL? Get a new one')).toBeDefined();
   });
 
-  it('Change key (connected row) and Change API key (settings) open Connect with Cancel; Cancel goes back', async () => {
+  it('Change key (Your Sandbox) opens Connect with Cancel; Cancel goes back', async () => {
     bff.mockImplementation(async () => Response.json(STATUS));
     await render({ fleet: 'prod-eu' });
-    expect(text()).toContain('Connected · Anthropic key ending');
-    for (const label of ['Change key', 'Change API key']) {
-      await click(label);
-      expect(text()).toContain('Connect a different key');
-      expect(document.querySelector('[aria-current="step"]')?.textContent).toBe('1Connect');
-      expect(document.getElementById('sandbox-step')).toBeNull();
-      const cancel = [...document.querySelectorAll<HTMLButtonElement>('#sandbox-connect button')].find((b) => b.textContent === 'Cancel')!;
-      await act(async () => { cancel.click(); });
-      expect(text()).not.toContain('Connect a different key');
-      expect(document.querySelector('[aria-current="step"]')?.textContent).toBe('2Run your agent');
-    }
+    expect(document.querySelector('section[aria-label="Your Sandbox"]')?.textContent).toContain('Anthropic · key ending');
+    await click('Change key');
+    expect(text()).toContain('Connect a different key');
+    expect(document.querySelector('[aria-current="step"]')?.textContent).toBe('1Connect');
+    expect(document.getElementById('sandbox-step')).toBeNull();
+    const cancel = [...document.querySelectorAll<HTMLButtonElement>('#sandbox-connect button')].find((b) => b.textContent === 'Cancel')!;
+    await act(async () => { cancel.click(); });
+    expect(text()).not.toContain('Connect a different key');
+    expect(document.querySelector('[aria-current="step"]')?.textContent).toBe('2Run your agent');
   });
 
   it('on Results, Get a new Sandbox URL shows the new URL above the report', async () => {
@@ -382,10 +384,10 @@ describe('Sandbox v2 page', () => {
       return Response.json(STATUS);
     });
     await render({ fleet: 'prod-eu' });
-    expect(document.querySelector('#sandbox-step h2')?.textContent).toBe('Results');
-    await click('Get a new Sandbox URL');
+    expect(document.querySelector('#sandbox-step')?.getAttribute('aria-label')).toBe('Results');
+    await click('New URL');
     await click('Get a new URL');
-    expect(document.querySelector('#sandbox-step h2')?.textContent).toBe('Results');
+    expect(document.querySelector('#sandbox-step')?.getAttribute('aria-label')).toBe('Results');
     expect(text()).toContain('https://proxy.whiteroom.tech/sk-wr-placeholder-rotated');
   });
 
@@ -417,7 +419,7 @@ describe('Sandbox v2 page', () => {
       if (url.startsWith('/api/sandbox/checks/')) { await new Promise<void>((r) => { release = r; }); return Response.json({ success: true, window: null, checks: [], rules: [] }); }
       return Response.json(STATUS);
     });
-    await click('Reset Sandbox');
+    await click('Reset Sandbox…');
     await click('Reset Sandbox');
     expect(document.querySelector('[aria-current="step"]')?.textContent).toBe('2Run your agent');
     await act(async () => { release(); });
@@ -433,18 +435,20 @@ describe('Sandbox v2 page', () => {
     expect(document.activeElement?.textContent).toBe('Connect a different key');
     const cancel = [...document.querySelectorAll<HTMLButtonElement>('#sandbox-connect button')].find((b) => b.textContent === 'Cancel')!;
     await act(async () => { cancel.click(); });
-    expect(document.activeElement?.textContent).toBe('Run your agent');
+    // The step card's heading: Run your agent before its checks load, the waiting line after.
+    expect(document.activeElement?.tagName).toBe('H2');
+    expect(document.activeElement?.closest('#sandbox-step')).not.toBeNull();
   });
 
   it('Results is the step once the check has ended; the practice footer shows on Connect only', async () => {
     await render({ fleet: 'prod-eu', preview: SANDBOX_V2_STATES['checks-report'] });
     expect(document.querySelector('[aria-current="step"]')?.textContent).toBe('3Results');
-    expect(document.querySelector('#sandbox-step h2')?.textContent).toBe('Results');
+    expect(document.querySelector('#sandbox-step')?.getAttribute('aria-label')).toBe('Results');
     expect(text()).not.toContain('Want scripted tasks with known answers?');
     act(() => root.unmount());
     root = createRoot(document.body.appendChild(document.createElement('div')));
     await render({ fleet: 'prod-eu', preview: SANDBOX_V2_STATES['checks-observe'] });
-    expect(document.querySelector('#sandbox-step h2')?.textContent).toBe('Run your agent');
+    expect(document.querySelector('#sandbox-step')?.getAttribute('aria-label')).toBe('Run your agent');
     expect(text()).not.toContain('Want scripted tasks with known answers?');
   });
 

@@ -102,7 +102,7 @@ describe('the report on the page', () => {
     expect(document.querySelector('h3[data-tone]')?.textContent).toBe('1 thing to fix before going live');
     // The eight rows, in number order and two groups; the headline counts them.
     expect([...document.querySelectorAll('li[data-row]')].map((li) => li.getAttribute('data-row'))).toEqual(['01', '02', '03', '04', '05', '06', '07', '08']);
-    expect([...document.querySelectorAll('section[aria-label]')].map((x) => x.getAttribute('aria-label'))).toEqual(['The agent', 'The guardrails']);
+    expect([...document.querySelectorAll('section[aria-label^="The "]')].map((x) => x.getAttribute('aria-label'))).toEqual(['The agent', 'The guardrails']);
     expect(body).toMatch(/\d of 8 checked · 2 need practice tasks/);
     // The failed row opens in place with what happened and how to fix it.
     const fix = document.querySelector('li[data-row="03"]')!;
@@ -112,16 +112,20 @@ describe('the report on the page', () => {
     // Rows 01 and 08 are checked in practice tasks: not run yet, a next step, linked.
     expect(document.querySelector('li[data-row="01"]')?.getAttribute('data-state')).toBe('not_run_yet');
     expect(document.querySelector('li[data-row="08"]')?.textContent).toContain('Not run yet: checks in practice tasks.');
-    expect(body).toContain('Next: Run practice tasks for 01, 08 and the rest of 03.');
-    // Linked from rows 01 and 08, row 02's long-task note (that's in the deep test), and Next.
-    expect([...document.querySelectorAll('a[href="/sandbox/practice"]')].length).toBe(4);
+    // The Next card beside the report (mockup Rev 3): the fix, then practice tasks for the rows they check.
+    const next = document.querySelector('section[aria-label="Next"]')!;
+    expect([...next.querySelectorAll('li')].map((li) => li.textContent)).toEqual([
+      expect.stringMatching(/ Then check again\.$/),
+      'Run practice tasks for 01, 08 and the rest of 03. A few minutes.',
+    ]);
+    // Linked from rows 01 and 08, row 02's long-task note (that's in the deep test), Next, and the report's own button.
+    expect([...document.querySelectorAll('a[href="/sandbox/practice"]')].length).toBe(5);
     expect(document.querySelector('li[data-row="02"] a[href="/sandbox/practice"]')).not.toBeNull();
-    // "Checked against N Sandbox rules · Change rules" opens the closed rules section.
-    expect(body).toMatch(/Checked against \d+ Sandbox rules · Change rules/);
-    const rules = document.getElementById('sandbox-rules') as HTMLDetailsElement;
-    expect(rules.open).toBe(false);
-    await act(async () => { [...document.querySelectorAll('button')].find((b) => b.textContent === 'Change rules')!.click(); });
-    expect(rules.open).toBe(true);
+    // The Sandbox rules card beside the report: Edit rules opens the editor under the step.
+    expect(document.querySelector('section[aria-label="Sandbox rules"]')?.textContent).toContain('5 ready-made · all Watch');
+    expect(document.getElementById('sandbox-rules')).toBeNull();
+    await act(async () => { [...document.querySelectorAll('button')].find((b) => b.textContent === 'Edit rules')!.click(); });
+    expect(document.getElementById('sandbox-rules')?.textContent).toContain('Use the ready-made set');
     expect(document.querySelector('a[href^="/controls"]')).toBeNull();
     const again = [...document.querySelectorAll('button')].find((b) => b.textContent === 'Check again')!;
     expect(again.className).toContain('wr-btn--primary');
@@ -132,11 +136,11 @@ describe('the report on the page', () => {
     expect(copy.textContent).toBe('Copied');
   });
 
-  it('all passed live: Nothing to fix, in the pass tone; Check again is secondary', () => {
+  it('all passed live: Nothing to fix, in the pass tone; Check again stays the first button (mockup Rev 3)', () => {
     const html = renderToStaticMarkup(h(ReportView, { state: stateOf(all('passed')), checked: 'just now', calls: 30, onAgain: () => {} }));
     expect(html).toContain('Nothing to fix');
     expect(html).toContain('data-tone="pass"');
-    expect(html).toMatch(/wr-btn--secondary[^>]*>Check again/);
+    expect(html).toMatch(/wr-btn--primary[^>]*>Check again/);
   });
 
   it('too few calls: the eight rows still show, with one line on what the live checks need', () => {
@@ -144,13 +148,13 @@ describe('the report on the page', () => {
     const html = renderToStaticMarkup(h(ReportView, { state: few, checked: 'just now', calls: 3, onAgain: () => {} }));
     expect(html).not.toContain('Not enough calls to check your agent');
     expect(html).toContain('Nothing was checked this time');
-    expect(html).toContain('0 of 8 checked · 2 need practice tasks · 3 calls · checked just now');
+    expect(html).toContain('0 of 8 checked · 2 need practice tasks · support-bot · 3 calls · just now');
     expect(html).toContain(tooFewNote(3));
     expect(html).toContain('Only 3 calls this time, so the live checks couldn’t run.');
     // All eight rows, in order; practice rows still offer practice tasks, and so does the next step.
     expect([...html.matchAll(/data-row="(\d\d)"/g)].map((m) => m[1])).toEqual(['01', '02', '03', '04', '05', '06', '07', '08']);
     expect(html).toContain('Not run yet: checks in practice tasks.');
-    expect(html).toMatch(/Next: <a[^>]*>Run practice tasks<\/a> for 01, 08 and the rest of 03/);
+    expect(html).toMatch(/<a[^>]*>Run practice tasks<\/a>/);
     expect(html).toMatch(/>Check again</);
     // Copy summary agrees: the same line under the when-line, then the rows.
     const text = rowsSummary(sandboxRows(few), { when: 'checked just now', calls: 3, lead: tooFewNote(3) });
@@ -192,7 +196,7 @@ describe('the report on the page', () => {
     expect(body).toMatch(/8 of 8 checked/);
     expect(body).toMatch(/Live check .+ · Practice tasks /);
     // Only row 02 still points on: a quick run has no long task, that's in the deep test.
-    expect([...document.querySelectorAll('a[href^="/sandbox/practice?from=sandbox"]')].map((a) => a.closest('li')?.getAttribute('data-row'))).toEqual(['02']);
+    expect([...document.querySelectorAll('li[data-row] a[href^="/sandbox/practice?from=sandbox"]')].map((a) => a.closest('li[data-row]')?.getAttribute('data-row'))).toEqual(['02']);
     expect(body).not.toContain('Next: Run practice tasks');
   });
 

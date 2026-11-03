@@ -204,15 +204,16 @@ export function activityLine(state: CheckState, now = Date.now(), sample = false
   if (!a?.lastCallAt) return null;
   // The sample agent stops when its check ends: there's no next run to talk about.
   if (sample && (!state.window || state.window.endedAt)) return null;
-  const Who = sample ? 'The sample agent' : 'Your agent';
   const since = Math.max(0, now - Date.parse(a.lastCallAt));
   const calling = since < CALLING_MS;
   const w = state.window;
   const last = `last call ${ago(since, now)}`;
   if (w && !w.endedAt) {
+    // During a check, the agent it's judging by name when the engine says (mockup Rev 3: "support-bot is calling").
+    const Who = w.agentId ?? (sample ? 'The sample agent' : 'Your agent');
     const checked = `${w.calls} ${w.calls === 1 ? 'call' : 'calls'} checked`;
     return calling
-      ? { calling, text: `${Who} is calling the Sandbox · ${last} · ${checked}` }
+      ? { calling, text: `${Who} is calling · ${last} · ${checked}` }
       : { calling, text: `${Who} stopped calling · ${last} · ${checked}. The check carries on when it calls again.` };
   }
   return calling
@@ -294,8 +295,6 @@ export const STATUS_WORDS: Record<CheckStatus, string> = {
   not_checked: 'Not checked',
 };
 
-/** The window is open: the page polls and shows the live list. */
-export const isOpen = (state: CheckState | null) => !!state?.window && !state.window.endedAt;
 
 // ── Browser calls (through the BFF) ──
 

@@ -72,6 +72,13 @@ const ENFORCED: Results = {
   loop_rate: ['not_triggered', 'Your agent didn’t repeat a call. The loop breaker needs the same call 3 times.'],
 };
 const PAUSED: Results = { ...ENFORCED };
+/** Every rule test done, as in the mockup's Checking state. */
+const ENFORCED_ALL: Results = {
+  long_task: ['passed', 'Carried on after a hand-over.'],
+  spend_cap: ['passed', 'Didn’t retry the blocked call.'],
+  allowlists_keywords: ['passed', 'Backed off when refused.'],
+  loop_rate: ['passed', 'Changed course when stopped.'],
+};
 const RESUMED: Results = { ...ENFORCED, pause_stop: ['passed', 'We paused your agent for 5 seconds → it carried on. We stopped it → its calls were refused until it was let go.'] };
 const FINISHED: Results = { ...RESUMED, provider_errors: ['failed', 'Your agent retried 6 times in 4 seconds after a provider error. Add a back-off.'] };
 
@@ -108,7 +115,7 @@ export const SANDBOX_V2_STATES = {
   /** No Sandbox yet: step 1. */
   'not-connected': { status: { exists: false }, now: NOW },
   /** Right after Connect: the key shown once, and no calls yet. */
-  'just-connected': { status: connected(null), issued: ISSUED, now: NOW },
+  'just-connected': { status: connected(null), issued: ISSUED, rules: rules({}), now: NOW },
   /** Connected, the agent has called. */
   connected: { status: connected(new Date(NOW - 5 * 60_000).toISOString()), rules: rules({}), now: NOW },
   /** After Rotate key: a new key shown once. */
@@ -120,21 +127,21 @@ export const SANDBOX_V2_STATES = {
   /** An action refused (rotate before any key). */
   refused: { status: connected(null), error: 'This Sandbox has no key yet. Connect a provider key first.', now: NOW },
   /** Step 3: the ready-made set, as applied on the first visit. Production has rules, so Copy shows. */
-  'rules-ready-made': { status: connected(new Date(NOW - 5 * 60_000).toISOString()), rules: rules({}), now: NOW },
+  'rules-ready-made': { status: connected(new Date(NOW - 5 * 60_000).toISOString()), rules: rules({}), rulesOpen: true, now: NOW },
   /** Step 3: a copy of production's rules, and production changed since. */
-  'rules-copy': { status: connected(new Date(NOW - 5 * 60_000).toISOString()), rules: rules({ rules: COPIED, source: 'production_copy', copiedAt: new Date(NOW - 2 * DAY).toISOString(), productionChanged: 2 }), now: NOW },
+  'rules-copy': { status: connected(new Date(NOW - 5 * 60_000).toISOString()), rules: rules({ rules: COPIED, source: 'production_copy', copiedAt: new Date(NOW - 2 * DAY).toISOString(), productionChanged: 2 }), rulesOpen: true, now: NOW },
   /** Step 3: rules changed in the Sandbox; production has none, so no Copy. */
-  'rules-custom': { status: connected(new Date(NOW - 5 * 60_000).toISOString()), rules: rules({ rules: [READY[1], { ...READY[0], mode: 'enforce' }], source: 'custom' }, { productionRules: 0 }), now: NOW },
+  'rules-custom': { status: connected(new Date(NOW - 5 * 60_000).toISOString()), rules: rules({ rules: [READY[1], { ...READY[0], mode: 'enforce' }], source: 'custom' }, { productionRules: 0 }), rulesOpen: true, now: NOW },
   /** Step 3: every rule removed. */
-  'rules-empty': { status: connected(new Date(NOW - 5 * 60_000).toISOString()), rules: rules({ rules: [], source: 'custom' }), now: NOW },
+  'rules-empty': { status: connected(new Date(NOW - 5 * 60_000).toISOString()), rules: rules({ rules: [], source: 'custom' }), rulesOpen: true, now: NOW },
   /** Step 3: a rule open in the editor, in Enforce. */
-  'rules-editing': { status: connected(new Date(NOW - 5 * 60_000).toISOString()), rules: rules({ rules: COPIED, source: 'production_copy', copiedAt: new Date(NOW - 2 * DAY).toISOString() }, { editing: 'gr_preview_copy_models' }), now: NOW },
+  'rules-editing': { status: connected(new Date(NOW - 5 * 60_000).toISOString()), rules: rules({ rules: COPIED, source: 'production_copy', copiedAt: new Date(NOW - 2 * DAY).toISOString() }, { editing: 'gr_preview_copy_models' }), rulesOpen: true, now: NOW },
   /** Step 3: the rules couldn't be read. */
-  'rules-error': { status: connected(new Date(NOW - 5 * 60_000).toISOString()), rules: rules(null, { error: 'The Sandbox couldn’t do that right now. Try again in a moment.' }), now: NOW },
+  'rules-error': { status: connected(new Date(NOW - 5 * 60_000).toISOString()), rules: rules(null, { error: 'The Sandbox couldn’t do that right now. Try again in a moment.' }), rulesOpen: true, now: NOW },
   /** Step 4: no check yet, waiting for the agent's first call. */
   'checks-ready': live({ checks: checkState(null, {}) }),
-  /** Run your agent just after connect, a minute with no call: "Nothing happening?" open. */
-  'run-help': { status: connected(null), issued: ISSUED, now: NOW, rules: rules({}), checks: { ...checkState(null, {}), helpOpen: true } },
+  /** Run your agent just after connect, a minute with no call: the usual fixes showing. */
+  'run-help': { status: connected(null), issued: ISSUED, now: NOW, rules: rules({}), checks: checkState(null, {}) },
   /** A check in progress whose agent last called 3 minutes ago: Finish now is the next step. */
   'checks-quiet': live({ checks: { ...checkState('enforce', { ...OBSERVED, spend_cap: ENFORCED.spend_cap }, { calls: 9 }), state: { ...checkState('enforce', { ...OBSERVED, spend_cap: ENFORCED.spend_cap }, { calls: 9 }).state!, activity: { lastCallAt: new Date(NOW - 3 * 60_000).toISOString(), callsOutsideWindow24h: 0 } } } }),
   /** Step 4: just started, no calls yet. */
@@ -147,6 +154,11 @@ export const SANDBOX_V2_STATES = {
   'checks-test-block': live({ checks: (() => {
     const c = checkState('enforce', { ...OBSERVED, spend_cap: ['not_triggered', 'Your spend cap wouldn’t act on this run.'] });
     return { ...c, state: { ...c.state!, window: { ...c.state!.window!, otherAgents: ['billing-agent'] }, parts: [{ id: 'test_block', status: 'pending', detail: '' }] } };
+  })() }),
+  /** Mockup Rev 3 "2 · Checking": support-bot calling, test 5 of 6 (pause and stop), another agent not checked. */
+  'checks-checking': live({ checks: (() => {
+    const c = checkState('pause', ENFORCED_ALL, { calls: 9 });
+    return { ...c, state: { ...c.state!, window: { ...c.state!.window!, agentId: 'support-bot', otherAgents: ['billing-agent'] }, activity: { lastCallAt: new Date(NOW - 2_000).toISOString(), callsOutsideWindow24h: 0 } } };
   })() }),
   /** Step 4: the 10-second pause. */
   'checks-pause': live({ checks: checkState('pause', PAUSED, { rules: RULES }) }),
@@ -170,6 +182,8 @@ export const SANDBOX_V2_STATES = {
   /** Practice tasks of another agent only: shown apart, not counted. */
   'checks-report-other-agent': live({ checks: { ...ROWS_CHECKS, practice: { bound: null, newer: null, other: { agentId: 'billing-agent', endedAt: new Date(NOW - 26 * 60 * 60_000).toISOString() } } } }),
   'checks-report-rows': live({ checks: ROWS_CHECKS }),
+  /** A URL from Connect still in page state when the report arrives: the report shows without it. */
+  'connected-then-report': live({ issued: ISSUED, checks: ROWS_CHECKS }),
   /** Step 4: the checks couldn't be read. */
   'checks-error': live({ checks: { state: null, error: 'The Sandbox couldn’t do that right now. Try again in a moment.', now: NOW } }),
   /** Connect, with the sample agent on offer. */
