@@ -32,6 +32,9 @@ describe('a check cut short by a WhiteRoom restart', () => {
     expect(restartedCheck(ended({ long_task: ['not_checked', R] }))).toBe(true);
     expect(restartedCheck(ended({}, [{ id: 'rate_limit_wait', status: 'not_checked', detail: R }]))).toBe(true);
     expect(restartedCheck(ended({ long_task: ['not_checked', 'Your agent didn’t reach this step.'] }))).toBe(false);
+    // A reworded engine sentence still counts; the phrase on a passed result doesn't.
+    expect(restartedCheck(ended({ pause_stop: ['not_checked', 'Not checked — WhiteRoom Restarted during this check. Check again.'] }))).toBe(true);
+    expect(restartedCheck(ended({ pause_stop: ['passed', 'Restarted during the check, then carried on.'] }))).toBe(false);
   });
 
   it('Next is Check again, not "run your agent again"', () => {

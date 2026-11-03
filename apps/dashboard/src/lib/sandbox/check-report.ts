@@ -17,16 +17,18 @@ export const ENOUGH_CALLS = 5;
 export const tooFewNote = (calls: number) =>
   `${calls === 0 ? 'No calls reached your Sandbox' : `Only ${calls === 1 ? '1 call' : `${calls} calls`}`} this time, so the live checks couldn’t run. Run a longer task, or run your agent again. Checks start by themselves.`;
 
-/** What the engine writes on each check left unfinished when it restarted mid-check (sandbox-check.ts hydrateSandboxChecks). */
-export const RESTARTED_DETAIL = 'Not checked: WhiteRoom restarted during the check.';
-
 /**
- * Whether the check was cut short by a WhiteRoom restart. The engine sends no
- * reason on the window, only that fixed wording on each check, rule or part
- * it couldn't finish, so that's what is matched.
+ * How the engine words a check it couldn't finish because it restarted mid-check. Sync point: engine
+ * apps/engine/src/concepts/sandbox-check.ts, hydrateSandboxChecks ("Not checked: WhiteRoom restarted
+ * during the check. Start checking again."). The engine sends no reason on the window, so this is the
+ * signal; it's matched loosely (the phrase, any case, on a not-checked result) so a reworded sentence
+ * still counts.
  */
+export const RESTARTED_DETAIL = /\brestarted during (the|this) check\b/i;
+
+/** Whether the check was cut short by a WhiteRoom restart: a check, rule or part not checked for that reason. */
 export function restartedCheck(state: Pick<CheckState, 'checks' | 'rules' | 'parts'>): boolean {
-  return [...state.checks, ...state.rules, ...(state.parts ?? [])].some((c) => c.status === 'not_checked' && c.detail.startsWith(RESTARTED_DETAIL));
+  return [...state.checks, ...state.rules, ...(state.parts ?? [])].some((c) => c.status === 'not_checked' && RESTARTED_DETAIL.test(c.detail));
 }
 
 /** The line above a report cut short by a restart: it says so, rather than blaming the agent's calls. */
