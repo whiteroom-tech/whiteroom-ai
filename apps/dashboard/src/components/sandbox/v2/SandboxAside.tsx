@@ -5,7 +5,7 @@ import { RULE_LABELS } from '@/lib/governance';
 import { keptUntilText, lastCallText, providerLabel, type SandboxFleetStatus } from '@/lib/sandbox/fleet';
 import { rulesSummary, type SandboxRulesState } from '@/lib/sandbox/rules';
 import { CALLING_MS } from '@/lib/sandbox/checks';
-import { WHAT_WE_CHECK, WHAT_WE_CHECK_SUB, WHERE_WORDS } from '@/lib/sandbox/what-we-check';
+import { PRACTICE_COVERS, PRACTICE_COVERS_NOTE, WHAT_WE_CHECK, WHAT_WE_CHECK_SUB, WHERE_WORDS } from '@/lib/sandbox/what-we-check';
 import v from './v2.module.css';
 
 // The Sandbox page's right-hand column (eight checks mockup Rev 3): lighter
@@ -63,7 +63,7 @@ export function SandboxRulesCard({ state, loadFailed = false, onEdit }: { state:
  * What we check: the eight rows in their groups, where each is checked, and
  * what it tests (opens per row). Rows checked in practice tasks link to them.
  */
-export function WhatWeCheckCard({ open, practiceHref }: { open: boolean; practiceHref: string }) {
+export function WhatWeCheckCard({ open, practiceHref, onPractice }: { open: boolean; practiceHref: string; onPractice?: () => void }) {
   return (
     <details className={`${v.rcard} ${v.rfold}`} open={open}>
       <summary className={v.rfoldHead}><h3 className={v.rcardHead}>What we check</h3></summary>
@@ -82,7 +82,7 @@ export function WhatWeCheckCard({ open, practiceHref }: { open: boolean; practic
                     </span>
                   </summary>
                   <p>{r.short}</p>
-                  <p>{r.more}{r.where !== 'here' && <> <Link href={practiceHref} className="wr-link">Run practice tasks</Link></>}</p>
+                  <p>{r.more}{r.where !== 'here' && <> <PracticeLink href={practiceHref} onPractice={onPractice} /></>}</p>
                 </details>
               </li>
             ))}
@@ -93,6 +93,13 @@ export function WhatWeCheckCard({ open, practiceHref }: { open: boolean; practic
   );
 }
 
+/** Run practice tasks: in the page when it can open them there, else the practice page. */
+export function PracticeLink({ href, onPractice, children = 'Run practice tasks' }: { href: string; onPractice?: () => void; children?: React.ReactNode }) {
+  return onPractice
+    ? <button type="button" className={v.linkButton} onClick={onPractice}>{children}</button>
+    : <Link href={href} className="wr-link">{children}</Link>;
+}
+
 /** Next: the report's next steps, numbered. */
 export function NextCard({ items }: { items: React.ReactNode[] }) {
   if (items.length === 0) return null;
@@ -100,6 +107,17 @@ export function NextCard({ items }: { items: React.ReactNode[] }) {
     <section className={v.rcard} aria-label="Next">
       <h3 className={v.rcardHead}>Next</h3>
       <ol className={v.tips}>{items.map((x, i) => <li key={i}>{x}</li>)}</ol>
+    </section>
+  );
+}
+
+/** What practice tasks check, beside their setup and progress. */
+export function PracticeCoversCard() {
+  return (
+    <section className={v.rcard} aria-label="What practice tasks check">
+      <h3 className={v.rcardHead}>What practice tasks check</h3>
+      <ul className={v.names}>{PRACTICE_COVERS.map((x) => <li key={x.num} className={v.coverRow}><span className={v.rowNum}>{x.num}</span> {x.text}</li>)}</ul>
+      <p className={v.rsub}>{PRACTICE_COVERS_NOTE}</p>
     </section>
   );
 }

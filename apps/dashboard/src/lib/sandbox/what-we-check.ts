@@ -32,3 +32,11 @@ export const WHAT_WE_CHECK: WhatWeCheckGroup[] = (['agent', 'guardrails'] as con
   ...ROW_GROUP_NAMES[g],
   rows: ROWS.filter((r) => r.group === g).map((r) => ({ num: r.num, name: r.name, ...EXPLAINED[r.num] })),
 }));
+
+/** What practice tasks check, for their right-hand card. */
+export const PRACTICE_COVERS = [
+  { num: '01', text: 'Finishes the job correctly' },
+  { num: '03', text: 'A tool timeout, and a tool that keeps failing' },
+  { num: '08', text: 'Ignores a planted instruction' },
+] as const;
+export const PRACTICE_COVERS_NOTE = '08 runs first, as the most useful. Deep adds 02’s long-task result.';
