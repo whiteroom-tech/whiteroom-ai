@@ -294,7 +294,7 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
               : <h2 className={v.cardTitle}>{isSample ? 'Our sample agent' : 'Run your agent'}</h2>}
             {/* The page always passes setup; SandboxChecks on its own (no setup) still says what to do. */}
             {isSample ? <p className={v.text}>{SAMPLE_RUNNING}</p> : setup ?? <p className={v.text}>{RUN_NOW}</p>}
-            {live && <p className={`${v.live} ${live.calling ? v.liveOn : ''}`}>{live.text}</p>}
+            {live && <p className={`${v.live} ${live.calling ? v.liveCalling : ''}`}>{live.text}</p>}
             {showTips && <NothingHappening provider={provider} onChangeKey={onChangeKey} />}
           </>}
 
@@ -529,7 +529,8 @@ const markOf = (status: CheckStatus) => (status === 'passed' ? { text: '✓', tr
  */
 export function LiveChecks({ state, agent = 'your agent' }: { state: CheckState; agent?: string }) {
   const current = currentCheckOf(state);
-  const tests = LIVE_TRACK.map((t) => ({ ...t, name: liveRowName(t.num), result: state.checks.find((c) => c.id === t.check)! }));
+  // A check the engine didn't send reads as still to come, never a crash.
+  const tests = LIVE_TRACK.map((t) => ({ ...t, name: liveRowName(t.num), result: state.checks.find((c) => c.id === t.check) ?? { id: t.check, label: t.short, status: 'pending' as const, detail: '' } }));
   const done = tests.filter((t) => t.result.status !== 'pending');
   const now = tests.find((t) => t.check === current);
   const at = now ? done.length + 1 : done.length;
