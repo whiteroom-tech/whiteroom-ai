@@ -220,6 +220,8 @@ export const SANDBOX_V2_STATES = {
   /** Practice tasks of another agent only: shown apart, not counted. */
   'checks-report-other-agent': live({ checks: { ...ROWS_CHECKS, practice: { bound: null, newer: null, other: { agentId: 'billing-agent', endedAt: new Date(NOW - 26 * 60 * 60_000).toISOString(), line: '01 ✓ · 03 ✓ · 08 ✕ Sent the file when the email asked' } } } }),
   'checks-report-rows': live({ checks: ROWS_CHECKS }),
+  /** A URL from Connect still in page state when the report arrives: the report shows without it. */
+  'connected-then-report': live({ issued: ISSUED, checks: ROWS_CHECKS }),
   /** Step 4: the checks couldn't be read. */
   'checks-error': live({ checks: { state: null, error: 'The Sandbox couldn’t do that right now. Try again in a moment.', now: NOW } }),
   /** Connect, with the sample agent on offer. */

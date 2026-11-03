@@ -15,6 +15,7 @@ const { SANDBOX_V2_STATES } = await import('@/app/dev/sandbox-v2/states');
 const { CHECK_IDS, checkStateOf, currentCheckOf } = await import('@/lib/sandbox/checks');
 const { LIVE_TRACK, nextSteps, nowExplained, ROWS, sandboxRows } = await import('@/lib/sandbox/sandbox-rows');
 const { WHAT_WE_CHECK } = await import('@/lib/sandbox/what-we-check');
+const { NextCard } = await import('@/components/sandbox/v2/SandboxAside');
 
 let root: Root;
 const text = () => document.body.textContent ?? '';
@@ -83,7 +84,7 @@ describe('the right-hand cards follow the step', () => {
 
   it('Edit rules opens the editor under the step, moves focus to its heading and brings it into view; Done closes it', async () => {
     const scroll = vi.fn();
-    Element.prototype.scrollIntoView = scroll;
+    vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(scroll);
     await render('checks-report-rows');
     expect(document.getElementById('sandbox-rules')).toBeNull();
     await act(async () => { [...document.querySelectorAll('button')].find((b) => b.textContent === 'Edit rules')!.click(); });
@@ -109,6 +110,19 @@ describe('the right-hand cards follow the step', () => {
   it('a URL from Connect shows while waiting, not above a later report', async () => {
     await render('just-connected');
     expect(document.querySelector('[aria-label="Copy the setting"]')).not.toBeNull();
+    // The same URL still on screen when the report arrives: the report stands alone
+    // (only a URL got with New URL on this page shows above it: sandbox-v2-page "on Results, Get a new Sandbox URL…").
+    await render('connected-then-report');
+    expect(document.getElementById('sandbox-step')?.getAttribute('aria-label')).toBe('Results');
+    expect(document.querySelector('[aria-label="Copy the setting"]')).toBeNull();
+  });
+
+  it('What we check: a choice made by hand stays when the step changes the default', async () => {
+    await render('just-connected');
+    const fold = () => document.querySelector('aside details') as HTMLDetailsElement;
+    expect(fold().open).toBe(true);
+    await act(async () => { fold().open = false; fold().dispatchEvent(new Event('toggle')); });
+    expect(fold().open).toBe(false);
   });
 });
 
@@ -150,6 +164,27 @@ describe('the report’s next steps', () => {
     const practice = { runId: 'r-1', endedAt: null, checks: ['a.result', 'c.timeout', 'c.keeps_failing', 'd.injection'].map((id) => ({ id, label: id, status: 'passed' as const, summary: '', fix: null })) };
     const steps = nextSteps(sandboxRows(live, practice), { few: false, sample: false }).map((x) => x.kind);
     expect(steps).toEqual(['live', 'deep']);
+  });
+});
+
+describe('the report’s next steps: edge cases', () => {
+  const ALL = { long_task: 'passed', spend_cap: 'passed', loop_rate: 'passed', allowlists_keywords: 'passed', pause_stop: 'passed', provider_errors: 'passed' };
+  const PRACTICE = { runId: 'r-1', endedAt: null, checks: ['a.result', 'c.timeout', 'c.keeps_failing', 'd.injection'].map((id) => ({ id, label: id, status: 'passed' as const, summary: '', fix: null })) };
+
+  it('a row not checked holds back go live (nothing failed, but not everything was tried)', () => {
+    const rows = sandboxRows(answer('done', { ...ALL, pause_stop: 'not_checked' }, true), PRACTICE);
+    expect(nextSteps(rows, { few: false, sample: false })).toEqual([]);
+  });
+
+  it('too few calls with a fix: run again first, then the fix', () => {
+    const rows = sandboxRows(answer('done', { provider_errors: 'failed' }, true));
+    expect(nextSteps(rows, { few: true, sample: false }).map((x) => x.kind)).toEqual(['again', 'fix', 'practice']);
+  });
+
+  it('the sample agent with nothing failed: no steps, so no Next card', async () => {
+    expect(nextSteps(sandboxRows(answer('done', ALL, true)), { few: false, sample: true })).toEqual([]);
+    await act(async () => { root.render(h(NextCard, { items: [] })); });
+    expect(document.querySelector('section[aria-label="Next"]')).toBeNull();
   });
 });
 
