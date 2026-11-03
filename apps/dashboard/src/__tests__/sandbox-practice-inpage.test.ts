@@ -100,6 +100,8 @@ describe('the line to paste', () => {
     expect(endedWords({ lifecycle: 'cancelled', endReason: 'code_expired', startedAt: null, sample: false }).message).toBe('The code expired. Get a new code.');
     expect(endedWords({ lifecycle: 'interrupted', endReason: 'lost_contact', startedAt: 'x', sample: false }).message).toBe('The test was interrupted. Run it again.');
     expect(endedWords({ lifecycle: 'cancelled', endReason: 'ended_by_owner', startedAt: 'x', sample: false }).message).toBe('The practice tasks ended before they finished.');
+    expect(endedWords({ lifecycle: 'cancelled', endReason: 'ended_by_owner', startedAt: null, sample: false }).message).toBe('That code was cancelled before the tasks started. Get a new code.');
+    expect(endedWords({ lifecycle: 'cancelled', endReason: 'ended_by_owner', startedAt: 'x', sample: true }).message).toBe('The sample run ended before it finished.');
   });
 
   it('times and the estimate come from tasks the page saw finish', () => {
@@ -286,6 +288,31 @@ describe('practice tasks in the page', () => {
     expect((document.getElementById('sbx-pt-model') as HTMLInputElement).value).toBe('my-gpt-4o-mini');
     await click('Get the command');
     expect(posts().find((p) => p.url.endsWith('/start'))?.body).toMatchObject({ model: 'my-gpt-4o-mini', origin: 'sandbox' });
+  });
+
+  it('a cloud key: a changed model starts a new test (the old draft was for the old model); the prefill can be cleared', async () => {
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => (String(url).includes('/source-model')
+      ? Response.json({ model: 'my-gpt-4o-mini', provider: 'unknown', directKey: true, blocked: null, providerKeys: [], controls: null })
+      : base(url, init)));
+    await act(async () => { root.render(card({ provider: 'azure-openai' })); });
+    await flush();
+    await click('Get the command');
+    const field = () => document.getElementById('sbx-pt-model') as HTMLInputElement;
+    const typeModel = async (v: string) => act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field(), v);
+      field().dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await typeModel('');
+    expect(field().value).toBe('');
+    // A different model: no draft fits, so it's a new test (and it waits for a model).
+    expect(button('Get the command')!.disabled).toBe(true);
+    await typeModel('my-gpt-4o');
+    await click('Get the command');
+    const starts = posts().filter((p) => p.url.endsWith('/start'));
+    expect(starts).toHaveLength(2);
+    expect(starts[1].body).toMatchObject({ model: 'my-gpt-4o' });
+    expect(posts().some((p) => p.url.endsWith(`${RUN}/end`))).toBe(true);
   });
 
   it('a cloud key with no known model: Get the command waits for one', async () => {

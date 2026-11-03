@@ -84,7 +84,6 @@ export function notRunFor(rows: SandboxRow[], agent: string): SandboxRow[] {
 const PRACTICE_FIX = 'Fix it, then run practice tasks again.';
 const PRACTICE_PART: RowPart = { label: 'Practice', text: 'Not run yet', state: 'not_run_yet' };
 
-/** What a probe says the rule does at its limit, as set. */
 
 /** The live checks' rows 04–06: their rule types and the engine check that says how the agent coped. */
 const RULE_ROWS = [
@@ -135,6 +134,8 @@ const ACTS_VERB: Record<NonNullable<RuleProbe['acts']>, string> = {
 const ACTS_PLURAL: Record<NonNullable<RuleProbe['acts']>, string> = {
   would_act: 'would act', notifies: 'notify and let it through', blocks: 'block', pauses: 'pause the agent', stops: 'stop the agent',
 };
+/** Rules that list things (models, tools, words): they act on a case, not at a limit. */
+const LIST_RULES: readonly string[] = ['model_allowlist', 'tool_list', 'keyword'];
 const watch = (acts: RuleProbe['acts']) => (acts === 'would_act' ? ' (Watch)' : '');
 
 /**
@@ -147,11 +148,11 @@ function ruleLine(set: RuleProbe[], limits: RowLimits): string {
   const verb = acts ? ACTS_VERB[acts] : 'acts';
   if (set.length === 1) {
     const limit = limits[set[0].ruleType];
-    const at = ['model_allowlist', 'tool_list', 'keyword'].includes(set[0].ruleType) ? '' : ` at ${limit ?? 'its limit'}`;
+    const at = LIST_RULES.includes(set[0].ruleType) ? '' : ` at ${limit ?? 'its limit'}`;
     return `${cap(verb)}${at}${watch(acts)}`;
   }
   const verbs = acts ? ACTS_PLURAL[acts] : 'act';
-  if (sameActs && set.every((p) => !['model_allowlist', 'tool_list', 'keyword'].includes(p.ruleType))) {
+  if (sameActs && set.every((p) => !LIST_RULES.includes(p.ruleType))) {
     return `${set.length === 2 ? 'Both' : 'All'} ${verbs} at your limits${watch(acts)}`;
   }
   if (sameActs) {

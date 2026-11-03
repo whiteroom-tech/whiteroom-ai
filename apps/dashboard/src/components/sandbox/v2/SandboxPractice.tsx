@@ -77,7 +77,10 @@ export function SandboxPractice({ fleet, agent, provider, sandboxKey, initialPro
   const [notYet, setNotYet] = useState(false);
   // The model the agent calls: from its latest call, or typed (a cloud key's model can't be guessed; Start needs it).
   const [agentModel, setAgentModel] = useState<string | null | undefined>(preview ? null : undefined);
-  const [typedModel, setTypedModel] = useState('');
+  // Null until the owner types: then their text, even empty (so the prefill can be cleared).
+  const [typedModel, setTypedModel] = useState<string | null>(null);
+  // The model each draft was started with, for reusing it only for the same model (the run doesn't say).
+  const draftModel = useRef<{ id: string; model: string | null } | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const track = useCallback((name: string, props?: Record<string, string | number | boolean>) => { if (!preview) analytics.capture(name, props); }, [preview]);
   useEffect(() => { if (!preview) setAdapter(readAdapter()); }, [preview]);
@@ -87,7 +90,7 @@ export function SandboxPractice({ fleet, agent, provider, sandboxKey, initialPro
   const cloud = isCloudProvider(provider);
   const modelField = cloud ? CLOUD_MODEL_FIELD[provider as keyof typeof CLOUD_MODEL_FIELD] : undefined;
   // Your agent's model: typed for a cloud key (prefilled with its latest), else its latest call's (none: the engine's own default).
-  const model = sample ? null : cloud ? (typedModel.trim() || agentModel || null) : agentModel ?? null;
+  const model = sample ? null : cloud ? (typedModel !== null ? typedModel.trim() || null : agentModel || null) : agentModel ?? null;
   const needsModel = !sample && cloud && !model;
   const sentProfile: PracticeProfile | null = caps ? (sample ? 'quick' : profile) : null;
   // Deep runs each task 3 times (mockup Rev 3); quick and the sample run once.
@@ -97,7 +100,9 @@ export function SandboxPractice({ fleet, agent, provider, sandboxKey, initialPro
   const command = practiceCommand({ code: code?.code ?? null, adapter: sample ? null : adapter, provider });
   /** A draft made for exactly these choices and this Sandbox key: a new code for it costs no start. */
   const sameDraft = (r: PracticeRun | null): boolean => !!r && r.lifecycle === 'draft' && r.sample === sample && (r.profile ?? null) === sentProfile && r.runs === runs
-    && (sample || (r.agentId === agent && (!sandboxKey || r.proxyKeyDisplayPrefix === sandboxKey)));
+    && (sample || (r.agentId === agent && (!sandboxKey || r.proxyKeyDisplayPrefix === sandboxKey) && sameModel(r)));
+  /** A cloud key's model is part of Start: a draft started with another model (or, picked up from before, once the owner typed one) isn't reused. */
+  const sameModel = (r: PracticeRun) => !cloud || (draftModel.current?.id === r.id ? draftModel.current.model === model : typedModel === null);
 
   const act = async (fn: () => Promise<void>) => {
     setBusy(true); setRefusal(null); setNotYet(false);
@@ -165,6 +170,7 @@ export function SandboxPractice({ fleet, agent, provider, sandboxKey, initialPro
     });
     setCode({ code: made.code, codeExpiresAt: made.codeExpiresAt });
     setCopied(false);
+    draftModel.current = { id: made.runId, model };
     setRun(await getPracticeRun(fleet, made.runId));
     track('practice_started', { sample, runs, from: 'sandbox', profile: sentProfile ?? 'none' });
   });
@@ -345,7 +351,7 @@ export function SandboxPractice({ fleet, agent, provider, sandboxKey, initialPro
           {modelField && (
             <div className={v.field}>
               <label className={v.flbl} htmlFor="sbx-pt-model">{modelField.label}</label>
-              <input id="sbx-pt-model" className={`${s.formInput} ${v.mono}`} value={typedModel || agentModel || ''} maxLength={128} spellCheck={false}
+              <input id="sbx-pt-model" className={`${s.formInput} ${v.mono}`} value={typedModel ?? agentModel ?? ''} maxLength={128} spellCheck={false}
                 placeholder={modelField.placeholder} onChange={(e) => choose(() => setTypedModel(e.target.value))} />
               <p className={v.rsub}>{needsModel ? modelField.missing : modelField.hint.replace(/^· /, '')}</p>
             </div>
