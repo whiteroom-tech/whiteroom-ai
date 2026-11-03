@@ -437,7 +437,9 @@ describe('Sandbox v2 page', () => {
     expect(document.activeElement?.textContent).toBe('Connect a different key');
     const cancel = [...document.querySelectorAll<HTMLButtonElement>('#sandbox-connect button')].find((b) => b.textContent === 'Cancel')!;
     await act(async () => { cancel.click(); });
-    expect(document.activeElement?.textContent).toBe('Waiting for your agent’s first call');
+    // The step card's heading: Run your agent before its checks load, the waiting line after.
+    expect(document.activeElement?.tagName).toBe('H2');
+    expect(document.activeElement?.closest('#sandbox-step')).not.toBeNull();
   });
 
   it('Results is the step once the check has ended; the practice footer shows on Connect only', async () => {

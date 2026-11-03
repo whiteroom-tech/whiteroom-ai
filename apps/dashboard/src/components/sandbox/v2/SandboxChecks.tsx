@@ -284,11 +284,14 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
     <div className={v.cols}>
       <div className={v.mainCol}>
         <section id={STEP_CARD_ID} className={v.card} aria-label={phase === 'results' ? 'Results' : isSample ? 'Our sample agent' : 'Run your agent'}>
+          {loading && !state && <SkeletonCard label="Loading your checks…" lines={['60%', '45%']} heights={[12, 12]} />}
           {error && <Banner variant="error" actions={!state && !loading && !preview ? <Button size={28} onClick={() => void load()}>Try again</Button> : undefined}>{error}</Banner>}
 
           {phase === 'waiting' && <>
-            <h2 className={v.big}><span className={v.pulse} aria-hidden="true" /><span role="status" aria-live="polite">{isSample ? 'Starting the sample agent…' : 'Waiting for your agent’s first call'}</span></h2>
-            {loading && !state && <SkeletonCard label="Loading your checks…" lines={['60%', '45%']} heights={[12, 12]} />}
+            {/* The URL to copy shows whatever the checks' read did; the waiting line only once a read says there's no check yet. */}
+            {state ? <h2 className={v.big}><span className={v.pulse} aria-hidden="true" /><span role="status" aria-live="polite">{isSample ? 'Starting the sample agent…' : 'Waiting for your agent’s first call'}</span></h2>
+              : <h2 className={v.cardTitle}>{isSample ? 'Our sample agent' : 'Run your agent'}</h2>}
+            {/* The page always passes setup; SandboxChecks on its own (no setup) still says what to do. */}
             {isSample ? <p className={v.text}>{SAMPLE_RUNNING}</p> : setup ?? <p className={v.text}>{RUN_NOW}</p>}
             {live && <p className={`${v.live} ${live.calling ? v.liveOn : ''}`}>{live.text}</p>}
             {noCallYet && !isSample && <NothingHappening provider={provider} onChangeKey={onChangeKey} />}

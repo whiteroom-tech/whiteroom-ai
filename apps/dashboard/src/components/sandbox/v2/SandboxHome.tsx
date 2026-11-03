@@ -425,9 +425,12 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
  * starts open beside the step; stacked under it, it starts closed.
  */
 export const TWO_COLUMNS_PX = 860;
+/** The sidebar and the page's padding beside the Sandbox column, for the first guess before it's measured. */
+const PAGE_CHROME_PX = 300;
 function useWide(ref: React.RefObject<HTMLElement | null>): boolean {
   // A first guess from the window (a phone starts closed, not open then closed), then the page's own width.
-  const [wide, setWide] = useState(() => typeof window === 'undefined' || window.innerWidth >= 1100);
+  // The page is the window less the sidebar and page padding (about 300 px), so the guess uses the same 860 px threshold.
+  const [wide, setWide] = useState(() => typeof window === 'undefined' || window.innerWidth - PAGE_CHROME_PX > TWO_COLUMNS_PX);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
