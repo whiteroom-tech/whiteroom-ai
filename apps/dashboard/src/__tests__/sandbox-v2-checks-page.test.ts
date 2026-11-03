@@ -12,7 +12,7 @@ import { createRoot, type Root } from 'react-dom/client';
 const capture = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/analytics', () => ({ analytics: { capture } }));
 
-const { SandboxChecks } = await import('@/components/sandbox/v2/SandboxChecks');
+const { IDLE_HELP_MS, SandboxChecks } = await import('@/components/sandbox/v2/SandboxChecks');
 const { SandboxHelper } = await import('@/components/sandbox/v2/SandboxHelper');
 const { SandboxHome } = await import('@/components/sandbox/v2/SandboxHome');
 const { SANDBOX_V2_STATES } = await import('@/app/dev/sandbox-v2/states');
@@ -305,25 +305,30 @@ describe('Check your agent', () => {
     expect(capture).toHaveBeenCalledWith('sandbox_v2_finish_now', { stage: 'observe', quiet: false });
   });
 
-  it('no call yet: the usual fixes show at once, name the setting and provider, and Change key works', async () => {
+  it('no call for a minute: the usual fixes show (once, with their event), name the setting and provider, and Change key works', async () => {
+    vi.useFakeTimers();
     capture.mockClear();
     checks = checkAnswer(null);
     const onChangeKey = vi.fn();
     await render(h(SandboxChecks, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, provider: 'openai', onChangeKey }));
-    // Mockup Rev 3 "2 · Waiting": always on screen under the line to copy, not a fold.
+    // Not at once: the heading says "after a minute".
+    expect(text()).not.toContain('Nothing after a minute?');
+    await act(async () => { await vi.advanceTimersByTimeAsync(IDLE_HELP_MS); });
     expect(text()).toContain('Nothing after a minute? Usually one of these:');
     expect(text()).toContain('Restart your agent after changing .env.');
     expect(text()).toContain('Check it reads OPENAI_BASE_URL, or pass the URL as base_url.');
     expect(text()).toContain('Check it calls OpenAI. This Sandbox is set up for an OpenAI key.');
-    await click('Change key');
+    await act(async () => { button('Change key')!.click(); });
     expect(onChangeKey).toHaveBeenCalledTimes(1);
-    expect(capture.mock.calls.filter(([n]) => n === 'sandbox_v2_idle_help')).toHaveLength(0);
+    await act(async () => { await vi.advanceTimersByTimeAsync(IDLE_HELP_MS * 3); });
+    expect(capture.mock.calls.filter(([n]) => n === 'sandbox_v2_idle_help')).toEqual([['sandbox_v2_idle_help', { opened: 'auto' }]]);
   });
 
   it('the usual fixes go once a call arrives', async () => {
     vi.useFakeTimers();
     checks = checkAnswer(null);
     await render(checksEl());
+    await act(async () => { await vi.advanceTimersByTimeAsync(IDLE_HELP_MS); });
     expect(text()).toContain('Nothing after a minute?');
     checks = { ...checkAnswer({ stage: 'observe', calls: 1 }), activity: { lastCallAt: new Date(Date.now() + 1000).toISOString(), callsOutsideWindow24h: 0 } };
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });

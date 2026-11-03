@@ -45,6 +45,8 @@ const POLL_MS = { visible: 5_000, hidden: 30_000 };
 export const RUN_NOW = 'Run your agent as you normally do. Checks start by themselves.';
 /** The current step's card: the page moves focus to its heading when the step changes. */
 export const STEP_CARD_ID = 'sandbox-step';
+/** The usual fixes show after this long with no call. */
+export const IDLE_HELP_MS = 60_000;
 
 const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : 'That didn’t work. Check your connection and try again.');
 
@@ -228,6 +230,17 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   const lastCallAt = state?.activity?.lastCallAt;
   // Not while quiet: the quiet box already says what to do.
   const noCallYet = !!state && !quiet && (!w || (!ended && w.calls === 0)) && (!lastCallAt || Date.parse(lastCallAt) < openedAt.current);
+  // The usual fixes show after a minute with no call (their heading says so); a preview shows them at once.
+  const [idle, setIdle] = useState(!!preview);
+  useEffect(() => {
+    if (preview || !noCallYet || idle) return;
+    const t = setTimeout(() => {
+      setIdle(true);
+      analytics.capture('sandbox_v2_idle_help', { opened: 'auto' });
+    }, IDLE_HELP_MS);
+    return () => clearTimeout(t);
+  }, [preview, noCallYet, idle]);
+  const showTips = noCallYet && idle && !isSample;
   const finish = () => {
     if (!preview && w) analytics.capture('sandbox_v2_finish_now', { stage: w.stage, quiet });
     void act('stop');
@@ -282,7 +295,7 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
             {/* The page always passes setup; SandboxChecks on its own (no setup) still says what to do. */}
             {isSample ? <p className={v.text}>{SAMPLE_RUNNING}</p> : setup ?? <p className={v.text}>{RUN_NOW}</p>}
             {live && <p className={`${v.live} ${live.calling ? v.liveOn : ''}`}>{live.text}</p>}
-            {noCallYet && !isSample && <NothingHappening provider={provider} onChangeKey={onChangeKey} />}
+            {showTips && <NothingHappening provider={provider} onChangeKey={onChangeKey} />}
           </>}
 
           {state && w && phase === 'checking' && <>
@@ -307,7 +320,7 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
             )}
             <LiveChecks state={state} agent={agentName} />
             {w.calls === 0 && w.stage === 'observe' && !quiet && !isSample && <p className={v.text}>{RUN_NOW}</p>}
-            {noCallYet && !isSample && <NothingHappening provider={provider} onChangeKey={onChangeKey} />}
+            {showTips && <NothingHappening provider={provider} onChangeKey={onChangeKey} />}
           </>}
 
           {state && w && phase === 'results' && <>
