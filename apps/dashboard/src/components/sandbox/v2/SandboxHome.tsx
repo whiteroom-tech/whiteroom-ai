@@ -394,7 +394,8 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
  */
 export const TWO_COLUMNS_PX = 860;
 function useWide(ref: React.RefObject<HTMLElement | null>): boolean {
-  const [wide, setWide] = useState(true);
+  // A first guess from the window (a phone starts closed, not open then closed), then the page's own width.
+  const [wide, setWide] = useState(() => typeof window === 'undefined' || window.innerWidth >= 1100);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;

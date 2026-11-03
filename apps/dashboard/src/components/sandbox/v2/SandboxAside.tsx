@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { RULE_LABELS } from '@/lib/governance';
 import { keptUntilText, lastCallText, providerLabel, type SandboxFleetStatus } from '@/lib/sandbox/fleet';
@@ -63,9 +64,13 @@ export function SandboxRulesCard({ state, loadFailed = false, onEdit }: { state:
  * What we check: the eight rows in their groups, where each is checked, and
  * what it tests (opens per row). Rows checked in practice tasks link to them.
  */
-export function WhatWeCheckCard({ open, practiceHref }: { open: boolean; practiceHref: string }) {
+export function WhatWeCheckCard({ open: byDefault, practiceHref }: { open: boolean; practiceHref: string }) {
+  // Open or closed by hand wins over the default (which follows the step and the page's width).
+  const [chosen, setChosen] = useState<boolean | null>(null);
+  const open = chosen ?? byDefault;
   return (
-    <details className={`${v.rcard} ${v.rfold}`} open={open}>
+    <details className={`${v.rcard} ${v.rfold}`} open={open}
+      onToggle={(e) => { const now = (e.currentTarget as HTMLDetailsElement).open; if (now !== open) setChosen(now); }}>
       <summary className={v.rfoldHead}><h3 className={v.rcardHead}>What we check</h3></summary>
       <p className={v.rsub}>{WHAT_WE_CHECK_SUB}</p>
       {WHAT_WE_CHECK.map((g) => (
