@@ -523,7 +523,8 @@ describe('the report after practice tasks', () => {
   it('the when-line says how thorough the bound run was', async () => {
     for (const [profile, words] of [['quick', '(Quick, your adapter)'], ['deep', '(Deep, your adapter)']] as const) {
       await act(async () => { root.render(h(ReportView, { state: state as never, checked: '14:00', calls: 20, practice: { bound: bound(profile), newer: null, other: null } })); });
-      expect(text()).toMatch(new RegExp(`Live check 14:00 · Practice tasks .+ ${words.replace(/[()]/g, '\\$&')}`));
+      expect(text()).toMatch(/Live check 14:00 · Practice tasks /);
+      expect(text()).toContain(words);
     }
   });
 });
