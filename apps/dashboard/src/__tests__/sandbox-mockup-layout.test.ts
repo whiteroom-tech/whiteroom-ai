@@ -195,6 +195,10 @@ describe('the report’s next steps: edge cases', () => {
     expect(nextSteps(rows, { few: true, sample: false }).map((x) => x.kind)).toEqual(['again', 'fix', 'practice']);
   });
 
+  it('the sample agent with too few calls: no run-again step (its report has Run the sample again)', () => {
+    expect(nextSteps(sandboxRows(answer('done', {}, true)), { few: true, sample: true }).map((x) => x.kind)).not.toContain('again');
+  });
+
   it('the sample agent with nothing failed: no steps, so no Next card', async () => {
     expect(nextSteps(sandboxRows(answer('done', ALL, true)), { few: false, sample: true })).toEqual([]);
     await act(async () => { root.render(h(NextCard, { items: [] })); });

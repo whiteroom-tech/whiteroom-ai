@@ -386,7 +386,8 @@ export type NextStep =
  */
 export function nextSteps(rows: SandboxRow[], o: { few: boolean; sample: boolean }): NextStep[] {
   const out: NextStep[] = [];
-  if (o.few) out.push({ kind: 'again' });
+  // The sample agent is run by WhiteRoom: its report offers Run the sample again itself, so no run-again step.
+  if (o.few && !o.sample) out.push({ kind: 'again' });
   for (const r of rows) if (r.state === 'failed' && r.fix) out.push({ kind: 'fix', num: r.num, text: r.fix.next });
   if (o.sample) return out;
   const practice = practiceRows(rows);
