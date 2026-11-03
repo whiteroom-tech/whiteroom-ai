@@ -30,8 +30,7 @@
 /* The checks card: live checks and the report. Rows reuse guided.module.css's check marks. */
 .live { display:flex; align-items:center; gap:8px; margin:0; font-size:var(--fs-sm); color:var(--tx2); }
 .live::before { content:''; width:8px; height:8px; border-radius:50%; background:var(--line2); flex:none; }
-.liveOn { color:var(--tx); font-weight:600; }
-.liveOn::before { background:var(--ok); }
+.liveCalling::before { background:var(--ok); }
 .members { margin-top:6px; font-size:var(--fs-sm); }
 .members > summary { cursor:pointer; color:var(--tx2); min-height:24px; }
 .report { display:grid; gap:4px; }
@@ -132,10 +131,8 @@
 @media (prefers-reduced-motion: reduce) { .rdotLive { animation:none; } }
 .rsub { margin:0; font-size:var(--fs-sm); color:var(--tx3); }
 .ractions { display:flex; flex-wrap:wrap; gap:8px; }
-.sbtn { border:1px solid var(--line2); background:transparent; color:var(--tx); border-radius:6px; padding:6px 12px; font:inherit; font-size:var(--fs-sm); font-weight:600; cursor:pointer; min-height:34px; }
-.sbtn:disabled, .dangerLink:disabled { opacity:.5; cursor:default; }
 .rsep { border-top:1px solid var(--line); padding-top:8px; }
-.dangerLink { background:none; border:0; padding:6px 0; font:inherit; font-size:var(--fs-sm); font-weight:600; color:var(--bad); cursor:pointer; min-height:34px; }
+.dangerText { color:var(--bad) !important; padding-left:0 !important; }
 .pills { display:flex; flex-wrap:wrap; gap:6px; }
 .pill { font-size:var(--fs-sm); border:1px solid var(--line2); border-radius:999px; padding:2px 10px; color:var(--tx2); background:var(--sunk); }
 .tips { margin:0; padding-left:22px; list-style:decimal; display:grid; gap:6px; font-size:var(--fs-md); color:var(--tx2); }
@@ -198,17 +195,9 @@
 .tipsBlock { border-top:1px solid var(--line); padding-top:12px; display:grid; gap:8px; }
 .tipsBlock > b { font-size:var(--fs-md); color:var(--tx); }
 .nrun { color:var(--tx3); }
-.liveCalling::before { background:var(--ok); }
-
 /* Practice tasks in the Sandbox page (mockup Rev 3 states 4–6). */
 .field { display:grid; gap:6px; min-width:0; }
 .flbl { margin:0; font-size:var(--fs-sm); font-weight:600; color:var(--tx); }
-.seg { display:inline-flex; justify-self:start; border:1px solid var(--line2); border-radius:8px; overflow:hidden; max-width:100%; }
-.seg > button { border:0; background:transparent; color:var(--tx2); padding:7px 12px; font:inherit; font-size:var(--fs-sm); font-weight:600; cursor:pointer; min-height:34px; }
-.seg > button[aria-pressed="true"] { background:var(--brand-dim); color:var(--tx); }
-.seg > button:disabled { opacity:.5; cursor:default; }
-.seg > button:focus-visible { outline:2px solid var(--brand); outline-offset:-2px; }
-@container (max-width: 560px) { .seg > button { min-height:44px; } }
 .notice { border:1px solid var(--warn-line, var(--warn)); background:var(--warn-bg); border-radius:8px; padding:12px 14px; display:grid; gap:8px; font-size:var(--fs-sm); color:var(--tx); }
 .codeDim { color:var(--tx3); }
 .ptasks { list-style:none; margin:0; padding:0; display:grid; gap:8px; }

@@ -6,6 +6,7 @@
 import { cliCommands, isPracticeProvider, planOf, TASK_NAMES } from './practice/model';
 import { PracticeError, refusalText } from './practice/api';
 import type { PracticeCheck, PracticeRun } from './practice/types';
+import { leftMs, seenDurations } from './seen-times';
 
 export { shellQuote } from './practice/model';
 
@@ -62,16 +63,9 @@ export function endedWords(run: Pick<PracticeRun, 'lifecycle' | 'endReason' | 's
  * one task's time is known.
  */
 export function taskTimes(seen: (number | null)[], startedAt: number | null, total: number, now: number): { seconds: (number | null)[]; left: number | null } {
-  const seconds = seen.map((at, i) => {
-    const from = i === 0 ? startedAt : seen[i - 1];
-    return at !== null && from !== null && from !== undefined ? Math.max(1, Math.round((at - from) / 1000)) : null;
-  });
-  const known = seconds.filter((x): x is number => x !== null);
-  const last = seen[seen.length - 1];
-  // Less the time the task now running has already had.
-  const left = known.length && last != null && seen.length < total
-    ? Math.max(0, Math.round((known.reduce((a, b) => a + b, 0) / known.length) * (total - seen.length) - (now - last) / 1000)) : null;
-  return { seconds, left };
+  const seconds = seenDurations(seen, startedAt).map((ms) => (ms === null ? null : Math.max(1, Math.round(ms / 1000))));
+  const ms = leftMs(seen, startedAt, total, now);
+  return { seconds, left: ms === null ? null : Math.round(ms / 1000) };
 }
 
 /** "about 1 min left", "under a minute left". */

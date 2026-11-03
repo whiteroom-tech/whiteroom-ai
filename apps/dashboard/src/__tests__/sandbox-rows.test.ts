@@ -242,3 +242,21 @@ describe('the rows in a few words (mockup Rev 3)', () => {
     expect(failedShort('Your agent didn’t carry on.')).toBe('Didn’t carry on.');
   });
 });
+
+describe('Your rule and the short lines: every form', () => {
+  const probe = (ruleType: string, acts: RuleProbe['acts'] = 'would_act'): RuleProbe => ({ ruleId: `gr_${ruleType}`, ruleType, status: 'passed', acts, detail: '' });
+  it('a list rule, list rules together, and mixed modes', () => {
+    expect(by(state({ probes: [probe('model_allowlist')] }))['06'].parts[0].text).toBe('Would act (Watch)');
+    expect(by(state({ probes: [probe('model_allowlist'), probe('keyword')] }))['06'].parts[0].text).toBe('Model allowlist and keywords would act (Watch)');
+    expect(by(state({ probes: [probe('loop_breaker', 'blocks'), probe('call_rate')] }))['05'].parts[0].text).toBe('Loop breaker blocks · Call rate would act (Watch)');
+    expect(by(state({ probes: [probe('spend_cap', 'pauses')] }), undefined, { spend_cap: '$5 a day' })['04'].parts[0].text).toBe('Pauses the agent at $5 a day');
+  });
+
+  it('a failure keeps decimals and reads without an arrow too', async () => {
+    const { failedShort } = await import('@/lib/sandbox/sandbox-rows');
+    expect(failedShort('We returned a provider error (529) → your agent retried it 4 times within 1.5 s. Fix: back off.')).toBe('Retried it 4 times within 1.5 s.');
+    expect(failedShort('Your agent called again after 0.4 s')).toBe('Called again after 0.4 s');
+    const rows = by(state({ checks: { provider_errors: ['failed', 'We returned a provider error (529) → your agent retried it 4 times within 1.5 s. Fix: back off.'] } }));
+    expect(rows['03'].parts[0].text).toMatch(/^Retried a 529 4 times in 1\.5 s/);
+  });
+});

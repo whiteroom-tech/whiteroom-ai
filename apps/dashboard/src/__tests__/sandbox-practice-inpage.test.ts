@@ -612,3 +612,59 @@ describe('the report and the check, around practice tasks (final review)', () =>
     expect(text()).toContain('today at');
   });
 });
+
+describe('the practice card when the Sandbox changes under it', () => {
+  const SANDBOX = 'sandbox-00000000-0000-4000-8000-000000000000';
+  const STATUS = { success: true, exists: true, sandboxFleetId: SANDBOX, createdAt: '2026-10-29T10:00:00.000Z', lastCallAt: null, expiresAt: '2026-11-12T10:00:00.000Z',
+    key: { prefix: 'sk-wr-0000000000000000...', provider: 'anthropic', keyHint: 'WXYZ' } };
+  beforeEach(() => {
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (u === '/api/sandbox/fleet/status' || u === '/api/sandbox/fleet/reset') return Response.json(STATUS);
+      if (u === '/api/sandbox/fleet/connect') return Response.json({ ...STATUS, created: true, proxyKey: 'sk-wr-placeholder-proxy-key', proxyUrl: 'https://proxy.whiteroom.tech/sk-wr-placeholder-proxy-key', provider: 'anthropic', keyHint: 'WXYZ' });
+      if (u.startsWith('/api/sandbox/rules/')) return Response.json({ success: true, sandboxFleetId: SANDBOX, rules: [], source: 'custom', productionChanged: 0 });
+      return base(url, init);
+    });
+  });
+  const openPracticeCard = async () => {
+    await act(async () => { root.render(h(SandboxHome, { fleet: 'prod-eu' })); });
+    await flush();
+    await act(async () => { button('Run practice tasks')!.click(); });
+    await flush();
+    expect(document.querySelector('section[aria-label="Practice tasks"]')).not.toBeNull();
+  };
+
+  it('Reset closes the practice card: back on the step, not the old card', async () => {
+    await openPracticeCard();
+    await click('Reset Sandbox…');
+    await click('Reset Sandbox');
+    expect(document.querySelector('section[aria-label="Practice tasks"]')).toBeNull();
+    // The step card shows again (this mock's checks still answer with the finished report).
+    expect(document.getElementById('sandbox-step')?.closest('[hidden]')).toBeNull();
+  });
+
+  it('Change key, then connecting, doesn’t bring the old practice card back', async () => {
+    await openPracticeCard();
+    await click('Change key');
+    const input = document.getElementById('sandbox-v2-key') as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'sk-ant-api03-placeholder-placeholder-placeholder-000000');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await click('Connect');
+    expect(document.querySelector('section[aria-label="Practice tasks"]')).toBeNull();
+  });
+
+  it('the report reads practice runs again only for a running test, not an unstarted draft', async () => {
+    vi.useFakeTimers();
+    listed = [{ id: RUN, lifecycle: 'draft', agentId: 'support-bot', sample: false, createdAt: '', endedAt: null }];
+    await act(async () => { root.render(h(SandboxChecks, { fleet: 'prod-eu', sandboxFleetId: SANDBOX, onPractice: vi.fn() })); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    const lists = () => fetchMock.mock.calls.filter(([u]) => String(u).startsWith('/api/sandbox/practice?')).length;
+    const before = lists();
+    await act(async () => { await vi.advanceTimersByTimeAsync(31_000); });
+    expect(lists()).toBe(before);
+    expect(text()).not.toContain('Practice tasks running');
+  });
+});

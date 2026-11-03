@@ -295,8 +295,6 @@ export const STATUS_WORDS: Record<CheckStatus, string> = {
   not_checked: 'Not checked',
 };
 
-/** The window is open: the page polls and shows the live list. */
-export const isOpen = (state: CheckState | null) => !!state?.window && !state.window.endedAt;
 
 // ── Browser calls (through the BFF) ──
 

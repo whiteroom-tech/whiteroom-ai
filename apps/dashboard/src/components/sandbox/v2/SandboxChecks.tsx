@@ -19,8 +19,10 @@ import type { GovernanceRule } from '@/lib/whiteroom/types';
 import { ruleSentence } from '@/lib/controls-view';
 import { analytics } from '@/lib/analytics';
 import { NextCard, PracticeLink } from './SandboxAside';
+import { useSeenAt } from './useSeenAt';
+import { leftMs } from '@/lib/sandbox/seen-times';
 import { otherRunLine } from '@/lib/sandbox/sandbox-practice';
-import type { PracticeProfile } from '@/lib/sandbox/practice/types';
+import type { PracticeProfile, PracticeResult } from '@/lib/sandbox/practice/types';
 import s from '../guided.module.css';
 import v from './v2.module.css';
 
@@ -55,6 +57,7 @@ export const practiceHref = (agentId: string | null | undefined) =>
 const POLL_MS = { visible: 5_000, hidden: 30_000 };
 /** While a practice test of this agent is open, the report reads practice runs again this often. */
 const PRACTICE_REREAD_MS = 10_000;
+const PRACTICE_REREAD_HIDDEN_MS = 30_000;
 export const RUN_NOW = 'Run your agent as you normally do. Checks start by themselves.';
 /** The current step's card: the page moves focus to its heading when the step changes. */
 export const STEP_CARD_ID = 'sandbox-step';
@@ -121,7 +124,8 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   useEffect(() => { if (practiceRun) setPicked(practiceRun); }, [practiceRun]);
   useEffect(() => { if (practiceOpen) { setPicked(null); boundRef.current = null; } }, [practiceOpen]);
   const limits = rowLimits(rules);
-  // Bumped to read practice runs again while one of this agent's is open, until it finishes.
+  const results = useRef(new Map<string, PracticeResult>());
+  // Bumped to read practice runs again while one of this agent's is running, until it finishes.
   const [practiceTick, setPracticeTick] = useState(0);
   // The latest onStale, read when called: a new callback from the page never re-reads or restarts polling.
   const staleRef = useRef(onStale);
@@ -234,13 +238,23 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
     const key = `${reportWindow}|${reportAgent}`;
     const setPractice = (view: PracticeView) => setPracticeRead({ key, view });
     let again: ReturnType<typeof setTimeout> | undefined;
+    // A finished run's result never changes: read once, kept for the re-reads.
+    const readResult = async (id: string) => {
+      const kept = results.current.get(id);
+      if (kept) return kept;
+      const res = await getPracticeResult(fleet, id);
+      if (res.lifecycle === 'finished') results.current.set(id, res);
+      return res;
+    };
     listPracticeRuns(fleet).then(async (runs) => {
       // A practice test of this agent still open: its progress on the report, read again until it finishes (then bound below).
-      const openRun = reportAgent ? runs.find((r) => !r.sample && r.agentId === reportAgent && ['draft', 'active', 'finalizing'].includes(r.lifecycle)) : undefined;
-      const running = openRun && openRun.lifecycle !== 'draft'
+      // A draft nobody has started isn't read again: only a test that's running.
+      const openRun = reportAgent ? runs.find((r) => !r.sample && r.agentId === reportAgent && (r.lifecycle === 'active' || r.lifecycle === 'finalizing')) : undefined;
+      const running = openRun
         ? await getPracticeRun(fleet, openRun.id).then((r) => ({ done: r.progress?.done ?? 0, total: r.progress?.total ?? r.plan?.tasks.length ?? 4 }), () => ({ done: 0, total: 4 }))
         : null;
-      if (openRun && live) again = setTimeout(() => setPracticeTick((n) => n + 1), PRACTICE_REREAD_MS);
+      // Slower while the tab is hidden, as the other polls.
+      if (openRun && live) again = setTimeout(() => setPracticeTick((n) => n + 1), document.hidden ? PRACTICE_REREAD_HIDDEN_MS : PRACTICE_REREAD_MS);
       const b = practiceBinding(runs, reportAgent, picked ?? boundRef.current);
       const newerAt = b.newer ? runs.find((r) => r.id === b.newer)?.endedAt ?? null : null;
       // Gone from the list (or none yet): nothing bound, so no stale result is shown.
@@ -250,11 +264,11 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
         const other = b.other && { agentId: b.other.agentId, endedAt: b.other.endedAt };
         if (live) setPractice({ bound: null, newer: null, other, running });
         if (!b.other || !other) return;
-        const otherRes = await getPracticeResult(fleet, b.other.id).catch(() => null);
+        const otherRes = await readResult(b.other.id).catch(() => null);
         if (live && otherRes?.report) setPractice({ bound: null, newer: null, other: { ...other, line: otherRunLine(otherRes.report.checks) }, running });
         return;
       }
-      const res = await getPracticeResult(fleet, b.bind);
+      const res = await readResult(b.bind);
       if (!live) return;
       const run = runs.find((r) => r.id === b.bind)!;
       setPractice({ bound: res.report ? { runId: b.bind, endedAt: run.endedAt, profile: run.profile ?? null, checks: res.report.checks } : null, newer: b.newer, newerAt, other: null, running });
@@ -335,7 +349,7 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
               : <h2 className={v.cardTitle}>{isSample ? 'Our sample agent' : 'Run your agent'}</h2>}
             {/* The page always passes setup; SandboxChecks on its own (no setup) still says what to do. */}
             {isSample ? <p className={v.text}>{SAMPLE_RUNNING}</p> : setup ?? <p className={v.text}>{RUN_NOW}</p>}
-            {live && <p className={`${v.live} ${live.calling ? v.liveOn : ''}`}>{live.text}</p>}
+            {live && <p className={`${v.live} ${live.calling ? v.liveCalling : ''}`}>{live.text}</p>}
             {showTips && <NothingHappening provider={provider} />}
           </>}
 
@@ -615,11 +629,9 @@ function RowLine({ row, sample, href, onPractice }: { row: SandboxRow; sample: b
  * test's time is known.
  */
 export function timeLeft(seenAt: (number | null)[], startedAt: number | null, total: number, now: number): string | null {
-  const times = seenAt.map((at, i) => { const from = i === 0 ? startedAt : seenAt[i - 1]; return at !== null && from !== null && from !== undefined ? at - from : null; });
-  const known = times.filter((x): x is number => x !== null && x > 0);
-  const last = seenAt[seenAt.length - 1];
-  if (!known.length || last === null || last === undefined || seenAt.length >= total) return null;
-  const s = Math.round(((known.reduce((a, b) => a + b, 0) / known.length) * (total - seenAt.length) - (now - last)) / 1000);
+  const ms = leftMs(seenAt, startedAt, total, now);
+  if (ms === null) return null;
+  const s = Math.round(ms / 1000);
   if (s <= 5) return 'a few seconds left';
   return s < 90 ? `about ${Math.round(s / 5) * 5} s left` : `about ${Math.round(s / 60)} min left`;
 }
@@ -646,19 +658,11 @@ export function LiveChecks({ state, agent = 'your agent', now: clock = Date.now(
   seenAt?: (number | null)[];
 }) {
   const current = currentCheckOf(state);
-  const tests = LIVE_TRACK.map((t) => ({ ...t, name: liveRowName(t.num), result: state.checks.find((c) => c.id === t.check)! }));
+  // A check the engine didn't send reads as still to come, never a crash.
+  const tests = LIVE_TRACK.map((t) => ({ ...t, name: liveRowName(t.num), result: state.checks.find((c) => c.id === t.check) ?? { id: t.check, label: t.short, status: 'pending' as const, detail: '' } }));
   const done = tests.filter((t) => t.result.status !== 'pending');
   // When each test was seen to finish, for "about N s left": from what this page saw only (the engine sends no timing).
-  const [seenAt, setSeenAt] = useState<(number | null)[]>(shown ?? []);
-  const windowId = state.window?.id ?? null;
-  const lastWindow = useRef<string | null>(shown ? windowId : null);
-  useEffect(() => {
-    if (shown || !windowId) return;
-    setSeenAt((was) => {
-      if (lastWindow.current !== windowId) { lastWindow.current = windowId; return Array.from({ length: done.length }, () => null); }
-      return was.length >= done.length ? was : [...was, ...Array.from({ length: done.length - was.length }, () => Date.now())];
-    });
-  }, [shown, windowId, done.length]);
+  const seenAt = useSeenAt(state.window?.id ?? null, done.length, shown);
   const left = timeLeft(seenAt, state.window ? Date.parse(state.window.startedAt) : null, tests.length, clock);
   const now = tests.find((t) => t.check === current);
   const at = now ? done.length + 1 : done.length;

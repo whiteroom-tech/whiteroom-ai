@@ -121,7 +121,8 @@ const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
  */
 export function failedShort(detail: string): string {
   const after = failText(detail).split('→ ').pop() ?? '';
-  const first = (after.match(/^[^.]*\./)?.[0] ?? after).trim();
+  // The first sentence: a period followed by a space or the end ("within 1.5 s." keeps its decimal).
+  const first = (after.match(/^.*?\.(?=\s|$)/)?.[0] ?? after).trim();
   return cap(first.replace(/^your agent /i, ''));
 }
 /** A live result's short line: the passed words for its row, or the failure in a few words, else as before. */

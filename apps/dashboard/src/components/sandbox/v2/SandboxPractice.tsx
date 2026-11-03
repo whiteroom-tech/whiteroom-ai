@@ -15,6 +15,7 @@ import {
   endedWords, leftWords, practiceCommand, practiceRefusal, practiceTaskLines, SANDBOX_PRACTICE_LEAD, taskTimes, type PracticeRefusalView,
 } from '@/lib/sandbox/sandbox-practice';
 import { useClock, usePracticePoll } from '../practice/usePracticePoll';
+import { useSeenAt } from './useSeenAt';
 import s from '../guided.module.css';
 import v from './v2.module.css';
 
@@ -77,8 +78,6 @@ export function SandboxPractice({ fleet, agent, provider, sandboxKey, initialPro
   // The model the agent calls: from its latest call, or typed (a cloud key's model can't be guessed; Start needs it).
   const [agentModel, setAgentModel] = useState<string | null | undefined>(preview ? null : undefined);
   const [typedModel, setTypedModel] = useState('');
-  // When each task was seen to finish, for its time and the estimate (null: done before the card opened).
-  const [seenAt, setSeenAt] = useState<(number | null)[]>(preview?.seenAt ?? []);
   const heading = useRef<HTMLHeadingElement>(null);
   const track = useCallback((name: string, props?: Record<string, string | number | boolean>) => { if (!preview) analytics.capture(name, props); }, [preview]);
   useEffect(() => { if (!preview) setAdapter(readAdapter()); }, [preview]);
@@ -209,19 +208,8 @@ export function SandboxPractice({ fleet, agent, provider, sandboxKey, initialPro
     },
     onError: (e) => setRefusal(practiceRefusal(e)),
   });
-  // Each finished task's time, noted as it's seen.
-  const done = run?.progress?.done ?? 0;
-  const runId = run?.id;
-  const started = !!run?.startedAt;
-  const lastRun = useRef<string | null>(null);
-  useEffect(() => {
-    if (preview || !runId || !started) return;
-    setSeenAt((was) => {
-      // A run first seen here: the tasks already done are from before the card opened (no time for them).
-      if (lastRun.current !== runId) { lastRun.current = runId; return Array.from({ length: done }, () => null); }
-      return was.length >= done ? was : [...was, ...Array.from({ length: done - was.length }, () => Date.now())];
-    });
-  }, [preview, runId, done, started]);
+  // Each finished task's time, noted as it's seen (only once the tasks have started).
+  const seenAt = useSeenAt(run?.startedAt ? run.id : null, run?.progress?.done ?? 0, preview?.seenAt);
 
   const copy = async () => {
     try { await navigator.clipboard.writeText(command); setCopied(true); track('practice_command_copied', { from: 'sandbox' }); } catch { setCopied(false); }

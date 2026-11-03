@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Button } from '@whiteroom/ui';
 import Link from 'next/link';
 import { RULE_LABELS } from '@/lib/governance';
 import { lastCallText, providerLabel, type SandboxFleetStatus } from '@/lib/sandbox/fleet';
@@ -39,10 +40,10 @@ export function YourSandboxCard({ connected, lastCallAt, now, busy, onNewUrl, on
       {/* The URL's start, short enough for one line (mockup Rev 3: "sk-wr-70d7…"). */}
       {!sample && <div className={`${v.rrow} ${v.nowrap}`}>URL starts <span className={v.mono}>{key.prefix.replace(/\.+$/, '').slice(0, 10)}…</span></div>}
       <div className={v.ractions}>
-        {!sample && <button type="button" className={v.sbtn} onClick={onNewUrl} disabled={busy}>New URL</button>}
-        <button type="button" className={v.sbtn} onClick={onChangeKey} disabled={busy}>{sample ? 'Use your own key' : 'Change key'}</button>
+        {!sample && <Button size={32} onClick={onNewUrl} disabled={busy}>New URL</Button>}
+        <Button size={32} onClick={onChangeKey} disabled={busy}>{sample ? 'Use your own key' : 'Change key'}</Button>
       </div>
-      <div className={v.rsep}><button type="button" className={v.dangerLink} onClick={onReset} disabled={busy}>Reset Sandbox…</button></div>
+      <div className={v.rsep}><Button size={32} variant="ghost" className={v.dangerText} onClick={onReset} disabled={busy}>Reset Sandbox…</Button></div>
     </section>
   );
 }
@@ -55,7 +56,7 @@ export function SandboxRulesCard({ state, loadFailed = false, onEdit }: { state:
       <h3 className={v.rcardHead}>Sandbox rules</h3>
       {rules.length > 0 && <div className={v.pills}>{rules.map((r) => <span key={r.id} className={v.pill}>{RULE_LABELS[r.ruleType]}</span>)}</div>}
       <p className={v.rsub}>{loadFailed && !state ? 'Couldn’t load. Edit rules to try again.' : rulesSummary(state, true)}</p>
-      <div className={v.ractions}><button type="button" className={v.sbtn} onClick={onEdit}>Edit rules</button></div>
+      <div className={v.ractions}><Button size={32} onClick={onEdit}>Edit rules</Button></div>
     </section>
   );
 }

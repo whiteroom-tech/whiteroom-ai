@@ -109,7 +109,6 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
   const [keyChoice, setKeyChoice] = useState<PracticeKeyChoice | null>(null);
   // Bumped when Start says the picked key is gone, so setup reads the keys again.
   const [refreshKeys, setRefreshKeys] = useState(0);
-  const [now, setNow] = useState(() => preview?.now ?? Date.now());
   const heading = useRef<HTMLHeadingElement>(null);
   const previewSrc = useMemo(() => previewSource(preview), [preview]);
   // Never a run code, fleet or agent name in an event (§10 A11y / PostHog). The preview sends none.
@@ -189,8 +188,7 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
   }, [askedRun, preview, demo, fleet, run, setup, showRun, loadSetup]);
 
   // While a test is open: a clock for the countdown, and polling for progress (shared with the Sandbox's practice card).
-  const clock = useClock(open && !preview, now);
-  useEffect(() => { if (open && !preview) setNow(clock); }, [clock, open, preview]);
+  const now = useClock(open && !preview, preview?.now ?? Date.now());
   const lifecycle = run?.lifecycle;
   usePracticePoll({
     fleet, runId: run?.id, enabled: open && !preview,

@@ -163,6 +163,8 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
       // Over the sample, the engine cleared its results: the checks card starts over.
       if (afterSample) setResets((n) => n + 1);
       setPracticeRun(null);
+      // A new key, Sandbox or run: an open practice card was for the old one.
+      setPractice(null);
       setSampleRefusal(null);
       connectedAt.current = Date.now();
       analytics.capture('sandbox_v2_connected', { provider: req.provider, detected, after_sample: afterSample });
@@ -196,6 +198,8 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
       setStatus(next);
       setResets((n) => n + 1);
       setPracticeRun(null);
+      // A new key, Sandbox or run: an open practice card was for the old one.
+      setPractice(null);
       analytics.capture('sandbox_v2_sample_started');
     } catch (e) {
       const known = e instanceof SandboxFleetError && SAMPLE_REFUSALS.includes(e.reason as SampleRefusal);
@@ -230,6 +234,8 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
         // The checks card starts over: its old report is gone too.
         setResets((n) => n + 1);
         setPracticeRun(null);
+        // A new key, Sandbox or run: an open practice card was for the old one.
+        setPractice(null);
         setNotice(RESET_NOTICE);
       }
     } catch (e) {
@@ -447,9 +453,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
  */
 export const TWO_COLUMNS_PX = 860;
 function useWide(ref: React.RefObject<HTMLElement | null>): boolean {
-  // A first guess from the window (a phone starts closed, not open then closed), then the page's own width.
-  // The page is the window less the sidebar and page padding (about 300 px), so the guess uses the same 860 px threshold.
-  // Closed until measured: a phone never shows What we check open, then closed.
+  // Closed until measured: the same first render on the server and the client (no hydration mismatch), and a phone never shows it open then closed.
   const [wide, setWide] = useState(false);
   useEffect(() => {
     const el = ref.current;
