@@ -17,6 +17,23 @@ export const ENOUGH_CALLS = 5;
 export const tooFewNote = (calls: number) =>
   `${calls === 0 ? 'No calls reached your Sandbox' : `Only ${calls === 1 ? '1 call' : `${calls} calls`}`} this time, so the live checks couldn’t run. Run a longer task, or run your agent again. Checks start by themselves.`;
 
+/** What the engine writes on each check left unfinished when it restarted mid-check (sandbox-check.ts hydrateSandboxChecks). */
+export const RESTARTED_DETAIL = 'Not checked: WhiteRoom restarted during the check.';
+
+/**
+ * Whether the check was cut short by a WhiteRoom restart. The engine sends no
+ * reason on the window, only that fixed wording on each check, rule or part
+ * it couldn't finish, so that's what is matched.
+ */
+export function restartedCheck(state: Pick<CheckState, 'checks' | 'rules' | 'parts'>): boolean {
+  return [...state.checks, ...state.rules, ...(state.parts ?? [])].some((c) => c.status === 'not_checked' && c.detail.startsWith(RESTARTED_DETAIL));
+}
+
+/** The line above a report cut short by a restart: it says so, rather than blaming the agent's calls. */
+export const restartNote = (anyChecked: boolean) =>
+  anyChecked ? 'WhiteRoom restarted during this check, so some checks didn’t finish. Check again.'
+    : 'WhiteRoom restarted during this check, so nothing was checked. Check again.';
+
 /** Whether an ended window saw too few calls to check anything: no live check passed or failed. */
 export function tooFewCalls(state: Pick<CheckState, 'checks'> & { window: { calls: number } | null }): boolean {
   const decided = state.checks.some((c) => (SCORED_CHECKS as readonly CheckId[]).includes(c.id) && (c.status === 'passed' || c.status === 'failed'));
