@@ -21,8 +21,25 @@ const CODE_DOTS = 'wrrt_•••••••';
  * sample agent), and the key's variable. Before a code exists, dots.
  */
 export function practiceCommand(o: { code: string | null; adapter: string | null; provider: string }): string {
-  const provider = isPracticeProvider(o.provider) ? o.provider : 'anthropic';
-  return cliCommands(o.adapter === null, 'python', provider, o.code ?? CODE_DOTS, o.adapter).run;
+  // The sample agent runs on any Anthropic or OpenAI key of the owner's (the engine takes only those for it), so it names none:
+  // the CLI uses whichever is set. Never the Sandbox's own provider, which may be a cloud one the sample can't use.
+  const sample = o.adapter === null;
+  const provider = sample ? null : isPracticeProvider(o.provider) ? o.provider : 'anthropic';
+  return cliCommands(sample, 'python', provider, o.code ?? CODE_DOTS, o.adapter).run;
+}
+
+/** The sample agent's key line: any key of the owner's, Anthropic or OpenAI (the practice page's wording). */
+export const SAMPLE_KEY_LINE = 'Set ANTHROPIC_API_KEY or OPENAI_API_KEY to any key of yours: it pays for the sample’s calls.';
+
+/**
+ * The practice tasks done, as the card counts them: the plan's tasks without
+ * the control checks (a deep run's step the card doesn't list). The engine's
+ * progress counts every step, so a deep run's would run ahead by one a pass.
+ */
+export function tasksDone(run: Pick<PracticeRun, 'plan' | 'profile' | 'scope' | 'runs' | 'progress'>): number {
+  const done = run.progress?.done ?? 0;
+  const order = run.plan ? run.plan.tasks.map((t) => t.scenario) : Array.from({ length: run.runs }, () => planOf(run.scope, run.profile ?? null)).flat();
+  return order.slice(0, done).filter((x) => x !== 'controls').length;
 }
 
 /** A refusal in the page's words: whether a new code is the way on, the open test it's about, and a link. */
@@ -90,7 +107,7 @@ const TASK_ROW: Record<string, string> = {
 export function practiceTaskLines(run: Pick<PracticeRun, 'plan' | 'profile' | 'scope' | 'runs' | 'progress'>): { task: string; label: string; state: 'done' | 'now' | 'todo' }[] {
   const order = run.plan ? run.plan.tasks.map((t) => t.scenario) : Array.from({ length: run.runs }, () => planOf(run.scope, run.profile ?? null)).flat();
   const tasks = order.filter((x) => x !== 'controls');
-  const done = Math.min(run.progress?.done ?? 0, tasks.length);
+  const done = Math.min(tasksDone(run), tasks.length);
   return tasks.map((x, i) => ({
     task: TASK_LINE[x] ?? (TASK_NAMES as Record<string, string>)[x] ?? x,
     label: TASK_ROW[x] ?? (TASK_NAMES as Record<string, string>)[x] ?? x,
