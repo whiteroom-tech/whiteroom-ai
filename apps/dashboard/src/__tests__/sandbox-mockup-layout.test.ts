@@ -26,10 +26,11 @@ const render = async (state: keyof typeof SANDBOX_V2_STATES) => {
 let wide = true;
 beforeEach(() => {
   wide = true;
-  vi.stubGlobal('matchMedia', (q: string) => ({ matches: wide && q.includes('min-width'), addEventListener: () => {}, removeEventListener: () => {} }));
+  // The page's own width decides two columns (useWide measures it, as the container query does).
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => ({ width: wide ? 1100 : 360, height: 0, top: 0, left: 0, right: 0, bottom: 0, x: 0, y: 0, toJSON: () => ({}) }));
   root = createRoot(document.body.appendChild(document.createElement('div')));
 });
-afterEach(() => { act(() => root.unmount()); document.body.innerHTML = ''; vi.unstubAllGlobals(); });
+afterEach(() => { act(() => root.unmount()); document.body.innerHTML = ''; vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 const answer = (stage: string, statuses: Record<string, string> = {}, ended = false) => checkStateOf({
   window: { id: 'chk_1', startedAt: '2026-10-29T10:00:00.000Z', endedAt: ended ? '2026-10-29T10:06:00.000Z' : null, stage, injectErrors: true, calls: 20 },
@@ -80,13 +81,34 @@ describe('the right-hand cards follow the step', () => {
     expect(text()).toContain('6 of 8 checked · 2 need practice tasks · support-bot · 17 calls');
   });
 
-  it('Edit rules opens the editor under the step, and Done closes it', async () => {
+  it('Edit rules opens the editor under the step, moves focus to its heading and brings it into view; Done closes it', async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
     await render('checks-report-rows');
     expect(document.getElementById('sandbox-rules')).toBeNull();
     await act(async () => { [...document.querySelectorAll('button')].find((b) => b.textContent === 'Edit rules')!.click(); });
     expect(document.getElementById('sandbox-rules')?.closest('aside')).toBeNull();
+    await act(async () => { await new Promise((r) => requestAnimationFrame(() => r(null))); });
+    expect(document.activeElement?.textContent).toBe('Sandbox rules');
+    expect(document.activeElement?.closest('#sandbox-rules')).not.toBeNull();
+    expect(scroll).toHaveBeenCalledWith(expect.objectContaining({ block: 'start' }));
     await act(async () => { [...document.querySelectorAll('button')].find((b) => b.textContent === 'Done')!.click(); });
     expect(document.getElementById('sandbox-rules')).toBeNull();
+  });
+
+  it('Done before the editor’s frame lands: nothing to focus, nothing thrown', async () => {
+    await render('checks-report-rows');
+    // Both clicks land before the frame that moves focus.
+    act(() => { [...document.querySelectorAll('button')].find((b) => b.textContent === 'Edit rules')!.click(); });
+    act(() => { [...document.querySelectorAll('button')].find((b) => b.textContent === 'Done')!.click(); });
+    expect(document.getElementById('sandbox-rules')).toBeNull();
+    await act(async () => { await new Promise((r) => requestAnimationFrame(() => r(null))); });
+    expect(document.activeElement?.closest('#sandbox-rules') ?? null).toBeNull();
+  });
+
+  it('a URL from Connect shows while waiting, not above a later report', async () => {
+    await render('just-connected');
+    expect(document.querySelector('[aria-label="Copy the setting"]')).not.toBeNull();
   });
 });
 

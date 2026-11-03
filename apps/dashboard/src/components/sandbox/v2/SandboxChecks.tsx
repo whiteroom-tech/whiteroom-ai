@@ -25,8 +25,6 @@ export interface SandboxChecksPreview {
   state: CheckState | null;
   error?: string;
   now?: number;
-  /** "Nothing happening?" already open (it opens itself after a minute with no call). */
-  helpOpen?: boolean;
   /** The practice run bound to the report, a newer one of that agent, or another agent's (eight checks §6). */
   practice?: PracticeView;
 }
@@ -47,8 +45,6 @@ const POLL_MS = { visible: 5_000, hidden: 30_000 };
 export const RUN_NOW = 'Run your agent as you normally do. Checks start by themselves.';
 /** The current step's card: the page moves focus to its heading when the step changes. */
 export const STEP_CARD_ID = 'sandbox-step';
-/** "Nothing happening?" opens itself after this long with no call. */
-export const IDLE_HELP_MS = 60_000;
 
 const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : 'That didn’t work. Check your connection and try again.');
 
@@ -525,15 +521,18 @@ export function LiveChecks({ state, agent = 'your agent' }: { state: CheckState;
   const others = state.window?.otherAgents ?? [];
   const pending = now?.result.detail;
   return <>
-    <p className={v.prog}><span><b>{at} of {tests.length} tests</b>{now ? ` · ${now.num} ${now.name}` : ''}</span></p>
-    <ol className={v.track} role="progressbar" aria-label="Tests done" aria-valuemin={0} aria-valuemax={tests.length} aria-valuenow={done.length}>
+    <p className={v.prog} role="progressbar" aria-label="Tests done" aria-valuemin={0} aria-valuemax={tests.length} aria-valuenow={done.length} aria-valuetext={`${done.length} of ${tests.length} tests done`}>
+      <span><b>{at} of {tests.length} tests</b>{now ? ` · ${now.num} ${now.name}` : ''}</span>
+    </p>
+    {/* A list, so each test's label and result reach screen readers (a progressbar's children don't). */}
+    <ol className={v.track} aria-label="Live tests">
       {tests.map((t) => {
         const decided = t.result.status !== 'pending';
         const mark = decided ? markOf(t.result.status) : null;
         return (
           <li key={t.check} className={mark ? mark.track : t === now ? v.tNow : undefined} data-check={t.check} data-status={t === now ? 'now' : t.result.status}>
             <i />
-            <span>{mark && <span className={v.tMark} aria-hidden="true">{mark.text}</span>}{t.num} {t.short}</span>
+            <span>{mark && <span className={v.tMark} aria-hidden="true">{mark.text}</span>}{t.num} {t.short}<span className={s.srOnly}>: {t === now ? 'now' : STATUS_WORDS[t.result.status]}</span></span>
           </li>
         );
       })}
