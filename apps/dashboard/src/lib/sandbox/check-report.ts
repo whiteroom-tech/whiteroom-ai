@@ -32,9 +32,8 @@ export function restartedCheck(state: Pick<CheckState, 'checks' | 'rules' | 'par
 }
 
 /** The line above a report cut short by a restart: it says so, rather than blaming the agent's calls. */
-export const restartNote = (anyChecked: boolean) =>
-  anyChecked ? 'WhiteRoom restarted during this check, so some checks didn’t finish. Check again.'
-    : 'WhiteRoom restarted during this check, so nothing was checked. Check again.';
+export const restartNote = (anyChecked: boolean, sample = false) =>
+  `WhiteRoom restarted during this check, so ${anyChecked ? 'some checks didn’t finish' : 'nothing was checked'}. ${sample ? 'Run the sample again.' : 'Check again.'}`;
 
 /** Whether an ended window saw too few calls to check anything: no live check passed or failed. */
 export function tooFewCalls(state: Pick<CheckState, 'checks'> & { window: { calls: number } | null }): boolean {

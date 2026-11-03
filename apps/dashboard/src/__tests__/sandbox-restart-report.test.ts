@@ -59,6 +59,16 @@ describe('a check cut short by a WhiteRoom restart', () => {
     expect(document.querySelector('li[data-row="03"]')?.textContent?.split('WhiteRoom restarted during the check').length).toBe(2);
   });
 
+  it('the sample agent: no Check again step; the note points to Run the sample again', async () => {
+    const state = ended({ long_task: ['not_checked', R] });
+    expect(nextSteps(sandboxRows(state), { few: true, sample: true, restarted: true })).toEqual([]);
+    expect(restartNote(false, true)).toBe('WhiteRoom restarted during this check, so nothing was checked. Run the sample again.');
+    const { ReportView } = await import('@/components/sandbox/v2/SandboxChecks');
+    await act(async () => { root.render(h(ReportView, { state, checked: 'today', calls: 0, sample: { onOwnKey: vi.fn(), onAgain: vi.fn() } })); });
+    expect(text()).toContain('Run the sample again.');
+    expect(text()).not.toContain('Check again.');
+  });
+
   it('some checks done before the restart: says some didn’t finish', () => {
     expect(restartNote(true)).toBe('WhiteRoom restarted during this check, so some checks didn’t finish. Check again.');
   });

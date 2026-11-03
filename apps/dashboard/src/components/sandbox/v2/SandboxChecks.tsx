@@ -515,7 +515,8 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
   // The eight rows, in number order and their two groups, always; too few calls adds one line on what the live checks need.
   // A restart cut it short: say so (the agent's calls weren't the reason). Else too few calls: what the live checks need.
   const decided = state.checks.some((c) => c.status === 'passed' || c.status === 'failed');
-  const few = restartedCheck(state) ? restartNote(decided) : tooFewCalls(state) ? tooFewNote(calls) : null;
+  // The sample's report offers Run the sample again (not Check again): the note points there.
+  const few = restartedCheck(state) ? restartNote(decided, !!sample) : tooFewCalls(state) ? tooFewNote(calls) : null;
   const agent = state.window?.agentId ?? null;
   // Only another agent's practice run: the practice rows say whose run they still wait for.
   const base = sandboxRows(state, practice.bound ?? undefined, limits);
