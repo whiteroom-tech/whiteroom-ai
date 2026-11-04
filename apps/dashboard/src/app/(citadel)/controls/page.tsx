@@ -160,6 +160,13 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   // rules are in and it has been restored, dropped or left for later. Otherwise
   // the first render (nothing selected, so nothing dirty) would wipe it.
   const [draftPhase, setDraftPhase] = useState<"pending" | "done">("pending");
+  // The "is back" note goes with the edit it's about: once that's saved, discarded or undone, it would be wrong.
+  const restoreNotice = useRef<string | null>(null);
+  const clearRestoreNotice = useCallback(() => {
+    const note = restoreNotice.current;
+    restoreNotice.current = null;
+    if (note) setNotice((n) => (n === note ? null : n));
+  }, []);
   useEffect(() => {
     if (draftPhase !== "pending") return;
     // The rules didn't load: leave the draft for the next visit.
@@ -182,7 +189,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     setRestoredEdit(rule.id);
     setSelectedId(rule.id);
     setDraft(saved.draft);
-    setNotice(`Your unsaved change to ${RULE_LABELS[rule.ruleType]} is back. Save or discard it.`);
+    restoreNotice.current = `Your unsaved change to ${RULE_LABELS[rule.ruleType]} is back. Save or discard it.`;
+    setNotice(restoreNotice.current);
   }, [draftPhase, listed, listFailed, rules, fleetId, suggestionRec, ruleParam]);
   // Kept while it differs from the rule; cleared when an edit goes back to the rule as saved.
   // Save and Discard clear it themselves (below), since they can close the editor too.
@@ -195,9 +203,10 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     } else if (keptFor.current && selected?.id === keptFor.current) {
       removeDraft(fleetId);
       keptFor.current = null;
+      clearRestoreNotice();
     }
-  }, [draftPhase, dirty, selected, draft, fleetId]);
-  const dropKept = useCallback(() => { removeDraft(fleetId); keptFor.current = null; }, [fleetId]);
+  }, [draftPhase, dirty, selected, draft, fleetId, clearRestoreNotice]);
+  const dropKept = useCallback(() => { removeDraft(fleetId); keptFor.current = null; clearRestoreNotice(); }, [fleetId, clearRestoreNotice]);
 
   // Only the newest load may set names or counts: an older one finishing last would undo it.
   const actorsReq = useRef(0);
