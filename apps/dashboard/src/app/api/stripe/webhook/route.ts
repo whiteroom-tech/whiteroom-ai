@@ -1,7 +1,7 @@
 import type Stripe from 'stripe';
 import { db } from '@/lib/db';
 import { stripe } from '@/lib/stripe';
-import { enqueueEntitlementSync, syncEntitlementsToEngine } from '@/lib/entitlements';
+import { enqueueEntitlementSync, markOutboxDelivered, withUserEntitlementLock } from '@/lib/entitlements';
 import { ACTIVE_STATUS_LIST, isActiveStatus, planItem } from '@/lib/plans';
 import { cancelClosing, cancelStripeSubscription, getClosing, reportRefundNeeded } from '@/lib/account-closing';
 import { isClosingOpen } from '@/lib/closing-shared';
@@ -89,16 +89,15 @@ async function handle(event: Stripe.Event): Promise<void> {
       const subscriptionId =
         typeof session.subscription === 'string' ? session.subscription : session.subscription?.id;
       if (!subscriptionId) return;
-      // Re-fetch rather than trusting the session's expanded copy: by the time
-      // this arrives the subscription may already have moved on, and the
-      // canonical object is the one to write.
-      const sub = await stripe().subscriptions.retrieve(subscriptionId);
-      await applySubscription(sub);
+      // Whose it is comes from the session's customer (recorded when checkout
+      // created it); the subscription itself is read under the lock, once.
+      await applySubscription({ id: subscriptionId, customer: session.customer, metadata: session.metadata ?? {} } as Stripe.Subscription);
       return;
     }
     case 'customer.subscription.created':
     case 'customer.subscription.updated':
     case 'customer.subscription.deleted': {
+      // The payload says whose subscription it is; its state is read fresh (below).
       await applySubscription(event.data.object as Stripe.Subscription);
       return;
     }
@@ -135,54 +134,102 @@ async function resolveUserId(sub: Stripe.Subscription): Promise<string | null> {
   return rows[0]?.user_id ?? null;
 }
 
-async function applySubscription(sub: Stripe.Subscription): Promise<void> {
-  const userId = await resolveUserId(sub);
+/**
+ * Applies a subscription's current state for the user it belongs to.
+ *
+ * Never the event's own copy: Stripe makes no ordering promise, and a late
+ * older event would put back a state the subscription has left. So the
+ * subscription is read from Stripe under the user's entitlement lock, and the
+ * write, the outbox row and the engine push all happen under it too: two
+ * events for one user are applied one after the other, each with what is
+ * current when it runs, and the engine receives them in that order.
+ *
+ * `known` is only for working out whose it is (its metadata and customer).
+ */
+async function applySubscription(known: Stripe.Subscription): Promise<void> {
+  const userId = await resolveUserId(known);
   if (!userId) {
-    console.warn(`[stripe] no WhiteRoom user for subscription ${sub.id} — nothing to apply`);
+    console.warn(`[stripe] no WhiteRoom user for subscription ${known.id} — nothing to apply`);
     return;
   }
 
-  const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer?.id;
-  const found = planItem(sub.items.data);
-  const plan = found?.plan ?? 'none';
-  await db().query(
-    `INSERT INTO subscriptions (
-       user_id, stripe_customer_id, stripe_subscription_id, plan, status,
-       current_period_end, cancel_at_period_end, updated_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, now())
-     ON CONFLICT (user_id) DO UPDATE SET
-       stripe_customer_id     = EXCLUDED.stripe_customer_id,
-       stripe_subscription_id = EXCLUDED.stripe_subscription_id,
-       plan                   = EXCLUDED.plan,
-       status                 = EXCLUDED.status,
-       current_period_end     = EXCLUDED.current_period_end,
-       cancel_at_period_end   = EXCLUDED.cancel_at_period_end,
-       -- The moment a paid subscription stops being active, kept until it's active again.
-       lapsed_at              = CASE
-                                  WHEN EXCLUDED.status = ANY($8) THEN NULL
-                                  WHEN subscriptions.lapsed_at IS NOT NULL THEN subscriptions.lapsed_at
-                                  WHEN subscriptions.status = ANY($8) THEN now()
-                                END,
-       updated_at             = now()`,
-    [
-      userId,
-      customerId,
-      sub.id,
-      plan,
-      sub.status,
-      periodEnd(sub),
-      sub.cancel_at_period_end ?? false,
-      ACTIVE_STATUS_LIST,
-    ],
-  );
+  await withUserEntitlementLock(userId, async (push) => {
+    const sub = await stripe().subscriptions.retrieve(known.id);
+    const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer?.id;
+    const found = planItem(sub.items.data);
+    const plan = found?.plan ?? 'none';
 
-  await guardClosedAccount(userId, sub);
+    // The write and its outbox row commit together, so a push that fails (or a
+    // process that dies after the commit) is re-sent by the sweep without
+    // waiting for another billing event.
+    const client = await db().connect();
+    let queued: string | null = null;
+    try {
+      await client.query('BEGIN');
+      const written = await client.query(
+        `INSERT INTO subscriptions (
+           user_id, stripe_customer_id, stripe_subscription_id, plan, status,
+           current_period_end, cancel_at_period_end, updated_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+         ON CONFLICT (user_id) DO UPDATE SET
+           stripe_customer_id     = EXCLUDED.stripe_customer_id,
+           stripe_subscription_id = EXCLUDED.stripe_subscription_id,
+           plan                   = EXCLUDED.plan,
+           status                 = EXCLUDED.status,
+           current_period_end     = EXCLUDED.current_period_end,
+           cancel_at_period_end   = EXCLUDED.cancel_at_period_end,
+           -- The moment a paid subscription stops being active, kept until it's active again.
+           lapsed_at              = CASE
+                                      WHEN EXCLUDED.status = ANY($8) THEN NULL
+                                      WHEN subscriptions.lapsed_at IS NOT NULL THEN subscriptions.lapsed_at
+                                      WHEN subscriptions.status = ANY($8) THEN now()
+                                    END,
+           updated_at             = now()
+         -- An inactive subscription never replaces a different, active one: an
+         -- old subscription's late cancellation mustn't undo the user's new one.
+         WHERE subscriptions.stripe_subscription_id IS NULL
+            OR subscriptions.stripe_subscription_id = EXCLUDED.stripe_subscription_id
+            OR EXCLUDED.status = ANY($8)
+            OR NOT (subscriptions.status = ANY($8))`,
+        [
+          userId,
+          customerId,
+          sub.id,
+          plan,
+          sub.status,
+          periodEnd(sub),
+          sub.cancel_at_period_end ?? false,
+          ACTIVE_STATUS_LIST,
+        ],
+      );
+      if (written.rowCount) {
+        const { rows } = await client.query(
+          `INSERT INTO entitlement_outbox (user_id, reason) VALUES ($1, $2) RETURNING id`,
+          [userId, `subscription_${sub.status}`],
+        );
+        queued = String(rows[0].id);
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
 
-  // Push the new limits through to the engine. Deliberately awaited: if this
-  // is going to fail we want it in the same log line as the event that caused
-  // it, and syncEntitlementsToEngine already swallows its own errors so it
-  // can't turn a successful payment into a retried webhook.
-  await syncEntitlementsToEngine(userId);
+    if (!queued) {
+      const { rows } = await db().query(`SELECT stripe_subscription_id FROM subscriptions WHERE user_id = $1`, [userId]);
+      console.warn(`[stripe] ignored ${sub.id} (${sub.status}): user's current subscription is ${rows[0]?.stripe_subscription_id ?? 'another one'}`);
+      return;
+    }
+
+    await guardClosedAccount(userId, sub);
+
+    // Push the new limits through to the engine, under the same lock. Never
+    // throws: a failed push leaves its outbox row pending for the sweep, so it
+    // can't turn a successful payment into a retried webhook.
+    if (await push()) await markOutboxDelivered(userId, queued);
+  });
 }
 
 /**
