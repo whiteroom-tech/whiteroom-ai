@@ -1759,6 +1759,18 @@ describe('Controls: the Sensitive data rule', () => {
     m.root.unmount();
   });
 
+  it('an Off rule stays Off while the engine has the rule switched off', async () => {
+    api.created = [{ ...SD, mode: 'off' }];
+    api.sdPaused = true;
+    const m = await mount();
+    await m.click(m.button('Show'));
+    expect(m.row('A call holds').textContent).not.toContain('Paused by WhiteRoom');
+    await m.click(m.row('A call holds'));
+    expect(m.text()).toContain('Off · records nothing');
+    expect(m.text()).not.toContain('nothing is checked or removed');
+    m.root.unmount();
+  });
+
   it('shows Paused by WhiteRoom when the engine has the rule switched off', async () => {
     api.created = [{ ...SD, mode: 'enforce' }];
     api.sdPaused = true;

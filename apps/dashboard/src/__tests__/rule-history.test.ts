@@ -56,3 +56,17 @@ describe('change log', () => {
     expect(undoFor(entry(kw(1), kw(2), { ruleType: 'keyword' }), [rule(kw(2), { ruleType: 'keyword' })])).toBeNull();
   });
 });
+
+describe('change log: Sensitive data', () => {
+  const sd = (over: Partial<GovernanceRuleSnapshot> = {}): GovernanceRuleSnapshot =>
+    ({ mode: 'enforce', alsoNotify: false, appliesTo: 'all', params: { detect: ['credentials', 'contact', 'ids'] }, ...over });
+  const sdEntry = (before: GovernanceRuleSnapshot, after: GovernanceRuleSnapshot) => entry(before, after, { ruleType: 'sensitive_data' });
+  const sdRule = (s: GovernanceRuleSnapshot) => rule(s, { ruleType: 'sensitive_data' });
+
+  it('reads a missing response as Remove it and send, not Block', () => {
+    // The rule came back from the engine without a response, the log saved redact: the same thing.
+    expect(undoFor(sdEntry(sd({ response: 'notify' }), sd({ response: 'redact' })), [sdRule(sd())])).toEqual({ kind: 'update', ruleId: 'gr_1', changes: { response: 'notify' } });
+    // An entry with no response on either side changed nothing about the response.
+    expect(undoFor(sdEntry(sd({ mode: 'watch' }), sd()), [sdRule(sd({ response: 'redact' }))])).toEqual({ kind: 'update', ruleId: 'gr_1', changes: { mode: 'watch' } });
+  });
+});

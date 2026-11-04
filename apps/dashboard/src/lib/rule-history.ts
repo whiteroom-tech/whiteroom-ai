@@ -7,7 +7,8 @@
 import { ruleSentenceText } from '@/lib/controls-view';
 import { RULE_LABELS } from '@/lib/governance';
 import { modeWords } from '@/lib/vocab';
-import type { GovernanceHistoryEntry, GovernanceRule, GovernanceRuleSnapshot } from '@/lib/whiteroom/types';
+import { responseOf } from '@/lib/rule-response';
+import type { GovernanceHistoryEntry, GovernanceRule, GovernanceRuleSnapshot, GovernanceRuleType } from '@/lib/whiteroom/types';
 
 const FIELDS = ['mode', 'response', 'alsoNotify', 'appliesTo', 'params'] as const;
 type Field = (typeof FIELDS)[number];
@@ -17,7 +18,9 @@ const canon = (v: unknown): unknown => (Array.isArray(v) ? v.map(canon) : v && t
   ? Object.fromEntries(Object.keys(v as object).sort().map((k) => [k, canon((v as Record<string, unknown>)[k])]))
   : v ?? null);
 const same = (a: unknown, b: unknown) => JSON.stringify(canon(a)) === JSON.stringify(canon(b));
-const norm = (s: GovernanceRuleSnapshot, f: Field) => (f === 'alsoNotify' ? s.alsoNotify === true : f === 'response' ? s.response ?? 'block' : s[f]);
+/** A field as it acts: no alert is false, and no response is the type's default (responseOf). */
+const norm = (s: GovernanceRuleSnapshot, f: Field, ruleType: GovernanceRuleType) =>
+  (f === 'alsoNotify' ? s.alsoNotify === true : f === 'response' ? responseOf({ ruleType, response: s.response }) : s[f]);
 
 /**
  * A change in today's words. In the fleet-wide list the rule's name is
@@ -74,9 +77,9 @@ export function undoFor(entry: GovernanceHistoryEntry, rules: GovernanceRule[], 
   const rule = rules.find((r) => r.id === entry.ruleId);
   if (!rule) return null;
   const current: GovernanceRuleSnapshot = { mode: rule.mode, response: rule.response, alsoNotify: rule.alsoNotify, appliesTo: rule.appliesTo, params: rule.params };
-  if (!FIELDS.every((f) => same(norm(current, f), norm(after, f)))) return null;
+  if (!FIELDS.every((f) => same(norm(current, f, entry.ruleType), norm(after, f, entry.ruleType)))) return null;
   const changes: Partial<GovernanceRuleSnapshot> = {};
-  for (const f of FIELDS) if (!same(norm(before, f), norm(after, f))) (changes as Record<string, unknown>)[f] = structuredClone(before[f]);
+  for (const f of FIELDS) if (!same(norm(before, f, entry.ruleType), norm(after, f, entry.ruleType))) (changes as Record<string, unknown>)[f] = structuredClone(before[f]);
   if (Object.keys(changes).length === 0) return null;
   return { kind: 'update', ruleId: rule.id, changes };
 }
