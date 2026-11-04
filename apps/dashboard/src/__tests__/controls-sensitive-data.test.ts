@@ -8,6 +8,7 @@ import { blockedByPhrase, governanceCounts, PAUSED_BY_WHITEROOM, RESPONSE_LABEL,
 import { eventModel, sensitiveCounts } from '@/lib/activity';
 import { reasonText } from '@/lib/runs';
 import { modeTagText } from '@/lib/vocab';
+import { responseOf } from '@/lib/rule-response';
 import type { AuditEntry, GovernanceRule, SensitiveDataParams } from '@/lib/whiteroom/types';
 
 const sd = (over: Partial<GovernanceRule> & { params?: SensitiveDataParams } = {}): GovernanceRule => ({
@@ -52,8 +53,13 @@ describe('Sensitive data in plain words', () => {
   it('needs something to look for', () => {
     expect(draftProblem({ ...draftFrom(sd()), params: { detect: [] } })).toBe('Pick at least one kind of data to look for.');
     expect(draftProblem(draftFrom(sd()))).toBeNull();
-    // A rule from an engine that didn't send a response defaults to Remove it and send.
-    expect(draftFrom({ ...sd(), response: undefined }).response).toBe('redact');
+    // A rule from an engine that didn't send a response defaults to Remove it and send, everywhere.
+    const bare = { ...sd({ mode: 'enforce' }), response: undefined };
+    expect(draftFrom(bare).response).toBe('redact');
+    expect(modeTagText(bare)).toBe('Enforce · removes');
+    expect(ruleSentenceText(bare)).toMatch(/remove it and send the call\.$/);
+    expect(isStopping(bare)).toBe(false);
+    expect(responseOf({ ruleType: 'keyword' })).toBe('block');
   });
 
   it('what the agent gets: the call goes through with markers, never what was found', () => {

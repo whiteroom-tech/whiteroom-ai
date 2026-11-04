@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Banner, Button, Panel, SkeletonCard, Tag } from '@whiteroom/ui';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { AddRuleDialog } from '@/app/(citadel)/controls/_components/AddRuleDialog';
-import { ruleSentenceText, SENSITIVE_KINDS } from '@/lib/controls-view';
+import { isStopping, ruleSentenceText, SENSITIVE_KINDS } from '@/lib/controls-view';
 import { RULE_LABELS } from '@/lib/governance';
 import { modeTagText } from '@/lib/vocab';
 import { governanceList } from '@/lib/whiteroom/client';
@@ -253,7 +253,7 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale, open = f
                 <li key={r.id} className={v.rule}>
                   <div className={v.ruleHead}>
                     <span className={v.ruleName}>{RULE_LABELS[r.ruleType]}</span>
-                    <Tag tone={r.mode === 'enforce' && r.response !== 'notify' ? 'block' : r.mode === 'off' ? 'muted' : 'warn'}>{modeTagText({ mode: r.mode, response: r.response })}</Tag>
+                    <Tag tone={isStopping(r) ? 'block' : r.mode === 'off' ? 'muted' : 'warn'}>{modeTagText(r)}</Tag>
                     {editing !== r.id && <Button size={28} variant="ghost" className={v.push} onClick={() => { setEditing(r.id); setEditError(null); }} disabled={busy} aria-label={`Edit ${RULE_LABELS[r.ruleType]}`}>Edit</Button>}
                   </div>
                   {editing === r.id ? (

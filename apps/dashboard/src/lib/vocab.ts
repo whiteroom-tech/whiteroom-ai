@@ -4,7 +4,8 @@
 // always the "WhiteRoom fleet key"; shift-wording.test.ts keeps "your API key"
 // out.)
 
-import type { GovernanceMode as RuleMode, GovernanceResponse } from '@/lib/whiteroom/types';
+import type { GovernanceMode as RuleMode, GovernanceResponse, GovernanceRuleType } from '@/lib/whiteroom/types';
+import { defaultResponse } from '@/lib/rule-response';
 
 /** Rule mode labels: Off · Watch · Enforce. */
 export const MODE_LABEL: Record<RuleMode, string> = { off: 'Off', watch: 'Watch', enforce: 'Enforce' };
@@ -24,8 +25,8 @@ export const NOTIFY = { option: 'Only alert me', verb: 'alert you', done: 'alert
 export const ENFORCE_TAG: Record<GovernanceResponse, string> = { block: 'Enforce', pause: 'Enforce · pauses', stop: 'Enforce · stops', notify: NOTIFY.tag, redact: 'Enforce · removes' };
 
 /** A rule's mode as its tag reads: Off, Watch, or what it enforces (ENFORCE_TAG). */
-export function modeTagText(rule: { mode: RuleMode; response?: GovernanceResponse }): string {
-  return rule.mode === 'enforce' ? ENFORCE_TAG[rule.response ?? 'block'] : MODE_LABEL[rule.mode];
+export function modeTagText(rule: { mode: RuleMode; response?: GovernanceResponse; ruleType?: GovernanceRuleType }): string {
+  return rule.mode === 'enforce' ? ENFORCE_TAG[rule.response ?? defaultResponse(rule.ruleType)] : MODE_LABEL[rule.mode];
 }
 
 /** The count of everything rules did or would have done. */

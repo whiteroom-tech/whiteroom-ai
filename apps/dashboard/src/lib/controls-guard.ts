@@ -5,6 +5,7 @@
 import { keywordTotal } from '@/lib/controls-view';
 import type { GovernanceHistoryEntry, GovernanceParams, GovernanceResponse, GovernanceRule, GovernanceScope, KeywordParams, ModelAllowlistParams, ToolListParams } from '@/lib/whiteroom/types';
 import { plural, HOUR_MS } from '@/lib/format';
+import { responseOf } from '@/lib/rule-response';
 
 /**
  * A rule in Enforce that can act, so the proxy refuses calls it can't tie to
@@ -116,7 +117,7 @@ export function keywordBlockCheck(
 ): { kind: 'ok' } | { kind: 'confirm' } | { kind: 'blocked'; reason: string } {
   if (rule.ruleType !== 'keyword') return { kind: 'ok' };
   type R = { mode: string; response?: GovernanceResponse; params: GovernanceParams };
-  const onIncoming = (r: R) => r.mode === 'enforce' && (r.response ?? 'block') !== 'notify' && (r.params as KeywordParams).where !== 'replies';
+  const onIncoming = (r: R) => r.mode === 'enforce' && responseOf(r) !== 'notify' && (r.params as KeywordParams).where !== 'replies';
   const next = { mode: change.mode ?? rule.mode, response: change.response ?? rule.response, params: change.params ?? rule.params };
   // Stop is stopCheck's; a rule already ending runs on incoming data (Stop too) was confirmed then.
   if (!onIncoming(next) || next.response === 'stop' || onIncoming(rule)) return { kind: 'ok' };
@@ -147,7 +148,7 @@ export function stopCheck(
   now: number = Date.now(),
 ): { kind: 'ok' } | { kind: 'confirm' } | { kind: 'blocked'; reason: string } {
   const mode = change.mode ?? rule.mode;
-  const response = change.response ?? rule.response ?? 'block';
+  const response = change.response ?? responseOf(rule);
   const already = rule.mode === 'enforce' && rule.response === 'stop';
   if (mode !== 'enforce' || response !== 'stop' || already) return { kind: 'ok' };
   const reason = stopBlockedReason(rule.id, history, rule.mode, now);

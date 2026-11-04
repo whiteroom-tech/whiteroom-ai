@@ -23,6 +23,7 @@ import { ROUTES } from '@/lib/routes';
 import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
 import { AGENT_NOTE, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, MODE_CHOICES, responseChoicesFor, responseOption, sendsAlert, SENSITIVE_NOTE, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
 import { Chip, field, GroupPicker, InlineSelect, MODEL_GROUPS, NumberField, ScopeField, SensitiveKindsField, TOOL_GROUPS } from './pickers';
+import { responseOf } from '@/lib/rule-response';
 
 /** When each rule acts; Keywords depends on where it looks (KEYWORD_ACTS), Loop breaker on its number (loopActs). */
 const ACTS: Record<Exclude<GovernanceRule['ruleType'], 'keyword' | 'loop_breaker'>, string> = {
@@ -125,7 +126,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
       || keywordBlockCheck(rule, { mode: 'enforce', response: o, params: asRule.params }, ruleHistory).kind === 'blocked';
     return needs ? actionAvailableFrom(rule.id, ruleHistory, rule.mode) : null;
   };
-  const actions = responseChoicesFor(rule.ruleType, govV1, rule.response ?? 'block', draft.response);
+  const actions = responseChoicesFor(rule.ruleType, govV1, responseOf(rule), draft.response);
   const nextOpen = Math.min(...actions.map(waitUntil).filter((t): t is number => typeof t === 'number'));
   useEffect(() => {
     if (!Number.isFinite(nextOpen)) return;

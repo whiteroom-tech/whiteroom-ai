@@ -18,6 +18,7 @@ import { MODE_LABEL } from '@/lib/vocab';
 import type { GovernanceMode, GovernanceResponse, GovernanceRule, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, SensitiveDataParams, SpendCapParams, ToolListParams } from '@/lib/whiteroom/types';
 import type { SandboxRuleFields } from '@/lib/sandbox/rules';
 import v from './v2.module.css';
+import { responseOf } from '@/lib/rule-response';
 
 const WHERE_OPTIONS = (Object.keys(KEYWORD_WHERE) as KeywordWhere[]).map((value) => ({ value, label: KEYWORD_WHERE[value][0].toUpperCase() + KEYWORD_WHERE[value].slice(1) }));
 
@@ -38,7 +39,7 @@ export function SandboxRuleEditor({ rule, agents, busy, error, onSave, onCancel,
   const set = (patch: Partial<RuleDraft>) => { setProblem(null); setDraft((d) => ({ ...d, ...patch })); };
   const setParams = (patch: object) => set({ params: { ...draft.params, ...patch } as RuleDraft['params'] });
   const p = draft.params;
-  const actions = responseChoicesFor(rule.ruleType, true, rule.response ?? 'block');
+  const actions = responseChoicesFor(rule.ruleType, true, responseOf(rule));
   const changes = draftChanges(draft, rule);
 
   const keywords = rule.ruleType === 'keyword' ? (p as KeywordParams).keywords : [];

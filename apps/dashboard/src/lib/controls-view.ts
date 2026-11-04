@@ -9,6 +9,7 @@ import type {
 import { convertSpendCap } from '@/lib/governance';
 import { MODE_LABEL, NOTIFY } from '@/lib/vocab';
 import { DAY_MS, fmtCount, ordinal } from '@/lib/format';
+import { responseOf, defaultResponse } from '@/lib/rule-response';
 
 // ── Sentences ───────────────────────────────────────────────────────
 
@@ -62,7 +63,7 @@ export const money = (p: SpendCapParams) => (p.unit === 'dollars' ? `$${fmtCount
  * sentence never claims a call is stopped when it isn't.
  */
 export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'response' | 'alsoNotify'> & { mode?: GovernanceRule['mode'] }): { pre: string; val: string; post: string } {
-  const response = rule.response ?? 'block';
+  const response = responseOf(rule);
   const does = response === 'block' && rule.alsoNotify ? `block the call and ${NOTIFY.verb}` : verbFor(rule.ruleType, response);
   const v = rule.mode === undefined || rule.mode === 'enforce' ? does : `it would ${does}`;
   if (rule.ruleType === 'spend_cap') {
@@ -139,14 +140,14 @@ const covers = (a: GovernanceScope, b: GovernanceScope) => a === 'all' || (b !==
  */
 export function spendOverlap(rules: readonly GovernanceRule[]): { never: GovernanceRule; first: GovernanceRule } | null {
   // Only caps that block: in Watch neither acts, and an alert before a block is a warning, not an overlap.
-  const caps = rules.filter((r) => r.ruleType === 'spend_cap' && r.mode === 'enforce' && (r.response ?? 'block') !== 'notify');
+  const caps = rules.filter((r) => r.ruleType === 'spend_cap' && r.mode === 'enforce' && responseOf(r) !== 'notify');
   for (let i = 0; i < caps.length; i++) {
     for (let j = i + 1; j < caps.length; j++) {
       const a = caps[i], b = caps[j];
       const pa = a.params as SpendCapParams, pb = b.params as SpendCapParams;
       if (pa.dailyCap === pb.dailyCap) continue;
       const [hi, lo] = pa.dailyCap > pb.dailyCap ? [a, b] : [b, a];
-      if (pa.unit === pb.unit && pa.scope === pb.scope && a.mode === b.mode && (a.response ?? 'block') === (b.response ?? 'block')
+      if (pa.unit === pb.unit && pa.scope === pb.scope && a.mode === b.mode && responseOf(a) === responseOf(b)
         && !!a.alsoNotify === !!b.alsoNotify && covers(lo.appliesTo, hi.appliesTo)) {
         return { never: hi, first: lo };
       }
@@ -183,7 +184,7 @@ const REASON: Record<GovernanceRuleType, string> = {
 
 /** The engine's 403 for this rule (blockResponseBody); nothing for Only alert me. */
 export function agentGets(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'response'>): string {
-  const response = rule.response ?? 'block';
+  const response = responseOf(rule);
   if (rule.ruleType === 'sensitive_data' && (response === 'redact' || response === 'notify')) {
     return `The call goes through with each find replaced:\n[redacted:credential:…]${response === 'notify' ? '\nYou get an alert; the agent doesn’t.' : ''}`;
   }
@@ -238,7 +239,7 @@ const numberOf = (rule: Pick<GovernanceRule, 'ruleType' | 'params'>): string => 
 
 export function draftFrom(rule: GovernanceRule): RuleDraft {
   return {
-    ruleType: rule.ruleType, mode: rule.mode, response: rule.response ?? (rule.ruleType === 'sensitive_data' ? 'redact' : 'block'), alsoNotify: !!rule.alsoNotify,
+    ruleType: rule.ruleType, mode: rule.mode, response: responseOf(rule), alsoNotify: !!rule.alsoNotify,
     appliesTo: rule.appliesTo === 'all' ? 'all' : [...rule.appliesTo],
     params: JSON.parse(JSON.stringify(rule.params)) as GovernanceParams,
     number: numberOf(rule),
@@ -310,7 +311,7 @@ export function draftChanges(d: RuleDraft, rule: GovernanceRule): {
   if ('error' in p) return null;
   const out: { mode?: GovernanceMode; response?: GovernanceResponse; alsoNotify?: boolean; appliesTo?: GovernanceScope; params?: GovernanceParams } = {};
   if (d.mode !== rule.mode) out.mode = d.mode;
-  if (d.response !== (rule.response ?? 'block')) out.response = d.response;
+  if (d.response !== responseOf(rule)) out.response = d.response;
   if (d.alsoNotify !== !!rule.alsoNotify) out.alsoNotify = d.alsoNotify;
   if (!same(d.appliesTo, rule.appliesTo)) out.appliesTo = d.appliesTo;
   if (!same(p.params, rule.params)) out.params = p.params;
@@ -346,7 +347,7 @@ export const RULE_TEMPLATES: { type: GovernanceRuleType; title: string; desc: st
 
 /** Whether a rule can stop a call or an agent now: Enforce with a response other than Only alert me or Remove it and send, that has something to act on. */
 export function isStopping(r: GovernanceRule): boolean {
-  const response = r.response ?? 'block';
+  const response = responseOf(r);
   return r.mode === 'enforce' && response !== 'notify' && response !== 'redact' && !emptyPick(r);
 }
 
@@ -370,10 +371,10 @@ const RESPONSE_RANK: Record<GovernanceResponse, number> = { redact: 0, notify: 0
 export function weakenings(prev: GovernanceRule, next: GovernanceRule): string[] {
   const out: string[] = [];
   if (MODE_RANK[next.mode] < MODE_RANK[prev.mode]) out.push(`Mode: ${MODE_LABEL[prev.mode]} → ${MODE_LABEL[next.mode]}`);
-  const pr = prev.response ?? 'block', nr = next.response ?? 'block';
+  const pr = responseOf(prev), nr = responseOf(next);
   if (next.mode === 'enforce' && prev.mode === 'enforce' && RESPONSE_RANK[nr] < RESPONSE_RANK[pr]) out.push(`When enforced: ${verbFor(prev.ruleType, pr)} → ${verbFor(next.ruleType, nr)}`);
   // Any lost alert, whatever the response: Pause, Stop and Only alert me alert; Block does when asked to.
-  const alerts = (r: GovernanceRule) => sendsAlert({ mode: r.mode, response: r.response ?? 'block', alsoNotify: !!r.alsoNotify });
+  const alerts = (r: GovernanceRule) => sendsAlert({ mode: r.mode, response: responseOf(r), alsoNotify: !!r.alsoNotify });
   if (alerts(prev) && !alerts(next) && MODE_RANK[next.mode] >= MODE_RANK[prev.mode]) out.push('It stops sending you an alert');
   if (prev.appliesTo === 'all' && next.appliesTo !== 'all') out.push(`Covers only ${next.appliesTo.join(', ') || 'no agents'}, not every agent`);
   else if (prev.appliesTo !== 'all' && next.appliesTo !== 'all') {
@@ -577,7 +578,7 @@ export function rowCount(rule: GovernanceRule, ctx: {
   if (nothingPicked) return { text: `Does nothing until you add ${nothingPicked}`, tone: 'warn' };
   if (ctx.neverFirst) return { text: `Never triggers (${ctx.neverFirst} cap first)`, tone: 'warn' };
   const week = ctx.byRuleId ? ctx.byRuleId[rule.id] ?? NO_ACTIONS : ctx.onlyOfItsType && ctx.byRuleType ? ctx.byRuleType[rule.ruleType] ?? NO_ACTIONS : undefined;
-  const response = rule.response ?? 'block';
+  const response = responseOf(rule);
   if (rule.mode === 'enforce') {
     const justThem = !ctx.agent || (rule.appliesTo !== 'all' && rule.appliesTo.length === 1 && rule.appliesTo[0] === ctx.agent);
     if (!justThem || !week) return { text: '', tone: 'plain' };
@@ -619,7 +620,7 @@ export function ruleStatus(rule: GovernanceRule, ctx: {
   now?: number;
 }): string {
   const who = whoFor(rule.appliesTo);
-  const response = rule.response ?? 'block';
+  const response = responseOf(rule);
   if (rule.mode === 'off') return 'Off · records nothing';
   const nothingPicked = emptyPick(rule);
   if (nothingPicked) return `Does nothing until you add ${nothingPicked}`;
@@ -657,7 +658,7 @@ export function duplicateRules(rules: readonly GovernanceRule[]): { keep: Govern
   for (const r of rules) {
     // A Keywords list the engine hid can't be compared: two such rules may look alike and differ.
     if (notSetUp(r) || keywordsHidden(r)) continue;
-    const g = out.find(({ keep: k }) => k.ruleType === r.ruleType && k.mode === r.mode && (k.response ?? 'block') === (r.response ?? 'block')
+    const g = out.find(({ keep: k }) => k.ruleType === r.ruleType && k.mode === r.mode && responseOf(k) === responseOf(r)
       && !!k.alsoNotify === !!r.alsoNotify && sameValue(scopeKey(k.appliesTo), scopeKey(r.appliesTo)) && sameValue(k.params, r.params));
     if (g) g.extra.push(r); else out.push({ keep: r, extra: [] });
   }
@@ -736,7 +737,7 @@ export function chooseMode(
   actions: readonly GovernanceResponse[] = responseChoices(true), canPick: (r: GovernanceResponse) => boolean = () => true,
 ): RuleDraft {
   if (mode !== 'enforce') {
-    return d.mode === 'enforce' ? { ...d, mode, response: saved.response ?? 'block', alsoNotify: !!saved.alsoNotify } : { ...d, mode };
+    return d.mode === 'enforce' ? { ...d, mode, response: saved.response ?? defaultResponse(d.ruleType), alsoNotify: !!saved.alsoNotify } : { ...d, mode };
   }
   if (d.mode === 'enforce') return d;
   const pick = [d.response, ...actions].find((r) => actions.includes(r) && canPick(r)) ?? d.response;

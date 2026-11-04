@@ -44,6 +44,7 @@ import {
   sameValue,
   blocksWhen, duplicateRules, keywordsHidden, keywordGaps, keywordsShort, leadCounts, modeCount, notSetUp, ruleCondition, ruleConditionText, ruleGroups, rowCount, ruleStatus, whoFor,
 } from "@/lib/controls-view";
+import { responseOf } from "@/lib/rule-response";
 
 // The engine caps performance queries at 336h (hours_back check in security.ts).
 const SUGGESTION_HOURS = 14 * 24;
@@ -401,7 +402,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         // Only what that save changed, as Save sends: a list the engine hid (Keywords) is never written back empty.
         const changes = {
           ...(before.mode !== saved.mode && { mode: before.mode }),
-          ...((before.response ?? "block") !== (saved.response ?? "block") && { response: before.response ?? "block" }),
+          ...(responseOf(before) !== responseOf(saved) && { response: responseOf(before) }),
           ...(!!before.alsoNotify !== !!saved.alsoNotify && { alsoNotify: !!before.alsoNotify }),
           ...(!sameValue(before.appliesTo, saved.appliesTo) && { appliesTo: before.appliesTo }),
           // A Keywords list the engine hid can't be written back: the editor can't change it either.
@@ -491,7 +492,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     // Already made (say, Save and Copy again): don't add a second, identical rule. Identical means
     // the same type, settings, response, alert and agents, whatever order the settings come in.
     if (rules.some((r) => r.ruleType === next.ruleType && sameValue(r.params, next.params) && sameValue(r.appliesTo, agentsPicked)
-      && (r.response ?? "block") === (next.response ?? "block") && !!r.alsoNotify === !!next.alsoNotify)) {
+      && responseOf(r) === responseOf(next) && !!r.alsoNotify === !!next.alsoNotify)) {
       setDialog(null);
       setDraft((cur) => (cur ? { ...cur, appliesTo: "all" } : cur));
       setNotice(`There's already a copy for ${agentsPicked.join(", ")}. The rule for all agents is unchanged.`);
@@ -996,30 +997,30 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
 
       <ChoiceDialog
         open={dialog?.kind === "enforce"}
-        title={dialog?.kind === "enforce" ? ACT_WORDS[dialog.next.response ?? "block"].title : ""}
+        title={dialog?.kind === "enforce" ? ACT_WORDS[responseOf(dialog.next)].title : ""}
         body={dialog?.kind === "enforce" ? <EnforcePreview rule={dialog.rule} next={dialog.next} wouldAct={wouldOf(dialog.rule)} week={weekOf(dialog.rule)} agentCalls={agentCalls} /> : null}
         busy={saving}
         cancelLabel={null}
         choices={[
           { label: dialog?.kind === "enforce" && dialog.rule.mode === "watch" ? "Keep watching" : "Cancel", onClick: cancelDialog },
-          { label: dialog?.kind === "enforce" ? ACT_WORDS[dialog.next.response ?? "block"].start : "", tone: "primary", onClick: () => { if (dialog?.kind === "enforce" && draft) void commit(dialog.rule, draft); } },
+          { label: dialog?.kind === "enforce" ? ACT_WORDS[responseOf(dialog.next)].start : "", tone: "primary", onClick: () => { if (dialog?.kind === "enforce" && draft) void commit(dialog.rule, draft); } },
         ]}
         onCancel={cancelDialog}
       />
       <ChoiceDialog
         open={dialog?.kind === "downgrade"}
-        title={dialog?.kind === "downgrade" ? ACT_WORDS[dialog.rule.response ?? "block"].stopTitle : ""}
+        title={dialog?.kind === "downgrade" ? ACT_WORDS[responseOf(dialog.rule)].stopTitle : ""}
         body={dialog?.kind === "downgrade" ? (
           <>
             <p style={{ margin: "0 0 8px" }}><strong>{RULE_LABELS[dialog.rule.ruleType]}</strong> · {ruleConditionText(dialog.rule)}</p>
             {/* Only leaving Enforce with nothing else weaker opens this (see save): Watch and Off both remove nothing. */}
-            <p style={{ margin: 0 }}>{dialog.rule.ruleType === "sensitive_data" ? `What it finds will reach your model provider for ${whoFor(dialog.next.appliesTo)}.` : (dialog.rule.response ?? "block") === "notify" ? `You won’t get alerts for ${whoFor(dialog.next.appliesTo)} any more.` : `Matching calls will go through for ${whoFor(dialog.next.appliesTo)}.`} {dialog.next.mode === "watch" ? "They’ll still be recorded." : "Nothing will be recorded."} You can undo it.</p>
+            <p style={{ margin: 0 }}>{dialog.rule.ruleType === "sensitive_data" ? `What it finds will reach your model provider for ${whoFor(dialog.next.appliesTo)}.` : responseOf(dialog.rule) === "notify" ? `You won’t get alerts for ${whoFor(dialog.next.appliesTo)} any more.` : `Matching calls will go through for ${whoFor(dialog.next.appliesTo)}.`} {dialog.next.mode === "watch" ? "They’ll still be recorded." : "Nothing will be recorded."} You can undo it.</p>
           </>
         ) : null}
         busy={saving}
         cancelLabel={null}
         choices={[
-          { label: dialog?.kind === "downgrade" ? ACT_WORDS[dialog.rule.response ?? "block"].keep : "", tone: "primary", onClick: cancelDialog },
+          { label: dialog?.kind === "downgrade" ? ACT_WORDS[responseOf(dialog.rule)].keep : "", tone: "primary", onClick: cancelDialog },
           { label: `Switch to ${dialog?.kind === "downgrade" ? MODE_LABEL[dialog.next.mode] : ""}`, tone: "bad", onClick: () => { setDialog(null); save(true); } },
         ]}
         onCancel={cancelDialog}
@@ -1194,13 +1195,13 @@ function EnforcePreview({ rule, next, wouldAct, week, agentCalls }: {
       <p style={{ margin: "0 0 4px" }}><strong>{RULE_LABELS[next.ruleType]}</strong> · {ruleConditionText(next)}</p>
       <p className="ctl-cap" style={{ margin: "0 0 14px" }}>Applies to {whoFor(next.appliesTo)}</p>
       <div className="ctl-tiles">
-        <div className="ctl-tile"><div className="ctl-tile__lbl">{ACT_WORDS[next.response ?? "block"].would}</div><div className="ctl-tile__num">{n === null ? "—" : n ? `${n.toLocaleString("en-US")} ${n === 1 ? "call" : "calls"}` : "no calls"}</div><div className="ctl-cap">{week || !watched ? "last 7 days" : "since its last change"}</div></div>
+        <div className="ctl-tile"><div className="ctl-tile__lbl">{ACT_WORDS[responseOf(next)].would}</div><div className="ctl-tile__num">{n === null ? "—" : n ? `${n.toLocaleString("en-US")} ${n === 1 ? "call" : "calls"}` : "no calls"}</div><div className="ctl-cap">{week || !watched ? "last 7 days" : "since its last change"}</div></div>
         <div className="ctl-tile"><div className="ctl-tile__lbl">Watching since</div><div className="ctl-tile__num">{since ?? "—"}</div><div className="ctl-cap">{watched ? "since its last change" : "Turn on Watch first to see what it would do"}</div></div>
       </div>
       {all.map(([a, c]) => (
         <p key={a} className="ctl-warnbox"><strong>This would block every call {a} makes.</strong> None of its {c.toLocaleString("en-US")} {c === 1 ? "call" : "calls"} since the last change used a model on this allowlist. Add its model first if {a} should keep working.</p>
       ))}
-      <p style={{ margin: "14px 0 0" }}>From now on, {ACT_WORDS[next.response ?? "block"].effect}</p>
+      <p style={{ margin: "14px 0 0" }}>From now on, {ACT_WORDS[responseOf(next)].effect}</p>
       {canAct(next) && <p className="ctl-cap" style={{ margin: "8px 0 0" }}>{UNNAMED_CALLS_REFUSED}</p>}
     </>
   );

@@ -458,6 +458,28 @@ describe('Sandbox rules: Sensitive data', () => {
     expect(options).toEqual(['Remove it and send', 'Remove it, send, and tell me', 'Pause the agent', 'Stop the agent']);
   });
 
+  it('tags Remove it and send in Enforce like an alert, not as blocking; Pause as blocking', async () => {
+    listAnswer = state({ source: 'custom', rules: [{ ...SD, mode: 'enforce' }, { ...SD, id: 'gr_sd2', mode: 'enforce', response: 'pause' }] });
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, open: true }));
+    const tags = [...document.querySelectorAll('li')].map((li) => li.querySelector('.wr-tag'));
+    expect(tags[0]?.textContent).toBe('Enforce · removes');
+    expect(tags[0]?.className).not.toMatch(/block/);
+    expect(tags[1]?.textContent).toBe('Enforce · pauses');
+    expect(tags[1]?.className).toMatch(/block/);
+  });
+
+  it('in a preview, Add a rule makes a Sensitive data rule with all three kinds and Remove it and send', async () => {
+    await render(h(SandboxHome, { key: 'rules-custom', fleet: 'prod-eu', preview: SANDBOX_V2_STATES['rules-custom'] }));
+    await click('Add a rule');
+    const template = [...document.querySelectorAll('dialog[open] button')].find((b) => b.textContent?.startsWith('Keep sensitive data out')) as HTMLButtonElement;
+    await act(async () => { template.click(); });
+    await flush();
+    expect(bff).not.toHaveBeenCalled();
+    const boxes = [...document.querySelectorAll('label')].filter((l) => l.querySelector('input[type="checkbox"]'));
+    expect(boxes.map((l) => [l.textContent, (l.querySelector('input') as HTMLInputElement).checked])).toEqual([['Keys and passwords', true], ['Emails and phone numbers', true], ['ID and card numbers', true]]);
+    expect(text()).toContain('Watch: records what it finds and removes nothing');
+  });
+
   it('the BFF accepts the new type and its Remove it and send response', () => {
     expect(ruleCreateCheck({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, ruleType: 'sensitive_data', mode: 'watch' }).ok).toBe(true);
     expect(ruleUpdateCheck({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, ruleId: 'gr_sd', response: 'redact' }).ok).toBe(true);
