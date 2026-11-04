@@ -263,3 +263,12 @@ it('a fleet change reads at once', async () => {
   expect(api.index.mock.calls.length).toBe(n + 1);
   expect(api.index.mock.calls.at(-1)![0]).toBe('other-fleet');
 });
+
+it('a 401 on a background poll (not a page load) also goes to session recovery', async () => {
+  await mount();
+  expect(api.reset).not.toHaveBeenCalled();
+  api.index.mockRejectedValue(new WhiteRoomApiError('Unauthorized', 401));
+  await advance(5 * 60_000); // the poll's next due read
+  expect(api.reset).toHaveBeenCalledWith('Your session expired. Please sign in again.');
+  expect(dimmed()).toBe(false);
+});
