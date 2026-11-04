@@ -322,7 +322,9 @@ function PlanSection({
   const contracted = plan === 'enterprise' || !!subscription?.planOverride;
   const canBuy = (p: PlanId) => !contracted && purchasablePlans.includes(p) && (p !== plan || entitlement.onTrial);
   const trialEnd = shortDay(entitlement.trialEndsAt);
-  const trialDaysLeft = freeDaysLeft(entitlement.trialEndsAt);
+  // Counted in the viewer's zone, so only once it's known: the server's UTC
+  // count can differ by a day and would mismatch hydration.
+  const trialDaysLeft = useViewerZone() !== null ? freeDaysLeft(entitlement.trialEndsAt) : null;
 
   return (
     <Section title="Plan" description="Limits apply to every fleet on the account">
@@ -330,7 +332,7 @@ function PlanSection({
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <strong style={{ fontSize: 'var(--fs-card)', fontWeight: 600 }}>{PLANS[plan].name}</strong>
-            {entitlement.onTrial && <span className="wr-settings-pill" data-tone="ok">free until {trialEnd} · {trialDaysLeft} {plural(trialDaysLeft, 'day')} left</span>}
+            {entitlement.onTrial && <span className="wr-settings-pill" data-tone="ok">free until {trialEnd}{trialDaysLeft !== null && <> · {trialDaysLeft} {plural(trialDaysLeft, 'day')} left</>}</span>}
             {subscription?.planOverride && <span className="wr-settings-pill" data-tone="ok">comped</span>}
             {subscription?.cancelAtPeriodEnd && <span className="wr-settings-pill" data-tone="warn">ends {subscription.currentPeriodEnd ? shortDay(subscription.currentPeriodEnd) : ''}</span>}
             {subscription?.status === 'past_due' && <span className="wr-settings-pill" data-tone="bad">payment failed</span>}
