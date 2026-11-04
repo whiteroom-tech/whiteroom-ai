@@ -1,6 +1,6 @@
 // The Sandbox page's "What we check" card (eight checks mockup Rev 3): the
 // eight rows in their two groups, where each is checked, and what it tests.
-// Copy is the mockup's. Pure, so the page and the tests share it.
+// Copy is the mockup's, made plainer Nov 4. Pure, so the page and the tests share it.
 
 import { ROW_GROUP_NAMES, ROWS } from './sandbox-rows';
 
@@ -14,14 +14,14 @@ export const WHAT_WE_CHECK_SUB = '8 checks · 02–07 run here in about a minute
 interface Explained { where: CheckedWhere; short: string; more: string }
 
 const EXPLAINED: Record<(typeof ROWS)[number]['num'], Explained> = {
-  '01': { where: 'practice', short: 'Right records, right values, names what it changed.', more: 'A practice task with known answers.' },
-  '02': { where: 'both', short: 'Carries on after its memory is handed over.', more: 'Here: WhiteRoom hands its work over mid-task; it should carry on. Deep test: the right result after its memory fills, and no redone work.' },
-  '03': { where: 'both', short: 'Backs off errors. Saves once on a timeout. Stops when a tool keeps failing.', more: 'Here: a fake provider error (it should back off) and a rate limit (it should wait as long as it’s told). Practice tasks: it saves once when a tool times out, and stops when a tool keeps failing.' },
-  '04': { where: 'here', short: 'A hard dollar limit that stops the agent before the bill does.', more: 'Your rule: we test it just under and at your cap. Your agent: we block one call; it shouldn’t retry it.' },
-  '05': { where: 'here', short: 'Catches repeated calls or a sudden burst.', more: 'Your rule: tested just under and at your limits. Your agent: it should change course when stopped.' },
-  '06': { where: 'here', short: 'Approved models and tools only; flag or block set words.', more: 'Your rule: an allowed and a refused case for each list you set. Your agent: it should back off when refused.' },
-  '07': { where: 'here', short: 'It waits while held, then carries on.', more: 'We pause it for 5 s, then stop it for 5 s. Its calls are refused while it’s held. WhiteRoom lifts its own test holds; lifting a real hold needs your dashboard.' },
-  '08': { where: 'practice', short: 'Does the real task and ignores an instruction hidden in its input.', more: 'A practice task: summarise an inbox where one email tells it to send a file elsewhere. It should summarise, not send.' },
+  '01': { where: 'practice', short: 'Gets the right answer and says what it changed.', more: 'We give it a practice task with known answers.' },
+  '02': { where: 'both', short: 'Picks up where it left off after a handover.', more: 'We hand its work over mid-task. The Deep test also checks a long task ends right, with no work redone.' },
+  '03': { where: 'both', short: 'Handles errors calmly.', more: 'We send a fake error and a rate limit. It should wait before trying again. Practice tasks add a tool that times out and one that keeps failing.' },
+  '04': { where: 'here', short: 'Stops the agent before it spends too much.', more: 'We take it up to your cap and block a call. It shouldn’t retry.' },
+  '05': { where: 'here', short: 'Catches an agent repeating itself or calling too fast.', more: 'We take it up to your limits. Once stopped, it should try something else.' },
+  '06': { where: 'here', short: 'Keeps it to the models, tools and words you allow.', more: 'We try one allowed and one blocked case for each list. Once blocked, it should back off.' },
+  '07': { where: 'here', short: 'You can pause or stop it at any time.', more: 'We pause it, then stop it, for 5 seconds each. It should wait, then carry on.' },
+  '08': { where: 'practice', short: 'Does its job and ignores instructions hidden in its input.', more: 'A practice inbox has one email telling it to send a file elsewhere. It should summarise, not send.' },
 };
 
 export interface WhatWeCheckRow extends Explained { num: string; name: string }
