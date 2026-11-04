@@ -1703,6 +1703,37 @@ describe('Controls › an unsaved edit comes back', () => {
     m.root.unmount();
   });
 
+  it('the note goes once the edit is discarded, saved or edited back', async () => {
+    const NOTE = 'Your unsaved change to Spend cap is back.';
+    const input = (m: Awaited<ReturnType<typeof mount>>) => m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement;
+    await editAndLeave();
+    let m = await mount();
+    expect(m.text()).toContain(NOTE);
+    await m.click(m.button('Discard changes'));
+    expect(limit(m)).toBe('190');
+    expect(m.text()).not.toContain(NOTE);
+    m.root.unmount(); document.body.innerHTML = '';
+
+    await editAndLeave();
+    m = await mount();
+    expect(m.text()).toContain(NOTE);
+    await type(input(m), '190');
+    expect(m.text()).not.toContain(NOTE);
+    m.root.unmount(); document.body.innerHTML = '';
+
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => {
+      const rule = { ...RULES.find((r) => r.id === id)!, ...ch, version: 2 } as GovernanceRule;
+      api.saved[id] = rule;
+      return { rule };
+    });
+    await editAndLeave('150');
+    m = await mount();
+    expect(m.text()).toContain(NOTE);
+    await m.click(m.button('Save'));
+    expect(m.text()).not.toContain(NOTE);
+    m.root.unmount();
+  });
+
   it('with the rules slow to load, the saved edit is untouched until they arrive, then restored', async () => {
     await editAndLeave();
     let open!: () => void;
