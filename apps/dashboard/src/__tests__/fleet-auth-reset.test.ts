@@ -228,3 +228,21 @@ it('a ping that migrates legacy credentials for the same fleet changes nothing',
   expect(reload).not.toHaveBeenCalled();
   expect(auth.status).toBe('authenticated');
 });
+
+it('a ping while a verdict is pending does not show the page again; it checks once the verdict is in', async () => {
+  await mount();
+  let answer!: (r: Response) => void;
+  server.verdict = () => new Promise((resolve) => { answer = resolve; });
+  await act(async () => { auth.resetSession(); }); await flush();
+  expect(auth.status).toBe('checking');
+  const gets = server.calls.filter((c) => c === 'GET').length;
+  await ping(); // another tab: the session still reads as fleet A
+  expect(auth.status).toBe('checking');
+  expect(el.textContent).not.toContain('fleet-a-agent');
+  expect(server.calls.filter((c) => c === 'GET').length).toBe(gets);
+  server.session = null; server.signedIn = false;
+  await act(async () => answer(json({ cleared: true }))); await flush();
+  // The waiting check ran after the verdict, and agrees: signed out.
+  expect(server.calls.filter((c) => c === 'GET').length).toBe(gets + 1);
+  expect(auth.status).toBe('unauthenticated');
+});

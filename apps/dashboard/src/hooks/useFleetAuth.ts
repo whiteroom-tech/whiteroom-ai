@@ -148,6 +148,9 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
   useEffect(() => { shownFleet.current = fleetId; }, [fleetId]);
   // One verdict at a time: a page can hit several auth errors in one poll.
   const resetting = useRef(false);
+  // A session check (a ping, Try again) that came while a verdict was pending: it
+  // waits, so it can't show the page again before the verdict says whether to.
+  const checkWaiting = useRef(false);
 
   /** This browser now holds a different fleet's session: start the tab fresh. */
   const switchedFleet = useCallback(() => {
@@ -201,6 +204,7 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
         signedOut('signedIn' in verdict && verdict.signedIn === false ? 'sign_in' : 'setup', message);
         broadcastAuthChange();
       } else if (verdict.fleetId !== expectFleetId) {
+        checkWaiting.current = false; // the reload checks afresh
         switchedFleet();
       } else {
         // Same fleet, session fine: the refusal was about something else.
@@ -208,7 +212,11 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
         setRetryableError(REFUSED_MESSAGE);
         setStatus('unauthenticated');
       }
-    })().finally(() => { resetting.current = false; });
+    })().finally(() => {
+      resetting.current = false;
+      // A check that waited runs now, against the session as the verdict left it.
+      if (checkWaiting.current) { checkWaiting.current = false; setAttempt((a) => a + 1); }
+    });
   }, [signedOut, switchedFleet]);
 
   // Bootstrap: migrate legacy localStorage creds into the cookie, else ask
@@ -218,6 +226,7 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
     let cancelled = false;
 
     async function bootstrap() {
+      if (resetting.current) { checkWaiting.current = true; return; }
       const legacy = getFleetCredentials();
 
       if (legacy.fleetToken) {
