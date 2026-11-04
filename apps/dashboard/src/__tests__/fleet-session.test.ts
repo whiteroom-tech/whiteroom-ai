@@ -367,6 +367,18 @@ describe('POST /api/fleet/session/recheck', () => {
     expect(setCalls).toHaveLength(0);
   });
 
+  it('no cookie, and the engine refuses a linked row\'s token: cleared, with signedIn from the account itself', async () => {
+    // A row from before fleet ids were stored, whose token the engine now rejects:
+    // the lookup answers 401 without signedIn, so the route asks the account.
+    mockGetUserFleets.mockResolvedValue([{ id: '1', fleet_token: 'ft-old', fleet_id: null, label: 'o', created_at: '' }]);
+    mockTokenLogin.mockRejectedValue(new WhiteRoomApiError('Unauthorized', 401));
+    session.current = { user: { id: 'u-bob' } };
+    expect(await (await RECHECK()).json()).toEqual({ cleared: true, signedIn: true });
+    session.current = null;
+    expect(await (await RECHECK()).json()).toEqual({ cleared: true, signedIn: false });
+    expect(setCalls).toHaveLength(0);
+  });
+
   it('a plain DELETE still just clears (sign-out is unchanged)', async () => {
     jar.set('wr_fleet_auth', 'ft-a');
     mockTokenLogin.mockResolvedValue({ success: true, fleetId: 'fleet-a' });
