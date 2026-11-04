@@ -68,6 +68,16 @@ export function runsWindow(view: RunsView, now: number = Date.now()): { fromDay:
   return runsDays(view.range, now);
 }
 
+/**
+ * A view's window as resolved now, with the zone that resolved it: "today"
+ * means another day after midnight or in another zone, so data is matched to
+ * the window it was read for by this key, never by the relative pick.
+ */
+export function windowKey(view: RunsView, now: number = Date.now()): string {
+  const d = runsWindow(view, now);
+  return `${d.fromDay}|${d.toDay}|${viewerTimeZone()}`;
+}
+
 /** Whole days from `a` to `b` (b − a). */
 export function daysBetween(a: string, b: string): number {
   return zoneDaysBetween(a, b);
