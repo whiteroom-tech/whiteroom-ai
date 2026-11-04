@@ -458,3 +458,36 @@ describe('review follow-ups: deadline, refusals, error labels', () => {
     log.mockRestore();
   });
 });
+
+describe('a lock connection that drops mid-work', () => {
+  const PAST = new Date(Date.now() - 86_400_000).toISOString();
+  const onPro = () => account({ sub: { plan: 'pro', status: 'active', plan_override: null, stripe_customer_id: 'cus_1' }, trialEndsAt: PAST });
+  const delayedRows = () => mocks.query.mock.calls.filter((c) => String(c[0]).includes("'unacknowledged_push'"));
+  const drop = () => lock.errorHandlers.forEach((h) => h(new Error('terminating connection due to administrator command')));
+
+  it('dropped before the push: nothing is sent, and it reports not delivered', async () => {
+    onPro();
+    const result = await withUserEntitlementLock('u1', async (push) => { drop(); return push(); });
+    expect(result).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(delayedRows()).toHaveLength(0); // never sent, so nothing can land late; the pending row returns it
+  });
+
+  it('dropped while the push is in flight: counted as unacknowledged, so the delayed re-push is queued', async () => {
+    onPro();
+    let answer!: (r: Response) => void;
+    fetchMock.mockImplementationOnce(() => new Promise<Response>((r) => { answer = r; }));
+    const result = withUserEntitlementLock('u1', (push) => push());
+    for (let i = 0; i < 40; i++) await Promise.resolve();
+    drop();
+    answer(new Response('{}', { status: 200 })); // the engine even said yes: order is still unknown
+    expect(await result).toBe(false);
+    expect(delayedRows()).toHaveLength(1);
+  });
+
+  it('a lock that stays up: pushes as normal', async () => {
+    onPro();
+    expect(await withUserEntitlementLock('u1', (push) => push())).toBe(true);
+    expect(delayedRows()).toHaveLength(0);
+  });
+});

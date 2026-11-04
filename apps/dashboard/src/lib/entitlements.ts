@@ -263,9 +263,11 @@ export async function withUserEntitlementLock<T>(userId: string, fn: (push: () =
     const lock = lockClient();
     // A held connection that drops (a Cloud SQL restart, a proxy reset) emits
     // 'error'; unheard, that's an uncaught exception that takes the instance down.
-    // Postgres releases the lock with the connection; the failing query rejects.
-    lock.on('error', () => console.error('[entitlements] lock connection failed'));
-    return await holdLock(lock, userId, deadline, fn);
+    // Postgres releases the lock with the connection, so from then on this
+    // caller no longer holds it: the push checks `held` (below).
+    const held = { lost: false };
+    lock.on('error', () => { held.lost = true; console.error('[entitlements] lock connection failed'); });
+    return await holdLock(lock, userId, deadline, held, fn);
   } finally {
     release();
   }
@@ -279,7 +281,7 @@ class LockUnavailableError extends Error {
   }
 }
 
-async function holdLock<T>(lock: ReturnType<typeof lockClient>, userId: string, deadline: number, fn: (push: () => Promise<boolean>) => Promise<T>): Promise<T> {
+async function holdLock<T>(lock: ReturnType<typeof lockClient>, userId: string, deadline: number, held: { lost: boolean }, fn: (push: () => Promise<boolean>) => Promise<T>): Promise<T> {
   try {
     try {
       await lock.connect();
@@ -291,7 +293,7 @@ async function holdLock<T>(lock: ReturnType<typeof lockClient>, userId: string, 
       throw new LockUnavailableError(err instanceof Error ? err.message : 'unknown error');
     }
     try {
-      return await fn(() => pushEntitlements(userId));
+      return await fn(() => pushEntitlements(userId, held));
     } finally {
       await lock.query(`SELECT pg_advisory_unlock(hashtext($1))`, [`entitlements:${userId}`]).catch(() => {});
     }
@@ -366,8 +368,12 @@ export async function syncEntitlementsToEngine(userId: string): Promise<boolean>
   }
 }
 
-/** The push itself. Only under the user's entitlement lock (withUserEntitlementLock). */
-async function pushEntitlements(userId: string): Promise<boolean> {
+/**
+ * The push itself. Only under the user's entitlement lock (withUserEntitlementLock),
+ * and only while it is still held: `held.lost` means the lock connection dropped,
+ * so Postgres released the lock and another push may be running.
+ */
+async function pushEntitlements(userId: string, held: { lost: boolean }): Promise<boolean> {
   const secret = process.env.WR_ENTITLEMENT_SYNC_SECRET;
   if (!secret) {
     console.warn('[entitlements] WR_ENTITLEMENT_SYNC_SECRET unset — skipping engine sync');
@@ -430,6 +436,10 @@ async function pushEntitlements(userId: string): Promise<boolean> {
     return false;
   };
 
+  // Lost before sending: don't send. Not delivered, so the caller's pending
+  // outbox row brings it back under a fresh lock.
+  if (held.lost) { console.error('[entitlements] lock lost before the push; not sent'); return false; }
+
   try {
     const res = await fetch(`${PROXY_URL}/internal/entitlements`, {
       method: 'POST',
@@ -438,6 +448,10 @@ async function pushEntitlements(userId: string): Promise<boolean> {
       headers: { 'Content-Type': 'application/json', 'x-wr-sync-secret': secret },
       body: JSON.stringify(payload),
     });
+    // Lost while it was in flight: another push may have overlapped it, so its
+    // order isn't known. Count it as unacknowledged: the delayed re-push sends
+    // the current state after anything still in flight has landed.
+    if (held.lost) { console.error('[entitlements] lock lost during the push'); return sentUnacknowledged(); }
     if (!res.ok) {
       console.error(`[entitlements] engine sync failed: HTTP ${res.status}`);
       return res.status >= 500 ? sentUnacknowledged() : false;
