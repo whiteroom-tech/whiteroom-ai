@@ -89,8 +89,9 @@ async function handle(event: Stripe.Event): Promise<void> {
       const subscriptionId =
         typeof session.subscription === 'string' ? session.subscription : session.subscription?.id;
       if (!subscriptionId) return;
-      // Read once to learn whose it is; applySubscription reads it again under the lock.
-      await applySubscription(await stripe().subscriptions.retrieve(subscriptionId));
+      // Whose it is comes from the session's customer (recorded when checkout
+      // created it); the subscription itself is read under the lock, once.
+      await applySubscription({ id: subscriptionId, customer: session.customer, metadata: session.metadata ?? {} } as Stripe.Subscription);
       return;
     }
     case 'customer.subscription.created':

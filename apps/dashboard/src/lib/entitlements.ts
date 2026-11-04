@@ -254,13 +254,23 @@ export async function markOutboxDelivered(userId: string, upToId: number | strin
  */
 export async function withUserEntitlementLock<T>(userId: string, fn: (push: () => Promise<boolean>) => Promise<T>): Promise<T> {
   // At most LOCK_CONNECTIONS of these connections per instance: a burst of
-  // webhooks waits here, holding nothing, rather than opening one each.
-  const release = await lockSlot();
-  const lock = lockClient();
-  // A held connection that drops (a Cloud SQL restart, a proxy reset) emits
-  // 'error'; unheard, that's an uncaught exception that takes the instance down.
-  // Postgres releases the lock with the connection; the failing query rejects.
-  lock.on('error', () => console.error('[entitlements] lock connection failed'));
+  // webhooks waits here, holding nothing, rather than opening one each. The
+  // wait is bounded like the lock's own (statement_timeout), so a slow engine
+  // or a busy user makes others fail fast (a retry), never hang.
+  const release = await lockSlot(LOCK_SLOT_WAIT_MS);
+  try {
+    const lock = lockClient();
+    // A held connection that drops (a Cloud SQL restart, a proxy reset) emits
+    // 'error'; unheard, that's an uncaught exception that takes the instance down.
+    // Postgres releases the lock with the connection; the failing query rejects.
+    lock.on('error', () => console.error('[entitlements] lock connection failed'));
+    return await holdLock(lock, userId, fn);
+  } finally {
+    release();
+  }
+}
+
+async function holdLock<T>(lock: ReturnType<typeof lockClient>, userId: string, fn: (push: () => Promise<boolean>) => Promise<T>): Promise<T> {
   try {
     await lock.connect();
     await lock.query(`SELECT pg_advisory_lock(hashtext($1))`, [`entitlements:${userId}`]);
@@ -271,23 +281,39 @@ export async function withUserEntitlementLock<T>(userId: string, fn: (push: () =
     }
   } finally {
     await lock.end().catch(() => {});
-    release();
   }
 }
 
 /** Lock connections open at once, per instance (Cloud SQL's limit is shared with the pool). */
 const LOCK_CONNECTIONS = 3;
+/** How long to wait for one: the same as waiting for the lock itself (db.ts statement_timeout). */
+const LOCK_SLOT_WAIT_MS = 15_000;
 let lockSlotsInUse = 0;
 const lockSlotQueue: Array<() => void> = [];
 
-/** Waits for one of LOCK_CONNECTIONS; resolves with its release. First come, first served. */
-function lockSlot(): Promise<() => void> {
+/**
+ * Waits for one of LOCK_CONNECTIONS, first come first served, and resolves
+ * with its release; rejects after `waitMs`, as a lock wait does.
+ */
+function lockSlot(waitMs: number): Promise<() => void> {
+  let released = false;
   const release = () => {
+    if (released) return;
+    released = true;
     const next = lockSlotQueue.shift();
     if (next) next(); else lockSlotsInUse--;
   };
   if (lockSlotsInUse < LOCK_CONNECTIONS) { lockSlotsInUse++; return Promise.resolve(release); }
-  return new Promise((resolve) => lockSlotQueue.push(() => resolve(release)));
+  return new Promise((resolve, reject) => {
+    // The slot is handed over (lockSlotsInUse unchanged) by the one released.
+    const take = () => { clearTimeout(timer); resolve(release); };
+    const timer = setTimeout(() => {
+      const i = lockSlotQueue.indexOf(take);
+      if (i >= 0) lockSlotQueue.splice(i, 1);
+      reject(new Error('timed out waiting for an entitlement lock connection'));
+    }, waitMs);
+    lockSlotQueue.push(take);
+  });
 }
 
 /**

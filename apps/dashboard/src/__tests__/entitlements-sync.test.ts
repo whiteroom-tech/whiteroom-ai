@@ -292,3 +292,110 @@ describe('the lock connection itself', () => {
     expect(lock.open).toBe(0);
   });
 });
+
+describe('waiting for a lock connection is bounded', () => {
+  it('a caller that can\'t get one of the 3 connections in 15s fails fast; the slots still come back', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const gates: Array<() => void> = [];
+      const held = ['a', 'b', 'c'].map((u) => withUserEntitlementLock(`u-${u}`, () => new Promise<void>((r) => { gates.push(r); })));
+      for (let i = 0; i < 40; i++) await Promise.resolve();
+      expect(lock.open).toBe(3);
+      const late = withUserEntitlementLock('u-d', async () => 'ran');
+      const outcome = late.then(() => 'ran', (e: Error) => e.message);
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(await outcome).toBe('timed out waiting for an entitlement lock connection');
+      // The waiter that gave up took no slot: once the three finish, a new caller gets one.
+      gates.forEach((g) => g());
+      await Promise.all(held);
+      expect(await withUserEntitlementLock('u-e', async () => 'ran')).toBe('ran');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('syncEntitlementsToEngine turns that into "not delivered", never a throw', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const gates: Array<() => void> = [];
+      const held = ['a', 'b', 'c'].map((u) => withUserEntitlementLock(`u-${u}`, () => new Promise<void>((r) => { gates.push(r); })));
+      for (let i = 0; i < 40; i++) await Promise.resolve();
+      const result = syncEntitlementsToEngine('u-d');
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(await result).toBe(false);
+      gates.forEach((g) => g());
+      await Promise.all(held);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+// The delayed re-push's whole life, through the real push code and the real
+// sweep route, over an in-memory outbox that applies the not_before rules only
+// where the SQL states them (so a regression in that SQL changes the outcome).
+// The same statements were run against staging Postgres when 013 was applied.
+describe('the delayed re-push, end to end', () => {
+  const PAST = new Date(Date.now() - 86_400_000).toISOString();
+  type Row = { id: number; user_id: string; reason: string; not_before: number | null; delivered_at: number | null };
+
+  it('is queued once, isn\'t marked by a newer push, isn\'t swept early, and is swept and marked once due', async () => {
+    const { POST: sweep } = await import('@/app/api/internal/entitlement-sweep/route');
+    const rows: Row[] = [];
+    let nextId = 1;
+    const due = (r: Row, sql: string) => !sql.includes('not_before IS NULL OR not_before <= now()') || r.not_before === null || r.not_before <= Date.now();
+    account({ sub: { plan: 'pro', status: 'active', plan_override: null, stripe_customer_id: 'cus_1' }, trialEndsAt: PAST });
+    const accountQuery = mocks.query.getMockImplementation()!;
+    mocks.query.mockImplementation(async (sql: string, params: unknown[] = []) => {
+      if (sql.includes("'unacknowledged_push'")) {
+        const [user, mins] = params as [string, number];
+        const waiting = sql.includes('NOT EXISTS') && sql.includes('not_before > now()')
+          && rows.some((r) => r.user_id === user && r.delivered_at === null && r.not_before !== null && r.not_before > Date.now());
+        if (!waiting) rows.push({ id: nextId++, user_id: user, reason: 'unacknowledged_push', not_before: Date.now() + mins * 60_000, delivered_at: null });
+        return { rows: [], rowCount: waiting ? 0 : 1 };
+      }
+      if (sql.includes('SELECT user_id, max(id)')) {
+        const pending = rows.filter((r) => r.delivered_at === null && due(r, sql));
+        const users = [...new Set(pending.map((r) => r.user_id))];
+        return { rows: users.map((u) => ({ user_id: u, max_id: Math.max(...pending.filter((r) => r.user_id === u).map((r) => r.id)) })) };
+      }
+      if (sql.includes('UPDATE entitlement_outbox SET delivered_at')) {
+        const [user, upTo] = params as [string, number];
+        for (const r of rows) if (r.user_id === user && r.id <= Number(upTo) && r.delivered_at === null && due(r, sql)) r.delivered_at = Date.now();
+        return { rows: [], rowCount: 1 };
+      }
+      if (sql.includes('DELETE FROM entitlement_outbox')) return { rows: [], rowCount: 0 };
+      return accountQuery(sql, params);
+    });
+    const runSweep = async () => (await sweep(new Request('https://app.test/api/internal/entitlement-sweep', { method: 'POST', headers: { 'x-wr-sync-secret': 'secret' } }))).json();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-11-04T12:00:00Z'));
+      fetchMock.mockResolvedValue(new Response('down', { status: 503 }));
+      expect(await syncEntitlementsToEngine('u1')).toBe(false);
+      expect(await syncEntitlementsToEngine('u1')).toBe(false); // a second failure: still one waiting row
+      expect(rows.filter((r) => r.reason === 'unacknowledged_push')).toHaveLength(1);
+      const delayed = rows[0];
+      // A minute later a webhook's change lands (its own row) and its push succeeds.
+      vi.setSystemTime(new Date('2026-11-04T12:01:00Z'));
+      rows.push({ id: nextId++, user_id: 'u1', reason: 'subscription_active', not_before: null, delivered_at: null });
+      fetchMock.mockResolvedValue(new Response('{}', { status: 200 }));
+      expect(await syncEntitlementsToEngine('u1')).toBe(true);
+      await markOutboxDelivered('u1', rows.at(-1)!.id);
+      expect(rows.at(-1)!.delivered_at).not.toBeNull();
+      expect(delayed.delivered_at).toBeNull(); // not due: a newer push can't mark it
+      // The sweep before it's due picks nothing.
+      const pushesBefore = fetchMock.mock.calls.length;
+      expect(await runSweep()).toEqual({ swept: 0 });
+      expect(fetchMock.mock.calls.length).toBe(pushesBefore);
+      // Once due, the sweep re-pushes the current state and marks it.
+      vi.setSystemTime(new Date('2026-11-04T12:06:30Z'));
+      expect(await runSweep()).toEqual({ swept: 1, pending: 1 });
+      expect(fetchMock.mock.calls.length).toBe(pushesBefore + 1);
+      expect(JSON.parse(fetchMock.mock.calls.at(-1)![1].body).fleets[0].plan).toBe('pro');
+      expect(delayed.delivered_at).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

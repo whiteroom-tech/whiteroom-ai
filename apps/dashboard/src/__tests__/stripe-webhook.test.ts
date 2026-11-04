@@ -335,10 +335,18 @@ describe('stripe webhook: order, replacement and delivery', () => {
     expect((upserts()[0][1] as unknown[])[7]).toEqual(['active', 'trialing', 'past_due']);
   });
 
-  it('checkout completion applies the subscription as Stripe has it now', async () => {
+  it('checkout completion finds the user by the session\'s customer and reads the subscription once, under the lock', async () => {
     mocks.current = sub('active');
-    expect((await event('checkout.session.completed', { subscription: 'sub_1' })).status).toBe(200);
+    // The customer checkout was created for, recorded against the user then (lib/billing ensureCustomer).
+    mocks.query.mockImplementation(async (sql: string) => {
+      const q = String(sql);
+      if (q.includes('WHERE stripe_customer_id = $1')) return { rowCount: 1, rows: [{ user_id: 'u1' }] };
+      return q.includes('RETURNING id') ? { rowCount: 1, rows: [{ id: 41 }] } : { rowCount: 1, rows: [] };
+    });
+    expect((await event('checkout.session.completed', { subscription: 'sub_1', customer: 'cus_1' })).status).toBe(200);
+    expect(mocks.retrieve).toHaveBeenCalledTimes(1);
     expect(mocks.retrieve).toHaveBeenCalledWith('sub_1');
+    expect((upserts()[0][1] as unknown[])[0]).toBe('u1');
     expect((upserts()[0][1] as unknown[])[4]).toBe('active');
   });
 });
