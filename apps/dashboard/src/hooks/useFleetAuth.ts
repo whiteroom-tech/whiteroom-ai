@@ -195,6 +195,8 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
       }
       if (!verdict) {
         // The server couldn't say. Nothing was cleared: keep the session.
+        // Its Try again re-checks, so a check that waited is dropped.
+        checkWaiting.current = false;
         setRetryableError(RETRYABLE_MESSAGE);
         setStatus('unauthenticated');
       } else if (verdict.cleared) {
@@ -208,13 +210,15 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
         switchedFleet();
       } else {
         // Same fleet, session fine: the refusal was about something else.
-        // Not straight back in, or the page would hit the same refusal again.
+        // Not straight back in, or the page would hit the same refusal again;
+        // so a check that waited is dropped too (Try again is the way back).
+        checkWaiting.current = false;
         setRetryableError(REFUSED_MESSAGE);
         setStatus('unauthenticated');
       }
     })().finally(() => {
       resetting.current = false;
-      // A check that waited runs now, against the session as the verdict left it.
+      // A check that waited runs now (only after a sign-out), against the session as the verdict left it.
       if (checkWaiting.current) { checkWaiting.current = false; setAttempt((a) => a + 1); }
     });
   }, [signedOut, switchedFleet]);

@@ -246,3 +246,20 @@ it('a ping while a verdict is pending does not show the page again; it checks on
   expect(server.calls.filter((c) => c === 'GET').length).toBe(gets + 1);
   expect(auth.status).toBe('unauthenticated');
 });
+
+it.each([
+  ['same fleet, session fine', () => json({ cleared: false, fleetId: 'fleet-a' }), /still signed in/],
+  ['server unreachable', () => json({ error: 'engine_unreachable' }, 502), /session was kept/],
+] as const)('a ping while a verdict is pending is dropped when the verdict is "%s": Try again stays up', async (_name, answerWith, message) => {
+  await mount();
+  let answer!: (r: Response) => void;
+  server.verdict = () => new Promise((resolve) => { answer = resolve; });
+  await act(async () => { auth.resetSession(); }); await flush();
+  await ping();
+  const gets = server.calls.filter((c) => c === 'GET').length;
+  await act(async () => answer(answerWith())); await flush(); await flush();
+  expect(auth.status).toBe('unauthenticated');
+  expect(auth.retryableError).toMatch(message);
+  expect(server.calls.filter((c) => c === 'GET').length).toBe(gets);
+  expect(rechecks()).toBe(1);
+});
