@@ -12,7 +12,7 @@ import type { GovernanceMode, GovernanceResponse } from '@/lib/whiteroom/types';
 import Link from 'next/link';
 import { Banner, Button, FONT_MONO, Hint, SegmentedControl } from '@whiteroom/ui';
 import type {
-  GovernanceHistoryEntry, GovernanceRule, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, SpendCapParams, ToolListParams,
+  GovernanceHistoryEntry, GovernanceRule, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, SensitiveDataParams, SpendCapParams, ToolListParams,
 } from '@/lib/whiteroom/types';
 import { RESPONSE_LABEL, RULE_LABELS } from '@/lib/governance';
 import { actionAvailableFrom, canAct, keywordBlockCheck, stopCheck } from '@/lib/controls-guard';
@@ -21,13 +21,14 @@ import { addDays, dayKey, formatInZone } from '@/lib/zone-time';
 import type { ControlActor } from '@/lib/control-actors';
 import { ROUTES } from '@/lib/routes';
 import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
-import { AGENT_NOTE, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, MODE_CHOICES, responseChoices, sendsAlert, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
+import { AGENT_NOTE, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, MODE_CHOICES, responseChoicesFor, responseOption, sendsAlert, SENSITIVE_KINDS, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
 import { Chip, field, GroupPicker, InlineSelect, MODEL_GROUPS, NumberField, ScopeField, TOOL_GROUPS } from './pickers';
 
 /** When each rule acts; Keywords depends on where it looks (KEYWORD_ACTS), Loop breaker on its number (loopActs). */
 const ACTS: Record<Exclude<GovernanceRule['ruleType'], 'keyword' | 'loop_breaker'>, string> = {
   spend_cap: 'Acts before the next call.', model_allowlist: 'Acts before the call.',
   tool_list: 'Acts before the agent gets the tool call.', call_rate: 'Acts on the call over the limit.',
+  sensitive_data: 'Acts before the call reaches the model.',
 };
 const KEYWORD_ACTS: Record<KeywordWhere, string> = {
   incoming: 'Acts before the call reaches the model.',
@@ -42,6 +43,10 @@ const WHEN_NOTES: Partial<Record<GovernanceRule['ruleType'], string>> = {
   keyword: 'Whole words, any case. Images and PDFs aren’t checked. The matched text is never stored, and the agent isn’t told which keyword matched.',
   tool_list: 'In Enforce, a streamed call is checked before it streams, so its text arrives all at once. In Watch, streamed calls aren’t checked.',
 };
+/** Under a Sensitive data rule's checkboxes, always shown: what it can't see. */
+const SENSITIVE_NOTE = 'Checked before anything reaches your model provider. Names, addresses, images and files aren’t checked.';
+/** Who, for Sensitive data: agent names come from the agent, so a list of agents isn't a security boundary. */
+const SELF_NAMED_NOTE = 'Agents name themselves, so to be sure every call is checked, use All agents.';
 const REPLY_NOTE = 'To block a streamed reply, it’s checked whole first, so its text arrives all at once. Replies on Bedrock can’t be checked yet.';
 const help = { margin: 0, fontSize: 'var(--fs-sm)', lineHeight: 1.5, color: 'var(--tx2)' } as const;
 const usd = (n: number) => `$${n < 10 ? n.toFixed(2) : Math.round(n).toLocaleString('en-US')}`;
@@ -122,7 +127,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
       || keywordBlockCheck(rule, { mode: 'enforce', response: o, params: asRule.params }, ruleHistory).kind === 'blocked';
     return needs ? actionAvailableFrom(rule.id, ruleHistory, rule.mode) : null;
   };
-  const actions = responseChoices(govV1, rule.response ?? 'block', draft.response);
+  const actions = responseChoicesFor(rule.ruleType, govV1, rule.response ?? 'block', draft.response);
   const nextOpen = Math.min(...actions.map(waitUntil).filter((t): t is number => typeof t === 'number'));
   useEffect(() => {
     if (!Number.isFinite(nextOpen)) return;
@@ -147,7 +152,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
         {/* On a phone the editor is its own page: back to the list on the left, the mode on the right. */}
         <button type="button" className="gov-edhead__back" onClick={onClose}>‹ Controls</button>
         <h2 id="ctl-ed-title" tabIndex={-1} className="gov-edhead__title ctl-ed-title">{RULE_LABELS[rule.ruleType]}</h2>
-        <span className={`gov-edhead__mode${draft.mode === 'enforce' && draft.response !== 'notify' ? ' is-on' : ''}`}>{modeTagText(draft)}{dirty ? ' · unsaved' : ''}</span>
+        <span className={`gov-edhead__mode${draft.mode === 'enforce' && draft.response !== 'notify' && draft.response !== 'redact' ? ' is-on' : ''}`}>{modeTagText(draft)}{dirty ? ' · unsaved' : ''}</span>
         <Button variant="ghost" size={28} onClick={onClose} className="gov-edhead__close">Close</Button>
       </div>
       <p className="ctl-status">{status}</p>
@@ -233,6 +238,27 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
             </>}
           </>
         )}
+        {rule.ruleType === 'sensitive_data' && (
+          <>
+            <span style={{ fontSize: 'var(--fs-md)' }}>A call holds any of:</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {SENSITIVE_KINDS.map(({ kind, label }) => {
+                const detect = (p as SensitiveDataParams).detect;
+                const on = detect.includes(kind);
+                return (
+                  <label key={kind} style={{ display: 'inline-flex', alignItems: 'center', gap: 10, fontSize: 'var(--fs-md)', cursor: 'pointer', alignSelf: 'flex-start', minHeight: 32 }}>
+                    <input type="checkbox" checked={on}
+                      // In the engine's order, so a saved rule and its draft compare equal.
+                      onChange={(e) => setParams({ detect: SENSITIVE_KINDS.map((k) => k.kind).filter((k) => (k === kind ? e.target.checked : detect.includes(k))) })}
+                      style={{ width: 16, height: 16, margin: 0, accentColor: 'var(--brand)' }} />
+                    {label}
+                  </label>
+                );
+              })}
+            </div>
+            <p style={help}>{SENSITIVE_NOTE}</p>
+          </>
+        )}
         {rule.ruleType === 'tool_list' && (
           <>
             <span style={{ fontSize: 'var(--fs-md)' }}>When an agent is about to run any of these tools:</span>
@@ -247,7 +273,8 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {/* Narrowing a rule for all agents: Save asks whether to keep it for everyone and add a copy, or move it. */}
         <p className="gov-eyebrow ctl-q">Who{rule.appliesTo === 'all' && draft.appliesTo !== 'all' && draft.appliesTo.length > 0
-          && <Hint text="When you save, you’ll choose: keep this rule for everyone and add a copy, or move it." size={12} />}</p>
+          && <Hint text="When you save, you’ll choose: keep this rule for everyone and add a copy, or move it." size={12} />}
+          {rule.ruleType === 'sensitive_data' && <Hint text={SELF_NAMED_NOTE} size={12} />}</p>
         <ScopeField scope={draft.appliesTo} agents={agents} onChange={(appliesTo) => set({ appliesTo })} />
       </section>
 
@@ -267,7 +294,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
               style={{ ...field, padding: '0 8px', cursor: 'pointer', maxWidth: '100%' }}>
               {actions.map((r) => {
                 const wait = waitFor(r);
-                return <option key={r} value={r} disabled={!!wait}>{`${RESPONSE_LABEL[r]}${wait ? ` · ${wait}` : ''}`}</option>;
+                return <option key={r} value={r} disabled={!!wait}>{`${responseOption(rule.ruleType, r, RESPONSE_LABEL)}${wait ? ` · ${wait}` : ''}`}</option>;
               })}
             </select>
           </label>
@@ -303,7 +330,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
         <pre style={{ margin: '10px 0 0', background: 'var(--sunk)', borderRadius: 7, padding: 12, fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', lineHeight: 1.6, color: 'var(--tx2)', overflowX: 'auto' }}>
           {agentGets({ ruleType: rule.ruleType, params: asRule.params, response: draft.response })}
         </pre>
-        {draft.response !== 'notify' && <p style={{ ...help, marginTop: 8 }}>{AGENT_NOTE[rule.ruleType]}</p>}
+        {(draft.response !== 'notify' || rule.ruleType === 'sensitive_data') && <p style={{ ...help, marginTop: 8 }}>{AGENT_NOTE[rule.ruleType]}</p>}
       </details>
 
       <details className="gov-details">

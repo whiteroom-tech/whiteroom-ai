@@ -26,6 +26,7 @@ let rules: GovernanceRule[] = state === 'empty' ? [] : [
   { ...base, id: 'r5', version: 1, ruleType: 'keyword', mode: 'watch', response: 'block', appliesTo: ['lead-agent'], params: { keywords: ['password'], where: 'incoming', wholeWord: true } },
   { ...base, id: 'r6', version: 1, ruleType: 'call_rate', mode: 'off', response: 'block', appliesTo: ['lead-agent'], params: { maxCalls: 60 } },
   { ...base, id: 'r7', version: 1, ruleType: 'tool_list', mode: 'off', response: 'block', appliesTo: 'all', params: { blockedTools: [] } },
+  { ...base, id: 'r12', version: 1, ruleType: 'sensitive_data', mode: 'enforce', response: 'redact', appliesTo: 'all', params: { detect: ['credentials', 'contact', 'ids'] } },
 ];
 const AGENTS = ['code-reviewer', 'contract-summarizer', 'invoice-reconciler', 'lead-agent', 'market-researcher', 'ops-scheduler', 'support-triage'];
 const history = state === 'empty' ? [] : [
@@ -50,8 +51,9 @@ function engine(body: Record<string, unknown>): unknown {
       const defaults: Record<string, GovernanceRule['params']> = {
         spend_cap: { dailyCap: 50, scope: 'day', unit: 'dollars' }, loop_breaker: { threshold: 100, scope: 'run', ignoreTools: [] },
         model_allowlist: { allowedModels: [] }, tool_list: { blockedTools: [] }, call_rate: { maxCalls: 60 }, keyword: { keywords: [], where: 'incoming', wholeWord: true },
+        sensitive_data: { detect: ['credentials', 'contact', 'ids'] },
       };
-      const rule = { ...base, changedAt: new Date().toISOString(), id: `n${++version}`, version: 1, ruleType: type, mode: 'watch', response: 'block', appliesTo: (body.applies_to as GovernanceRule['appliesTo']) ?? 'all', params: defaults[type] } as GovernanceRule;
+      const rule = { ...base, changedAt: new Date().toISOString(), id: `n${++version}`, version: 1, ruleType: type, mode: 'watch', response: type === 'sensitive_data' ? 'redact' : 'block', appliesTo: (body.applies_to as GovernanceRule['appliesTo']) ?? 'all', params: defaults[type] } as GovernanceRule;
       rules = [...rules, rule];
       return { rule };
     }

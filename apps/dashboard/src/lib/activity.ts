@@ -15,6 +15,7 @@ import type { AuditEntry, ToolDetail } from '@/lib/whiteroom/types';
 import { blockedByPhrase, occurrences, ruleLabel } from '@/lib/governance';
 import { fmtCount, HOUR_MS, plural, timeAgo } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
+import { MODE_LABEL } from '@/lib/vocab';
 import { addDays, dayKey, formatInZone } from '@/lib/zone-time';
 
 export type { AuditEntry, ToolDetail };
@@ -81,6 +82,7 @@ const EVENT_COPY: Record<string, EventCopy> = {
   agent_resumed: { icon: '▶', tone: 'start', code: 'RES', say: () => 'was resumed' },
   governance_block: { icon: '⛔', tone: 'block', code: 'BLK', say: (e) => `was blocked by ${governancePhrase(e)}` },
   governance_would_block: { icon: '⚠', tone: 'wouldBlock', code: 'W/B', say: (e) => `would have been blocked by ${governancePhrase(e)}` },
+  governance_sensitive_data: { icon: '🛡', tone: 'idle', code: 'S/D', say: sensitiveDataSay },
   governance_rule_changed: { icon: '⚙', tone: 'idle', code: 'GOV', who: 'Controls', say: (e) => String(e.message ?? `${ruleLabel(e.ruleType)} changed`) },
   // Calls WhiteRoom couldn't tie to an agent while the fleet has Pause/Stop or
   // an Enforce rule on. Fleet-level: there's no agent to name.
@@ -184,6 +186,34 @@ function windowText(e: AuditEntry, style: 'between' | 'range' = 'between'): stri
 }
 
 /** "spend cap (budget exceeded) ×3" — rule, why, and how many calls it stands for. */
+/** The Sensitive data rule's kinds, as its finds are counted: [singular, plural]. */
+const SENSITIVE_WORDS: [key: string, one: string, many: string][] = [
+  ['credential', 'key or password', 'keys or passwords'],
+  ['contact', 'email or phone number', 'emails or phone numbers'],
+  ['ids', 'ID or card number', 'ID or card numbers'],
+];
+
+/** "2 keys or passwords and 1 email or phone number": counts only; the engine never sends what was found. */
+export function sensitiveCounts(counts: unknown): string {
+  const c = counts && typeof counts === 'object' ? counts as Record<string, unknown> : {};
+  const parts = SENSITIVE_WORDS.flatMap(([k, one, many]) => {
+    const n = positiveCount(c[k]);
+    return n === null ? [] : [`${fmtCount(n)} ${n === 1 ? one : many}`];
+  });
+  if (!parts.length) return 'sensitive data';
+  return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0];
+}
+
+/** A governance_sensitive_data event: what was removed (Enforce) or found (Watch), and from whose text. */
+function sensitiveDataSay(e: AuditEntry): string {
+  const n = occurrences(e);
+  const times = n > 1 ? ` ×${n}` : '';
+  const what = sensitiveCounts(e.counts);
+  if (e.mode === 'watch') return `sent ${what} to the model provider (${MODE_LABEL.watch}: nothing removed)${times}`;
+  if (e.source === 'whiteroom') return `had ${what} removed from text WhiteRoom added to its call${times}`;
+  return `had ${what} removed before the call reached the model provider${times}`;
+}
+
 function governancePhrase(e: AuditEntry): string {
   const n = occurrences(e);
   const times = n > 1 ? ` ×${n}` : '';

@@ -15,6 +15,8 @@ import { plural, HOUR_MS } from '@/lib/format';
 export function canAct(rule: Pick<GovernanceRule, 'mode' | 'ruleType' | 'params' | 'response'>): boolean {
   if (rule.mode !== 'enforce') return false;
   if (rule.response === 'notify') return false;
+  // The engine leaves Sensitive data out of fleetHasEnforcingRule: it doesn't make callers name themselves.
+  if (rule.ruleType === 'sensitive_data') return false;
   if (rule.ruleType === 'model_allowlist' && (rule.params as ModelAllowlistParams).allowedModels.length === 0) return false;
   if (rule.ruleType === 'tool_list' && (rule.params as ToolListParams).blockedTools.length === 0) return false;
   if (rule.ruleType === 'keyword' && keywordTotal(rule.params as KeywordParams) === 0) return false;

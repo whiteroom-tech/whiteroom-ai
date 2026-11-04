@@ -6,6 +6,7 @@
 
 import type {
   AuditEntry,
+  GovernanceListResult,
   GovernanceResponse,
   RuleActionCounts,
   RuleActionsResult,
@@ -17,6 +18,15 @@ import { MODE_LABEL, NOTIFY } from './vocab';
 
 export const GOVERNANCE_BLOCK = 'governance_block';
 export const GOVERNANCE_WOULD_BLOCK = 'governance_would_block';
+/** A call the Sensitive data rule cleaned, or found something in (Watch): counts only, never the text. */
+export const GOVERNANCE_SENSITIVE_DATA = 'governance_sensitive_data';
+
+/** A Sensitive data rule's tag while the engine has the rule switched off (its kill switch). */
+export const PAUSED_BY_WHITEROOM = 'Paused by WhiteRoom';
+/** Whether the engine has the Sensitive data rule switched off: those rules then act as Off. */
+export function sensitiveDataPaused(list: Pick<GovernanceListResult, 'sensitiveDataPaused'>): boolean {
+  return list.sensitiveDataPaused === true;
+}
 
 export const RULE_LABELS: Record<GovernanceRuleType, string> = {
   spend_cap: 'Spend cap',
@@ -25,6 +35,7 @@ export const RULE_LABELS: Record<GovernanceRuleType, string> = {
   tool_list: 'Tool list',
   call_rate: 'Call rate',
   keyword: 'Keywords',
+  sensitive_data: 'Sensitive data',
 };
 
 export const REASON_LABELS: Record<string, string> = {
@@ -34,6 +45,7 @@ export const REASON_LABELS: Record<string, string> = {
   tool_not_allowed: 'tool not allowed',
   rate_exceeded: 'too many calls',
   keyword_found: 'keyword found',
+  sensitive_data_found: 'sensitive data found',
 };
 
 /**
@@ -45,6 +57,7 @@ export const REASON_LABELS: Record<string, string> = {
  */
 export function blockedByPhrase(ruleType: unknown, reason: unknown, lower: boolean): string {
   if (ruleType === 'keyword') return 'the Keywords rule';
+  if (ruleType === 'sensitive_data') return 'the Sensitive data rule';
   const label = ruleLabel(ruleType);
   const why = REASON_LABELS[String(reason ?? '')];
   return `${lower ? `the ${label.toLowerCase()}` : label}${why ? ` (${why})` : ''}`;
@@ -109,6 +122,7 @@ export function governanceFromSummary(g: { blocks: number; wouldBlocks: number; 
       tool_list: g.byRule.tool_list ?? emptyTally(),
       call_rate: g.byRule.call_rate ?? emptyTally(),
       keyword: g.byRule.keyword ?? emptyTally(),
+      sensitive_data: g.byRule.sensitive_data ?? emptyTally(),
     },
   };
 }
@@ -119,7 +133,7 @@ export function governanceCounts(entries: AuditEntry[], sinceMs = 0): Governance
     blocks: 0,
     wouldBlocks: 0,
     byAgent: {},
-    byRule: { spend_cap: emptyTally(), loop_breaker: emptyTally(), model_allowlist: emptyTally(), tool_list: emptyTally(), call_rate: emptyTally(), keyword: emptyTally() },
+    byRule: { spend_cap: emptyTally(), loop_breaker: emptyTally(), model_allowlist: emptyTally(), tool_list: emptyTally(), call_rate: emptyTally(), keyword: emptyTally(), sensitive_data: emptyTally() },
   };
   for (const e of entries) {
     if (!isGovernanceDecision(e)) continue;
@@ -185,7 +199,7 @@ export function computeSuggestions(index: PerformanceIndexResult, hourly: FleetH
 
 /** The "then" select, in the Rev 9 words. */
 export const RESPONSE_LABEL: Record<GovernanceResponse, string> = {
-  notify: NOTIFY.option, block: 'Block the call', pause: 'Pause the agent', stop: 'Stop the agent',
+  notify: NOTIFY.option, block: 'Block the call', pause: 'Pause the agent', stop: 'Stop the agent', redact: 'Remove it and send',
 };
 
 /** What each response does, under the select (README › Screen 5). */
@@ -194,6 +208,7 @@ export const RESPONSE_EFFECT: Record<GovernanceResponse, string> = {
   block: 'That one call fails with a plain reason. The agent keeps going.',
   pause: 'Its current run ends. It can’t make calls until someone resumes it, even after a restart.',
   stop: 'The agent refuses every call until someone resumes it, even after a restart. Stop overrides a pause.',
+  redact: 'What it finds is replaced before the call reaches your model provider. The agent keeps going.',
 };
 
 // ── Rule actions (P2.4) ─────────────────────────────────────────────

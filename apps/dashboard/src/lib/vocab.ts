@@ -21,7 +21,7 @@ export const NOTIFY = { option: 'Only alert me', verb: 'alert you', done: 'alert
  * the call. A rule that only alerts never stops a call, so it says Alert only
  * rather than Enforce (the Controls lead line counts it apart too).
  */
-export const ENFORCE_TAG: Record<GovernanceResponse, string> = { block: 'Enforce', pause: 'Enforce · pauses', stop: 'Enforce · stops', notify: NOTIFY.tag };
+export const ENFORCE_TAG: Record<GovernanceResponse, string> = { block: 'Enforce', pause: 'Enforce · pauses', stop: 'Enforce · stops', notify: NOTIFY.tag, redact: 'Enforce · removes' };
 
 /** A rule's mode as its tag reads: Off, Watch, or what it enforces (ENFORCE_TAG). */
 export function modeTagText(rule: { mode: RuleMode; response?: GovernanceResponse }): string {

@@ -124,7 +124,7 @@ const BY_RULE_ID = { gr_allow: acts(0, 60), gr_sc190: acts(0, 59), gr_gone: acts
 const tally = (blocks: number, wouldBlocks: number) => ({ blocks, wouldBlocks });
 const COUNTS: GovernanceCounts = {
   blocks: 0, wouldBlocks: 120,
-  byRule: { spend_cap: tally(0, 59), loop_breaker: tally(0, 0), model_allowlist: tally(0, 60), tool_list: tally(0, 0), call_rate: tally(0, 0), keyword: tally(0, 1) },
+  byRule: { spend_cap: tally(0, 59), loop_breaker: tally(0, 0), model_allowlist: tally(0, 60), tool_list: tally(0, 0), call_rate: tally(0, 0), keyword: tally(0, 1), sensitive_data: tally(0, 0) },
   byAgent: { 'code-reviewer': tally(0, 60), 'lead-agent': tally(0, 59), 'keyword-test': tally(0, 1) },
 };
 

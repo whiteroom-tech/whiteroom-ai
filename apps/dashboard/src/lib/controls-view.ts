@@ -4,7 +4,7 @@
 
 import type {
   CallRateParams, GovernanceMode, GovernanceParams, GovernanceResponse, GovernanceRule, GovernanceRuleType,
-  GovernanceScope, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, RuleActionCounts, SpendCapParams, ToolListParams,
+  GovernanceScope, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, RuleActionCounts, SensitiveDataKind, SensitiveDataParams, SpendCapParams, ToolListParams,
 } from '@/lib/whiteroom/types';
 import { convertSpendCap } from '@/lib/governance';
 import { MODE_LABEL, NOTIFY } from '@/lib/vocab';
@@ -29,7 +29,27 @@ export function keywordFits(keywords: readonly string[]): boolean {
 /** Where a Keywords rule looks, as it reads in a sentence. */
 export const KEYWORD_WHERE: Record<KeywordWhere, string> = { incoming: 'incoming data', replies: 'a model reply', both: 'incoming data or a reply' };
 
-const VERB: Record<GovernanceResponse, string> = { notify: NOTIFY.verb, block: 'block the call', pause: 'pause the agent', stop: 'stop the agent' };
+const VERB: Record<GovernanceResponse, string> = { notify: NOTIFY.verb, block: 'block the call', pause: 'pause the agent', stop: 'stop the agent', redact: 'remove it and send the call' };
+
+/** What a Sensitive data rule looks for, as its checkboxes read, in the engine's order. */
+export const SENSITIVE_KINDS: { kind: SensitiveDataKind; label: string }[] = [
+  { kind: 'credentials', label: 'Keys and passwords' },
+  { kind: 'contact', label: 'Emails and phone numbers' },
+  { kind: 'ids', label: 'ID and card numbers' },
+];
+
+/** A checkbox label mid-sentence: "Keys and passwords" → "keys and passwords"; "ID" stays "ID". */
+const midSentence = (label: string) => (/^[A-Z]{2}/.test(label) ? label : label[0].toLowerCase() + label.slice(1));
+
+/** A Sensitive data rule's kinds in a sentence: "keys and passwords or emails and phone numbers". */
+export function sensitiveKindsText(p: SensitiveDataParams): string {
+  const words = SENSITIVE_KINDS.filter((k) => p.detect.includes(k.kind)).map((k) => midSentence(k.label));
+  return words.length > 1 ? `${words.slice(0, -1).join(', ')} or ${words[words.length - 1]}` : words[0] ?? '';
+}
+
+/** What the rule's notify does: a Sensitive data rule removes the find before it alerts. */
+const verbFor = (ruleType: GovernanceRuleType, response: GovernanceResponse) =>
+  ruleType === 'sensitive_data' && response === 'notify' ? 'remove it, send the call and alert you' : VERB[response];
 
 export const money = (p: SpendCapParams) => (p.unit === 'dollars' ? `$${fmtCount(p.dailyCap)}` : `${fmtCount(p.dailyCap)} tokens`);
 
@@ -40,7 +60,7 @@ export const money = (p: SpendCapParams) => (p.unit === 'dollars' ? `$${fmtCount
  */
 export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'response' | 'alsoNotify'> & { mode?: GovernanceRule['mode'] }): { pre: string; val: string; post: string } {
   const response = rule.response ?? 'block';
-  const does = response === 'block' && rule.alsoNotify ? `block the call and ${NOTIFY.verb}` : VERB[response];
+  const does = response === 'block' && rule.alsoNotify ? `block the call and ${NOTIFY.verb}` : verbFor(rule.ruleType, response);
   const v = rule.mode === undefined || rule.mode === 'enforce' ? does : `it would ${does}`;
   if (rule.ruleType === 'spend_cap') {
     const p = rule.params as SpendCapParams;
@@ -68,6 +88,10 @@ export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 
   if (rule.ruleType === 'tool_list') {
     const tools = (rule.params as ToolListParams).blockedTools;
     return tools.length ? { pre: 'When an agent is about to run ', val: tools.join(', '), post: `, ${v}.` } : { pre: 'No tools picked yet.', val: '', post: '' };
+  }
+  if (rule.ruleType === 'sensitive_data') {
+    const kinds = sensitiveKindsText(rule.params as SensitiveDataParams);
+    return kinds ? { pre: 'When a call holds ', val: kinds, post: `, ${v}.` } : { pre: 'Nothing picked to look for yet.', val: '', post: '' };
   }
   const models = (rule.params as ModelAllowlistParams).allowedModels;
   return models.length ? { pre: 'Only allow ', val: models.join(', '), post: `. For any other model, ${v}.` } : { pre: 'No models picked yet.', val: '', post: '' };
@@ -130,8 +154,9 @@ export function spendOverlap(rules: readonly GovernanceRule[]): { never: Governa
 
 // ── What each row says ──────────────────────────────────────────────
 
-const TALLY: Record<GovernanceResponse, keyof RuleActionCounts> = { notify: 'toldYou', block: 'blocked', pause: 'paused', stop: 'stopped' };
-const TALLY_WORD: Record<GovernanceResponse, string> = { notify: NOTIFY.done, block: 'blocked', pause: 'paused', stop: 'stopped' };
+// Remove it and send records no rule action (only the audit trail has it), so it has no count to show.
+const TALLY: Record<GovernanceResponse, keyof RuleActionCounts | null> = { notify: 'toldYou', block: 'blocked', pause: 'paused', stop: 'stopped', redact: null };
+const TALLY_WORD: Record<GovernanceResponse, string> = { notify: NOTIFY.done, block: 'blocked', pause: 'paused', stop: 'stopped', redact: 'removed' };
 const times = (n: number) => (n === 1 ? 'once' : `${fmtCount(n)} times`);
 /** A rule (or agent) with no actions. */
 export const NO_ACTIONS: RuleActionCounts = { blocked: 0, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 };
@@ -142,6 +167,7 @@ export function emptyPick(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): st
   if (rule.ruleType === 'tool_list') return (rule.params as ToolListParams).blockedTools.length ? null : 'a tool';
   // The engine skips an allowlist with no models (it would refuse every call), so it does nothing yet.
   if (rule.ruleType === 'model_allowlist') return (rule.params as ModelAllowlistParams).allowedModels.length ? null : 'a model';
+  if (rule.ruleType === 'sensitive_data') return (rule.params as SensitiveDataParams).detect.length ? null : 'something to look for';
   return null;
 }
 
@@ -149,17 +175,20 @@ export function emptyPick(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): st
 
 const REASON: Record<GovernanceRuleType, string> = {
   spend_cap: 'budget_exceeded', loop_breaker: 'loop_detected', model_allowlist: 'model_not_allowed', tool_list: 'tool_not_allowed', call_rate: 'rate_exceeded',
-  keyword: 'keyword_found',
+  keyword: 'keyword_found', sensitive_data: 'sensitive_data_found',
 };
 
 /** The engine's 403 for this rule (blockResponseBody); nothing for Only alert me. */
 export function agentGets(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'response'>): string {
   const response = rule.response ?? 'block';
+  if (rule.ruleType === 'sensitive_data' && (response === 'redact' || response === 'notify')) {
+    return `The call goes through with each find replaced:\n[redacted:credential:…]${response === 'notify' ? '\nYou get an alert; the agent doesn’t.' : ''}`;
+  }
   if (response === 'notify') return 'Nothing: the call goes through.\nYou get an alert; the agent doesn’t.';
   const held = response === 'pause' || response === 'stop';
   const resets = held ? 'when someone resumes it'
     : rule.ruleType === 'call_rate' ? 'once the last minute is back under the limit'
-    : rule.ruleType === 'model_allowlist' || rule.ruleType === 'tool_list' || rule.ruleType === 'keyword' ? 'never'
+    : rule.ruleType === 'model_allowlist' || rule.ruleType === 'tool_list' || rule.ruleType === 'keyword' || rule.ruleType === 'sensitive_data' ? 'never'
     : (rule.params as SpendCapParams | LoopBreakerParams).scope === 'day' ? 'next day (00:00 UTC)' : 'next run';
   return `403 governance_block\nresponse: ${response}\nreason: ${REASON[rule.ruleType]}\nretryable: ${!held && rule.ruleType === 'call_rate'}\nresets: ${resets}`;
 }
@@ -171,6 +200,7 @@ export const AGENT_NOTE: Record<GovernanceRuleType, string> = {
   call_rate: 'Stops the call that goes over the limit. Refused calls count too, so an agent that keeps retrying stays over until it slows down.',
   tool_list: 'Stops the model’s reply before the agent gets it, so the tool never runs. The model call itself is already spent.',
   keyword: 'Stops the call before the model sees it, or the reply before the agent does. The agent isn’t told which keyword matched.',
+  sensitive_data: 'Acts before the call reaches the model. The agent isn’t told what was found.',
 };
 
 // ── The edit model behind Save ──────────────────────────────────────
@@ -205,7 +235,7 @@ const numberOf = (rule: Pick<GovernanceRule, 'ruleType' | 'params'>): string => 
 
 export function draftFrom(rule: GovernanceRule): RuleDraft {
   return {
-    ruleType: rule.ruleType, mode: rule.mode, response: rule.response ?? 'block', alsoNotify: !!rule.alsoNotify,
+    ruleType: rule.ruleType, mode: rule.mode, response: rule.response ?? (rule.ruleType === 'sensitive_data' ? 'redact' : 'block'), alsoNotify: !!rule.alsoNotify,
     appliesTo: rule.appliesTo === 'all' ? 'all' : [...rule.appliesTo],
     params: JSON.parse(JSON.stringify(rule.params)) as GovernanceParams,
     number: numberOf(rule),
@@ -261,7 +291,7 @@ export function changeUnit(d: RuleDraft, unit: 'tokens' | 'dollars'): RuleDraft 
 
 /** Whether the rule, as drafted, sends an alert when it acts: Only alert me, Pause, Stop, or Block with an alert. */
 export function sendsAlert(d: Pick<RuleDraft, 'mode' | 'response' | 'alsoNotify'>): boolean {
-  return d.mode === 'enforce' && (d.response !== 'block' || d.alsoNotify);
+  return d.mode === 'enforce' && (d.response === 'notify' || d.response === 'pause' || d.response === 'stop' || (d.response === 'block' && d.alsoNotify));
 }
 
 /** A new response; "Also alert me" only applies to Block, so it's cleared otherwise. */
@@ -292,6 +322,7 @@ export function draftProblem(d: RuleDraft): string | null {
   if (d.mode === 'enforce' && d.ruleType === 'model_allowlist' && (p.params as ModelAllowlistParams).allowedModels.length === 0) return 'Pick at least one model before you turn on Enforce.';
   if (d.mode === 'enforce' && d.ruleType === 'tool_list' && (p.params as ToolListParams).blockedTools.length === 0) return 'Pick at least one tool before you turn on Enforce.';
   if (d.mode === 'enforce' && d.ruleType === 'keyword' && keywordTotal(p.params as KeywordParams) === 0) return 'Pick at least one keyword before you turn on Enforce.';
+  if (d.ruleType === 'sensitive_data' && (p.params as SensitiveDataParams).detect.length === 0) return 'Pick at least one kind of data to look for.';
   return null;
 }
 
@@ -305,13 +336,15 @@ export const RULE_TEMPLATES: { type: GovernanceRuleType; title: string; desc: st
   { type: 'loop_breaker', title: 'Break loops', desc: 'Catch an agent making the same call over and over.' },
   { type: 'tool_list', title: 'Block tools', desc: 'Keep agents from running tools you name.' },
   { type: 'keyword', title: 'Flag keywords', desc: 'Get an alert, or block the call, when words you pick show up.', isNew: true },
+  { type: 'sensitive_data', title: 'Keep sensitive data out', desc: 'Remove keys, passwords and personal details before a call reaches your model provider.', isNew: true },
 ];
 
 // ── Groups: who a rule covers ───────────────────────────────────────
 
-/** Whether a rule can stop a call or an agent now: Enforce with a response other than Only alert me, that has something to act on. */
+/** Whether a rule can stop a call or an agent now: Enforce with a response other than Only alert me or Remove it and send, that has something to act on. */
 export function isStopping(r: GovernanceRule): boolean {
-  return r.mode === 'enforce' && (r.response ?? 'block') !== 'notify' && !emptyPick(r);
+  const response = r.response ?? 'block';
+  return r.mode === 'enforce' && response !== 'notify' && response !== 'redact' && !emptyPick(r);
 }
 
 /** The rules that can stop a call or an agent now (isStopping). */
@@ -322,7 +355,8 @@ export function stopping(rules: GovernanceRule[]): GovernanceRule[] {
 // ── Weakening a rule ────────────────────────────────────────────────
 
 const MODE_RANK: Record<GovernanceMode, number> = { off: 0, watch: 1, enforce: 2 };
-const RESPONSE_RANK: Record<GovernanceResponse, number> = { notify: 0, block: 1, pause: 2, stop: 3 };
+// Remove it and send sits with Only alert me: neither stops the call (losing the alert is said apart).
+const RESPONSE_RANK: Record<GovernanceResponse, number> = { redact: 0, notify: 0, block: 1, pause: 2, stop: 3 };
 
 /**
  * What a change makes weaker, in plain lines, so Save can ask first: a lower
@@ -334,9 +368,9 @@ export function weakenings(prev: GovernanceRule, next: GovernanceRule): string[]
   const out: string[] = [];
   if (MODE_RANK[next.mode] < MODE_RANK[prev.mode]) out.push(`Mode: ${MODE_LABEL[prev.mode]} → ${MODE_LABEL[next.mode]}`);
   const pr = prev.response ?? 'block', nr = next.response ?? 'block';
-  if (next.mode === 'enforce' && prev.mode === 'enforce' && RESPONSE_RANK[nr] < RESPONSE_RANK[pr]) out.push(`When enforced: ${VERB[pr]} → ${VERB[nr]}`);
+  if (next.mode === 'enforce' && prev.mode === 'enforce' && RESPONSE_RANK[nr] < RESPONSE_RANK[pr]) out.push(`When enforced: ${verbFor(prev.ruleType, pr)} → ${verbFor(next.ruleType, nr)}`);
   // Any lost alert, whatever the response: Pause, Stop and Only alert me alert; Block does when asked to.
-  const alerts = (r: GovernanceRule) => r.mode === 'enforce' && ((r.response ?? 'block') !== 'block' || !!r.alsoNotify);
+  const alerts = (r: GovernanceRule) => sendsAlert({ mode: r.mode, response: r.response ?? 'block', alsoNotify: !!r.alsoNotify });
   if (alerts(prev) && !alerts(next) && MODE_RANK[next.mode] >= MODE_RANK[prev.mode]) out.push('It stops sending you an alert');
   if (prev.appliesTo === 'all' && next.appliesTo !== 'all') out.push(`Covers only ${next.appliesTo.join(', ') || 'no agents'}, not every agent`);
   else if (prev.appliesTo !== 'all' && next.appliesTo !== 'all') {
@@ -389,6 +423,11 @@ function looser(prev: GovernanceRule, next: GovernanceRule): string[] {
       const places = (w: KeywordParams['where']) => (w === 'both' ? ['incoming', 'replies'] : [w]);
       for (const gone of places(p.where).filter((x) => !places(n.where).includes(x))) out.push(`No longer looks in ${gone === 'incoming' ? 'incoming data' : 'model replies'}`);
       return out;
+    }
+    case 'sensitive_data': {
+      const kept = (b as SensitiveDataParams).detect;
+      const dropped = SENSITIVE_KINDS.filter((k) => (a as SensitiveDataParams).detect.includes(k.kind) && !kept.includes(k.kind));
+      return dropped.length ? [`No longer looks for ${dropped.map((k) => midSentence(k.label)).join(' or ')}`] : [];
     }
     default:
       return [];
@@ -443,6 +482,10 @@ export function ruleCondition(rule: Pick<GovernanceRule, 'ruleType' | 'params'>)
   if (rule.ruleType === 'tool_list') {
     const tools = (rule.params as ToolListParams).blockedTools;
     return tools.length ? { pre: 'Tools: ', val: tools.join(', '), post: '' } : { pre: 'No tools picked yet', val: '', post: '' };
+  }
+  if (rule.ruleType === 'sensitive_data') {
+    const kinds = sensitiveKindsText(rule.params as SensitiveDataParams);
+    return kinds ? { pre: 'A call holds ', val: kinds, post: '' } : { pre: 'Nothing picked to look for yet', val: '', post: '' };
   }
   const models = (rule.params as ModelAllowlistParams).allowedModels;
   return models.length ? { pre: 'Only ', val: models.join(', '), post: '' } : { pre: 'No models picked yet', val: '', post: '' };
@@ -503,6 +546,7 @@ export function blocksWhen(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'a
     case 'call_rate': return `only over ${fmtCount((rule.params as CallRateParams).maxCalls)} calls a minute${only}`;
     case 'model_allowlist': return `only for models not on its list${only}`;
     case 'tool_list': return `only for the tools it names${only}`;
+    case 'sensitive_data': return `only when a call holds ${sensitiveKindsText(rule.params as SensitiveDataParams)}${only}`;
     default: return `only when its keywords show up${only}`;
   }
 }
@@ -534,7 +578,9 @@ export function rowCount(rule: GovernanceRule, ctx: {
   if (rule.mode === 'enforce') {
     const justThem = !ctx.agent || (rule.appliesTo !== 'all' && rule.appliesTo.length === 1 && rule.appliesTo[0] === ctx.agent);
     if (!justThem || !week) return { text: '', tone: 'plain' };
-    const n = week[TALLY[response]];
+    const tally = TALLY[response];
+    if (!tally) return { text: '', tone: 'plain' };
+    const n = week[tally];
     return n ? { text: `${fmtCount(n)} ${TALLY_WORD[response]} · 7 days`, tone: 'hot' } : { text: 'None caught · 7 days', tone: 'plain' };
   }
   const since = ctx.wouldAct && !ctx.wouldAct.unversioned ? ctx.wouldAct : null;
@@ -549,10 +595,12 @@ export function rowCount(rule: GovernanceRule, ctx: {
 
 const WOULD_VERB: Record<GovernanceResponse, (who: string) => string> = {
   block: (who) => `blocked ${who}`, pause: (who) => `paused ${who}`, stop: (who) => `stopped ${who}`, notify: (who) => `alerted you about ${who}`,
+  redact: (who) => `removed data from calls by ${who}`,
 };
 /** "6 blocked", "1 alert": an enforced rule's count, as the status line says it. */
 const DID: Record<GovernanceResponse, (n: number) => string> = {
   block: (n) => `${fmtCount(n)} blocked`, pause: (n) => `${fmtCount(n)} paused`, stop: (n) => `${fmtCount(n)} stopped`, notify: (n) => `${fmtCount(n)} ${n === 1 ? 'alert' : 'alerts'}`,
+  redact: (n) => `${fmtCount(n)} removed`,
 };
 
 /**
@@ -574,9 +622,10 @@ export function ruleStatus(rule: GovernanceRule, ctx: {
   if (nothingPicked) return `Does nothing until you add ${nothingPicked}`;
   if (ctx.neverFirst) return `Never triggers · the ${ctx.neverFirst} cap catches it first`;
   if (rule.mode === 'enforce') {
-    const n = ctx.week ? ctx.week[TALLY[response]] : null;
+    const tally = TALLY[response];
+    const n = ctx.week && tally ? ctx.week[tally] : null;
     const tail = n === null ? '' : n ? ` · ${DID[response](n)} in 7 days` : ' · nothing caught in 7 days';
-    return `${response === 'notify' ? 'Alerting you' : 'Enforcing'} for ${who}${tail}`;
+    return `${response === 'notify' ? 'Alerting you' : response === 'redact' ? 'Removing sensitive data' : 'Enforcing'} for ${who}${tail}`;
   }
   const w = ctx.wouldAct;
   if (w && !w.unversioned && w.since) {
@@ -701,18 +750,36 @@ export function responseChoices(govV1: boolean, ...keep: GovernanceResponse[]): 
   return (['block', 'pause', 'stop', 'notify'] as const).filter((r) => govV1 || r === 'notify' || r === 'block' || keep.includes(r));
 }
 
+/**
+ * A rule type's "When enforced" actions. Sensitive data removes what it
+ * finds and has no Block (a retry would go out cleaned); Remove it and send
+ * comes first. Every other type is responseChoices.
+ */
+export function responseChoicesFor(ruleType: GovernanceRuleType, govV1: boolean, ...keep: GovernanceResponse[]): GovernanceResponse[] {
+  if (ruleType !== 'sensitive_data') return responseChoices(govV1, ...keep).filter((r) => r !== 'redact');
+  return (['redact', 'notify', 'pause', 'stop'] as const).filter((r) => govV1 || r === 'redact' || r === 'notify' || keep.includes(r));
+}
+
+/** The "When enforced" option's words; a Sensitive data rule's alert also removes the find. */
+export function responseOption(ruleType: GovernanceRuleType, r: GovernanceResponse, labels: Record<GovernanceResponse, string>): string {
+  return ruleType === 'sensitive_data' && r === 'notify' ? 'Remove it, send, and tell me' : labels[r];
+}
+
 /** What an enforced rule does, after "Enforce: ". */
 const ENFORCE_LINE: Record<GovernanceResponse, string> = {
   block: 'blocks the call. The agent keeps going.',
   pause: 'pauses the agent and alerts you. Its run ends until someone resumes it.',
   stop: 'stops the agent and alerts you. It refuses every call until someone resumes it.',
   notify: 'alerts you. The call goes through.',
+  redact: 'removes what it finds, then sends the call. The agent keeps going.',
 };
 
 /** The one plain line under What happens, for the pick. */
-export function whatHappensLine(d: Pick<RuleDraft, 'mode' | 'response' | 'alsoNotify'>): string {
+export function whatHappensLine(d: Pick<RuleDraft, 'mode' | 'response' | 'alsoNotify'> & { ruleType?: GovernanceRuleType }): string {
   if (d.mode === 'off') return 'Off: does nothing and records nothing.';
-  if (d.mode === 'watch') return 'Watch: records what it would do; every call goes through.';
+  if (d.mode === 'watch') return d.ruleType === 'sensitive_data' ? 'Watch: records what it finds and removes nothing; every call goes through.' : 'Watch: records what it would do; every call goes through.';
+  if (d.ruleType === 'sensitive_data' && d.response === 'notify') return 'Enforce: removes what it finds, sends the call and alerts you.';
+  if (d.ruleType === 'sensitive_data' && (d.response === 'pause' || d.response === 'stop')) return `Enforce: removes what it finds and ${d.response === 'pause' ? 'pauses the agent' : 'stops the agent'} the first time something new turns up, and alerts you.`;
   if (d.response === 'block' && d.alsoNotify) return 'Enforce: blocks the call and alerts you. The agent keeps going.';
   return `Enforce: ${ENFORCE_LINE[d.response]}`;
 }

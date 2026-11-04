@@ -48,6 +48,8 @@ const api = vi.hoisted(() => ({
   /** Rules the mocked engine created, listed after RULES. */
   created: [] as GovernanceRule[],
   govV1: false,
+  /** The engine has the Sensitive data rule switched off. */
+  sdPaused: false,
   /** Models the fleet used lately, for the allowlist suggestion; null: no data. */
   models: null as string[] | null,
   /** Hourly points the store returns (with models set). */
@@ -70,7 +72,7 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
-  governanceList: async () => { api.lists++; if (api.listFail) throw new Error('down'); if (api.listGate) await api.listGate; return { fleetId: 'f1', rules: api.empty ? [] : [...RULES.map((r) => api.saved[r.id] ?? r), ...api.created], history: api.history, agents: ['lead-agent', 'market-researcher'], govV1: api.govV1 }; },
+  governanceList: async () => { api.lists++; if (api.listFail) throw new Error('down'); if (api.listGate) await api.listGate; return { fleetId: 'f1', rules: api.empty ? [] : [...RULES.map((r) => api.saved[r.id] ?? r), ...api.created], history: api.history, agents: ['lead-agent', 'market-researcher'], govV1: api.govV1, ...(api.sdPaused && { sensitiveDataPaused: true }) }; },
   performanceRecommendationGet: () => new Promise(() => {}),
   alertsGet: async () => api.alerts,
   ruleWouldAct: async (_f: string, ruleId: string) => ({ fleetId: 'f1', ruleId, byAgent: api.would[ruleId] ?? {}, unversioned: false, since: '2026-10-21T00:00:00Z' }),
@@ -122,7 +124,7 @@ async function mount() {
 
 beforeEach(() => {
   nav.params = new URLSearchParams(); nav.replace.mockClear(); nav.push.mockClear();
-  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.hourly = []; api.listGate = null; api.listFail = false; api.empty = false; api.would = {}; api.agentCalls = {}; api.history = []; api.totals = null;
+  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.hourly = []; api.listGate = null; api.listFail = false; api.empty = false; api.would = {}; api.agentCalls = {}; api.history = []; api.totals = null; api.sdPaused = false;
   document.body.innerHTML = '';
 });
 const type = async (input: HTMLInputElement, value: string) => {
@@ -1672,6 +1674,50 @@ describe('Controls page, mockup suggestions and toasts', () => {
     api.history = [{ id: 'h1', ruleId: 'r1', ruleType: 'loop_breaker', description: 'Added new Loop breaker rule', by: 'R Haque', time: new Date().toISOString() }];
     const m = await mount();
     expect(m.text()).toContain('Loop breaker added · R Haque');
+    m.root.unmount();
+  });
+});
+
+describe('Controls: the Sensitive data rule', () => {
+  const SD: GovernanceRule = { ...base, id: 'sd1', ruleType: 'sensitive_data', mode: 'watch', response: 'redact', appliesTo: 'all', params: { detect: ['credentials', 'contact', 'ids'] } };
+
+  it('asks what to look for with three checkboxes, says what isn’t checked, and saves the kinds in the engine’s order', async () => {
+    api.created = [SD];
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...SD, ...ch, id, version: 2 } }));
+    const m = await mount();
+    expect(m.row('A call holds').textContent).toContain('Sensitive data');
+    await m.open('A call holds');
+    const boxes = [...m.el.querySelectorAll('label')].filter((l) => l.querySelector('input[type="checkbox"]') && /Keys and passwords|Emails and phone numbers|ID and card numbers/.test(l.textContent ?? ''));
+    expect(boxes.map((l) => l.textContent)).toEqual(['Keys and passwords', 'Emails and phone numbers', 'ID and card numbers']);
+    expect(m.text()).toContain('Checked before anything reaches your model provider. Names, addresses, images and files aren’t checked.');
+    expect(m.text()).toContain('Watch: records what it finds and removes nothing; every call goes through.');
+    await m.click(boxes[1].querySelector('input')!);
+    await m.click(m.button('Save'));
+    // Looking for less weakens the rule: it says so first.
+    expect(m.text()).toContain('No longer looks for emails and phone numbers');
+    await m.click(m.button('Save the change'));
+    expect(api.update).toHaveBeenCalledWith('f1', 'sd1', expect.objectContaining({ params: { detect: ['credentials', 'ids'] } }), 'k');
+    m.root.unmount();
+  });
+
+  it('offers Remove it and send first in Enforce, and never Block', async () => {
+    api.created = [SD];
+    const m = await mount();
+    await m.open('A call holds');
+    await m.click(m.seg('Enforce'));
+    const labels = [...m.action()!.options].map((o) => o.textContent);
+    expect(labels).toEqual(['Remove it and send', 'Remove it, send, and tell me']);
+    expect(m.action()!.value).toBe('redact');
+    m.root.unmount();
+  });
+
+  it('shows Paused by WhiteRoom when the engine has the rule switched off', async () => {
+    api.created = [{ ...SD, mode: 'enforce' }];
+    api.sdPaused = true;
+    const m = await mount();
+    expect(m.row('A call holds').textContent).toContain('Paused by WhiteRoom');
+    await m.click(m.row('A call holds'));
+    expect(m.text()).toContain('Paused by WhiteRoom · nothing is checked or removed until it’s back on');
     m.root.unmount();
   });
 });

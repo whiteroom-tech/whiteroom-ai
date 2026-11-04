@@ -10,7 +10,7 @@ describe('rule mode words', () => {
   });
 
   it('tags an enforced rule by what it does: Enforce, the action when it isn’t Block, and Alert only for alerts', () => {
-    expect(ENFORCE_TAG).toEqual({ block: 'Enforce', pause: 'Enforce · pauses', stop: 'Enforce · stops', notify: 'Alert only' });
+    expect(ENFORCE_TAG).toEqual({ block: 'Enforce', pause: 'Enforce · pauses', stop: 'Enforce · stops', notify: 'Alert only', redact: 'Enforce · removes' });
     expect(modeTagText({ mode: 'watch', response: 'stop' })).toBe('Watch');
     expect(modeTagText({ mode: 'off' })).toBe('Off');
     expect(modeTagText({ mode: 'enforce' })).toBe('Enforce');

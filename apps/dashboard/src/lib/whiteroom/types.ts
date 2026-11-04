@@ -654,11 +654,11 @@ export interface CustomControlInput {
 
 // -- Fleet governance rules (Controls page) --
 
-export type GovernanceRuleType = 'spend_cap' | 'loop_breaker' | 'model_allowlist' | 'tool_list' | 'call_rate' | 'keyword';
+export type GovernanceRuleType = 'spend_cap' | 'loop_breaker' | 'model_allowlist' | 'tool_list' | 'call_rate' | 'keyword' | 'sensitive_data';
 export type GovernanceMode = 'off' | 'watch' | 'enforce';
-/** What Enforce does (engine P2.3): notify, block, pause or stop. */
-export type GovernanceResponse = 'notify' | 'block' | 'pause' | 'stop';
-export type GovernanceReason = 'budget_exceeded' | 'loop_detected' | 'model_not_allowed' | 'tool_not_allowed' | 'rate_exceeded' | 'keyword_found';
+/** What Enforce does (engine P2.3): notify, block, pause or stop; redact only for Sensitive data, which has no block. */
+export type GovernanceResponse = 'notify' | 'block' | 'pause' | 'stop' | 'redact';
+export type GovernanceReason = 'budget_exceeded' | 'loop_detected' | 'model_not_allowed' | 'tool_not_allowed' | 'rate_exceeded' | 'keyword_found' | 'sensitive_data_found';
 export type GovernanceScope = 'all' | string[];
 
 export interface SpendCapParams { dailyCap: number; scope: 'run' | 'day'; unit: 'tokens' | 'dollars' }
@@ -675,7 +675,10 @@ export interface KeywordParams {
   /** Sent instead of the list to a caller without the dashboard's secret (keywords is then empty). */
   keywordCount?: number;
 }
-export type GovernanceParams = SpendCapParams | LoopBreakerParams | ModelAllowlistParams | ToolListParams | CallRateParams | KeywordParams;
+/** Sensitive data rule: what to remove from a call before it reaches the model provider. */
+export type SensitiveDataKind = 'credentials' | 'contact' | 'ids';
+export interface SensitiveDataParams { detect: SensitiveDataKind[] }
+export type GovernanceParams = SpendCapParams | LoopBreakerParams | ModelAllowlistParams | ToolListParams | CallRateParams | KeywordParams | SensitiveDataParams;
 
 export interface GovernanceRule {
   id: string;
@@ -725,6 +728,8 @@ export interface GovernanceListResult {
   lastActiveAt?: Record<string, string | null>;
   /** Pause and Stop responses are offered (Gov v1 fleets). */
   govV1?: boolean;
+  /** The engine's Sensitive data switch is off (WR_SENSITIVE_DATA=off): those rules act as Off. Absent from older engines. */
+  sensitiveDataPaused?: boolean;
 }
 
 /** Rule actions in words (engine rule_actions). */

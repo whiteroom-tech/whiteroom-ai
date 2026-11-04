@@ -26,7 +26,7 @@ import {
 import type {
   GovernanceHistoryEntry, GovernanceResponse, GovernanceRule, GovernanceRuleType, KeywordParams, ModelAllowlistParams, RuleActionCounts, RuleActionsResult, RuleWouldActResult, SpendCapParams,
 } from "@/lib/whiteroom/types";
-import { computeSuggestions, RESPONSE_EFFECT, RESPONSE_LABEL, RULE_LABELS, tallyFromRuleActions, tallyTotal, type GovernanceSuggestions } from "@/lib/governance";
+import { computeSuggestions, PAUSED_BY_WHITEROOM, RESPONSE_EFFECT, RESPONSE_LABEL, RULE_LABELS, sensitiveDataPaused, tallyFromRuleActions, tallyTotal, type GovernanceSuggestions } from "@/lib/governance";
 import { FleetLogin } from "@/components/citadel/FleetLogin";
 import { ConfirmDialog } from "@/components/citadel/ConfirmDialog";
 import { fetchControlActors, oldestTime, type ControlActor } from "@/lib/control-actors";
@@ -91,6 +91,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const [history, setHistory] = useState<GovernanceHistoryEntry[]>([]);
   const [agents, setAgents] = useState<string[]>([]);
   const [govV1, setGovV1] = useState(false);
+  // The engine's Sensitive data switch is off: those rules act as Off until it's back on.
+  const [sdPaused, setSdPaused] = useState(false);
   const [actors, setActors] = useState<ControlActor[]>([]);
   const [loaded, setLoaded] = useState(false);
   // True once the rules have actually been read (a failed read sets `loaded` too, with no rules).
@@ -182,6 +184,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       void loadActors(d.history);
       setAgents(d.agents);
       setGovV1(!!d.govV1);
+      setSdPaused(sensitiveDataPaused(d));
       setLoaded(true);
       setListed(true);
       setListedAt(Date.now());
@@ -734,7 +737,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     if (notSetUp(r)) return <span className="ctl-mtag is-off">Not set up</span>;
     if (r.mode === "off") return <span className="ctl-mtag is-off">{MODE_LABEL.off}</span>;
     if (r.mode === "watch") return <span className="ctl-mtag">{MODE_LABEL.watch}</span>;
-    return <span className={`ctl-mtag${r.response === "notify" ? "" : " is-block"}`}>{modeTagText(r)}</span>;
+    if (sdPaused && r.ruleType === "sensitive_data") return <span className="ctl-mtag">{PAUSED_BY_WHITEROOM}</span>;
+    return <span className={`ctl-mtag${r.response === "notify" || r.response === "redact" ? "" : " is-block"}`}>{modeTagText(r)}</span>;
   };
 
   const row = (r: GovernanceRule, showScope = false, key: string = r.id) => {
@@ -951,7 +955,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                   undoOf={undoOf}
                   fleetDailySpend={dailySpend}
                   agentSpend={spendAgents.flatMap((a) => (agentSpend[a] ? [{ agent: a, ...agentSpend[a]! }] : []))}
-                  status={ruleStatus(edited, { week: weekOf(edited), wouldAct: wouldOf(edited), neverFirst: neverFirst(edited) })}
+                  status={sdPaused && edited.ruleType === "sensitive_data" ? `${PAUSED_BY_WHITEROOM} · nothing is checked or removed until it’s back on` : ruleStatus(edited, { week: weekOf(edited), wouldAct: wouldOf(edited), neverFirst: neverFirst(edited) })}
                   ruleHistory={history}
                   startOpen={justAdded === edited.id}
                   onAudit={() => setAuditOpen(true)}
@@ -1007,7 +1011,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         body={dialog?.kind === "downgrade" ? (
           <>
             <p style={{ margin: "0 0 8px" }}><strong>{RULE_LABELS[dialog.rule.ruleType]}</strong> · {ruleConditionText(dialog.rule)}</p>
-            <p style={{ margin: 0 }}>{(dialog.rule.response ?? "block") === "notify" ? `You won’t get alerts for ${whoFor(dialog.next.appliesTo)} any more.` : `Matching calls will go through for ${whoFor(dialog.next.appliesTo)}.`} {dialog.next.mode === "watch" ? "They’ll still be recorded." : "Nothing will be recorded."} You can undo it.</p>
+            <p style={{ margin: 0 }}>{dialog.rule.ruleType === "sensitive_data" ? `What it finds will reach your model provider for ${whoFor(dialog.next.appliesTo)}.` : (dialog.rule.response ?? "block") === "notify" ? `You won’t get alerts for ${whoFor(dialog.next.appliesTo)} any more.` : `Matching calls will go through for ${whoFor(dialog.next.appliesTo)}.`} {dialog.next.mode === "watch" ? "They’ll still be recorded." : "Nothing will be recorded."} You can undo it.</p>
           </>
         ) : null}
         busy={saving}
@@ -1150,11 +1154,12 @@ const ACT_WORDS: Record<GovernanceResponse, { title: string; start: string; woul
   pause: { title: "Start pausing agents with this rule?", start: "Start pausing", would: "Would have paused", effect: "a call that matches ends the agent’s run, and it waits until someone resumes it.", stopTitle: "Stop pausing agents with this rule?", keep: "Keep pausing" },
   stop: { title: "Start stopping agents with this rule?", start: "Start stopping", would: "Would have stopped", effect: "a call that matches stops the agent until someone resumes it.", stopTitle: "Stop this rule stopping agents?", keep: "Keep stopping" },
   notify: { title: "Turn on alerts for this rule?", start: "Turn on alerts", would: "Would have alerted you", effect: "a call that matches sends you an alert. The call goes through.", stopTitle: "Turn off alerts from this rule?", keep: "Keep alerts" },
+  redact: { title: "Start removing sensitive data?", start: "Start removing", would: "Would have removed data from", effect: "what it finds is removed before the call reaches your model provider. The agent keeps going.", stopTitle: "Stop removing sensitive data?", keep: "Keep removing" },
 };
 
 /** "Two identical loop breakers": each kind of rule, more than one. */
 const RULE_PLURAL: Record<GovernanceRuleType, string> = {
-  spend_cap: "spend caps", loop_breaker: "loop breakers", call_rate: "call rate rules", model_allowlist: "model allowlists", tool_list: "tool lists", keyword: "Keywords rules",
+  spend_cap: "spend caps", loop_breaker: "loop breakers", call_rate: "call rate rules", model_allowlist: "model allowlists", tool_list: "tool lists", keyword: "Keywords rules", sensitive_data: "Sensitive data rules",
 };
 
 /** "6 agents will lose this rule", for moving a rule from all agents to some. */

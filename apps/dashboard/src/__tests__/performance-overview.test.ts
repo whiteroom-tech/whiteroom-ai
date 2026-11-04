@@ -11,7 +11,7 @@ import {
 const t = (blocks: number, wouldBlocks: number) => ({ blocks, wouldBlocks });
 const COUNTS: GovernanceCounts = {
   blocks: 1, wouldBlocks: 120,
-  byRule: { spend_cap: t(0, 59), loop_breaker: t(1, 0), model_allowlist: t(0, 60), tool_list: t(0, 0), call_rate: t(0, 0), keyword: t(0, 1) },
+  byRule: { spend_cap: t(0, 59), loop_breaker: t(1, 0), model_allowlist: t(0, 60), tool_list: t(0, 0), call_rate: t(0, 0), keyword: t(0, 1), sensitive_data: t(0, 0) },
   byAgent: { 'code-reviewer': t(0, 60), 'lead-agent': t(1, 59), '': t(0, 1), quiet: t(0, 0) },
 };
 const rule = (id: string, ruleType: GovernanceRule['ruleType'], mode: GovernanceRule['mode'], params: object) => ({ id, ruleType, mode, params, appliesTo: 'all' }) as unknown as GovernanceRule;
