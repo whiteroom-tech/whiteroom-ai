@@ -42,7 +42,7 @@ import {
   weakenings,
   averageDailySpend,
   sameValue,
-  blocksWhen, duplicateRules, keywordsHidden, keywordGaps, keywordsShort, leadCounts, modeCount, notSetUp, ruleCondition, ruleConditionText, ruleGroups, rowCount, ruleStatus, whoFor,
+  blocksWhen, duplicateRules, isStopping, keywordsHidden, keywordGaps, keywordsShort, leadCounts, modeCount, notSetUp, ruleCondition, ruleConditionText, ruleGroups, rowCount, ruleStatus, whoFor,
 } from "@/lib/controls-view";
 import { responseOf } from "@/lib/rule-response";
 
@@ -740,7 +740,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     // Switched off by WhiteRoom, a Watch rule records nothing either.
     if (sdPaused && r.ruleType === "sensitive_data") return <span className="ctl-mtag">{PAUSED_BY_WHITEROOM}</span>;
     if (r.mode === "watch") return <span className="ctl-mtag">{MODE_LABEL.watch}</span>;
-    return <span className={`ctl-mtag${r.response === "notify" || r.response === "redact" ? "" : " is-block"}`}>{modeTagText(r)}</span>;
+    return <span className={`ctl-mtag${isStopping(r) ? " is-block" : ""}`}>{modeTagText(r)}</span>;
   };
 
   const row = (r: GovernanceRule, showScope = false, key: string = r.id) => {

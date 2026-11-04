@@ -1740,6 +1740,16 @@ describe('Controls: the Sensitive data rule', () => {
     m.root.unmount();
   });
 
+  it('an enforced rule with no response from the engine reads as Remove it and send, not as blocking', async () => {
+    api.created = [{ ...SD, mode: 'enforce', response: undefined }];
+    const m = await mount();
+    const tag = m.row('A call holds').querySelector('.ctl-mtag')!;
+    expect(tag.textContent).toBe('Enforce · removes');
+    expect(tag.className).not.toContain('is-block');
+    expect(m.row('100×').querySelector('.ctl-mtag')!.className).toContain('is-block');
+    m.root.unmount();
+  });
+
   it('a Watch rule shows Paused by WhiteRoom too, since it records nothing while switched off; other rules keep their tags', async () => {
     api.created = [SD];
     api.sdPaused = true;
