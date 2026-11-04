@@ -3,8 +3,6 @@ import { Client, Pool, type PoolConfig } from 'pg';
 
 let pool: Pool | null = null;
 
-// Lazily constructed: no connection attempt happens at module import time, so
-// `next build`'s page-data collection pass doesn't need real DB env vars.
 /**
  * How to reach the database, for the pool and for the rare connection held
  * outside it (lib/entitlements' per-user lock). Same socket, credentials and
@@ -24,6 +22,8 @@ export function pgConfig(): PoolConfig {
   };
 }
 
+// Lazily constructed: no connection attempt happens at module import time, so
+// `next build`'s page-data collection pass doesn't need real DB env vars.
 export function db(): Pool {
   if (!pool) {
     pool = new Pool({ ...pgConfig(), max: 5, idleTimeoutMillis: 30_000 });
@@ -35,7 +35,7 @@ export function db(): Pool {
 }
 
 /** A connection of its own, outside the pool, for holding a session lock (lib/entitlements). */
-export function lockClient(): Pick<Client, 'connect' | 'query' | 'end'> {
+export function lockClient(): Pick<Client, 'connect' | 'query' | 'end' | 'on'> {
   return new Client(pgConfig());
 }
 

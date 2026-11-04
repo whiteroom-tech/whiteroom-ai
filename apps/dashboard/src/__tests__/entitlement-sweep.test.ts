@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
   mark: vi.fn(),
 }));
 
-vi.mock('@/lib/db', () => ({ lockClient: () => ({ connect: async () => {}, query: async () => ({ rows: [] }), end: async () => {} }), db: () => ({ query: mocks.query }) }));
+vi.mock('@/lib/db', () => ({ lockClient: () => ({ connect: async () => {}, query: async () => ({ rows: [] }), end: async () => {}, on: () => {} }), db: () => ({ query: mocks.query }) }));
 vi.mock('@/lib/entitlements', () => ({
   syncEntitlementsToEngine: mocks.sync,
   // Its SQL (only rows that are due) is tested in entitlements-sync.test.ts.
@@ -97,6 +97,18 @@ describe('entitlement sweep', () => {
     const select = mocks.query.mock.calls.find((c: unknown[]) => String(c[0]).includes('SELECT user_id'))!;
     expect(select[0]).toContain('not_before IS NULL OR not_before <= now()');
     expect(mocks.mark).toHaveBeenCalledWith('u1', 7);
+  });
+
+  it('prunes after delivering, so it never holds a push up', async () => {
+    outbox([{ max_id: 7, user_id: 'u1' }]);
+    const order: string[] = [];
+    mocks.sync.mockImplementation(async () => { order.push('push'); return true; });
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (String(sql).includes('DELETE FROM entitlement_outbox')) order.push('prune');
+      return String(sql).includes('SELECT user_id') ? { rows: [{ max_id: 7, user_id: 'u1' }] } : { rows: [], rowCount: 0 };
+    });
+    await sweep(SECRET);
+    expect(order).toEqual(['push', 'prune']);
   });
 
   it('prunes rows delivered over a month ago, even when nothing is pending', async () => {

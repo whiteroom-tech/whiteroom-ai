@@ -3,15 +3,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ query: vi.fn() }));
 // The per-user entitlement lock, as Postgres's advisory lock behaves: a second
 // pg_advisory_lock on the same key waits until the first is unlocked.
-const lock = vi.hoisted(() => ({ held: new Map<string, Promise<void>>(), fail: false, log: [] as string[] }));
+const lock = vi.hoisted(() => ({
+  held: new Map<string, Promise<void>>(), fail: false, log: [] as string[],
+  connectFails: false, unlockFails: false, open: 0, maxOpen: 0,
+  errorHandlers: [] as Array<(e: Error) => void>, ended: 0,
+}));
 
 vi.mock('@/auth', () => ({ auth: async () => null }));
 vi.mock('@/lib/db', () => ({
   lockClient: () => {
     let release: (() => void) | null = null;
     return {
-      connect: async () => {},
-      end: async () => {},
+      connect: async () => {
+        if (lock.connectFails) throw new Error('connect ECONNREFUSED');
+        lock.open++; lock.maxOpen = Math.max(lock.maxOpen, lock.open);
+      },
+      end: async () => { lock.ended++; if (lock.open > 0) lock.open--; },
+      on: (event: string, handler: (e: Error) => void) => { if (event === 'error') lock.errorHandlers.push(handler); },
       query: async (sql: string, params: unknown[]) => {
         const key = String(params[0]);
         if (sql.includes('pg_advisory_lock(')) {
@@ -24,6 +32,7 @@ vi.mock('@/lib/db', () => ({
         } else if (sql.includes('pg_advisory_unlock(')) {
           lock.log.push(`unlock ${key}`);
           release?.();
+          if (lock.unlockFails) throw new Error('connection terminated');
         }
         return { rows: [] };
       },
@@ -56,6 +65,7 @@ function pushed() {
 beforeEach(() => {
   vi.clearAllMocks();
   lock.held.clear(); lock.fail = false; lock.log = [];
+  Object.assign(lock, { connectFails: false, unlockFails: false, open: 0, maxOpen: 0, errorHandlers: [], ended: 0 });
   process.env.WR_ENTITLEMENT_SYNC_SECRET = 'secret';
   fetchMock.mockResolvedValue(new Response('{}', { status: 200 }));
   vi.stubGlobal('fetch', fetchMock);
@@ -162,10 +172,13 @@ describe('entitlement lock and late pushes', () => {
 
   it('different users don\'t wait for each other', async () => {
     onPlan('pro');
-    fetchMock.mockImplementationOnce(() => new Promise<Response>(() => {})); // u1's push never answers
-    void syncEntitlementsToEngine('u1');
+    let answerU1!: (r: Response) => void;
+    fetchMock.mockImplementationOnce(() => new Promise<Response>((r) => { answerU1 = r; })); // u1's push hangs
+    const u1 = syncEntitlementsToEngine('u1');
     await flushAll();
     expect(await syncEntitlementsToEngine('u2')).toBe(true);
+    answerU1(new Response('{}', { status: 200 })); // let it finish, so it holds no lock slot after this test
+    expect(await u1).toBe(true);
   });
 
   it('the late-landing case: an unacknowledged push that lands after a newer one is overwritten by the delayed re-push', async () => {
@@ -234,5 +247,48 @@ describe('entitlement lock and late pushes', () => {
     await expect(withUserEntitlementLock('u1', async () => { throw new Error('stripe down'); })).rejects.toThrow('stripe down');
     expect(lock.log).toEqual(['lock entitlements:u1', 'unlock entitlements:u1']);
     expect(lock.held.size).toBe(0);
+  });
+});
+
+describe('the lock connection itself', () => {
+  const PAST = new Date(Date.now() - 86_400_000).toISOString();
+  const onPro = () => account({ sub: { plan: 'pro', status: 'active', plan_override: null, stripe_customer_id: 'cus_1' }, trialEndsAt: PAST });
+
+  it('a connect that fails: not delivered, never throws, and the client is still ended', async () => {
+    lock.connectFails = true;
+    onPro();
+    await expect(syncEntitlementsToEngine('u1')).resolves.toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(lock.ended).toBe(1);
+  });
+
+  it('an unlock that fails (connection gone) still ends the client and keeps the result', async () => {
+    lock.unlockFails = true;
+    onPro();
+    await expect(syncEntitlementsToEngine('u1')).resolves.toBe(true);
+    expect(lock.ended).toBe(1);
+  });
+
+  it('listens for the connection dropping, so it can\'t crash the process', async () => {
+    let inside!: () => void;
+    const held = withUserEntitlementLock('u1', () => new Promise<void>((r) => { inside = r; }));
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(lock.errorHandlers).toHaveLength(1);
+    expect(() => lock.errorHandlers[0](new Error('terminating connection due to administrator command'))).not.toThrow();
+    inside();
+    await held;
+  });
+
+  it('at most 3 lock connections at once; the rest wait, holding none, and all finish', async () => {
+    const settle = () => new Promise((r) => setTimeout(r, 0));
+    const gates: Array<() => void> = [];
+    const runs = ['a', 'b', 'c', 'd', 'e'].map((u) => withUserEntitlementLock(`u-${u}`, () => new Promise<string>((r) => { gates.push(() => r(u)); })));
+    await settle(); await settle();
+    expect(lock.open).toBe(3); // d and e wait in-process, with no connection
+    expect(gates).toHaveLength(3);
+    while (gates.length) { gates.shift()!(); await settle(); await settle(); }
+    expect(await Promise.all(runs)).toEqual(['a', 'b', 'c', 'd', 'e']);
+    expect(lock.maxOpen).toBe(3);
+    expect(lock.open).toBe(0);
   });
 });

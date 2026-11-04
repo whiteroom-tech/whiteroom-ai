@@ -12,9 +12,6 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: 'Unauthorized.' }, { status: 401 });
   }
 
-  // Delivered rows only matter for a while after: keep a month. Housekeeping, so it never fails the sweep.
-  await db().query(`DELETE FROM entitlement_outbox WHERE delivered_at < now() - interval '30 days'`).catch(() => {});
-
   // max_id bounds the acknowledgement below: a row enqueued while this user's
   // sync is in flight may not be reflected in what was sent, so it stays
   // pending for the next sweep.
@@ -29,6 +26,7 @@ export async function POST(req: Request): Promise<Response> {
   );
 
   if (pending.length === 0) {
+    await prune();
     return Response.json({ swept: 0 });
   }
 
@@ -46,5 +44,15 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 
+  await prune();
   return Response.json({ swept: delivered, pending: pending.length });
+}
+
+/**
+ * Delivered rows only matter for a while after: keep a month. After delivery,
+ * so it never holds it up; housekeeping, so it never fails the sweep. Uses the
+ * delivered_at index (migration 013).
+ */
+async function prune(): Promise<void> {
+  await db().query(`DELETE FROM entitlement_outbox WHERE delivered_at < now() - interval '30 days'`).catch(() => {});
 }

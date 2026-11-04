@@ -22,7 +22,7 @@ const stripeApi = vi.hoisted(() => ({
 }));
 
 vi.mock('@/auth', () => ({ auth: async () => session.current, signIn: vi.fn(), signOut: vi.fn(), handlers: {} }));
-vi.mock('@/lib/db', () => ({ lockClient: () => ({ connect: async () => {}, query: async () => ({ rows: [] }), end: async () => {} }), db: () => ({ query, connect: async () => ({ query, release: () => {} }) }) }));
+vi.mock('@/lib/db', () => ({ lockClient: () => ({ connect: async () => {}, query: async () => ({ rows: [] }), end: async () => {}, on: () => {} }), db: () => ({ query, connect: async () => ({ query, release: () => {} }) }) }));
 vi.mock('@/lib/email', () => ({ sendEmail, EMAIL_FROM: 'x' }));
 vi.mock('@/lib/fleet-usage', () => ({ fetchFleetUsage: vi.fn() }));
 vi.mock('@/lib/whiteroom/client', () => ({ PROXY_URL: 'http://engine.test' }));

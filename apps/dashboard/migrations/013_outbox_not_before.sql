@@ -14,3 +14,8 @@ DROP INDEX IF EXISTS idx_entitlement_outbox_pending;
 CREATE INDEX IF NOT EXISTS idx_entitlement_outbox_pending
   ON entitlement_outbox (created_at, not_before)
   WHERE delivered_at IS NULL;
+
+-- The sweep prunes delivered rows after 30 days; this keeps that from scanning the table.
+CREATE INDEX IF NOT EXISTS idx_entitlement_outbox_delivered
+  ON entitlement_outbox (delivered_at)
+  WHERE delivered_at IS NOT NULL;
