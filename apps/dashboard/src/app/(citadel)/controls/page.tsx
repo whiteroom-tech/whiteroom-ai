@@ -674,7 +674,9 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   // ── What the page shows ─────────────────────────────────────────
   const shown = useMemo(() => rulesFor(rules, agentFilter), [rules, agentFilter]);
   const groups = useMemo(() => ruleGroups(shown), [shown]);
-  const canStop = stopping(shown);
+  // While WhiteRoom has Sensitive data switched off, those rules act as Off: counted as Off, whatever they're set to.
+  const asCounted = (rs: GovernanceRule[]) => (sdPaused ? rs.map((r) => (r.ruleType === "sensitive_data" ? { ...r, mode: "off" as const } : r)) : rs);
+  const canStop = stopping(asCounted(shown));
   const overlap = spendOverlap(shown);
   const neverFirst = (r: GovernanceRule) => (overlap?.never.id === r.id ? money(overlap.first.params as SpendCapParams) : null);
   // Viewing one agent: that agent's rule actions, to match the rules shown.
@@ -783,7 +785,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
 
   const lists = !agentFilter ? (
     <>
-      {card("Rules for all agents", groups.all.length ? `${modeCount(groups.all)} · new agents get these too` : "No rules cover every agent.", <div>{groups.all.map((r) => row(r))}</div>)}
+      {card("Rules for all agents", groups.all.length ? `${modeCount(asCounted(groups.all))} · new agents get these too` : "No rules cover every agent.", <div>{groups.all.map((r) => row(r))}</div>)}
       {card("Rules for specific agents", groups.byAgent.length ? `Only ${groups.byAgent.map((g) => g.agent).join(", ")} ${groups.byAgent.length > 1 ? "have" : "has"} extra rules` : "No agent has extra rules.",
         groups.byAgent.map((g) => (
           <div key={g.agent}>
@@ -800,7 +802,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     <>
       {(() => {
         const mine = groups.byAgent.find((g) => g.agent === agentFilter)?.rules ?? [];
-        return card(<>Only for <span style={{ fontFamily: FONT_MONO }}>{agentFilter}</span></>, mine.length ? modeCount(mine) : "No extra rules. Covered by the rules for all agents.",
+        return card(<>Only for <span style={{ fontFamily: FONT_MONO }}>{agentFilter}</span></>, mine.length ? modeCount(asCounted(mine)) : "No extra rules. Covered by the rules for all agents.",
           mine.length ? <div>{mine.map((r) => row(r))}</div> : (
             <div className="ctl-row ctl-row--static">
               <span className="ctl-cap" style={{ flex: "1 1 240px" }}>This agent follows the rules for all agents below.</span>
@@ -812,7 +814,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         <button type="button" className="ctl-disc" aria-expanded={alsoOpen} onClick={() => setAlsoOpen((v) => !v)}>
           <span className="ctl-disc__chev" aria-hidden="true">›</span>
           Also covered by {groups.all.length} {groups.all.length === 1 ? "rule" : "rules"} for all agents
-          <span className="ctl-cap" style={{ marginLeft: "auto" }}>{modeCount(groups.all)}</span>
+          <span className="ctl-cap" style={{ marginLeft: "auto" }}>{modeCount(asCounted(groups.all))}</span>
         </button>
         {alsoOpen && <div>{groups.all.map((r) => row(r))}</div>}
       </section>
@@ -820,7 +822,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     </>
   );
 
-  const lead = leadCounts(shown);
+  const lead = leadCounts(asCounted(shown));
   // As Performance and Home count them: "blocked" is blocked calls only; pauses and stops are named apart.
   const caught = counts ? tallyTotal(counts) : 0;
   const acted: Array<[number, string]> = counts

@@ -1759,6 +1759,35 @@ describe('Controls: the Sensitive data rule', () => {
     m.root.unmount();
   });
 
+  it('on a Gov v1 fleet it can pause the agent, after the Start pausing confirm', async () => {
+    api.created = [SD];
+    api.govV1 = true;
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...SD, ...ch, id, version: 2 } }));
+    const m = await mount();
+    await m.open('A call holds');
+    await m.click(m.seg('Enforce'));
+    expect([...m.action()!.options].map((o) => o.textContent?.split(' · ')[0])).toEqual(['Remove it and send', 'Remove it, send, and tell me', 'Pause the agent', 'Stop the agent']);
+    await m.pick('Pause the agent');
+    expect(m.text()).toContain('Enforce: removes what it finds and pauses the agent the first time something new turns up, and alerts you.');
+    await m.click(m.button('Save'));
+    expect(m.text()).toContain('Start pausing agents with this rule?');
+    await m.click(m.button('Start pausing'));
+    expect(api.update).toHaveBeenCalledWith('f1', 'sd1', expect.objectContaining({ mode: 'enforce', response: 'pause' }), 'k');
+    m.root.unmount();
+  });
+
+  it('while switched off, an enforcing Sensitive data rule isn’t counted as Enforce', async () => {
+    api.created = [{ ...SD, mode: 'enforce', response: 'pause' }];
+    const on = await mount();
+    expect(on.text()).toContain('3 Enforce');
+    on.root.unmount();
+    api.sdPaused = true;
+    const off = await mount();
+    expect(off.text()).toContain('2 Enforce');
+    expect(off.text()).not.toContain('3 Enforce');
+    off.root.unmount();
+  });
+
   it('an Off rule stays Off while the engine has the rule switched off', async () => {
     api.created = [{ ...SD, mode: 'off' }];
     api.sdPaused = true;
