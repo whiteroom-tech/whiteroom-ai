@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Banner, Button, Panel, SkeletonCard, Tag } from '@whiteroom/ui';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { AddRuleDialog } from '@/app/(citadel)/controls/_components/AddRuleDialog';
-import { ruleSentenceText } from '@/lib/controls-view';
+import { ruleSentenceText, SENSITIVE_KINDS } from '@/lib/controls-view';
 import { RULE_LABELS } from '@/lib/governance';
 import { modeTagText } from '@/lib/vocab';
 import { governanceList } from '@/lib/whiteroom/client';
@@ -166,7 +166,10 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale, open = f
     if (preview) {
       const id = `gr_preview_new_${ruleType}`;
       const rule = previewReadyMade(sandboxFleetId).find((r) => r.ruleType === ruleType)
-        ?? { id, fleetId: sandboxFleetId, ruleType, mode: 'watch' as const, appliesTo: 'all' as const, version: 1, changedBy: '', changedAt: '', params: { blockedTools: [] } };
+        ?? { id, fleetId: sandboxFleetId, ruleType, mode: 'watch' as const, appliesTo: 'all' as const, version: 1, changedBy: '', changedAt: '',
+          ...(ruleType === 'sensitive_data'
+            ? { response: 'redact' as const, params: { detect: SENSITIVE_KINDS.map((k) => k.kind) } }
+            : { params: { blockedTools: [] } }) };
       withRules((rs) => [...rs, { ...rule, id }]);
       setEditing(id);
       return;

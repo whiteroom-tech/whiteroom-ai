@@ -12,7 +12,7 @@ import { createRoot, type Root } from 'react-dom/client';
 const { SandboxRules } = await import('@/components/sandbox/v2/SandboxRules');
 const { SandboxHome } = await import('@/components/sandbox/v2/SandboxHome');
 const { SANDBOX_V2_STATES } = await import('@/app/dev/sandbox-v2/states');
-const { RULES_DURING_CHECK, rulesSummary, SANDBOX_RULES_ONLY, sourceLine, previewReadyMade, rulesStateOf } = await import('@/lib/sandbox/rules');
+const { RULES_DURING_CHECK, rulesSummary, SANDBOX_RULES_ONLY, sourceLine, previewReadyMade, rulesStateOf, ruleCreateCheck, ruleUpdateCheck } = await import('@/lib/sandbox/rules');
 
 const SANDBOX_ID = 'sandbox-00000000-0000-4000-8000-000000000000';
 const READY = previewReadyMade(SANDBOX_ID);
@@ -435,5 +435,32 @@ describe('Sandbox rules: the summary line', () => {
     // Short, under the rules card's chips (mockup Rev 3): "5 ready-made · all Watch".
     expect(rulesSummary({ rules: [rule('watch'), rule('watch')], source: 'ready_made' }, true)).toBe('2 ready-made · all Watch');
     expect(rulesSummary({ rules: [rule('enforce'), rule('watch'), rule('enforce')], source: 'production_copy' }, true)).toBe('3 copied from production · 2 in Enforce');
+  });
+});
+
+describe('Sandbox rules: Sensitive data', () => {
+  const SD = { id: 'gr_sd', fleetId: SANDBOX_ID, ruleType: 'sensitive_data', mode: 'watch', response: 'redact', appliesTo: 'all', version: 1, changedBy: '', changedAt: '', params: { detect: ['credentials', 'contact', 'ids'] } };
+
+  it('shows a copied Sensitive data rule and edits it with its checkboxes and no Block', async () => {
+    listAnswer = state({ source: 'production_copy', rules: [SD] });
+    await render(h(SandboxRules, { fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, open: true }));
+    expect(text()).toContain('Sensitive data');
+    expect(text()).not.toContain('can’t show yet');
+    await act(async () => { (document.querySelector('button[aria-label="Edit Sensitive data"]') as HTMLButtonElement).click(); });
+    await flush();
+    const boxes = [...document.querySelectorAll('label')].filter((l) => l.querySelector('input[type="checkbox"]')).map((l) => l.textContent);
+    expect(boxes).toEqual(['Keys and passwords', 'Emails and phone numbers', 'ID and card numbers']);
+    expect(text()).toContain('Names, addresses, images and files aren’t checked.');
+    const enforce = [...document.querySelectorAll('[role="radiogroup"] button')].find((b) => b.textContent === 'Enforce') as HTMLButtonElement;
+    await act(async () => { enforce.click(); });
+    await flush();
+    const options = [...(document.querySelector('select[aria-label="When enforced"]') as HTMLSelectElement).options].map((o) => o.textContent);
+    expect(options).toEqual(['Remove it and send', 'Remove it, send, and tell me', 'Pause the agent', 'Stop the agent']);
+  });
+
+  it('the BFF accepts the new type and its Remove it and send response', () => {
+    expect(ruleCreateCheck({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, ruleType: 'sensitive_data', mode: 'watch' }).ok).toBe(true);
+    expect(ruleUpdateCheck({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, ruleId: 'gr_sd', response: 'redact' }).ok).toBe(true);
+    expect(rulesStateOf(state({ rules: [SD] }))?.rules[0]).toMatchObject({ ruleType: 'sensitive_data', response: 'redact' });
   });
 });

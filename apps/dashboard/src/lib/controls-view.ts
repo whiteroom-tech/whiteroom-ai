@@ -38,6 +38,9 @@ export const SENSITIVE_KINDS: { kind: SensitiveDataKind; label: string }[] = [
   { kind: 'ids', label: 'ID and card numbers' },
 ];
 
+/** Under a Sensitive data rule's checkboxes, always shown: what it can't see. */
+export const SENSITIVE_NOTE = 'Checked before anything reaches your model provider. Names, addresses, images and files aren’t checked.';
+
 /** A checkbox label mid-sentence: "Keys and passwords" → "keys and passwords"; "ID" stays "ID". */
 const midSentence = (label: string) => (/^[A-Z]{2}/.test(label) ? label : label[0].toLowerCase() + label.slice(1));
 

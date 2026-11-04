@@ -70,9 +70,9 @@ export function rulesSummary(state: Pick<SandboxRulesState, 'rules' | 'source'> 
 /** Why a rule in Watch can still block during a check: each one is enforced for a moment, one at a time. */
 export const RULES_DURING_CHECK = 'During a check, each rule is switched on for a moment to see how your agent reacts.';
 
-const RULE_TYPES: readonly GovernanceRuleType[] = ['spend_cap', 'loop_breaker', 'model_allowlist', 'tool_list', 'call_rate', 'keyword'];
+const RULE_TYPES: readonly GovernanceRuleType[] = ['spend_cap', 'loop_breaker', 'model_allowlist', 'tool_list', 'call_rate', 'keyword', 'sensitive_data'];
 const MODES: readonly GovernanceMode[] = ['off', 'watch', 'enforce'];
-const RESPONSES: readonly GovernanceResponse[] = ['notify', 'block', 'pause', 'stop'];
+const RESPONSES: readonly GovernanceResponse[] = ['notify', 'block', 'pause', 'stop', 'redact'];
 const SOURCES: readonly Exclude<SandboxRulesSource, null>[] = ['ready_made', 'production_copy', 'custom'];
 const RULE_ID_RE = /^[A-Za-z0-9_.:-]{1,128}$/;
 const AGENT_MAX = 100;

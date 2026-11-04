@@ -6,7 +6,8 @@
 
 import { useState } from 'react';
 import { FONT_MONO, Icon } from '@whiteroom/ui';
-import type { GovernanceScope } from '@/lib/whiteroom/types';
+import type { GovernanceScope, SensitiveDataKind } from '@/lib/whiteroom/types';
+import { SENSITIVE_KINDS } from '@/lib/controls-view';
 
 export const field = { background: 'var(--sunk)', border: '1px solid var(--line2)', borderRadius: 7, color: 'var(--tx)', fontSize: 'var(--fs-sm)', minHeight: '1.875rem', boxSizing: 'border-box' } as const;
 
@@ -130,6 +131,25 @@ export function ScopeField({ scope, agents, onChange }: { scope: GovernanceScope
 }
 
 /** A number typed in a sentence; kept as text until Save, so "1,0" isn't forced into 10. */
+/**
+ * A Sensitive data rule's three checkboxes, kept in the engine's order so a
+ * saved rule and its draft compare equal. Shared by Controls and Sandbox.
+ */
+export function SensitiveKindsField({ detect, onChange }: { detect: SensitiveDataKind[]; onChange: (detect: SensitiveDataKind[]) => void }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {SENSITIVE_KINDS.map(({ kind, label }) => (
+        <label key={kind} style={{ display: 'inline-flex', alignItems: 'center', gap: 10, fontSize: 'var(--fs-md)', cursor: 'pointer', alignSelf: 'flex-start', minHeight: 32 }}>
+          <input type="checkbox" checked={detect.includes(kind)}
+            onChange={(e) => onChange(SENSITIVE_KINDS.map((k) => k.kind).filter((k) => (k === kind ? e.target.checked : detect.includes(k))))}
+            style={{ width: 16, height: 16, margin: 0, accentColor: 'var(--brand)' }} />
+          {label}
+        </label>
+      ))}
+    </div>
+  );
+}
+
 export function NumberField({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) {
   return (
     <input

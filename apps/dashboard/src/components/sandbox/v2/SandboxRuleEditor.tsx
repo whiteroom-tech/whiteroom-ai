@@ -8,14 +8,14 @@
 
 import { useState } from 'react';
 import { Banner, Button, SegmentedControl } from '@whiteroom/ui';
-import { Chip, field, GroupPicker, InlineSelect, MODEL_GROUPS, NumberField, ScopeField, TOOL_GROUPS } from '@/app/(citadel)/controls/_components/pickers';
+import { Chip, field, GroupPicker, InlineSelect, MODEL_GROUPS, NumberField, ScopeField, SensitiveKindsField, TOOL_GROUPS } from '@/app/(citadel)/controls/_components/pickers';
 import {
   changeUnit, chooseAction, chooseMode, draftChanges, draftFrom, draftProblem, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits,
-  MODE_CHOICES, responseChoices, whatHappensLine, type RuleDraft,
+  MODE_CHOICES, responseChoicesFor, responseOption, SENSITIVE_NOTE, whatHappensLine, type RuleDraft,
 } from '@/lib/controls-view';
 import { RESPONSE_LABEL } from '@/lib/governance';
 import { MODE_LABEL } from '@/lib/vocab';
-import type { GovernanceMode, GovernanceResponse, GovernanceRule, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, SpendCapParams, ToolListParams } from '@/lib/whiteroom/types';
+import type { GovernanceMode, GovernanceResponse, GovernanceRule, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, SensitiveDataParams, SpendCapParams, ToolListParams } from '@/lib/whiteroom/types';
 import type { SandboxRuleFields } from '@/lib/sandbox/rules';
 import v from './v2.module.css';
 
@@ -38,7 +38,7 @@ export function SandboxRuleEditor({ rule, agents, busy, error, onSave, onCancel,
   const set = (patch: Partial<RuleDraft>) => { setProblem(null); setDraft((d) => ({ ...d, ...patch })); };
   const setParams = (patch: object) => set({ params: { ...draft.params, ...patch } as RuleDraft['params'] });
   const p = draft.params;
-  const actions = responseChoices(true, rule.response ?? 'block');
+  const actions = responseChoicesFor(rule.ruleType, true, rule.response ?? 'block');
   const changes = draftChanges(draft, rule);
 
   const keywords = rule.ruleType === 'keyword' ? (p as KeywordParams).keywords : [];
@@ -120,6 +120,12 @@ export function SandboxRuleEditor({ rule, agents, busy, error, onSave, onCancel,
           {!keywordFits(keywords) && <p className={v.text}>A rule holds up to {KEYWORD_MAX} keywords. Remove one to add another.</p>}
         </>}
 
+        {rule.ruleType === 'sensitive_data' && <>
+          <span className={v.sentence}>A call holds any of:</span>
+          <SensitiveKindsField detect={(p as SensitiveDataParams).detect} onChange={(detect) => setParams({ detect })} />
+          <p className={v.text}>{SENSITIVE_NOTE}</p>
+        </>}
+
         <p className={v.label}>Who</p>
         <ScopeField scope={draft.appliesTo} agents={agents} onChange={(appliesTo) => set({ appliesTo })} />
 
@@ -134,7 +140,7 @@ export function SandboxRuleEditor({ rule, agents, busy, error, onSave, onCancel,
             When enforced:
             <select className="gov-field" aria-label="When enforced" value={draft.response} onChange={(e) => setDraft(chooseAction(draft, e.target.value as GovernanceResponse))}
               style={{ ...field, padding: '0 8px', cursor: 'pointer', maxWidth: '100%' }}>
-              {actions.map((r) => <option key={r} value={r}>{RESPONSE_LABEL[r]}</option>)}
+              {actions.map((r) => <option key={r} value={r}>{responseOption(rule.ruleType, r, RESPONSE_LABEL)}</option>)}
             </select>
           </label>
         )}

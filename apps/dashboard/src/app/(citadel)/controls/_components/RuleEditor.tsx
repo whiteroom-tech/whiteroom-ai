@@ -21,8 +21,8 @@ import { addDays, dayKey, formatInZone } from '@/lib/zone-time';
 import type { ControlActor } from '@/lib/control-actors';
 import { ROUTES } from '@/lib/routes';
 import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
-import { AGENT_NOTE, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, MODE_CHOICES, responseChoicesFor, responseOption, sendsAlert, SENSITIVE_KINDS, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
-import { Chip, field, GroupPicker, InlineSelect, MODEL_GROUPS, NumberField, ScopeField, TOOL_GROUPS } from './pickers';
+import { AGENT_NOTE, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, MODE_CHOICES, responseChoicesFor, responseOption, sendsAlert, SENSITIVE_NOTE, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
+import { Chip, field, GroupPicker, InlineSelect, MODEL_GROUPS, NumberField, ScopeField, SensitiveKindsField, TOOL_GROUPS } from './pickers';
 
 /** When each rule acts; Keywords depends on where it looks (KEYWORD_ACTS), Loop breaker on its number (loopActs). */
 const ACTS: Record<Exclude<GovernanceRule['ruleType'], 'keyword' | 'loop_breaker'>, string> = {
@@ -43,8 +43,6 @@ const WHEN_NOTES: Partial<Record<GovernanceRule['ruleType'], string>> = {
   keyword: 'Whole words, any case. Images and PDFs aren’t checked. The matched text is never stored, and the agent isn’t told which keyword matched.',
   tool_list: 'In Enforce, a streamed call is checked before it streams, so its text arrives all at once. In Watch, streamed calls aren’t checked.',
 };
-/** Under a Sensitive data rule's checkboxes, always shown: what it can't see. */
-const SENSITIVE_NOTE = 'Checked before anything reaches your model provider. Names, addresses, images and files aren’t checked.';
 /** Who, for Sensitive data: agent names come from the agent, so a list of agents isn't a security boundary. */
 const SELF_NAMED_NOTE = 'Agents name themselves, so to be sure every call is checked, use All agents.';
 const REPLY_NOTE = 'To block a streamed reply, it’s checked whole first, so its text arrives all at once. Replies on Bedrock can’t be checked yet.';
@@ -241,21 +239,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
         {rule.ruleType === 'sensitive_data' && (
           <>
             <span style={{ fontSize: 'var(--fs-md)' }}>A call holds any of:</span>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {SENSITIVE_KINDS.map(({ kind, label }) => {
-                const detect = (p as SensitiveDataParams).detect;
-                const on = detect.includes(kind);
-                return (
-                  <label key={kind} style={{ display: 'inline-flex', alignItems: 'center', gap: 10, fontSize: 'var(--fs-md)', cursor: 'pointer', alignSelf: 'flex-start', minHeight: 32 }}>
-                    <input type="checkbox" checked={on}
-                      // In the engine's order, so a saved rule and its draft compare equal.
-                      onChange={(e) => setParams({ detect: SENSITIVE_KINDS.map((k) => k.kind).filter((k) => (k === kind ? e.target.checked : detect.includes(k))) })}
-                      style={{ width: 16, height: 16, margin: 0, accentColor: 'var(--brand)' }} />
-                    {label}
-                  </label>
-                );
-              })}
-            </div>
+            <SensitiveKindsField detect={(p as SensitiveDataParams).detect} onChange={(detect) => setParams({ detect })} />
             <p style={help}>{SENSITIVE_NOTE}</p>
           </>
         )}
