@@ -9,8 +9,28 @@ import type { RunSummary } from '@/lib/whiteroom/types';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const nav = vi.hoisted(() => ({ params: new URLSearchParams(), replace: vi.fn(), push: vi.fn() }));
-vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: nav.replace, push: nav.push }), useSearchParams: () => nav.params }));
+// Next's router follows history.replaceState (useSearchParams updates), and the
+// Runs filters live in the address alone, so the mock does the same: the query
+// is window.location's, and a replaceState re-renders whoever reads it.
+const nav = vi.hoisted(() => ({ replace: vi.fn(), push: vi.fn(), listeners: new Set<() => void>() }));
+vi.mock('next/navigation', async () => {
+  const { useSyncExternalStore } = await import('react');
+  const subscribe = (l: () => void) => { nav.listeners.add(l); return () => { nav.listeners.delete(l); }; };
+  return {
+    useRouter: () => ({ replace: nav.replace, push: nav.push }),
+    useSearchParams: () => new URLSearchParams(useSyncExternalStore(subscribe, () => window.location.search)),
+  };
+});
+const realReplaceState = window.history.replaceState.bind(window.history);
+window.history.replaceState = (data: unknown, unused: string, url?: string | URL | null) => {
+  realReplaceState(data, unused, url);
+  nav.listeners.forEach((l) => l());
+};
+/** The address as a link or Back/Forward would leave it (before or during a mount). */
+function setQuery(q: string) {
+  realReplaceState(null, '', q ? `/runs?${q}` : '/runs');
+  nav.listeners.forEach((l) => l());
+}
 vi.mock('@/hooks/useFleetAuth', () => ({ useFleetAuth: () => ({ status: 'authenticated', fleetId: 'f1', authKey: 'k', resetSession: vi.fn() }) }));
 
 const api = vi.hoisted(() => ({ list: vi.fn(), counted: true, hours: vi.fn(), days: { days: [] } as { days: { day: string; runs: number; flagged?: number }[]; flaggedUnavailable?: boolean }, daysFn: null as null | ((...a: unknown[]) => Promise<unknown>) }));
@@ -60,7 +80,7 @@ async function mount(sample?: RunSummary[], retentionDays?: number) {
 beforeEach(() => {
   api.hours.mockReset();
   api.hours.mockResolvedValue({ hours: [{ hour: 9, runs: 2 }, { hour: 14, runs: 1 }] });
-  nav.params = new URLSearchParams();
+  setQuery('');
   nav.replace.mockClear();
   api.list.mockReset();
   api.list.mockImplementation(async (_f: string, opts: { ruleActivity?: boolean }) => {
@@ -79,12 +99,12 @@ describe('Runs › Show › Rule activity', () => {
     expect(m.text()).toContain('2 would have acted (Watch)');
     await m.click(m.radio('Rule activity'));
     expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ ruleActivity: true, flagged: false }), 'k');
-    expect(nav.replace).toHaveBeenLastCalledWith(expect.stringContaining('show=rules'), { scroll: false });
+    expect(window.location.search).toContain('show=rules');
     m.root.unmount();
   });
 
   it('opens on a shared ?show=rules link', async () => {
-    nav.params = new URLSearchParams('show=rules');
+    setQuery('show=rules');
     const m = await mount();
     expect(api.list).toHaveBeenCalledWith('f1', expect.objectContaining({ ruleActivity: true }), 'k');
     expect(m.radio('Rule activity')?.getAttribute('aria-checked')).toBe('true');
@@ -93,7 +113,7 @@ describe('Runs › Show › Rule activity', () => {
 
   it('falls back to All, and offers no Rule activity, on an engine that doesn’t count rule actions', async () => {
     api.counted = false;
-    nav.params = new URLSearchParams('show=rules');
+    setQuery('show=rules');
     const m = await mount();
     expect(m.radio('Rule activity')).toBeUndefined();
     expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ ruleActivity: false }), 'k');
@@ -390,7 +410,7 @@ describe('Runs › Export', () => {
     const { downloadWorkbook } = await import('@/lib/xlsx');
     const dl = vi.mocked(downloadWorkbook);
     dl.mockClear();
-    nav.params = new URLSearchParams('agent=lead-agent');
+    setQuery('agent=lead-agent');
     const m = await mount();
     await openAndDownload(m, { span: 'yesterday' });
     const y = new Date(Date.now() - 86_400_000).toLocaleDateString('en-CA');
@@ -404,7 +424,7 @@ describe('Runs › Export', () => {
     await openAndDownload(t);
     expect(t.text()).toContain('Pick a shorter range for the rest.');
     t.root.unmount();
-    nav.params = new URLSearchParams();
+    setQuery('');
   });
 
   it('says when it stopped at the newest runs, when the export failed, and when the engine can’t list runs', async () => {
@@ -433,7 +453,7 @@ describe('Runs › a day by hour', () => {
   const at = (h: number) => { const d = new Date(`${day}T00:00:00`); d.setHours(h, 15); return d.toISOString(); };
 
   it('shows the picked day by hour, and an hour lists only that hour’s runs', async () => {
-    nav.params = new URLSearchParams(`day=${day}`);
+    setQuery(`day=${day}`);
     api.list.mockImplementation(async (_f: string, o: { hour?: number | null }) => ({ runs: o.hour === 9 ? [run(1, { startedAt: at(9) })] : [run(1, { startedAt: at(9) }), run(2, { startedAt: at(14) })], total: 2, cursor: null }));
     const m = await mount();
     expect(api.hours).toHaveBeenCalledWith('f1', { day, agentId: undefined }, 'k');
@@ -442,14 +462,14 @@ describe('Runs › a day by hour', () => {
     expect(m.el.querySelector('button[aria-label="3 am: 0 runs"]')!.hasAttribute('disabled')).toBe(true);
     await m.click(nine);
     expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ hour: 9 }), 'k');
-    expect(nav.replace).toHaveBeenLastCalledWith(expect.stringContaining('hour=9'), { scroll: false });
+    expect(window.location.search).toContain('hour=9');
     await m.click([...m.el.querySelectorAll('button')].find((b) => b.textContent === 'All hours'));
     expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ hour: null }), 'k');
     m.root.unmount();
   });
 
   it('exports just the picked hour when the dialog keeps "What’s shown now"', async () => {
-    nav.params = new URLSearchParams(`day=${day}&hour=9`);
+    setQuery(`day=${day}&hour=9`);
     api.list.mockImplementation(async () => ({ runs: [run(1, { startedAt: at(9) })], total: 1, cursor: null }));
     const m = await mount();
     HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) { this.setAttribute('open', ''); };
@@ -462,7 +482,7 @@ describe('Runs › a day by hour', () => {
   });
 
   it('on an engine without the hour filter, keeps the counts but not the picking, rather than mislabel the whole day', async () => {
-    nav.params = new URLSearchParams(`day=${day}&hour=9`);
+    setQuery(`day=${day}&hour=9`);
     api.list.mockImplementation(async () => ({ runs: [run(1, { startedAt: at(9) }), run(2, { startedAt: at(14) })], total: 2, cursor: null }));
     const m = await mount();
     expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ hour: null }), 'k');
@@ -472,7 +492,7 @@ describe('Runs › a day by hour', () => {
   });
 
   it('asks again on another day after an ignored hour, and refreshes the hours with the list', async () => {
-    nav.params = new URLSearchParams(`day=${day}&hour=9`);
+    setQuery(`day=${day}&hour=9`);
     let honour = false;
     api.list.mockImplementation(async (_f: string, o: { hour?: number | null }) => ({ runs: honour && o.hour === 9 ? [run(1, { startedAt: at(9) })] : [run(1, { startedAt: at(9) }), run(2, { startedAt: at(14) })], total: 2, cursor: null }));
     const m = await mount();
@@ -488,7 +508,7 @@ describe('Runs › a day by hour', () => {
   });
 
   it('never shows one day’s hour counts under another day', async () => {
-    nav.params = new URLSearchParams(`day=${day}`);
+    setQuery(`day=${day}`);
     api.list.mockImplementation(async () => ({ runs: [run(1, { startedAt: at(9) })], total: 1, cursor: null }));
     const m = await mount();
     expect(m.text()).toContain('by hour');
@@ -500,7 +520,7 @@ describe('Runs › a day by hour', () => {
   });
 
   it('moves focus to a stable place when the control used goes away', async () => {
-    nav.params = new URLSearchParams(`day=${day}&hour=9`);
+    setQuery(`day=${day}&hour=9`);
     api.list.mockImplementation(async () => ({ runs: [run(1, { startedAt: at(9) })], total: 1, cursor: null }));
     const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => { cb(0); return 0; });
     const m = await mount();
@@ -519,7 +539,7 @@ describe('Runs › a day by hour', () => {
 
   it('applies a link’s hour only to the day it named', async () => {
     const old = new Date(Date.now() - 40 * 86_400_000).toLocaleDateString('en-CA');
-    nav.params = new URLSearchParams(`day=${old}&hour=9`);
+    setQuery(`day=${old}&hour=9`);
     const m = await mount(undefined, 30);
     expect(api.list).toHaveBeenCalledWith('f1', expect.objectContaining({ hour: null }), 'k');
     expect(api.list).not.toHaveBeenCalledWith('f1', expect.objectContaining({ hour: 9 }), 'k');
@@ -528,7 +548,7 @@ describe('Runs › a day by hour', () => {
 
   it('shows no hourly view on an engine without run_hours', async () => {
     api.hours.mockResolvedValue({ unsupported: true });
-    nav.params = new URLSearchParams(`day=${day}`);
+    setQuery(`day=${day}`);
     const m = await mount();
     expect(m.text()).not.toContain('by hour');
     // Nor does the day chart invite picking a day for its hours.
@@ -538,11 +558,120 @@ describe('Runs › a day by hour', () => {
 
   it('stops filtering by a linked hour on an engine without run_hours', async () => {
     api.hours.mockResolvedValue({ unsupported: true });
-    nav.params = new URLSearchParams(`day=${day}&hour=9`);
+    setQuery(`day=${day}&hour=9`);
     api.list.mockImplementation(async () => ({ runs: [run(1, { startedAt: at(9) })], total: 1, cursor: null }));
     const m = await mount();
     expect(m.text()).not.toContain('by hour');
     expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ hour: null }), 'k');
+    m.root.unmount();
+  });
+});
+
+// The filters live in the address alone (bug-fix spec PR D, finding 08): a
+// link or Back/Forward on this page moves the filters, and paging belongs to
+// a filter epoch, so it never comes back from an earlier visit to a filter.
+describe('Runs › filters follow the address', () => {
+  const paged = () => api.list.mockImplementation(async (_f: string, o: { cursor?: string | null; pageSize: number }) => {
+    const from = Number(o.cursor ?? 0);
+    return { runs: Array.from({ length: o.pageSize }, (_, i) => run(from + i + 1)), total: 60, cursor: String(from + o.pageSize) };
+  });
+  const moreButton = (m: Awaited<ReturnType<typeof mount>>) => [...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Show more runs');
+  const outside = async (q: string) => { await act(async () => setQuery(q)); await flush(); };
+
+  it('a same-page link changes range, Show and agent, with one list request for them', async () => {
+    const m = await mount();
+    const before = api.list.mock.calls.length;
+    await outside('range=today&show=flagged&agent=other-agent');
+    expect(m.radio('Today')?.getAttribute('aria-checked')).toBe('true');
+    expect(api.list.mock.calls.length).toBe(before + 1);
+    expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ agentId: 'other-agent', flagged: true, pageSize: 25 }), 'k');
+    m.root.unmount();
+  });
+
+  it('a pick writes the address once with history.replaceState, not the router', async () => {
+    const m = await mount();
+    const spy = vi.spyOn(window.history, 'replaceState');
+    await m.click(m.radio('30 days'));
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(window.location.search).toBe('?range=30d');
+    expect(nav.replace).not.toHaveBeenCalled();
+    spy.mockRestore();
+    m.root.unmount();
+  });
+
+  it('two quick picks end on the second', async () => {
+    const m = await mount();
+    await act(async () => { m.radio('Today')!.click(); m.radio('30 days')!.click(); });
+    await flush();
+    expect(m.radio('30 days')?.getAttribute('aria-checked')).toBe('true');
+    expect(window.location.search).toBe('?range=30d');
+    m.root.unmount();
+  });
+
+  it('a superseded pick, then a link to that same address, applies the link', async () => {
+    const m = await mount();
+    await m.click(m.radio('Today'));
+    await m.click(m.radio('30 days'));
+    await outside('range=today');
+    expect(m.radio('Today')?.getAttribute('aria-checked')).toBe('true');
+    m.root.unmount();
+  });
+
+  it('Back to an earlier address shows its filters', async () => {
+    setQuery('range=30d');
+    const m = await mount();
+    await m.click(m.radio('Today'));
+    await outside('range=30d'); // what popstate leaves for useSearchParams
+    expect(m.radio('30 days')?.getAttribute('aria-checked')).toBe('true');
+    m.root.unmount();
+  });
+
+  it('custom days in the address are applied as given', async () => {
+    const to = new Date(Date.now() - 86_400_000).toLocaleDateString('en-CA');
+    const from = new Date(Date.now() - 5 * 86_400_000).toLocaleDateString('en-CA');
+    const m = await mount();
+    await outside(`range=custom&from=${from}&to=${to}`);
+    expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ fromDay: from, toDay: to }), 'k');
+    m.root.unmount();
+  });
+
+  it('after Show more, an outside filter change starts again from one page', async () => {
+    paged();
+    const m = await mount();
+    await m.click(moreButton(m));
+    expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ cursor: '25' }), 'k');
+    await outside('range=today');
+    expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ cursor: null, pageSize: 25 }), 'k');
+    m.root.unmount();
+  });
+
+  it('A → B → A with a Show more from the first A still loading: its page is dropped, and A starts at one page', async () => {
+    paged();
+    const m = await mount();
+    let lateMore!: (v: unknown) => void;
+    api.list.mockImplementationOnce(() => new Promise((resolve) => { lateMore = resolve; }));
+    await act(async () => { moreButton(m)!.click(); }); await flush(); // A's Show more, held
+    paged();
+    await outside('range=today'); // B
+    await outside('');            // back to A
+    const rowsBefore = m.el.querySelectorAll('.wr-runs-list a.wr-runs-list__row').length;
+    await act(async () => lateMore({ runs: Array.from({ length: 25 }, (_, i) => run(100 + i)), total: 60, cursor: '50' })); await flush();
+    expect(m.el.querySelectorAll('.wr-runs-list a.wr-runs-list__row').length).toBe(rowsBefore);
+    expect(m.el.querySelectorAll('.wr-runs-list a.wr-runs-list__row').length).toBe(25);
+    // The next poll for A reads one page, not the old expanded count.
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); }); await flush();
+    expect(api.list).toHaveBeenLastCalledWith('f1', expect.objectContaining({ cursor: null, pageSize: 25 }), 'k');
+    m.root.unmount();
+  });
+
+  it('A → B → A with nothing pending: A is not restored to its old expanded list', async () => {
+    paged();
+    const m = await mount();
+    await m.click(moreButton(m));
+    expect(m.el.querySelectorAll('.wr-runs-list a.wr-runs-list__row')).toHaveLength(50);
+    await outside('range=today');
+    await outside('');
+    expect(m.el.querySelectorAll('.wr-runs-list a.wr-runs-list__row')).toHaveLength(25);
     m.root.unmount();
   });
 });

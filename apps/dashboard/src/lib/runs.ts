@@ -121,6 +121,61 @@ export function oldestKept(retentionDays: number | null | undefined, now: number
   return retentionDays && retentionDays > 0 ? addDays(localDay(now), 1 - retentionDays) : null;
 }
 
+/** The Runs list's filters. All of them live in the address; nothing else holds them. */
+export interface RunsFilters {
+  range: RunsRange;
+  agent: string;
+  show: RunsShow;
+  /** One picked day, which overrides the range. */
+  day: string | null;
+  /** A picked hour of the picked day. */
+  hour: number | null;
+  /** A custom range's ends. */
+  from: string | null;
+  to: string | null;
+}
+
+/**
+ * The filters an address names: unknown values fall back to the defaults, a
+ * day older than the plan keeps moves to the oldest kept (and drops its hour,
+ * which belonged to the day the link named), and a custom range is kept to
+ * what the engine takes (clampSpan).
+ */
+export function runsFiltersFromParams(params: { get(name: string): string | null }, retentionDays?: number, now: number = Date.now()): RunsFilters {
+  const oldest = oldestKept(retentionDays, now);
+  const r = params.get('range');
+  const s = params.get('show');
+  const named = validDay(params.get('day'), now);
+  const tooOld = !!(named && oldest && named < oldest);
+  const rawHour = params.get('hour');
+  const h = Number(rawHour);
+  const f = validDay(params.get('from'), now);
+  const t = validDay(params.get('to'), now);
+  const span = f && t ? clampSpan(f, t, { today: localDay(now), oldest }) : null;
+  return {
+    range: (RUNS_RANGES as (string | null)[]).includes(r) ? (r as RunsRange) : '7d',
+    agent: params.get('agent') ?? 'all',
+    show: s === 'flagged' || s === 'rules' ? s : 'all',
+    day: tooOld ? oldest : named,
+    hour: rawHour !== null && Number.isInteger(h) && h >= 0 && h <= 23 && named && !tooOld ? h : null,
+    from: span?.from ?? null,
+    to: span?.to ?? null,
+  };
+}
+
+/** The address for `f`: the path with its other query kept, and defaults dropped. */
+export function runsFiltersUrl(path: string, search: string, f: RunsFilters): string {
+  const sp = new URLSearchParams(search);
+  if (f.range === '7d') sp.delete('range'); else sp.set('range', f.range);
+  if (f.agent === 'all') sp.delete('agent'); else sp.set('agent', f.agent);
+  if (f.show !== 'all') sp.set('show', f.show); else sp.delete('show');
+  if (f.day) sp.set('day', f.day); else sp.delete('day');
+  if (f.day && f.hour !== null) sp.set('hour', String(f.hour)); else sp.delete('hour');
+  if (f.range === 'custom' && f.from && f.to) { sp.set('from', f.from); sp.set('to', f.to); } else { sp.delete('from'); sp.delete('to'); }
+  const qs = sp.toString();
+  return qs ? `${path}?${qs}` : path;
+}
+
 /**
  * Where the day strip should end so the shown days are on it: unchanged when
  * their last day is already on the strip, else that last day.

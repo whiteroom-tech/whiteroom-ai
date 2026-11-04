@@ -121,6 +121,8 @@ async function mount() {
 }
 
 beforeEach(() => {
+  // An unsaved edit is kept in sessionStorage across visits (controls-draft): each test starts with none.
+  sessionStorage.clear();
   nav.params = new URLSearchParams(); nav.replace.mockClear(); nav.push.mockClear();
   api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.hourly = []; api.listGate = null; api.listFail = false; api.empty = false; api.would = {}; api.agentCalls = {}; api.history = []; api.totals = null;
   document.body.innerHTML = '';
@@ -1672,6 +1674,185 @@ describe('Controls page, mockup suggestions and toasts', () => {
     api.history = [{ id: 'h1', ruleId: 'r1', ruleType: 'loop_breaker', description: 'Added new Loop breaker rule', by: 'R Haque', time: new Date().toISOString() }];
     const m = await mount();
     expect(m.text()).toContain('Loop breaker added · R Haque');
+    m.root.unmount();
+  });
+});
+
+// An unsaved edit survives leaving the page (bug-fix spec PR D, finding 12):
+// Back/Forward can't be held back in the App Router, so the draft is kept for
+// this tab and restored on return, restore first and then keep.
+describe('Controls › an unsaved edit comes back', () => {
+  const KEY = 'wr_controls_draft:f1';
+  const limit = (m: Awaited<ReturnType<typeof mount>>) => (m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement | null)?.value;
+  const saved = () => JSON.parse(sessionStorage.getItem(KEY) ?? 'null') as { ruleId: string; version: number; draft: { number: string } } | null;
+  async function editAndLeave(value = '250') {
+    const m = await mount();
+    await m.open('$190');
+    await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, value);
+    expect(saved()).toMatchObject({ ruleId: 'r3', version: 1, draft: { number: value } });
+    await act(async () => m.root.unmount()); // Back: the page goes away, nothing asked
+    document.body.innerHTML = '';
+  }
+
+  it('Back then Forward: the edit is back in the editor, with a note', async () => {
+    await editAndLeave();
+    const m = await mount();
+    expect(limit(m)).toBe('250');
+    expect(m.text()).toContain('Your unsaved change to Spend cap is back. Save or discard it.');
+    expect(m.button('Save')!.disabled).toBe(false);
+    m.root.unmount();
+  });
+
+  it('with the rules slow to load, the saved edit is untouched until they arrive, then restored', async () => {
+    await editAndLeave();
+    let open!: () => void;
+    api.listGate = new Promise<void>((r) => { open = r; });
+    const m = await mount();
+    expect(saved()?.draft.number).toBe('250'); // the first render (nothing selected) didn't wipe it
+    await act(async () => open()); await flush();
+    expect(limit(m)).toBe('250');
+    m.root.unmount();
+  });
+
+  it('if the rules fail to load, the saved edit waits for the next visit', async () => {
+    await editAndLeave();
+    api.listFail = true;
+    let m = await mount();
+    expect(saved()?.draft.number).toBe('250');
+    m.root.unmount(); document.body.innerHTML = '';
+    api.listFail = false;
+    m = await mount();
+    expect(limit(m)).toBe('250');
+    m.root.unmount();
+  });
+
+  it('a link to another rule wins; the edit is kept until another rule is edited', async () => {
+    await editAndLeave();
+    nav.params = new URLSearchParams('rule=r4');
+    const m = await mount();
+    expect(m.text()).not.toContain('is back');
+    expect(saved()?.ruleId).toBe('r3');
+    await m.click(m.button('Change'));
+    await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '210');
+    expect(saved()).toMatchObject({ ruleId: 'r4', draft: { number: '210' } });
+    m.root.unmount();
+  });
+
+  it('a rule changed since the edit: the edit is dropped, and the note says so', async () => {
+    await editAndLeave();
+    api.saved.r3 = { ...RULES[2], version: 2 };
+    const m = await mount();
+    expect(m.text()).toContain('Spend cap changed since you edited it, so your unsaved change was dropped.');
+    expect(saved()).toBeNull();
+    m.root.unmount();
+  });
+
+  it('a rule removed since: the edit is dropped quietly', async () => {
+    await editAndLeave();
+    api.empty = true;
+    const m = await mount();
+    expect(saved()).toBeNull();
+    expect(m.text()).not.toContain('unsaved change');
+    m.root.unmount();
+  });
+
+  it('Save clears it', async () => {
+    // The server keeps what was saved, so the reload after Save lists it.
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => {
+      const rule = { ...RULES.find((r) => r.id === id)!, ...ch, version: 2 } as GovernanceRule;
+      api.saved[id] = rule;
+      return { rule };
+    });
+    const m = await mount();
+    await m.open('$190');
+    // Lower (stricter), so Save goes straight through without the "make it weaker?" confirm.
+    await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '150');
+    expect(saved()).not.toBeNull();
+    await m.click(m.button('Save'));
+    expect(api.update).toHaveBeenCalled();
+    expect(saved()).toBeNull();
+    m.root.unmount();
+  });
+
+  it('Discard clears it', async () => {
+    const m = await mount();
+    await m.open('$190');
+    await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '250');
+    await m.click(m.button('Discard changes'));
+    expect(saved()).toBeNull();
+    m.root.unmount();
+  });
+
+  it('editing back to the saved value clears it', async () => {
+    const m = await mount();
+    await m.open('$190');
+    const input = () => m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement;
+    await type(input(), '250');
+    expect(saved()).not.toBeNull();
+    await type(input(), '190');
+    expect(saved()).toBeNull();
+    m.root.unmount();
+  });
+
+  it('storage that throws: the page still works, and keeps nothing', async () => {
+    const real = Object.getOwnPropertyDescriptor(window, 'sessionStorage')!;
+    Object.defineProperty(window, 'sessionStorage', { configurable: true, get: () => { throw new Error('blocked'); } });
+    try {
+      const m = await mount();
+      await m.open('$190');
+      await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '250');
+      expect(m.button('Save')!.disabled).toBe(false);
+      m.root.unmount();
+    } finally {
+      Object.defineProperty(window, 'sessionStorage', real);
+    }
+    expect(saved()).toBeNull();
+  });
+
+  it('a save refused because the rule changed elsewhere drops the kept edit too', async () => {
+    const { WhiteRoomApiError } = await import('@/lib/whiteroom/client');
+    api.update.mockRejectedValueOnce(new WhiteRoomApiError('HTTP 409', 409));
+    const m = await mount();
+    await m.open('$190');
+    await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '150');
+    expect(saved()).not.toBeNull();
+    await m.click(m.button('Save'));
+    expect(m.text()).toContain('This rule changed somewhere else');
+    expect(saved()).toBeNull();
+    m.root.unmount();
+  });
+
+  it('"Discard changes" in the leave dialog drops the kept edit', async () => {
+    const m = await mount();
+    await m.open('Only claude');
+    await m.pick('Block the call');
+    expect(saved()?.ruleId).toBe('r2');
+    await m.click(m.button('‹ Controls'));
+    await m.click([...[...m.el.querySelectorAll('dialog[open]')].at(-1)!.querySelectorAll('button')].find((b) => b.textContent === 'Discard changes'));
+    expect(saved()).toBeNull();
+    m.root.unmount();
+  });
+
+  it('a suggestion being added (?rec=) comes first; the kept edit waits for a later visit', async () => {
+    await editAndLeave();
+    nav.params = new URLSearchParams('rec=rec_123');
+    let m = await mount();
+    expect(m.text()).toContain('Suggestion draft');
+    expect(m.text()).not.toContain('is back');
+    expect(saved()?.draft.number).toBe('250');
+    m.root.unmount(); document.body.innerHTML = '';
+    nav.params = new URLSearchParams();
+    m = await mount();
+    expect(limit(m)).toBe('250');
+    m.root.unmount();
+  });
+
+  it('a kept edit for a rule that is now another kind is dropped', async () => {
+    await editAndLeave();
+    sessionStorage.setItem(KEY, JSON.stringify({ ...saved()!, draft: { ...saved()!.draft, ruleType: 'call_rate' } }));
+    const m = await mount();
+    expect(saved()).toBeNull();
+    expect(m.text()).not.toContain('is back');
     m.root.unmount();
   });
 });
