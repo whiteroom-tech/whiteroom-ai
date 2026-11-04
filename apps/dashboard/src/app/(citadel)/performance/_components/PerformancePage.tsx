@@ -138,9 +138,9 @@ export function PerformancePage({ retentionDays }: {
     const now = Date.now();
     const days = runsWindow(rangeView, now);
     const key = windowKey(rangeView, now);
-    const w = viewInstants(rangeView);
+    const w = viewInstants(rangeView, now);
     try {
-      const weekStart = dayStart(addDays(localDay(), -6)); // the Savings chart's 7 calendar days
+      const weekStart = dayStart(addDays(localDay(now), -6)); // the Savings chart's 7 calendar days
       // Totals the engine computes over the whole stored audit trail (Phase 1
       // spec H1): the range for savings and rule counts, and 7 calendar days
       // for the chart.
@@ -302,24 +302,27 @@ export function PerformancePage({ retentionDays }: {
     intervalMs: 60_000,
     enabled: authenticated && view === 'index' && !legacyAgent,
   });
-  // A new window (range, custom days, saved zone) or fleet reads at once, dimmed.
-  const readFor = useRef(`${fleetId}|${currentKey}`);
-  useEffect(() => {
-    const next = `${fleetId}|${currentKey}`;
-    if (readFor.current === next) return;
-    readFor.current = next;
-    if (authenticated && view === 'index' && !legacyAgent) void fetchIndex();
-  }, [fleetId, currentKey, authenticated, view, legacyAgent, fetchIndex]);
-  // The Savings chart is 7 local calendar days: reload just after local
-  // midnight so it moves to the new day even when nothing else refreshes.
+  // The Savings chart is 7 local calendar days: just after local midnight the
+  // page reads again so it moves to the new day, even for a range whose own
+  // days don't move (a custom range in the past). The timer only counts
+  // midnights; the read is the one below, so a midnight that also moves the
+  // range's days still reads once.
   const [midnights, setMidnights] = useState(0);
   useEffect(() => {
     if (!authenticated || view !== 'index') return;
     const next = dayStart(addDays(localDay(), 1)).getTime() + 5_000;
     // Bumping `midnights` re-runs this effect, which arms the next midnight.
-    const t = setTimeout(() => { fetchIndex(); setMidnights((n) => n + 1); }, next - Date.now());
+    const t = setTimeout(() => setMidnights((n) => n + 1), next - Date.now());
     return () => clearTimeout(t);
-  }, [authenticated, view, fetchIndex, midnights, zone]);
+  }, [authenticated, view, midnights, zone]);
+  // A new window (range, custom days, saved zone), fleet or day reads at once, dimmed.
+  const readFor = useRef(`${fleetId}|${currentKey}|${midnights}`);
+  useEffect(() => {
+    const next = `${fleetId}|${currentKey}|${midnights}`;
+    if (readFor.current === next) return;
+    readFor.current = next;
+    if (authenticated && view === 'index' && !legacyAgent) void fetchIndex();
+  }, [fleetId, currentKey, midnights, authenticated, view, legacyAgent, fetchIndex]);
   useEffect(() => { if (authenticated && view === 'evidence' && selectedFindingId) fetchEvidence(selectedFindingId); }, [authenticated, view, selectedFindingId, fetchEvidence]);
 
   async function handleFeedback(recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string, recover?: boolean): Promise<FeedbackResult> {

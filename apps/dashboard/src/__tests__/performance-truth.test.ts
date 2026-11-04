@@ -10,7 +10,8 @@ import { createRoot, type Root } from 'react-dom/client';
 const nav = vi.hoisted(() => ({ params: new URLSearchParams(), router: { replace: vi.fn(), push: vi.fn() } }));
 const api = vi.hoisted(() => ({ index: vi.fn(), hourly: vi.fn(), audit: vi.fn(), evidence: vi.fn(), reset: vi.fn() }));
 vi.mock('next/navigation', () => ({ useRouter: () => nav.router, useSearchParams: () => nav.params, usePathname: () => '/performance' }));
-vi.mock('@/hooks/useFleetAuth', () => ({ useFleetAuth: () => ({ status: 'authenticated', fleetId: 'test-fleet', authKey: undefined, resetSession: api.reset }) }));
+const fleet = vi.hoisted(() => ({ id: 'test-fleet' }));
+vi.mock('@/hooks/useFleetAuth', () => ({ useFleetAuth: () => ({ status: 'authenticated', fleetId: fleet.id, authKey: undefined, resetSession: api.reset }) }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
   performanceIndex: api.index, performanceFleetHourly: api.hourly, auditSummary: api.audit, performanceEvidence: api.evidence,
@@ -45,7 +46,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
   vi.setSystemTime(new Date('2026-11-03T15:00:00Z'));
   setViewerZone('UTC', { quiet: true });
-  clearSnapshots(); nav.params = new URLSearchParams(); vi.clearAllMocks();
+  clearSnapshots(); nav.params = new URLSearchParams(); vi.clearAllMocks(); fleet.id = 'test-fleet';
   api.index.mockReset().mockResolvedValue({ summary: { totalCalls: 700 } });
   api.hourly.mockReset().mockResolvedValue({ hourly: [] });
   api.audit.mockReset().mockResolvedValue(null);
@@ -225,4 +226,40 @@ it('a 401 while loading evidence calls resetSession', async () => {
   api.evidence.mockRejectedValue(new WhiteRoomApiError('Unauthorized', 401));
   await act(async () => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'evidence')!.click()); await flush();
   expect(api.reset).toHaveBeenCalled();
+});
+
+// --- review follow-ups: midnight reads once; a fleet change reads at once ---
+
+it('just after midnight, Today reads once and shows the new day as today', async () => {
+  nav.params = new URLSearchParams('range=today');
+  api.index.mockResolvedValueOnce({ summary: { totalCalls: 40 } });
+  await mount();
+  // Polls on the way to midnight are not due until five minutes pass; count from just before.
+  await advance(9 * 3600_000 - 60_000);
+  const n = api.index.mock.calls.length;
+  api.index.mockResolvedValue({ summary: { totalCalls: 3 } });
+  await advance(60_000 + 10_000); // midnight + 5s, plus a little
+  const atMidnight = api.index.mock.calls.length - n;
+  expect(atMidnight).toBe(1);
+  expect(shown()).toBe('today: 3 calls');
+  const [, , , w] = api.index.mock.calls.at(-1)!;
+  expect((w as { from: Date }).from.toISOString()).toBe('2026-11-04T00:00:00.000Z');
+});
+
+it('a fixed custom range still reads once at midnight (the Savings chart moves to the new day)', async () => {
+  nav.params = new URLSearchParams('range=custom&from=2026-10-20&to=2026-10-25');
+  await mount();
+  await advance(9 * 3600_000 - 60_000);
+  const n = api.index.mock.calls.length;
+  await advance(70_000);
+  expect(api.index.mock.calls.length - n).toBe(1);
+});
+
+it('a fleet change reads at once', async () => {
+  await mount();
+  const n = api.index.mock.calls.length;
+  fleet.id = 'other-fleet';
+  await act(async () => { root.render(h(PerformancePage)); }); await flush();
+  expect(api.index.mock.calls.length).toBe(n + 1);
+  expect(api.index.mock.calls.at(-1)![0]).toBe('other-fleet');
 });
