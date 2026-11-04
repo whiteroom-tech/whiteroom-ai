@@ -3,11 +3,13 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { performanceIndex, performanceEvidence, performanceFeedback, performanceRecommendationGet, performanceFleetHourly, auditSummary, ruleActions as fetchRuleActions, performanceCostForecast, governanceList, isAuthError } from '@/lib/whiteroom/client';
-import { addDays, clampSpan, dayStart, localDay, runsDays, runsWindow, spanLabel, viewInstants, type RunsRange, type RunsView } from '@/lib/runs';
+import { addDays, clampSpan, dayStart, localDay, runsDays, runsWindow, spanLabel, viewInstants, windowKey, type RunsRange, type RunsView } from '@/lib/runs';
 import { legacyHoursBack, NEEDS_WINDOWS, PERF_MAX_DAYS, perfOldest, perfRangeParams, perfViewFromParams, windowUnsupported } from '@/lib/performance-range';
 import { syncQueryParams } from '@/lib/url';
 import { agentTotalsFromBuckets, cacheSavedTotal, dailySavingsFromBuckets, savedByDay, savingsDollars, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
-import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
+import { LoadFailed, LoadingLine, RefreshFailed } from '@/components/citadel/States';
+import { usePoll } from '@/hooks/usePoll';
+import { WEEK_POLL_MS } from '@/lib/home-agents';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { useViewerZone } from '@/hooks/useViewerZone';
 import { NO_EXTRAS, readSnapshot, saveSnapshot, updateSnapshot, type OverviewExtras } from '@/lib/performance-snapshot';
@@ -36,7 +38,7 @@ export function PerformancePage({ retentionDays }: {
   retentionDays?: number;
 }) {
   const auth = useFleetAuth();
-  const { fleetId, authKey } = auth;
+  const { fleetId, authKey, resetSession } = auth;
   const authenticated = auth.status === 'authenticated';
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -65,7 +67,11 @@ export function PerformancePage({ retentionDays }: {
   // until the page loads again (an engine upgrade shows on the next load).
   const [windowsOff, setWindowsOff] = useState(false);
   const span = runsWindow(rangeView);
-  const rangeKey = `${span.fromDay}|${span.toDay}`;
+  // A new saved zone moves the days, so it re-renders this page (and re-keys it).
+  const zone = useViewerZone();
+  // The window on screen as resolved now: fetching, matching data to it and the
+  // snapshot cache all use this one key (its days and zone).
+  const currentKey = windowKey(rangeView);
 
   // Keep the URL in sync: defaults drop their param; leaving agent/evidence
   // views removes ?agent.
@@ -82,7 +88,7 @@ export function PerformancePage({ retentionDays }: {
   const openAgent = useCallback((id: string) => router.push(agentPage(id)), [router]);
   // The overview as last shown for this fleet and range: on a return visit it's
   // on screen at once, and the refresh below replaces it.
-  const [shown] = useState(() => readSnapshot(fleetId, rangeKey));
+  const [shown] = useState(() => readSnapshot(fleetId, currentKey));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   // When the shown index data arrived, for the refresh-failed line.
@@ -100,6 +106,9 @@ export function PerformancePage({ retentionDays }: {
   const [savingsDays, setSavingsDays] = useState<DaySavings[] | null>(shown?.savingsDays ?? null);
   const [agentIds, setAgentIds] = useState<string[] | null>(shown?.agentIds ?? null);
   const [extra, setExtra] = useState<OverviewExtras>(shown?.extras ?? NO_EXTRAS);
+  // The window the overview on screen was read for. Only data for the current
+  // window is shown as it; while another loads, the old figures keep their own dates.
+  const [dataSpan, setDataSpan] = useState<{ key: string; fromDay: string; toDay: string } | null>(shown ? { key: currentKey, ...span } : null);
 
   // Monotonic request ids, one per fetch key: a response is applied only if it
   // is still the newest request for that key, so rapid Today→7 days→30 days clicks (or
@@ -108,15 +117,23 @@ export function PerformancePage({ retentionDays }: {
   // By day's week of hourly rows, kept a few minutes per fleet (WEEK_READ_TTL_MS).
   const weekRead = useRef<{ fleetId: string; at: number; data: FleetHourlyResult } | null>(null);
   const evidenceReq = useRef(0);
+  // The foreground read in flight (a range change, Try again, midnight), else 0.
+  // A background poll waits for it rather than start a newer read over it.
+  const foreground = useRef(0);
 
-  const fetchIndex = useCallback(async () => {
+  /**
+   * Reads the overview. A background read (the poll) leaves the page as it
+   * is while it runs: no dimming, and the last error stands until it succeeds.
+   */
+  const fetchIndex = useCallback(async ({ background = false }: { background?: boolean } = {}) => {
     if (!fleetId) return;
+    if (background && foreground.current) return;
     const req = ++indexReq.current;
     const stale = () => indexReq.current !== req;
-    setLoading(true); setError('');
+    if (!background) { foreground.current = req; setLoading(true); setError(''); }
     // The range's days as instants, worked out now, so a tab left open past midnight moves on.
     const days = runsWindow(rangeView);
-    const key = `${days.fromDay}|${days.toDay}`;
+    const key = windowKey(rangeView);
     const w = viewInstants(rangeView);
     try {
       const weekStart = dayStart(addDays(localDay(), -6)); // the Savings chart's 7 calendar days
@@ -186,6 +203,8 @@ export function PerformancePage({ retentionDays }: {
       setAgentIds(snapshot.agentIds);
       setAuditFailed(snapshot.auditFailed);
       setExtra(extras);
+      setDataSpan({ key, fromDay: days.fromDay, toDay: days.toDay });
+      setError('');
       saveSnapshot(fleetId, key, snapshot);
       if (fromAudit) {
         // Durable counts (engine rule_actions) replace the audit log's when they arrive.
@@ -202,16 +221,26 @@ export function PerformancePage({ retentionDays }: {
           () => {},
         );
       }
-    } catch { if (!stale()) setError('Failed to load performance data.'); }
-    finally { if (!stale()) setLoading(false); }
-  }, [fleetId, rangeView, authKey]);
+    } catch (e) {
+      if (stale()) return;
+      if (isAuthError(e)) { resetSession('Your session expired. Please sign in again.'); return; }
+      setError('Failed to load performance data.');
+    } finally {
+      // Whichever read finishes newest ends the loading state, so a superseded
+      // one can never leave the page dimmed.
+      if (foreground.current === req) foreground.current = 0;
+      if (!stale()) setLoading(false);
+    }
+  }, [fleetId, rangeView, authKey, resetSession]);
 
   // A range already seen shows its last overview at once; the refresh replaces it.
   const showRange = (next: RunsView) => {
     setRangeView(next);
     const d = runsWindow(next);
-    const snap = readSnapshot(fleetId, `${d.fromDay}|${d.toDay}`);
+    const key = windowKey(next);
+    const snap = readSnapshot(fleetId, key);
     if (!snap) return;
+    setDataSpan({ key, ...d });
     setIndexData(snap.indexData);
     setHourlyData(snap.hourlyData);
     setSavingsDays(snap.savingsDays);
@@ -246,16 +275,33 @@ export function PerformancePage({ retentionDays }: {
       if (stale()) return;
       if (data.error) { setError(data.error); return; }
       setEvidenceData(data);
-    } catch { if (!stale()) setError('Failed to load evidence.'); }
+    } catch (e) {
+      if (stale()) return;
+      if (isAuthError(e)) { resetSession('Your session expired. Please sign in again.'); return; }
+      setError('Failed to load evidence.');
+    }
     finally { if (!stale()) setLoading(false); }
-  }, [fleetId, authKey]);
+  }, [fleetId, authKey, resetSession]);
 
-  useEffect(() => { if (authenticated && view === 'index' && !legacyAgent) fetchIndex(); }, [authenticated, view, fetchIndex, legacyAgent]);
+  // The overview keeps itself current, as the header's "Live · updated" says: every
+  // few minutes (its heavy totals change slowly, as on Home), every minute while a
+  // read is failing, which is what "Retrying" promises. usePoll pauses while the
+  // tab is hidden, reads again on return, and reads once when the overview opens.
+  usePoll(() => fetchIndex({ background: true }), {
+    intervalMs: error ? 60_000 : WEEK_POLL_MS,
+    enabled: authenticated && view === 'index' && !legacyAgent,
+  });
+  // A new window (range, custom days, saved zone) or fleet reads at once, dimmed.
+  const readFor = useRef(`${fleetId}|${currentKey}`);
+  useEffect(() => {
+    const next = `${fleetId}|${currentKey}`;
+    if (readFor.current === next) return;
+    readFor.current = next;
+    if (authenticated && view === 'index' && !legacyAgent) void fetchIndex();
+  }, [fleetId, currentKey, authenticated, view, legacyAgent, fetchIndex]);
   // The Savings chart is 7 local calendar days: reload just after local
   // midnight so it moves to the new day even when nothing else refreshes.
   const [midnights, setMidnights] = useState(0);
-  // A new saved zone moves midnight, so the timer is re-armed for it.
-  const zone = useViewerZone();
   useEffect(() => {
     if (!authenticated || view !== 'index') return;
     const next = dayStart(addDays(localDay(), 1)).getTime() + 5_000;
@@ -295,8 +341,13 @@ export function PerformancePage({ retentionDays }: {
     finally { setFeedbackLoading(null); }
   }
 
+  // Whether the overview on screen was read for the window picked now.
+  const dataMatches = dataSpan?.key === currentKey;
   // "today", "last 7 days", "Oct 1 – Oct 20", for the lead line and section metas. (The Savings chart is always 7 days.)
-  const rangeLabel = spanLabel(rangeView);
+  // Figures from another window (dimmed while the picked one loads) say their own dates.
+  const rangeLabel = dataMatches || !dataSpan ? spanLabel(rangeView) : spanLabel({ range: 'custom', day: null, from: dataSpan.fromDay, to: dataSpan.toDay });
+  // The overview is shown only as what it is: the picked window's, or another's while that loads.
+  const overviewShown = view === 'index' && !!indexData && (dataMatches || loading);
 
   // A refetch is in flight while the previous data is still on screen
   // (e.g. switching 24h→3d, or picking another agent).
@@ -310,7 +361,7 @@ export function PerformancePage({ retentionDays }: {
     <div className="flex flex-col" style={{ minWidth: 0, minHeight: 0, flex: 1 }}>
       <PageHeader
         fleetId={fleetId}
-        badge={view === 'index' ? <LiveStatus at={loadedAt} failing={!!error && !!indexData} /> : undefined}
+        badge={view === 'index' ? <LiveStatus at={dataMatches ? loadedAt : null} failing={!!error && !!indexData} /> : undefined}
         title={view === 'index' ? 'Performance' : <>
           <button onClick={() => { setView('index'); setSelectedAgent(null); setSelectedFindingId(null); }} className="wr-crumb-btn">Performance</button>
           {selectedAgent && (
@@ -342,12 +393,14 @@ export function PerformancePage({ retentionDays }: {
       <div className="wr-page-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, ...(refreshing ? { opacity: 0.55, pointerEvents: 'none' as const, transition: 'opacity 0.15s' } : { transition: 'opacity 0.15s' }) }}>
         {/* With data on screen, a failed refresh keeps it and says so; with
             nothing yet, the error stands alone. */}
-        {error && (view === 'index' ? indexData : evidenceData)
+        {error && (view === 'index' ? overviewShown : evidenceData)
           ? <div style={{ marginBottom: 16 }}><RefreshFailed since={view === 'index' ? loadedAt : null} /></div>
-          : error && <div style={{ marginBottom: 16 }}><Banner variant="error">{error}</Banner></div>}
-        {loading && !indexData && <LoadingLine padded={false}>Loading performance&hellip;</LoadingLine>}
+          : error && view === 'index'
+            ? <div style={{ marginBottom: 16 }}><LoadFailed what="performance data" onRetry={() => void fetchIndex()} /></div>
+            : error && <div style={{ marginBottom: 16 }}><Banner variant="error">{error}</Banner></div>}
+        {loading && !overviewShown && view === 'index' && <LoadingLine padded={false}>Loading performance&hellip;</LoadingLine>}
 
-        {view === 'index' && indexData && <IndexView data={indexData} hourlyData={hourlyData} auditFailed={auditFailed} govSavings={govSavings} govCounts={govCounts} savingsDays={savingsDays} agentIds={agentIds} rangeLabel={rangeLabel} fleetId={fleetId!} authKey={authKey}
+        {overviewShown && <IndexView data={indexData} hourlyData={hourlyData} auditFailed={auditFailed} govSavings={govSavings} govCounts={govCounts} savingsDays={savingsDays} agentIds={agentIds} rangeLabel={rangeLabel} fleetId={fleetId!} authKey={authKey}
           workingHour={extra.workingHour} rules={extra.rules} byRuleId={extra.byRuleId} weekHourly={extra.weekHourly} usdByDay={extra.usdByDay} cacheSaved={extra.cacheSaved ?? null}
           onSelectAgent={openAgent} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} feedbackError={feedbackError} />}
         {view === 'evidence' && evidenceData && <EvidenceView data={evidenceData} fleetId={fleetId} recommendationId={selectedRecId} authKey={authKey} />}

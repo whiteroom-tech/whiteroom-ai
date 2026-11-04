@@ -53,9 +53,9 @@ it('an hourly error payload still leaves the overview up (unchanged)', async () 
   expect(shown()).toBe('700 calls; chart off');
 });
 
-it('a rejected session on the hourly read fails the read, even though the index answered', async () => {
+it('a rejected session on the hourly read goes to session recovery, even though the index answered', async () => {
   api.hourly.mockRejectedValue(new WhiteRoomApiError('Unauthorized', 401));
   await mount();
   expect(shown()).toBeNull();
-  expect(el.textContent).toContain('Failed to load performance data.');
+  expect(api.reset).toHaveBeenCalledWith('Your session expired. Please sign in again.');
 });
