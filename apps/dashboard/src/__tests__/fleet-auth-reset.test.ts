@@ -19,6 +19,9 @@ vi.mock('@/lib/safe-storage', () => ({
   safeSet: (key: string, value: string) => { if (key === 'wr_auth_ping') pings.log.push(value); },
 }));
 const feed = vi.hoisted(() => ({ fn: vi.fn() }));
+// Pre-cookie credentials in localStorage, which the bootstrap migrates.
+const legacy = vi.hoisted(() => ({ creds: { fleetId: null as string | null, fleetToken: null as string | null } }));
+vi.mock('@/lib/fleet-credentials', () => ({ getFleetCredentials: () => legacy.creds, clearFleetCredentials: () => { legacy.creds = { fleetId: null, fleetToken: null }; } }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({ ...(await orig<typeof import('@/lib/whiteroom/client')>()), performanceLiveFeed: feed.fn }));
 
 const { useFleetAuth } = await import('@/hooks/useFleetAuth');
@@ -31,6 +34,7 @@ const server = vi.hoisted(() => ({
   session: 'fleet-a' as string | null,
   signedIn: true,
   deleteVerdict: null as null | (() => Promise<Response>),
+  post: null as null | (() => Promise<Response>),
   calls: [] as string[],
 }));
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -38,7 +42,9 @@ function fakeFetch(url: string, init?: RequestInit) {
   const method = init?.method ?? 'GET';
   server.calls.push(method);
   if (method === 'GET') return Promise.resolve(server.session ? json({ fleetId: server.session }) : json({ error: 'No fleet session.', signedIn: server.signedIn }, 401));
-  if (method === 'DELETE') return server.deleteVerdict ? server.deleteVerdict() : Promise.resolve(json({ ok: true }));
+  if (method === 'POST' && url.endsWith('/recheck')) { server.calls.push('RECHECK'); return server.deleteVerdict ? server.deleteVerdict() : Promise.resolve(json({ cleared: true })); }
+  if (method === 'DELETE') return Promise.resolve(json({ ok: true }));
+  if (method === 'POST') return server.post ? server.post() : Promise.reject(new Error('unexpected POST'));
   return Promise.reject(new Error(`unexpected ${method} ${url}`));
 }
 
@@ -59,12 +65,15 @@ async function mount() {
   await act(async () => root.render(h(Page))); await flush();
 }
 const ping = async () => { await act(async () => { window.dispatchEvent(new StorageEvent('storage', { key: 'wr_auth_ping', newValue: String(Date.now()) })); }); await flush(); };
-const deletes = () => server.calls.filter((c) => c === 'DELETE').length;
+// The recheck after an auth error (deleteVerdict answers it); a plain DELETE is the no-fleet fallback.
+const deletes = () => server.calls.filter((c) => c === 'RECHECK').length;
+const plainDeletes = () => server.calls.filter((c) => c === 'DELETE').length;
 
 beforeEach(() => {
   vi.clearAllMocks();
   pings.log = [];
-  Object.assign(server, { session: 'fleet-a', signedIn: true, deleteVerdict: null, calls: [] });
+  Object.assign(server, { session: 'fleet-a', signedIn: true, deleteVerdict: null, post: null, calls: [] });
+  legacy.creds = { fleetId: null, fleetToken: null };
   vi.stubGlobal('fetch', vi.fn(fakeFetch));
   Object.defineProperty(window, 'location', { configurable: true, value: { ...window.location, reload, assign: vi.fn() } });
   feed.fn.mockResolvedValue({ entries: [{ id: 'a1', type: 'task_complete', timestamp: '2026-11-03T16:00:00Z', agentId: 'fleet-a-agent', taskName: 'private to fleet A' }], total: 1 });
@@ -185,4 +194,37 @@ it('the private feed leaves the screen the moment an auth error starts, and a la
   expect(el.textContent).not.toContain('fleet-a-agent');
   await act(async () => lateFeed?.({ entries: [{ id: 'a2', type: 'task_complete', timestamp: '2026-11-03T16:01:00Z', agentId: 'fleet-a-agent', taskName: 'late' }], total: 1 })); await flush();
   expect(el.textContent).not.toContain('fleet-a-agent');
+});
+
+// --- The paths review asked to cover ---
+
+it('resetSession with no fleet known yet: plain sign-out (DELETE), to setup, and other tabs told', async () => {
+  server.session = null; server.signedIn = true; // the page never got a fleet
+  await mount();
+  expect(auth.fleetId).toBeNull();
+  await act(async () => { auth.resetSession('Your session expired. Please sign in again.'); }); await flush();
+  expect(plainDeletes()).toBe(1);
+  expect(deletes()).toBe(0);
+  expect(auth.status).toBe('unauthenticated');
+  expect(auth.needs).toBe('setup');
+  expect(pings.log.length).toBeGreaterThan(0);
+});
+
+it('a ping that migrates legacy credentials for a different fleet reloads', async () => {
+  await mount();
+  expect(auth.fleetId).toBe('fleet-a');
+  legacy.creds = { fleetId: 'fleet-b', fleetToken: 'placeholder-legacy-token' };
+  server.post = () => Promise.resolve(json({ fleetId: 'fleet-b' }));
+  await ping();
+  expect(reload).toHaveBeenCalledTimes(1);
+  expect(auth.status).toBe('checking');
+});
+
+it('a ping that migrates legacy credentials for the same fleet changes nothing', async () => {
+  await mount();
+  legacy.creds = { fleetId: 'fleet-a', fleetToken: 'placeholder-legacy-token' };
+  server.post = () => Promise.resolve(json({ fleetId: 'fleet-a' }));
+  await ping();
+  expect(reload).not.toHaveBeenCalled();
+  expect(auth.status).toBe('authenticated');
 });

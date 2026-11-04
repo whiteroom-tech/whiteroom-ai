@@ -53,18 +53,12 @@ vi.mock('@/lib/user-fleets', () => ({
 
 import { WhiteRoomApiError } from '@/lib/whiteroom/client';
 import { DELETE, GET, POST } from '@/app/api/fleet/session/route';
+import { POST as RECHECK } from '@/app/api/fleet/session/recheck/route';
 
 const HOST = 'app.whiteroom.ai';
 
 function fakeHeaders(origin: string | null, host: string | null = HOST) {
   mockHeaders.mockResolvedValue(new Map([['origin', origin], ['host', host]]));
-}
-
-function deleteReq(body?: unknown) {
-  return new Request(`https://${HOST}/api/fleet/session`, {
-    method: 'DELETE',
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
 }
 
 function postReq(body: unknown) {
@@ -301,7 +295,7 @@ describe('DELETE /api/fleet/session', () => {
   it('is origin-checked', async () => {
     fakeHeaders('https://evil.com');
     jar.set('wr_fleet_auth', 'ft-cookie');
-    const res = await DELETE(deleteReq());
+    const res = await DELETE();
     expect(res.status).toBe(403);
     expect(jar.has('wr_fleet_auth')).toBe(true);
   });
@@ -309,20 +303,21 @@ describe('DELETE /api/fleet/session', () => {
   it('clears the cookie and its owner', async () => {
     jar.set('wr_fleet_auth', 'ft-cookie');
     jar.set('wr_fleet_auth_owner', 'u-alice');
-    const res = await DELETE(deleteReq());
+    const res = await DELETE();
     expect(res.status).toBe(200);
     expect(jar.has('wr_fleet_auth')).toBe(false);
     expect(jar.has('wr_fleet_auth_owner')).toBe(false);
   });
 });
 
-// DELETE {expectFleetId}: a page's auth error. Clears only on proof that this
-// fleet's session is gone; never on a guess (another tab may have switched).
-describe('DELETE /api/fleet/session {expectFleetId}', () => {
+// The recheck after a page's auth error: clears only on proof that the
+// session is gone; never on a guess (another tab may have switched). Takes no
+// input, and never writes a cookie.
+describe('POST /api/fleet/session/recheck', () => {
   it('cookie for that fleet and the engine rejects it: clears', async () => {
     jar.set('wr_fleet_auth', 'ft-a');
     mockTokenLogin.mockRejectedValue(new WhiteRoomApiError('Unauthorized', 401));
-    const res = await DELETE(deleteReq({ expectFleetId: 'fleet-a' }));
+    const res = await RECHECK();
     expect(await res.json()).toEqual({ cleared: true });
     expect(jar.has('wr_fleet_auth')).toBe(false);
   });
@@ -330,7 +325,7 @@ describe('DELETE /api/fleet/session {expectFleetId}', () => {
   it('cookie for that fleet and the engine accepts it: keeps it, says so', async () => {
     jar.set('wr_fleet_auth', 'ft-a');
     mockTokenLogin.mockResolvedValue({ success: true, fleetId: 'fleet-a' });
-    const res = await DELETE(deleteReq({ expectFleetId: 'fleet-a' }));
+    const res = await RECHECK();
     expect(await res.json()).toEqual({ cleared: false, fleetId: 'fleet-a' });
     expect(jar.get('wr_fleet_auth')).toBe('ft-a');
   });
@@ -338,47 +333,63 @@ describe('DELETE /api/fleet/session {expectFleetId}', () => {
   it('cookie is now another fleet\'s (another tab signed in): keeps it, names that fleet', async () => {
     jar.set('wr_fleet_auth', 'ft-b');
     mockTokenLogin.mockResolvedValue({ success: true, fleetId: 'fleet-b' });
-    const res = await DELETE(deleteReq({ expectFleetId: 'fleet-a' }));
+    const res = await RECHECK();
     expect(await res.json()).toEqual({ cleared: false, fleetId: 'fleet-b' });
     expect(jar.get('wr_fleet_auth')).toBe('ft-b');
   });
 
-  it('cookie minted for another account: not cleared; answers with this account\'s fleet', async () => {
+  it('cookie minted for another account: answers with this account\'s fleet, and writes no cookie', async () => {
     jar.set('wr_fleet_auth', 'ft-a');
     jar.set('wr_fleet_auth_owner', 'u-alice');
     session.current = { user: { id: 'u-bob' } };
     mockGetUserFleets.mockResolvedValue([{ id: '1', fleet_token: 'ft-b', fleet_id: 'fleet-b', label: 'b', created_at: '' }]);
-    const res = await DELETE(deleteReq({ expectFleetId: 'fleet-a' }));
+    const res = await RECHECK();
     expect(await res.json()).toEqual({ cleared: false, fleetId: 'fleet-b' });
-    expect(jar.get('wr_fleet_auth')).toBe('ft-b');
+    expect(setCalls).toHaveLength(0);
+  });
+
+  it('no cookie, a linked fleet: reports it without adopting it into a cookie', async () => {
+    session.current = { user: { id: 'u-bob' } };
+    mockGetUserFleets.mockResolvedValue([{ id: '1', fleet_token: 'ft-b', fleet_id: 'fleet-b', label: 'b', created_at: '' }]);
+    expect(await (await RECHECK()).json()).toEqual({ cleared: false, fleetId: 'fleet-b' });
+    expect(setCalls).toHaveLength(0);
+    expect(jar.has('wr_fleet_auth')).toBe(false);
+  });
+
+  it('a plain DELETE still just clears (sign-out is unchanged)', async () => {
+    jar.set('wr_fleet_auth', 'ft-a');
+    mockTokenLogin.mockResolvedValue({ success: true, fleetId: 'fleet-a' });
+    expect((await DELETE()).status).toBe(200);
+    expect(jar.has('wr_fleet_auth')).toBe(false);
+    expect(mockTokenLogin).not.toHaveBeenCalled();
   });
 
   it('engine unreachable: 502, nothing cleared', async () => {
     jar.set('wr_fleet_auth', 'ft-a');
     mockTokenLogin.mockRejectedValue(new WhiteRoomApiError('timeout'));
-    const res = await DELETE(deleteReq({ expectFleetId: 'fleet-a' }));
+    const res = await RECHECK();
     expect(res.status).toBe(502);
     expect(jar.get('wr_fleet_auth')).toBe('ft-a');
   });
 
   it('no cookie and no linked fleet: cleared, with whether an account is signed in', async () => {
     session.current = null;
-    expect(await (await DELETE(deleteReq({ expectFleetId: 'fleet-a' }))).json()).toEqual({ cleared: true, signedIn: false });
+    expect(await (await RECHECK()).json()).toEqual({ cleared: true, signedIn: false });
     session.current = { user: { id: 'u-no-fleet' } };
-    expect(await (await DELETE(deleteReq({ expectFleetId: 'fleet-a' }))).json()).toEqual({ cleared: true, signedIn: true });
+    expect(await (await RECHECK()).json()).toEqual({ cleared: true, signedIn: true });
   });
 
   it('a Sandbox fleet\'s cookie counts as no session for these pages: cleared', async () => {
     jar.set('wr_fleet_auth', 'ft-sbx');
     mockTokenLogin.mockResolvedValue({ success: true, fleetId: 'sandbox-abc' });
-    const res = await DELETE(deleteReq({ expectFleetId: 'fleet-a' }));
+    const res = await RECHECK();
     expect(await res.json()).toEqual({ cleared: true });
   });
 
   it('is origin-checked', async () => {
     fakeHeaders('https://evil.com');
     jar.set('wr_fleet_auth', 'ft-a');
-    const res = await DELETE(deleteReq({ expectFleetId: 'fleet-a' }));
+    const res = await RECHECK();
     expect(res.status).toBe(403);
     expect(jar.has('wr_fleet_auth')).toBe(true);
   });

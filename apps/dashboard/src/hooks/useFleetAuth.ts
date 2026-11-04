@@ -67,6 +67,8 @@ export interface FleetAuthState {
 export type FleetAuthNeeds = 'sign_in' | 'setup' | null;
 
 const SESSION_URL = '/api/fleet/session';
+/** After an auth error: is the session really gone? (Clears it only if so.) */
+const RECHECK_URL = '/api/fleet/session/recheck';
 const RETRYABLE_MESSAGE =
   'Could not reach the WhiteRoom server. Your session was kept — retry when you are back online.';
 
@@ -78,7 +80,7 @@ export function broadcastAuthChange(): void {
 /** Said when the session is fine but a page's call was still refused. */
 const REFUSED_MESSAGE = 'This page couldn’t load. You’re still signed in, so try again.';
 
-/** What DELETE {expectFleetId} answers (app/api/fleet/session). */
+/** What the recheck answers (app/api/fleet/session/recheck). */
 type ResetVerdict = { cleared: true; signedIn?: boolean } | { cleared: false; fleetId: string };
 
 /**
@@ -183,13 +185,7 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
     (async () => {
       let verdict: ResetVerdict | null = null;
       try {
-        const res = await fetch(SESSION_URL, {
-          method: 'DELETE',
-          credentials: 'same-origin',
-          cache: 'no-store',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ expectFleetId }),
-        });
+        const res = await fetch(RECHECK_URL, { method: 'POST', credentials: 'same-origin', cache: 'no-store' });
         if (res.ok) verdict = (await res.json()) as ResetVerdict;
       } catch {
         /* network: no verdict */
