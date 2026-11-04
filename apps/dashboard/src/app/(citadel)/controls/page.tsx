@@ -747,7 +747,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
 
   const row = (r: GovernanceRule, showScope = false, key: string = r.id) => {
     const c = ruleCondition(r);
-    const count = rowCount(r, { byRuleId: actions?.byRuleId, byRuleType: actions?.byRule, onlyOfItsType: typeCount(r.ruleType) === 1, wouldAct: wouldOf(r), agent: agentFilter, neverFirst: neverFirst(r) });
+    // Switched off by WhiteRoom, the rule counts as Off: no live count beside the Paused tag.
+    const count = rowCount(asCounted([r])[0], { byRuleId: actions?.byRuleId, byRuleType: actions?.byRule, onlyOfItsType: typeCount(r.ruleType) === 1, wouldAct: wouldOf(r), agent: agentFilter, neverFirst: neverFirst(r) });
     return (
       <button key={key} type="button" className={`ctl-row${r.id === selectedId ? " is-on" : ""}${r.mode === "enforce" ? " is-block" : ""}`} onClick={() => openRule(r.id)} disabled={saving} aria-pressed={r.id === selectedId}>
         <span className="ctl-row__main">

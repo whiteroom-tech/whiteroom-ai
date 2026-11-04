@@ -15,10 +15,10 @@ import {
 } from '@/lib/controls-view';
 import { RESPONSE_LABEL } from '@/lib/governance';
 import { MODE_LABEL } from '@/lib/vocab';
+import { responseOf } from '@/lib/rule-response';
 import type { GovernanceMode, GovernanceResponse, GovernanceRule, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, SensitiveDataParams, SpendCapParams, ToolListParams } from '@/lib/whiteroom/types';
 import type { SandboxRuleFields } from '@/lib/sandbox/rules';
 import v from './v2.module.css';
-import { responseOf } from '@/lib/rule-response';
 
 const WHERE_OPTIONS = (Object.keys(KEYWORD_WHERE) as KeywordWhere[]).map((value) => ({ value, label: KEYWORD_WHERE[value][0].toUpperCase() + KEYWORD_WHERE[value].slice(1) }));
 

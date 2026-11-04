@@ -1805,6 +1805,8 @@ describe('Controls: the Sensitive data rule', () => {
     api.sdPaused = true;
     const m = await mount();
     expect(m.row('A call holds').textContent).toContain('Paused by WhiteRoom');
+    // No live count beside it: nothing is being checked.
+    expect(m.row('A call holds').querySelector('.ctl-row__count')).toBeNull();
     await m.click(m.row('A call holds'));
     expect(m.text()).toContain('Paused by WhiteRoom · nothing is checked or removed until it’s back on');
     m.root.unmount();

@@ -483,6 +483,11 @@ describe('Sandbox rules: Sensitive data', () => {
   it('the BFF accepts the new type and its Remove it and send response', () => {
     expect(ruleCreateCheck({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, ruleType: 'sensitive_data', mode: 'watch' }).ok).toBe(true);
     expect(ruleUpdateCheck({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, ruleId: 'gr_sd', response: 'redact' }).ok).toBe(true);
+    // Remove it and send is Sensitive data's alone, and Sensitive data has no Block.
+    expect(ruleCreateCheck({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, ruleType: 'keyword', response: 'redact' }).ok).toBe(false);
+    expect(ruleCreateCheck({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, ruleType: 'sensitive_data', response: 'block' }).ok).toBe(false);
+    expect(ruleCreateCheck({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, ruleType: 'sensitive_data', response: 'pause' }).ok).toBe(true);
+    expect(ruleCreateCheck({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, ruleType: 'keyword', response: 'block' }).ok).toBe(true);
     expect(rulesStateOf(state({ rules: [SD] }))?.rules[0]).toMatchObject({ ruleType: 'sensitive_data', response: 'redact' });
   });
 });

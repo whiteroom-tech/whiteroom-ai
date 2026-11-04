@@ -177,9 +177,16 @@ function ruleFields(b: Record<string, unknown>): RuleCheck {
   return { ok: true, request: out };
 }
 
-/** A create's engine fields: a known rule type and the rule's own fields. */
+/**
+ * A create's engine fields: a known rule type and the rule's own fields.
+ * Remove it and send is Sensitive data's alone, and Sensitive data has no
+ * Block. An update doesn't carry the rule's type, so there the engine checks
+ * the response against the saved rule (validResponse by rule type).
+ */
 export function ruleCreateCheck(b: Record<string, unknown>): RuleCheck {
   if (!RULE_TYPES.includes(b.ruleType as GovernanceRuleType)) return { ok: false, error: 'Invalid request.' };
+  const sd = b.ruleType === 'sensitive_data';
+  if ((b.response === 'redact' && !sd) || (b.response === 'block' && sd)) return { ok: false, error: 'Invalid request.' };
   const f = ruleFields(b);
   return f.ok ? { ok: true, request: { rule_type: b.ruleType, ...f.request } } : f;
 }
