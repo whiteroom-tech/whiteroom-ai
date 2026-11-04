@@ -203,7 +203,7 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
         clearFleetCredentials();
         // The engine rejected the session: Fleet key re-provisions and re-links it.
         // With no session at all, the account's own state decides.
-        signedOut('signedIn' in verdict && verdict.signedIn === false ? 'sign_in' : 'setup', message);
+        signedOut(verdict.signedIn === false ? 'sign_in' : 'setup', message);
         broadcastAuthChange();
       } else if (verdict.fleetId !== expectFleetId) {
         checkWaiting.current = false; // the reload checks afresh
