@@ -1,6 +1,6 @@
 /* Sandbox v2's page column. Surfaces, buttons, banners and copy chips are the
    shared primitives (@whiteroom/ui, globals.css); this only lays them out. */
-.page { display:grid; gap:16px; max-width:1120px; min-width:0; container-type:inline-size; }
+.page { display:grid; gap:16px; min-width:0; container-type:inline-size; }
 .stack { display:grid; gap:12px; min-width:0; }
 .label { margin:0; font-size:var(--fs-sm); font-weight:600; color:var(--tx2); }
 .text { margin:0; font-size:var(--fs-sm); color:var(--tx2); line-height:1.5; }
