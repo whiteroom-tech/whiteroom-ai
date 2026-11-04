@@ -110,6 +110,8 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
   }), []);
   const backToReport = useCallback(() => { setPractice(null); focusReport(); }, [focusReport]);
   const practiceDone = useCallback((runId: string) => { setPracticeRun(runId); setPractice(null); focusReport(); }, [focusReport]);
+  /** A new key, Sandbox or run: an open practice card, and the run bound from it, were for the old one. */
+  const resetPractice = () => { setPracticeRun(null); setPractice(null); };
   // A URL got from Get a new Sandbox URL on this page: it shows above the check or report too, so it's seen before the page is left.
   const [rotatedHere, setRotatedHere] = useState(false);
   // When a key was connected on this page (for the first-call event).
@@ -162,9 +164,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
       setChecks(null);
       // Over the sample, the engine cleared its results: the checks card starts over.
       if (afterSample) setResets((n) => n + 1);
-      setPracticeRun(null);
-      // A new key, Sandbox or run: an open practice card was for the old one.
-      setPractice(null);
+      resetPractice();
       setSampleRefusal(null);
       connectedAt.current = Date.now();
       analytics.capture('sandbox_v2_connected', { provider: req.provider, detected, after_sample: afterSample });
@@ -197,9 +197,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
       setReplacing(false);
       setStatus(next);
       setResets((n) => n + 1);
-      setPracticeRun(null);
-      // A new key, Sandbox or run: an open practice card was for the old one.
-      setPractice(null);
+      resetPractice();
       analytics.capture('sandbox_v2_sample_started');
     } catch (e) {
       const known = e instanceof SandboxFleetError && SAMPLE_REFUSALS.includes(e.reason as SampleRefusal);
@@ -233,9 +231,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
         setChecks(null);
         // The checks card starts over: its old report is gone too.
         setResets((n) => n + 1);
-        setPracticeRun(null);
-        // A new key, Sandbox or run: an open practice card was for the old one.
-        setPractice(null);
+        resetPractice();
         setNotice(RESET_NOTICE);
       }
     } catch (e) {

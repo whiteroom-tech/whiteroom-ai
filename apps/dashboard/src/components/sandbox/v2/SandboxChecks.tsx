@@ -22,6 +22,7 @@ import { NextCard, PracticeLink } from './SandboxAside';
 import { AgentNaming } from '@/components/citadel/AgentNaming';
 import { agentNamingFor } from '@/lib/provider-key-form';
 import { useSeenAt } from './useSeenAt';
+import { PRACTICE_POLL_MS } from '../practice/usePracticePoll';
 import { leftMs } from '@/lib/sandbox/seen-times';
 import { otherRunLine, practiceTaskLines, tasksDone } from '@/lib/sandbox/sandbox-practice';
 import type { PracticeProfile, PracticeResult } from '@/lib/sandbox/practice/types';
@@ -56,7 +57,6 @@ const NO_PRACTICE: PracticeView = { bound: null, newer: null, other: null };
 export const practiceHref = (agentId: string | null | undefined) =>
   agentId ? `${ROUTES.practiceTest}?from=sandbox&agent=${encodeURIComponent(agentId)}` : ROUTES.practiceTest;
 
-const POLL_MS = { visible: 5_000, hidden: 30_000 };
 /** While a practice test of this agent is open, the report reads practice runs again this often. */
 const PRACTICE_REREAD_MS = 10_000;
 const PRACTICE_REREAD_HIDDEN_MS = 30_000;
@@ -162,7 +162,7 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
     void load();
   }, [load, preview]);
 
-  // Read the checks every 5 seconds (30 when the tab is hidden), one read at a time: a check starts
+  // Read the checks every 5 seconds (30 when the tab is hidden; the practice poll's timing), one read at a time: a check starts
   // on the agent's first call, so the page watches for one too. A state conflict or a failed read
   // keeps polling; only a Sandbox that changed under the page stops it.
   const loaded = state !== null;
@@ -173,7 +173,7 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
     let pending = false;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
-    const next = () => { clearTimeout(timer); if (live && !stopped) timer = setTimeout(poll, document.hidden ? POLL_MS.hidden : POLL_MS.visible); };
+    const next = () => { clearTimeout(timer); if (live && !stopped) timer = setTimeout(poll, document.hidden ? PRACTICE_POLL_MS.hidden : PRACTICE_POLL_MS.visible); };
     const poll = async () => {
       if (pending || stopped || !live) return;
       if (acting.current) { next(); return; }
@@ -192,7 +192,7 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
         next();
       }
     };
-    timer = setTimeout(poll, POLL_MS.visible);
+    timer = setTimeout(poll, PRACTICE_POLL_MS.visible);
     const onVisible = () => { if (!document.hidden && !pending) { clearTimeout(timer); void poll(); } };
     document.addEventListener('visibilitychange', onVisible);
     return () => { live = false; clearTimeout(timer); document.removeEventListener('visibilitychange', onVisible); };

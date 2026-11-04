@@ -264,6 +264,21 @@ describe('Your rule and the short lines: every form', () => {
     const rows = by(state({ checks: { provider_errors: ['failed', 'We returned a provider error (529) → your agent retried it 4 times within 1.5 s. Fix: back off.'] } }));
     expect(rows['03'].parts[0].text).toMatch(/^Retried a 529 4 times in 1\.5 s/);
   });
+
+  it('row 03 names the provider error the engine says it sent, else the one it sends today (529)', async () => {
+    const { nowExplained, PROVIDER_ERROR_STATUS, providerErrorStatus } = await import('@/lib/sandbox/sandbox-rows');
+    expect(PROVIDER_ERROR_STATUS).toBe(529);
+    expect(providerErrorStatus('We returned a provider error (503) → it retried 1 time, backing off.')).toBe(503);
+    expect(providerErrorStatus('Backed off and tried again later.')).toBe(PROVIDER_ERROR_STATUS);
+    expect(providerErrorStatus(undefined)).toBe(PROVIDER_ERROR_STATUS);
+    const passed = by(state({ checks: { provider_errors: ['passed', 'We returned a provider error (503) → it retried 1 time, backing off.'] } }));
+    expect(passed['03'].parts[0].text).toMatch(/^Backed off a 503 · /);
+    const failed = by(state({ checks: { provider_errors: ['failed', 'We returned a provider error (503) → your agent retried it 4 times within 5 s. Fix: back off.'] } }));
+    expect(failed['03'].parts[0].text).toMatch(/^Retried a 503 4 times in 5 s/);
+    // No status in the engine's words: the one it sends today.
+    expect(by(state({ checks: { provider_errors: ['passed', 'Backed off and tried again later.'] } }))['03'].parts[0].text).toMatch(/^Backed off a 529 · /);
+    expect(nowExplained('provider_errors', 'enforce', 'support-bot')).toBe('We send back one provider error (529). A good agent backs off before it tries again.');
+  });
 });
 
 describe('passed rows only claim what this run did', () => {
