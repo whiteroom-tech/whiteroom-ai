@@ -44,6 +44,7 @@ import {
   sameValue,
   blocksWhen, duplicateRules, keywordsHidden, keywordGaps, keywordsShort, leadCounts, modeCount, notSetUp, ruleCondition, ruleConditionText, ruleGroups, rowCount, ruleStatus, whoFor,
 } from "@/lib/controls-view";
+import { readDraft, removeDraft, writeDraft } from "@/lib/controls-draft";
 
 // The engine caps performance queries at 336h (hours_back check in security.ts).
 const SUGGESTION_HOURS = 14 * 24;
@@ -143,6 +144,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const focusEditor = useRef(false);
   /** The rule Add rule just made: its editor opens with When expanded. */
   const [justAdded, setJustAdded] = useState<string | null>(null);
+  /** The rule whose unsaved edit was just brought back: its editor opens with When expanded, as it was left. */
+  const [restoredEdit, setRestoredEdit] = useState<string | null>(null);
 
   // Trusted from the URL until the agents load, then only if it names one.
   const agentFilter = agentParam && (!loaded || agents.includes(agentParam)) ? agentParam : null;
@@ -151,6 +154,49 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const selectedRef = useRef(selectedId);
   selectedRef.current = selectedId;
   const dirty = !!(selected && draft && isDirty(draft, selected));
+
+  // ── An unsaved edit survives leaving the page (Back, Forward, reload) ──
+  // Restore first, then keep: nothing reads or writes the saved draft until the
+  // rules are in and it has been restored, dropped or left for later. Otherwise
+  // the first render (nothing selected, so nothing dirty) would wipe it.
+  const [draftPhase, setDraftPhase] = useState<"pending" | "done">("pending");
+  useEffect(() => {
+    if (draftPhase !== "pending") return;
+    // The rules didn't load: leave the draft for the next visit.
+    if (listFailed) { setDraftPhase("done"); return; }
+    if (!listed) return;
+    setDraftPhase("done");
+    const saved = readDraft(fleetId);
+    if (!saved) return;
+    // A suggestion being added, or a link to another rule, comes first; the draft waits.
+    if (suggestionRec || (ruleParam && ruleParam !== saved.ruleId)) return;
+    const rule = rules.find((r) => r.id === saved.ruleId);
+    if (!rule) { removeDraft(fleetId); return; }
+    if (rule.version !== saved.version) {
+      removeDraft(fleetId);
+      setNotice(`${RULE_LABELS[rule.ruleType]} changed since you edited it, so your unsaved change was dropped.`);
+      return;
+    }
+    focusEditor.current = true;
+    setRestoredEdit(rule.id);
+    setSelectedId(rule.id);
+    setDraft(saved.draft);
+    setNotice(`Your unsaved change to ${RULE_LABELS[rule.ruleType]} is back. Save or discard it.`);
+  }, [draftPhase, listed, listFailed, rules, fleetId, suggestionRec, ruleParam]);
+  // Kept while it differs from the rule; cleared when an edit goes back to the rule as saved.
+  // Save and Discard clear it themselves (below), since they can close the editor too.
+  const keptFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (draftPhase !== "done") return;
+    if (dirty && selected && draft) {
+      writeDraft(fleetId, { ruleId: selected.id, version: selected.version, draft });
+      keptFor.current = selected.id;
+    } else if (keptFor.current && selected?.id === keptFor.current) {
+      removeDraft(fleetId);
+      keptFor.current = null;
+    }
+  }, [draftPhase, dirty, selected, draft, fleetId]);
+  const dropKept = useCallback(() => { removeDraft(fleetId); keptFor.current = null; }, [fleetId]);
 
   // Only the newest load may set names or counts: an older one finishing last would undo it.
   const actorsReq = useRef(0);
@@ -532,6 +578,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       setRules((rs) => rs.map((r) => (r.id === saved.id && saved.version >= r.version ? saved : r)));
       // Only the draft that was saved becomes the saved rule's: never one edited since, or another rule's.
       if (selectedRef.current === saved.id) setDraft((cur) => (cur && JSON.stringify(cur) === sent ? draftFrom(saved) : cur));
+      if (readDraft(fleetId)?.ruleId === saved.id) dropKept();
       const how = saved.mode === "enforce" ? (saved.response === undefined || saved.response === "block" ? "blocking" : "on") : saved.mode === "watch" ? "in Watch" : "off";
       showToast(`Saved. ${RULE_LABELS[saved.ruleType]} is ${how} for ${whoFor(saved.appliesTo)}.`, () => live.current.undoSaved(rule, saved));
       void fetchData();
@@ -539,7 +586,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       if (e instanceof WhiteRoomApiError && e.status === 409) {
         // The edit was made on the old rule: it goes, so the next Save can't overwrite the other change.
         setError("This rule changed somewhere else, so your edit wasn’t saved. It’s been reloaded: make your change again.");
-        void fetchData().then((ok) => { if (ok && selectedRef.current === rule.id) setDraft(null); });
+        void fetchData().then((ok) => { if (ok && selectedRef.current === rule.id) { setDraft(null); dropKept(); } });
       } else {
         handleError(e, "save the rule");
         void fetchData();
@@ -953,14 +1000,14 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                   agentSpend={spendAgents.flatMap((a) => (agentSpend[a] ? [{ agent: a, ...agentSpend[a]! }] : []))}
                   status={ruleStatus(edited, { week: weekOf(edited), wouldAct: wouldOf(edited), neverFirst: neverFirst(edited) })}
                   ruleHistory={history}
-                  startOpen={justAdded === edited.id}
+                  startOpen={justAdded === edited.id || restoredEdit === edited.id}
                   onAudit={() => setAuditOpen(true)}
                   onUndo={undo}
                   dirty={dirty}
                   error={error}
                   saving={saving}
                   onSave={() => save()}
-                  onDiscard={() => { setDraft(draftFrom(edited)); setError(null); }}
+                  onDiscard={() => { setDraft(draftFrom(edited)); setError(null); dropKept(); }}
                   onClose={() => openRule(null)}
                   onRemove={() => setDialog({ kind: "remove", rule: edited })}
                 />
@@ -1133,6 +1180,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
           const then = dialog.then;
           setDialog(null);
           if (selected) setDraft(draftFrom(selected));
+          dropKept();
           then();
         }}
         onCancel={cancelDialog}

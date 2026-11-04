@@ -2,7 +2,7 @@
 
 import { RULE_ACTIVITY } from '@/lib/vocab';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button, DataTable, Icon, SegmentedControl, SelectChip, Toast, FONT_MONO } from '@whiteroom/ui';
 import { counted, fmtCount, fmtTime, plural } from '@/lib/format';
@@ -16,7 +16,7 @@ import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { RangeDates, RangeMenu } from '@/components/citadel/RangePicker';
 import { EventFeedRuns } from '@/components/runs/EventFeedRuns';
 import { reportStatuses, usd } from '@/lib/home';
-import { addDays, clampSpan, collectRuns, dayLabel, hourLabel, exportDays, fmtClockLength, fmtStarted, ignoresFlagged, ignoresHour, ignoresRuleActivity, localDay, MAX_SPAN_DAYS, oldestKept, runHref, runsDays, runsExportHeader, runsExportRow, RUNS_LIST_URL_KEY, RUNS_RANGES, runsTitle, runsWindow, spanLabel, standOut, stripDays, stripEndFor, validDay, zoneName, type ExportSpan, type RunsRange, type RunsShow, type RunsView } from '@/lib/runs';
+import { addDays, clampSpan, collectRuns, dayLabel, hourLabel, exportDays, fmtClockLength, fmtStarted, ignoresFlagged, ignoresHour, ignoresRuleActivity, localDay, MAX_SPAN_DAYS, oldestKept, runHref, runsDays, runsExportHeader, runsExportRow, runsFiltersFromParams, runsFiltersUrl, RUNS_LIST_URL_KEY, runsTitle, runsWindow, spanLabel, standOut, stripDays, stripEndFor, validDay, zoneName, type ExportSpan, type RunsFilters, type RunsRange, type RunsShow, type RunsView } from '@/lib/runs';
 import { DayStrip } from '@/components/runs/DayStrip';
 import { HourStrip } from '@/components/runs/HourStrip';
 import { AuditCheckDialog, ExportRunsDialog } from '@/components/runs/RunsDialogs';
@@ -26,10 +26,6 @@ import { buildWorkbook, downloadWorkbook } from '@/lib/xlsx';
 const PAGE = 25;
 /** An export reads at most this many pages of 50; past it, the file says it's the newest N. */
 const EXPORT_MAX_PAGES = 100;
-
-function isRange(v: string | null): v is RunsRange {
-  return (RUNS_RANGES as (string | null)[]).includes(v);
-}
 
 const STRIP_DAYS = 30;
 
@@ -129,50 +125,38 @@ export function RunsTable({ preview, retentionDays }: {
 } = {}) {
   const auth = useFleetAuth();
   const { fleetId, authKey, resetSession } = auth;
-  const router = useRouter();
   const params = useSearchParams();
 
-  const [range, setRange] = useState<RunsRange>(() => { const r = params.get('range'); return isRange(r) ? r : '7d'; });
-  const [agent, setAgent] = useState(() => params.get('agent') ?? 'all');
-  const [show, setShow] = useState<RunsShow>(() => { const s = params.get('show'); return s === 'flagged' || s === 'rules' ? s : 'all'; });
+  // The filters live in the address and nowhere else: Back/Forward, a link to
+  // this page and a pick here all change the same thing, so what's shown always
+  // matches the URL. Picks are written with history.replaceState, which Next's
+  // router follows (useSearchParams updates) without a server round trip.
+  const paramsKey = params.toString();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const filters = useMemo(() => runsFiltersFromParams(params, retentionDays), [paramsKey, retentionDays]);
+  const { range, agent, show, day, hour, from, to } = filters;
+  const writeFilters = useCallback((f: RunsFilters) => {
+    const url = runsFiltersUrl(window.location.pathname, window.location.search, f);
+    if (url !== `${window.location.pathname}${window.location.search}`) window.history.replaceState(null, '', url);
+  }, []);
   const flaggedOnly = show === 'flagged';
   const rulesOnly = show === 'rules';
   // Flagged shows once the engine reports flags (P2.1); Rule activity once it counts each run's rule actions (E1a).
   const [flagsKnown, setFlagsKnown] = useState(() => !!preview?.runs.some((r) => r.flags));
   const [rulesKnown, setRulesKnown] = useState(() => !!preview?.runs.some((r) => r.wouldActCalls !== undefined));
-  // A picked hour of the picked day (the hourly view); only with a day, and only on engines that take it.
-  const [hour, setHour] = useState<number | null>(() => {
-    const raw = params.get('hour');
-    const h = Number(raw);
-    const d = validDay(params.get('day'));
-    // Only for the day the link named: a day older than the plan keeps moves to the oldest kept, and the hour isn't that day's.
-    return raw !== null && Number.isInteger(h) && h >= 0 && h <= 23 && d && !(oldestKept(retentionDays) && d < oldestKept(retentionDays)!) ? h : null;
-  });
   // Hour counts are kept with the day and agent they're for, so the last day's never show under a new heading.
   const [hoursFor, setHoursFor] = useState<{ key: string; hours: RunHourCount[] } | null>(null);
-  const [hoursOk, setHoursOk] = useState(true);
-  // Whether the engine filters by hour (list_runs hour). If one ignores it, the chart stays (its counts
-  // are right) but its bars can't be picked; a new day or agent checks again.
-  const [hourPickOk, setHourPickOk] = useState(true);
+  const hoursKey = `${day ?? ''}|${agent}`;
+  // What the engine can do for this day and agent, checked again when either changes (not on
+  // every filter change: clearing an unsupported hour mustn't offer the hours again).
+  // hoursOk: it counts runs by hour. hourPickOk: it filters the list by hour; if one ignores
+  // it, the chart stays (its counts are right) but its bars can't be picked.
+  const [capsFor, setCapsFor] = useState<{ key: string; hoursOk: boolean; hourPickOk: boolean } | null>(null);
+  const { hoursOk, hourPickOk } = capsFor?.key === hoursKey ? capsFor : { hoursOk: true, hourPickOk: true };
+  const setCaps = useCallback((key: string, patch: { hoursOk?: boolean; hourPickOk?: boolean }) =>
+    setCapsFor((prev) => ({ ...(prev?.key === key ? prev : { key, hoursOk: true, hourPickOk: true }), ...patch })), []);
   const oldest = oldestKept(retentionDays);
-  // One picked day (the viewer's local day) overrides the range.
-  // A shared link can name a day the plan no longer keeps: start at the oldest kept.
-  const [day, setDay] = useState<string | null>(() => { const d = validDay(params.get('day')); return d && oldest && d < oldest ? oldest : d; });
-  // A custom range's ends, kept to what the engine takes (see clampSpan).
-  const [span0] = useState(() => {
-    const f = validDay(params.get('from'));
-    const t = validDay(params.get('to'));
-    return f && t ? clampSpan(f, t, { today: localDay(), oldest }) : null;
-  });
-  const [from, setFrom] = useState<string | null>(span0?.from ?? null);
-  const [to, setTo] = useState<string | null>(span0?.to ?? null);
   const view: RunsView = { range, day, from, to };
-  // The day strip shows 30 days ending on `stripEnd`, following the shown
-  // days. Pinned to a day only when paged back; null follows today, so a tab
-  // left open past midnight moves on with it.
-  const [stripPin, setStripPin] = useState<string | null>(() => { const end = runsWindow(view).toDay; return end === localDay() ? null : end; });
-  const stripEnd = stripPin ?? localDay();
-  const pinStrip = (end: string) => setStripPin(end >= localDay() ? null : end);
   // Day counts are kept with the agent and window they're for (like the hours), so a new agent's or
   // window's rows never sit under the last one's totals while its own counts load.
   const [dayCountsFor, setDayCountsFor] = useState<{ key: string; days: RunDayCount[] } | null>(null);
@@ -180,23 +164,50 @@ export function RunsTable({ preview, retentionDays }: {
   const [stripFailedFor, setStripFailedFor] = useState<string | null>(null);
   // The engine said it couldn't count flagged runs over this range (too many calls): no amber segment or key.
   const [flaggedUnavailable, setFlaggedUnavailable] = useState(false);
-  // How many runs the list shows: a page to start, a page more with each Show more.
-  // /dev/runs only: how many sample rows Show more has revealed.
-  const [previewLimit, setPreviewLimit] = useState(PAGE);
-  // Where Show more continues from, and whether it has added rows (polls then refresh only the first page).
-  const [next, setNext] = useState<string | null>(null);
-  const expanded = useRef(false);
-  // Bumped by Show more: a load already in flight with the shorter list is dropped when it lands.
+  // Bumped by Show more and by every filter change: a load already in flight is dropped when it lands.
   const listGen = useRef(0);
-  const shownCount = useRef(0);
-  // The filter a Show more belongs to: a page that lands after the filter changed is dropped.
-  const filterKey = `${range}|${day}|${hour}|${from}|${to}|${agent}|${show}`;
-  const currentFilter = useRef(filterKey);
-  currentFilter.current = filterKey;
   const [runs, setRuns] = useState<RunSummary[] | null>(preview?.runs ?? null);
   const [total, setTotal] = useState(preview?.runs.length ?? 0);
   // A new filter keeps the old rows on screen, dimmed, until its own arrive.
   const [loading, setLoading] = useState(false);
+
+  // Paging belongs to one *filter epoch*: a number that goes up on every filter change,
+  // however it came (a pick, Back/Forward, a link), A → B → A included. Anything kept
+  // for an earlier epoch reads as its default, so a list never starts at an old length,
+  // and a Show more page that lands after the filter changed (even back) is dropped.
+  const filterKey = `${range}|${day}|${hour}|${from}|${to}|${agent}|${show}`;
+  const [seen, setSeen] = useState({ key: filterKey, epoch: 0 });
+  // The day strip shows 30 days ending on `stripEnd`, following the shown
+  // days. Pinned to a day only when paged back; null follows today, so a tab
+  // left open past midnight moves on with it.
+  const [stripPinFor, setStripPinFor] = useState<{ epoch: number; pin: string | null }>(() => {
+    const end = runsWindow(view).toDay;
+    return { epoch: 0, pin: end === localDay() ? null : end };
+  });
+  if (seen.key !== filterKey) {
+    // React's "adjust state when a prop changes": re-renders before paint, so no frame shows old paging.
+    const nextEpoch = seen.epoch + 1;
+    setSeen({ key: filterKey, epoch: nextEpoch });
+    const end = stripEndFor(runsWindow(view), stripPinFor.pin ?? localDay(), STRIP_DAYS);
+    setStripPinFor({ epoch: nextEpoch, pin: end >= localDay() ? null : end });
+    listGen.current++;
+    // The preview fetches nothing: it keeps its sample, and lists it below.
+    if (!preview) setLoading(true);
+  }
+  const epoch = seen.key === filterKey ? seen.epoch : seen.epoch + 1;
+  const epochNow = useRef(epoch);
+  epochNow.current = epoch;
+  const stripEnd = stripPinFor.pin ?? localDay();
+  const pinStrip = (end: string) => setStripPinFor({ epoch, pin: end >= localDay() ? null : end });
+  // /dev/runs only: how many sample rows Show more has revealed.
+  const [previewFor, setPreviewFor] = useState({ epoch: 0, limit: PAGE });
+  const previewLimit = previewFor.epoch === epoch ? previewFor.limit : PAGE;
+  // Where Show more continues from: none until this epoch's first page is in.
+  const [nextFor, setNextFor] = useState<{ epoch: number; cursor: string | null }>({ epoch: 0, cursor: null });
+  const next = nextFor.epoch === epoch ? nextFor.cursor : null;
+  // Whether Show more has added rows this epoch, and how many are open (polls then keep that many current).
+  const paging = useRef({ epoch: 0, expanded: false, shown: 0 });
+  const pagingNow = () => (paging.current.epoch === epochNow.current ? paging.current : { epoch: epochNow.current, expanded: false, shown: 0 });
   // Show more's own wait: cleared when its load lands or fails, so the button never sticks.
   const [moreBusy, setMoreBusy] = useState(false);
   const [agents, setAgents] = useState<string[]>(() => (preview ? [...new Set(preview.runs.map((r) => r.agentId))].sort() : []));
@@ -208,25 +219,10 @@ export function RunsTable({ preview, retentionDays }: {
   const [exportError, setExportError] = useState<string | null>(null);
   const [auditOpen, setAuditOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const hoursKey = `${day ?? ''}|${agent}`;
   const hours = hoursFor?.key === hoursKey ? hoursFor.hours : null;
   const setHours = (h: RunHourCount[] | null, key = hoursKey) => setHoursFor(h ? { key, hours: h } : null);
 
-  // The whole filter state lives in the URL; defaults drop out.
-  useEffect(() => {
-    const sp = new URLSearchParams(window.location.search);
-    if (range === '7d') sp.delete('range'); else sp.set('range', range);
-    if (agent === 'all') sp.delete('agent'); else sp.set('agent', agent);
-    if (show !== 'all') sp.set('show', show); else sp.delete('show');
-    if (day) sp.set('day', day); else sp.delete('day');
-    if (day && hour !== null) sp.set('hour', String(hour)); else sp.delete('hour');
-    if (range === 'custom' && from && to) { sp.set('from', from); sp.set('to', to); } else { sp.delete('from'); sp.delete('to'); }
-    const qs = sp.toString();
-    const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
-    if (url !== `${window.location.pathname}${window.location.search}`) router.replace(url, { scroll: false });
-  }, [range, agent, show, day, hour, from, to, router]);
-
-  // A new filter starts from the first page, in one update, so no request
+  // A new filter starts from the first page (its new epoch), so no request
   // ever pairs the new filter with an old length. The old rows stay, dimmed.
   function changeFilter(change: { range?: RunsRange; agent?: string; show?: RunsShow; day?: string | null; hour?: number | null; from?: string; to?: string }) {
     const today = localDay();
@@ -249,22 +245,12 @@ export function RunsTable({ preview, retentionDays }: {
     const same = nextView.range === range && nextView.day === day && (nextView.from ?? null) === from && (nextView.to ?? null) === to
       && (change.agent ?? agent) === agent && (change.show ?? show) === show && nextHour === hour;
     if (same) return;
-    setRange(nextView.range);
-    setDay(nextView.day);
-    setFrom(nextView.from ?? null);
-    setTo(nextView.to ?? null);
-    pinStrip(stripEndFor(runsWindow(nextView), stripEnd, STRIP_DAYS));
-    if (change.agent !== undefined) setAgent(change.agent);
-    if (change.show !== undefined) setShow(change.show);
-    // An hour belongs to its day: a different day (or none) drops it, and a new day or agent asks for hours again.
-    setHour(nextHour);
-    if (nextView.day !== day || change.agent !== undefined) { setHoursOk(true); setHourPickOk(true); }
-    setPreviewLimit(PAGE);
-    // Show more continues the old list's pages: not until the new filter's first page is in.
-    setNext(null);
-    expanded.current = false;
-    // The preview fetches nothing: it keeps its sample, and lists it below.
-    if (!preview) setLoading(true);
+    // Into the address; the new epoch then resets paging and the strip follows the shown days.
+    // An hour belongs to its day: a different day (or none) drops it.
+    writeFilters({
+      range: nextView.range, day: nextView.day, from: nextView.from ?? null, to: nextView.to ?? null,
+      agent: change.agent ?? agent, show: change.show ?? show, hour: nextHour,
+    });
   }
 
   const listQuery = useCallback(() => ({ ...runsWindow({ range, day, from, to }), agentId: agent === 'all' ? undefined : agent, flagged: flaggedOnly, ruleActivity: rulesOnly, hour: day ? hour : null }),
@@ -275,8 +261,10 @@ export function RunsTable({ preview, retentionDays }: {
   const load = useCallback(async (stale: () => boolean) => {
     if (!fleetId || preview) return;
     const gen = listGen.current;
+    const forEpoch = epochNow.current;
     try {
-      const want = expanded.current ? Math.max(PAGE, shownCount.current) : PAGE;
+      const open = pagingNow();
+      const want = open.expanded ? Math.max(PAGE, open.shown) : PAGE;
       const got: RunSummary[] = [];
       let cursor: string | null = null;
       let count = 0;
@@ -286,18 +274,20 @@ export function RunsTable({ preview, retentionDays }: {
         if ('unsupported' in res) { setUnsupported(true); return; }
         if (first) {
           // An engine without flags (or rule counts) ignores the filter and lists every run: show All.
-          if ((flaggedOnly && ignoresFlagged(res.runs)) || (rulesOnly && ignoresRuleActivity(res.runs))) { setShow('all'); return; }
-          // An engine without the hour filter lists the whole day: drop the hourly view rather than mislabel it.
-          if (day && hour !== null && ignoresHour(res.runs, hour)) { setHour(null); setHourPickOk(false); return; }
+          if ((flaggedOnly && ignoresFlagged(res.runs)) || (rulesOnly && ignoresRuleActivity(res.runs))) { writeFilters({ ...filters, show: 'all' }); return; }
+          // An engine without the hour filter lists the whole day: drop the hourly view rather than
+          // mislabel it, and stop offering hours for this day and agent.
+          if (day && hour !== null && ignoresHour(res.runs, hour)) { setCaps(`${day}|${agent}`, { hourPickOk: false }); writeFilters({ ...filters, hour: null }); return; }
           count = res.total;
         }
         got.push(...res.runs);
         cursor = res.cursor;
         if (!cursor || res.runs.length === 0) break;
       }
+      if (forEpoch !== epochNow.current) return;
       setRuns(got);
-      shownCount.current = got.length;
-      setNext(cursor);
+      paging.current = { ...pagingNow(), shown: got.length };
+      setNextFor({ epoch: forEpoch, cursor });
       if (got.some((r) => r.flags)) setFlagsKnown(true);
       if (got.some((r) => r.wouldActCalls !== undefined)) setRulesKnown(true);
       setTotal(count);
@@ -311,34 +301,33 @@ export function RunsTable({ preview, retentionDays }: {
       setLoading(false);
       setFailing(true);
     }
-  }, [fleetId, authKey, listQuery, day, hour, flaggedOnly, rulesOnly, resetSession, preview]);
+  }, [fleetId, authKey, listQuery, day, hour, agent, filters, flaggedOnly, rulesOnly, resetSession, preview, writeFilters, setCaps]);
 
   /** Show more: the next page after the rows shown, appended. */
   async function showMore() {
-    if (preview) { setPreviewLimit((l) => l + PAGE); return; }
+    if (preview) { setPreviewFor((p) => ({ epoch, limit: (p.epoch === epoch ? p.limit : PAGE) + PAGE })); return; }
     if (!fleetId || !next) return;
-    const forFilter = filterKey;
+    const forEpoch = epoch;
     listGen.current++;
     setMoreBusy(true);
     try {
       const res = await listRuns(fleetId, { ...listQuery(), cursor: next, pageSize: PAGE }, authKey);
-      if (currentFilter.current !== forFilter) return;
+      if (epochNow.current !== forEpoch) return;
       // A poll this dropped (it bumped listGen) isn't redone by anything else: ask again now.
       if ('unsupported' in res) { refresh(); return; }
       // A poll that started while this page loaded counted the shorter list: drop it when it lands.
       listGen.current++;
-      expanded.current = true;
       setRuns((prev) => {
         const have = new Set((prev ?? []).map((r) => r.runId));
         const all = [...(prev ?? []), ...res.runs.filter((r) => !have.has(r.runId))];
-        shownCount.current = all.length;
+        paging.current = { epoch: forEpoch, expanded: true, shown: all.length };
         return all;
       });
-      setNext(res.cursor);
+      setNextFor({ epoch: forEpoch, cursor: res.cursor });
       setTotal(res.total);
     } catch (e) {
       if (isAuthError(e)) { resetSession('Your session expired. Please sign in again.'); return; }
-      if (currentFilter.current === forFilter) { setToast('Couldn’t load more runs. Try again.'); refresh(); }
+      if (epochNow.current === forEpoch) { setToast('Couldn’t load more runs. Try again.'); refresh(); }
     } finally {
       setMoreBusy(false);
     }
@@ -370,9 +359,9 @@ export function RunsTable({ preview, retentionDays }: {
       return;
     }
     if (stale()) return;
-    if ('unsupported' in h) { setHoursOk(false); setHour(null); } else setHours(h.hours, `${day}|${agent}`);
+    if ('unsupported' in h) { setCaps(`${day}|${agent}`, { hoursOk: false }); if (hour !== null) writeFilters({ ...filters, hour: null }); } else setHours(h.hours, `${day}|${agent}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fleetId, authKey, preview, day, agent, hoursOk, resetSession]);
+  }, [fleetId, authKey, preview, day, agent, hour, filters, hoursOk, resetSession, writeFilters, setCaps]);
   const { refresh: refreshHours } = usePoll(loadHours, { intervalMs: 30_000, enabled: auth.status === 'authenticated' && !unsupported && !preview && !!day && hoursOk });
   const firstHours = useRef(true);
   useEffect(() => {
