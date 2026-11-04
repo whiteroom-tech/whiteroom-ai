@@ -14,6 +14,9 @@ vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null }) }));
 vi.mock('@/lib/billing', () => ({ openBillingPortal: vi.fn(), startCheckout: vi.fn() }));
 vi.mock('@/lib/plan-savings', () => ({ getMonthSavings: vi.fn(async () => null) }));
 vi.mock('@/hooks/useFleetAuth', () => ({ useFleetAuth: () => ({ status: 'authenticated', fleetId: null }) }));
+// The viewer's zone as after hydration; null is the server render.
+let zone: string | null = 'UTC';
+vi.mock('@/hooks/useViewerZone', () => ({ useViewerZone: () => zone, useSavedViewerZone: () => null }));
 vi.mock('@/components/AppShell', () => ({ AppShell: ({ children }: { children: React.ReactNode }) => children }));
 
 const { SettingsView, freeDaysLeft } = await import('@/app/settings/settings-view');
@@ -88,6 +91,15 @@ describe('Settings plan: savings share and soft agent counts', () => {
     expect(t).not.toContain('This month:');
     // An older account's longer free period counts its real days, not 30.
     expect(view(1, { freeDays: 63 })).toContain('· 63 days left');
+  });
+
+  it('leaves days left out of the server render (counted in the viewer\'s zone, which it doesn\'t know)', () => {
+    zone = null;
+    try {
+      const t = view(1);
+      expect(t).toMatch(/free until [A-Z][a-z]{2} \d+ /);
+      expect(t).not.toContain('days left');
+    } finally { zone = 'UTC'; }
   });
 
   it('counts free days left by calendar day, whatever the hour', () => {
