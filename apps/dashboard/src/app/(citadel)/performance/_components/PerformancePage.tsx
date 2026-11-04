@@ -241,8 +241,9 @@ export function PerformancePage({ retentionDays }: {
   // A range already seen shows its last overview at once; the refresh replaces it.
   const showRange = (next: RunsView) => {
     setRangeView(next);
-    const d = runsWindow(next);
-    const key = windowKey(next);
+    const now = Date.now(); // one reading for the days and their key
+    const d = runsWindow(next, now);
+    const key = windowKey(next, now);
     const snap = readSnapshot(fleetId, key);
     if (!snap) return;
     setDataSpan({ key, ...d });
