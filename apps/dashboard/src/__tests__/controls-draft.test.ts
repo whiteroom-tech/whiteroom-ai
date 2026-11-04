@@ -44,7 +44,25 @@ it.each([
   ['params not an object', { ...draft, params: 'x' }],
   ['appliesTo of the wrong kind', { ...draft, appliesTo: 'some' }],
   ['a number that is not text', { ...draft, number: 100 }],
+  ['keyword params missing their list', { ...draft, params: {} }],
+  ['keywords as a string', { ...draft, params: { keywords: 'placeholder-term', where: 'incoming' } }],
+  ['a keyword "where" this build doesn\'t know', { ...draft, params: { keywords: [], where: 'everywhere' } }],
+  ['a spend cap with no unit', { ...draft, ruleType: 'spend_cap', params: { dailyCap: 5, scope: 'day' } }],
+  ['a loop breaker whose ignore list isn\'t a list', { ...draft, ruleType: 'loop_breaker', params: { threshold: 5, scope: 'run', ignoreTools: 'x' } }],
+  ['a rule type this build doesn\'t know', { ...draft, ruleType: 'mystery', params: {} }],
 ])('a draft the editor couldn\'t open (%s) reads as none', (_name, bad) => {
   sessionStorage.setItem('wr_controls_draft:f1', JSON.stringify({ ruleId: 'r1', version: 1, draft: bad }));
   expect(readDraft('f1')).toBeNull();
+});
+
+it.each([
+  ['spend cap', { ruleType: 'spend_cap', params: { dailyCap: 5, scope: 'day', unit: 'dollars' } }],
+  ['loop breaker', { ruleType: 'loop_breaker', params: { threshold: 5, scope: 'run', ignoreTools: [] } }],
+  ['call rate', { ruleType: 'call_rate', params: { maxCalls: 60 } }],
+  ['model allowlist', { ruleType: 'model_allowlist', params: { allowedModels: ['m'] } }],
+  ['tool list', { ruleType: 'tool_list', params: { blockedTools: [] } }],
+  ['keyword', { ruleType: 'keyword', params: { keywords: ['x'], where: 'both', wholeWord: true } }],
+])('a well-formed %s draft reads back', (_name, shape) => {
+  writeDraft('f1', { ruleId: 'r1', version: 1, draft: { ...draft, ...shape } as RuleDraft });
+  expect(readDraft('f1')).not.toBeNull();
 });

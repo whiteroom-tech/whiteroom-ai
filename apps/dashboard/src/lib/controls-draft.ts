@@ -33,14 +33,30 @@ export function readDraft(fleetId: string): SavedDraft | null {
   }
 }
 
-/** The fields the rule editor reads, of the right kinds. */
+const strings = (v: unknown) => Array.isArray(v) && v.every((s) => typeof s === 'string');
+const scope = (v: unknown) => v === 'run' || v === 'day';
+
+/** Per rule type, the params the editor reads, of the right kinds (lib/whiteroom/types). Numbers it edits as text (`number`). */
+const PARAMS_FIT: Record<string, (p: Record<string, unknown>) => boolean> = {
+  spend_cap: (p) => scope(p.scope) && (p.unit === 'dollars' || p.unit === 'tokens'),
+  loop_breaker: (p) => scope(p.scope) && strings(p.ignoreTools),
+  call_rate: () => true,
+  model_allowlist: (p) => strings(p.allowedModels),
+  tool_list: (p) => strings(p.blockedTools),
+  keyword: (p) => strings(p.keywords) && (p.where === 'incoming' || p.where === 'replies' || p.where === 'both'),
+};
+
+/** The fields the rule editor reads, of the right kinds, with params that fit the rule type. */
 function isRuleDraft(d: unknown): d is RuleDraft {
   if (!d || typeof d !== 'object') return false;
   const x = d as Record<string, unknown>;
-  const isObject = (v: unknown) => !!v && typeof v === 'object' && !Array.isArray(v);
-  return typeof x.ruleType === 'string' && typeof x.mode === 'string' && typeof x.response === 'string'
-    && typeof x.alsoNotify === 'boolean' && typeof x.number === 'string' && isObject(x.params)
-    && (x.appliesTo === 'all' || (Array.isArray(x.appliesTo) && x.appliesTo.every((a) => typeof a === 'string')));
+  const params = x.params;
+  if (!params || typeof params !== 'object' || Array.isArray(params)) return false;
+  const fits = typeof x.ruleType === 'string' ? PARAMS_FIT[x.ruleType] : undefined;
+  return !!fits && fits(params as Record<string, unknown>)
+    && typeof x.mode === 'string' && typeof x.response === 'string'
+    && typeof x.alsoNotify === 'boolean' && typeof x.number === 'string'
+    && (x.appliesTo === 'all' || strings(x.appliesTo));
 }
 
 export function writeDraft(fleetId: string, saved: SavedDraft): void {
