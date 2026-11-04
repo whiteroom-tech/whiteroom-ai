@@ -7,6 +7,11 @@
 //   GET           -> report the current session (cookie, else the signed-in
 //                    user's linked fleets), setting/refreshing the cookie
 //   DELETE        -> clear the cookie (sign out)
+//   DELETE {expectFleetId}
+//                 -> clear only on proof: the cookie is this fleet's and the
+//                    engine rejects its token. Otherwise says which fleet the
+//                    session is now ({cleared:false, fleetId}), or that there's
+//                    none ({cleared:true, signedIn}); 502 clears nothing.
 
 import { checkSameOrigin } from '@/lib/origin-check';
 import { isSandboxFleetId, SANDBOX_KEY_MESSAGE } from '@/lib/fleet-helpers';
@@ -88,8 +93,15 @@ export async function GET() {
     await clearFleetAuthCookie();
   }
 
-  // No (valid) cookie: a next-auth session user may still have fleets linked
-  // in user_fleets — adopt the preferred one into the cookie.
+  return adoptLinkedFleet();
+}
+
+/**
+ * No (valid) cookie: a next-auth session user may still have fleets linked in
+ * user_fleets — adopt the preferred one into the cookie. Answers as GET does:
+ * {fleetId}, 401 {signedIn} when there's none, or the engine's error.
+ */
+async function adoptLinkedFleet(): Promise<Response> {
   let linked = await tokenFromUserFleets();
   // Rows that predate fleet ids being stored are resolved from the engine; one
   // that turns out to be a Sandbox fleet's is skipped and the next tried (at most 5).
@@ -115,10 +127,43 @@ export async function GET() {
   return Response.json({ fleetId: linked.fleetId });
 }
 
-export async function DELETE() {
+export async function DELETE(req: Request) {
   const originError = await checkSameOrigin();
   if (originError) return originError;
 
-  await clearFleetAuthCookie();
-  return Response.json({ ok: true });
+  let expect: string | null = null;
+  try {
+    const v = (await req.json())?.expectFleetId;
+    if (typeof v === 'string' && v.length > 0 && v.length <= 128) expect = v;
+  } catch {
+    /* no body: a plain sign-out */
+  }
+  if (!expect) {
+    await clearFleetAuthCookie();
+    return Response.json({ ok: true });
+  }
+
+  // A page hit an auth error for fleet `expect`. Look at the cookie this
+  // request actually carries: another tab may have signed in as someone else
+  // since, and their session mustn't be cleared on this tab's guess.
+  const cookieToken = await getFleetAuthCookie();
+  if (cookieToken) {
+    const resolved = await resolveFleetId(cookieToken);
+    if ('fleetId' in resolved && !isSandboxFleetId(resolved.fleetId)) return Response.json({ cleared: false, fleetId: resolved.fleetId });
+    if ('error' in resolved && resolved.error.status === 502) return resolved.error;
+    // Rejected (or a Sandbox fleet's, which never opens these pages): proof.
+    await clearFleetAuthCookie();
+    return Response.json({ cleared: true });
+  }
+
+  // No cookie for whoever is signed in now: what GET would adopt, if anything.
+  const adopted = await adoptLinkedFleet();
+  if (adopted.ok) {
+    const { fleetId } = (await adopted.json()) as { fleetId: string };
+    return Response.json({ cleared: false, fleetId });
+  }
+  if (adopted.status === 502) return adopted;
+  const body = (await adopted.json().catch(() => ({}))) as { signedIn?: boolean };
+  const signedIn = typeof body.signedIn === 'boolean' ? body.signedIn : !!(await auth())?.user;
+  return Response.json({ cleared: true, signedIn });
 }
