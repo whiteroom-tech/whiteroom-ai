@@ -117,6 +117,8 @@ export function PerformancePage({ retentionDays }: {
   // By day's week of hourly rows, kept a few minutes per fleet (WEEK_READ_TTL_MS).
   const weekRead = useRef<{ fleetId: string; at: number; data: FleetHourlyResult } | null>(null);
   const evidenceReq = useRef(0);
+  // When the last read succeeded, for the poll's pace.
+  const lastGoodRead = useRef(0);
   // The foreground read in flight (a range change, Try again, midnight), else 0.
   // A background poll waits for it rather than start a newer read over it.
   const foreground = useRef(0);
@@ -132,8 +134,10 @@ export function PerformancePage({ retentionDays }: {
     const stale = () => indexReq.current !== req;
     if (!background) { foreground.current = req; setLoading(true); setError(''); }
     // The range's days as instants, worked out now, so a tab left open past midnight moves on.
-    const days = runsWindow(rangeView);
-    const key = windowKey(rangeView);
+    // One clock reading for both, so the key always names the days actually read.
+    const now = Date.now();
+    const days = runsWindow(rangeView, now);
+    const key = windowKey(rangeView, now);
     const w = viewInstants(rangeView);
     try {
       const weekStart = dayStart(addDays(localDay(), -6)); // the Savings chart's 7 calendar days
@@ -205,6 +209,7 @@ export function PerformancePage({ retentionDays }: {
       setExtra(extras);
       setDataSpan({ key, fromDay: days.fromDay, toDay: days.toDay });
       setError('');
+      lastGoodRead.current = Date.now();
       saveSnapshot(fleetId, key, snapshot);
       if (fromAudit) {
         // Durable counts (engine rule_actions) replace the audit log's when they arrive.
@@ -285,10 +290,16 @@ export function PerformancePage({ retentionDays }: {
 
   // The overview keeps itself current, as the header's "Live · updated" says: every
   // few minutes (its heavy totals change slowly, as on Home), every minute while a
-  // read is failing, which is what "Retrying" promises. usePoll pauses while the
-  // tab is hidden, reads again on return, and reads once when the overview opens.
-  usePoll(() => fetchIndex({ background: true }), {
-    intervalMs: error ? 60_000 : WEEK_POLL_MS,
+  // read is failing, which is what "Retrying" promises. One steady minute tick that
+  // reads only when one of those is due, so the pace never re-arms the poll.
+  // usePoll pauses while the tab is hidden, and reads once when the overview opens.
+  const failing = useRef(false);
+  failing.current = !!error;
+  usePoll(() => {
+    const due = failing.current || Date.now() - lastGoodRead.current >= WEEK_POLL_MS;
+    return due ? fetchIndex({ background: true }) : undefined;
+  }, {
+    intervalMs: 60_000,
     enabled: authenticated && view === 'index' && !legacyAgent,
   });
   // A new window (range, custom days, saved zone) or fleet reads at once, dimmed.

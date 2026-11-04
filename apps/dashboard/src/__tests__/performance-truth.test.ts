@@ -119,6 +119,22 @@ it('Live: a background read every 5 minutes, without dimming the page', async ()
   expect(shown()).toBe('last 7 days: 710 calls');
 });
 
+it('the minute tick reads only when due: no extra reads around a failure', async () => {
+  await mount();
+  const n = api.index.mock.calls.length;
+  await advance(4 * 60_000); // four ticks, none due
+  expect(api.index.mock.calls.length).toBe(n);
+  api.index.mockRejectedValueOnce(new Error('offline'));
+  await advance(60_000); // due at 5 min: fails
+  expect(api.index.mock.calls.length).toBe(n + 1);
+  await advance(30_000); // no immediate re-read on the failure
+  expect(api.index.mock.calls.length).toBe(n + 1);
+  await advance(30_000); // the next minute: retried, and succeeds
+  expect(api.index.mock.calls.length).toBe(n + 2);
+  await advance(60_000); // recovered: back to every 5 minutes, no extra read
+  expect(api.index.mock.calls.length).toBe(n + 2);
+});
+
 it('Retrying: a failing read is retried every minute, and success clears it', async () => {
   await mount();
   api.index.mockRejectedValue(new Error('offline'));
