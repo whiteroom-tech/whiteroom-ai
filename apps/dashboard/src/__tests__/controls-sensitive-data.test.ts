@@ -6,6 +6,7 @@ import {
 import { canAct } from '@/lib/controls-guard';
 import { blockedByPhrase, governanceCounts, PAUSED_BY_WHITEROOM, RESPONSE_LABEL, sensitiveDataPaused } from '@/lib/governance';
 import { eventModel, sensitiveCounts } from '@/lib/activity';
+import { reasonText } from '@/lib/runs';
 import { modeTagText } from '@/lib/vocab';
 import type { AuditEntry, GovernanceRule, SensitiveDataParams } from '@/lib/whiteroom/types';
 
@@ -76,6 +77,7 @@ describe('Sensitive data in plain words', () => {
   it('is offered as a new rule, and reads in the activity feed', () => {
     expect(RULE_TEMPLATES.find((t) => t.type === 'sensitive_data')).toMatchObject({ title: 'Keep sensitive data out', isNew: true });
     expect(blockedByPhrase('sensitive_data', 'sensitive_data_found', true)).toBe('the Sensitive data rule');
+    expect(reasonText('sensitive_data_found')).toBe('sensitive data was found');
   });
 
   it('reads the engine’s switch from one field', () => {

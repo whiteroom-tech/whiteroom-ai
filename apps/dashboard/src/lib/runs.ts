@@ -343,6 +343,7 @@ const REASON_TEXT: Record<string, string> = {
   loop_detected: 'the same call repeated',
   rate_exceeded: 'too many calls',
   keyword_found: 'a keyword was found',
+  sensitive_data_found: 'sensitive data was found',
 };
 export function reasonText(reason: string | null | undefined): string | null {
   return reason ? REASON_TEXT[reason] ?? REASON_LABELS[reason] ?? null : null;

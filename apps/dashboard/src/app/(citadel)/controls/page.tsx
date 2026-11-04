@@ -736,8 +736,9 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const modeTag = (r: GovernanceRule) => {
     if (notSetUp(r)) return <span className="ctl-mtag is-off">Not set up</span>;
     if (r.mode === "off") return <span className="ctl-mtag is-off">{MODE_LABEL.off}</span>;
-    if (r.mode === "watch") return <span className="ctl-mtag">{MODE_LABEL.watch}</span>;
+    // Switched off by WhiteRoom, a Watch rule records nothing either.
     if (sdPaused && r.ruleType === "sensitive_data") return <span className="ctl-mtag">{PAUSED_BY_WHITEROOM}</span>;
+    if (r.mode === "watch") return <span className="ctl-mtag">{MODE_LABEL.watch}</span>;
     return <span className={`ctl-mtag${r.response === "notify" || r.response === "redact" ? "" : " is-block"}`}>{modeTagText(r)}</span>;
   };
 
@@ -955,7 +956,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                   undoOf={undoOf}
                   fleetDailySpend={dailySpend}
                   agentSpend={spendAgents.flatMap((a) => (agentSpend[a] ? [{ agent: a, ...agentSpend[a]! }] : []))}
-                  status={sdPaused && edited.ruleType === "sensitive_data" ? `${PAUSED_BY_WHITEROOM} · nothing is checked or removed until it’s back on` : ruleStatus(edited, { week: weekOf(edited), wouldAct: wouldOf(edited), neverFirst: neverFirst(edited) })}
+                  status={sdPaused && edited.ruleType === "sensitive_data" && edited.mode !== "off" ? `${PAUSED_BY_WHITEROOM} · nothing is checked or removed until it’s back on` : ruleStatus(edited, { week: weekOf(edited), wouldAct: wouldOf(edited), neverFirst: neverFirst(edited) })}
                   ruleHistory={history}
                   startOpen={justAdded === edited.id}
                   onAudit={() => setAuditOpen(true)}

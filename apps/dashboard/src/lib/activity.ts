@@ -185,7 +185,6 @@ function windowText(e: AuditEntry, style: 'between' | 'range' = 'between'): stri
   return style === 'between' ? `between ${from} and ${to}` : `${from}–${to}`;
 }
 
-/** "spend cap (budget exceeded) ×3" — rule, why, and how many calls it stands for. */
 /** The Sensitive data rule's kinds, as its finds are counted: [singular, plural]. */
 const SENSITIVE_WORDS: [key: string, one: string, many: string][] = [
   ['credential', 'key or password', 'keys or passwords'],
@@ -214,6 +213,7 @@ function sensitiveDataSay(e: AuditEntry): string {
   return `had ${what} removed before the call reached the model provider${times}`;
 }
 
+/** "spend cap (budget exceeded) ×3" — rule, why, and how many calls it stands for. */
 function governancePhrase(e: AuditEntry): string {
   const n = occurrences(e);
   const times = n > 1 ? ` ×${n}` : '';

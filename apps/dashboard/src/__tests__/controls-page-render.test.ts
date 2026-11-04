@@ -1711,6 +1711,31 @@ describe('Controls: the Sensitive data rule', () => {
     m.root.unmount();
   });
 
+  it('asks before it stops removing, saying what will reach the model provider', async () => {
+    api.created = [{ ...SD, mode: 'enforce' }];
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...SD, mode: 'enforce', ...ch, id, version: 2 } }));
+    const m = await mount();
+    await m.open('A call holds');
+    await m.pick('Watch');
+    await m.click(m.button('Save'));
+    const dialog = [...m.el.querySelectorAll('dialog[open]')].at(-1)!;
+    expect(dialog.textContent).toContain('Stop removing sensitive data?');
+    expect(dialog.textContent).toContain('What it finds will reach your model provider for all agents. They’ll still be recorded.');
+    expect(m.button('Keep removing')!.className).toContain('wr-btn--primary');
+    await m.click(m.button('Switch to Watch'));
+    expect(api.update).toHaveBeenCalledWith('f1', 'sd1', expect.objectContaining({ mode: 'watch' }), 'k');
+    m.root.unmount();
+  });
+
+  it('a Watch rule shows Paused by WhiteRoom too, since it records nothing while switched off; other rules keep their tags', async () => {
+    api.created = [SD];
+    api.sdPaused = true;
+    const m = await mount();
+    expect(m.row('A call holds').textContent).toContain('Paused by WhiteRoom');
+    expect(m.row('100×').textContent).not.toContain('Paused by WhiteRoom');
+    m.root.unmount();
+  });
+
   it('shows Paused by WhiteRoom when the engine has the rule switched off', async () => {
     api.created = [{ ...SD, mode: 'enforce' }];
     api.sdPaused = true;
