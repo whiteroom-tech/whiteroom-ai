@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, FONT_MONO } from '@whiteroom/ui';
 import { SettingsCard } from '@/components/settings/SettingsCard';
+import { LoadFailed } from '@/components/citadel/States';
 import { alertsGet, alertsSetSlack, alertsSetTeams, alertsTest, type AlertChannel, type AlertsStatus } from '@/lib/whiteroom/client';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 
@@ -16,7 +17,7 @@ const CHANNELS: Record<AlertChannel, { name: string; short: string; label: strin
  * Slack and Microsoft Teams webhooks. Each has to accept a test message
  * before it's saved; afterwards only its last four characters are shown.
  * Teams shows only on engines that have it. Hidden on engines without alerts
- * and when no fleet is signed in.
+ * and when no fleet is signed in; a read that fails says so, with Try again.
  */
 export function AlertsSection({ preview }: { preview?: AlertsStatus } = {}) {
   const auth = useFleetAuth();
@@ -24,23 +25,43 @@ export function AlertsSection({ preview }: { preview?: AlertsStatus } = {}) {
   const fleetId = preview ? 'preview' : auth.fleetId;
   const authStatus = auth.status;
   const [status, setStatus] = useState<AlertsStatus | null>(preview ?? null);
+  const [failed, setFailed] = useState(false);
+  // Bumped by Try again to read once more. While that read runs the failed card
+  // stays up with its button busy, rather than the card vanishing and coming back.
+  const [attempt, setAttempt] = useState(0);
+  const [retrying, setRetrying] = useState(false);
+  const retry = useRef(false);
 
   useEffect(() => {
     if (preview) return;
-    setStatus(null);
-    if (authStatus !== 'authenticated' || !fleetId) return;
+    const again = retry.current;
+    retry.current = false;
+    if (!again) { setStatus(null); setFailed(false); }
+    if (authStatus !== 'authenticated' || !fleetId) { setRetrying(false); return; }
     let live = true;
-    alertsGet(fleetId).then((s) => { if (live) setStatus(s); }, () => {});
+    alertsGet(fleetId).then(
+      (s) => { if (live) { setStatus(s); setFailed(false); setRetrying(false); } },
+      () => { if (live) { setFailed(true); setRetrying(false); } },
+    );
     return () => { live = false; };
-  }, [fleetId, authStatus, preview]);
+  }, [fleetId, authStatus, preview, attempt]);
 
-  if (!fleetId || !status) return null;
+  if (!fleetId) return null;
+  if (failed) {
+    return (
+      <SettingsCard id="alerts" title="Alerts" sub="A Slack or Teams message when a rule alerts, pauses or stops an agent.">
+        <LoadFailed what="alert settings" busy={retrying} onRetry={() => { retry.current = true; setRetrying(true); setAttempt((n) => n + 1); }} />
+      </SettingsCard>
+    );
+  }
+  if (!status) return null;
   const channels: AlertChannel[] = status.teams === undefined ? ['slack'] : ['slack', 'teams'];
 
   return (
     <SettingsCard id="alerts" title="Alerts" sub={`A ${channels.length > 1 ? 'Slack or Teams' : 'Slack'} message when a rule alerts, pauses or stops an agent, or blocks a call you asked about. Each links to the run.`}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {channels.map((c) => <ChannelRow key={`${fleetId}:${c}`} fleetId={fleetId} channel={c} ending={status[c]?.ending ?? null} onStatus={setStatus} preview={!!preview} />)}
+        {/* Each row takes only its own channel from a reply, so a late Slack reply can't undo a newer Teams change. */}
+        {channels.map((c) => <ChannelRow key={`${fleetId}:${c}`} fleetId={fleetId} channel={c} ending={status[c]?.ending ?? null} onStatus={(s) => setStatus((prev) => (prev ? { ...prev, [c]: s[c] } : s))} preview={!!preview} />)}
       </div>
     </SettingsCard>
   );

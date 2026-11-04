@@ -152,7 +152,8 @@ export function proxy(request: NextRequest) {
                    request.cookies.get('authjs.session-token');
     if (!cookie?.value) {
       const signIn = new URL('/sign-in', request.url);
-      signIn.searchParams.set('callbackUrl', pathname);
+      // With the query, so a link to a rule, filter or event opens on it after sign-in.
+      signIn.searchParams.set('callbackUrl', pathname + request.nextUrl.search);
       return NextResponse.redirect(signIn);
     }
   }
