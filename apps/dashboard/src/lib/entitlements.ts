@@ -14,7 +14,7 @@ import 'server-only';
 
 import { auth } from '@/auth';
 import { SANDBOX_FLEET_PREFIX } from '@/lib/fleet-helpers';
-import { db, type Queryable } from '@/lib/db';
+import { db, lockClient, type Queryable } from '@/lib/db';
 import { fetchFleetUsage } from '@/lib/fleet-usage';
 import { PROXY_URL } from '@/lib/whiteroom/client';
 import { fleetOwners } from '@/lib/control-auth';
@@ -218,6 +218,56 @@ export async function enqueueEntitlementSync(
 }
 
 /**
+ * How long a push the engine didn't acknowledge can still land there: past the
+ * engine's Cloud Run request timeout (300s, cloudbuild-engine.yaml --timeout),
+ * with a margin. The engine applies a push as soon as it reads the body, so a
+ * request is applied within that time or never. Raise this with that timeout.
+ */
+const LATE_PUSH_MARGIN_MINUTES = 6;
+
+/**
+ * Marks this user's outbox rows up to `upToId` delivered, after the engine
+ * acknowledged a push that reflects them. Rows not yet due (a delayed re-push,
+ * below) are left: they exist to re-send after a push that may still land late.
+ */
+export async function markOutboxDelivered(userId: string, upToId: number | string, q: Queryable = db()): Promise<void> {
+  await q.query(
+    `UPDATE entitlement_outbox SET delivered_at = now()
+     WHERE user_id = $1 AND id <= $2 AND delivered_at IS NULL
+       AND (not_before IS NULL OR not_before <= now())`,
+    [userId, upToId],
+  );
+}
+
+/**
+ * Holds this user's entitlement lock while `fn` runs, and hands it `push`, the
+ * engine push that may only run under it. Two pushes for one user never
+ * overlap, and each reads the database when it runs and holds the lock until
+ * the engine acknowledges: so the engine receives a user's states in the order
+ * they were committed. Without it, an older push that read the old plan could
+ * land after a newer one.
+ *
+ * The lock is a Postgres advisory lock on a connection of its own, outside the
+ * pool: `fn` uses the pool for its queries, and waiters holding pool slots
+ * could otherwise starve the holder. Waiting gives up after statement_timeout
+ * (15s) with an error. If the lock connection drops, Postgres releases it.
+ */
+export async function withUserEntitlementLock<T>(userId: string, fn: (push: () => Promise<boolean>) => Promise<T>): Promise<T> {
+  const lock = lockClient();
+  await lock.connect();
+  try {
+    await lock.query(`SELECT pg_advisory_lock(hashtext($1))`, [`entitlements:${userId}`]);
+    try {
+      return await fn(() => pushEntitlements(userId));
+    } finally {
+      await lock.query(`SELECT pg_advisory_unlock(hashtext($1))`, [`entitlements:${userId}`]).catch(() => {});
+    }
+  } finally {
+    await lock.end().catch(() => {});
+  }
+}
+
+/**
  * Pushes this user's current limits to the engine.
  *
  * Called after anything that can change what they're entitled to: a webhook,
@@ -231,8 +281,24 @@ export async function enqueueEntitlementSync(
  * succeeded. Instead it returns whether the engine acknowledged the push, and
  * callers that need delivery (the outbox sweep) must check it — the engine
  * only knows what it was last sent, so nothing else re-sends a missed push.
+ *
+ * Takes the user's entitlement lock (withUserEntitlementLock). A caller that
+ * already holds it uses the `push` it was handed instead: this would wait on
+ * itself.
  */
 export async function syncEntitlementsToEngine(userId: string): Promise<boolean> {
+  try {
+    return await withUserEntitlementLock(userId, (push) => push());
+  } catch (err) {
+    // The lock couldn't be had (another push held it past statement_timeout, or
+    // the database is unreachable): not delivered; a queued row stays pending.
+    console.error('[entitlements] could not take the entitlement lock');
+    return false;
+  }
+}
+
+/** The push itself. Only under the user's entitlement lock (withUserEntitlementLock). */
+async function pushEntitlements(userId: string): Promise<boolean> {
   const secret = process.env.WR_ENTITLEMENT_SYNC_SECRET;
   if (!secret) {
     console.warn('[entitlements] WR_ENTITLEMENT_SYNC_SECRET unset — skipping engine sync');
@@ -276,6 +342,23 @@ export async function syncEntitlementsToEngine(userId: string): Promise<boolean>
     })),
   };
 
+  // Sent but not acknowledged (a timeout, a dropped connection, a 5xx) doesn't
+  // mean not applied: the engine may still apply it after a newer push has
+  // landed. So queue a re-push of the current state for after that can happen.
+  const sentUnacknowledged = async (): Promise<false> => {
+    // One waiting re-push per user is enough: it sends whatever is current when it runs.
+    await db().query(
+      `INSERT INTO entitlement_outbox (user_id, reason, not_before)
+       SELECT $1, 'unacknowledged_push', now() + make_interval(mins => $2)
+       WHERE NOT EXISTS (
+         SELECT 1 FROM entitlement_outbox
+         WHERE user_id = $1 AND delivered_at IS NULL AND not_before > now()
+       )`,
+      [userId, LATE_PUSH_MARGIN_MINUTES],
+    ).catch(() => console.error('[entitlements] could not queue the delayed re-push'));
+    return false;
+  };
+
   try {
     const res = await fetch(`${PROXY_URL}/internal/entitlements`, {
       method: 'POST',
@@ -286,7 +369,7 @@ export async function syncEntitlementsToEngine(userId: string): Promise<boolean>
     });
     if (!res.ok) {
       console.error(`[entitlements] engine sync failed: HTTP ${res.status}`);
-      return false;
+      return sentUnacknowledged();
     }
     const body = (await res.json().catch(() => null)) as { closed?: unknown } | null;
     const closed = Array.isArray(body?.closed) ? body.closed : null;
@@ -295,7 +378,7 @@ export async function syncEntitlementsToEngine(userId: string): Promise<boolean>
     // Otherwise a deleted account could be removed with its fleets still open.
     if (closing && !closed) {
       console.error('[entitlements] engine did not take the closing time; leaving pending');
-      return false;
+      return sentUnacknowledged();
     }
     // The engine has the final say on closing: a fleet it reports closed
     // while this side thinks it open (a cancel that came too late) is
@@ -306,7 +389,7 @@ export async function syncEntitlementsToEngine(userId: string): Promise<boolean>
     return true;
   } catch (err) {
     console.error('[entitlements] engine sync failed');
-    return false;
+    return sentUnacknowledged();
   }
 }
 

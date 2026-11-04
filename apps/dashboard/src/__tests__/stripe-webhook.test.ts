@@ -9,10 +9,19 @@ const mocks = vi.hoisted(() => ({
   cancelStripe: vi.fn(),
   refund: vi.fn(),
   enqueue: vi.fn(),
+  mark: vi.fn(),
+  retrieve: vi.fn(),
+  /** What Stripe says the subscription is now (deliver() sets it to the payload unless a test says otherwise). */
+  current: null as Record<string, unknown> | null,
 }));
 
-vi.mock('@/lib/db', () => ({ db: () => ({ query: mocks.query }) }));
-vi.mock('@/lib/entitlements', () => ({ syncEntitlementsToEngine: mocks.sync, enqueueEntitlementSync: mocks.enqueue }));
+vi.mock('@/lib/db', () => ({ db: () => ({ query: mocks.query, connect: async () => ({ query: mocks.query, release: () => {} }) }) }));
+// The lock itself is tested in entitlements-sync.test.ts; here it just runs the work, handing it the push.
+vi.mock('@/lib/entitlements', () => ({
+  enqueueEntitlementSync: mocks.enqueue,
+  markOutboxDelivered: mocks.mark,
+  withUserEntitlementLock: async (userId: string, fn: (push: () => Promise<boolean>) => Promise<unknown>) => fn(() => mocks.sync(userId)),
+}));
 vi.mock('@/lib/account-closing', () => ({
   getClosing: mocks.getClosing,
   cancelClosing: mocks.cancelClosing,
@@ -20,12 +29,13 @@ vi.mock('@/lib/account-closing', () => ({
   reportRefundNeeded: mocks.refund,
 }));
 vi.mock('@/lib/stripe', () => ({
-  stripe: () => ({ webhooks: { constructEventAsync: mocks.constructEvent } }),
+  stripe: () => ({ webhooks: { constructEventAsync: mocks.constructEvent }, subscriptions: { retrieve: mocks.retrieve } }),
 }));
 
 const { POST } = await import('@/app/api/stripe/webhook/route');
 
 function deliver(subscription: Record<string, unknown>) {
+  mocks.current = subscription;
   mocks.constructEvent.mockResolvedValue({
     id: `evt_${Math.random()}`,
     type: 'customer.subscription.updated',
@@ -72,8 +82,10 @@ beforeEach(() => {
   process.env.STRIPE_PRICE_PRO_SHARE = 'price_pro_share';
   process.env.STRIPE_PRICE_STARTER_FEE = 'price_starter_fee';
   process.env.STRIPE_PRICE_PRO_FEE = 'price_pro_fee';
-  // rowCount 1 means the idempotency claim succeeds; everything else is a write.
-  mocks.query.mockResolvedValue({ rowCount: 1, rows: [] });
+  // rowCount 1 means the idempotency claim succeeds; everything else is a write
+  // (an outbox row answers with its id).
+  mocks.query.mockImplementation(async (sql: string) => (String(sql).includes('RETURNING id') ? { rowCount: 1, rows: [{ id: 41 }] } : { rowCount: 1, rows: [] }));
+  mocks.retrieve.mockImplementation(async () => mocks.current);
   mocks.sync.mockResolvedValue(true);
   mocks.getClosing.mockResolvedValue(null);
   mocks.cancelClosing.mockResolvedValue(true);
@@ -214,5 +226,119 @@ describe('stripe webhook: a subscription on a closing account', () => {
     await deliver({ ...subscription([{ price: 'price_starter', quantity: 1 }]), status: 'canceled' });
     expect(mocks.cancelClosing).not.toHaveBeenCalled();
     expect(mocks.cancelStripe).not.toHaveBeenCalled();
+  });
+});
+
+// Bug-fix spec PR E (audit finding 01): events are applied as the subscription
+// is now, under the user's lock; an old subscription can't replace the current
+// one; and the outbox row is written with the change, so a failed push is
+// re-sent without waiting for another billing event.
+describe('stripe webhook: order, replacement and delivery', () => {
+  // What Stripe says now: set by a test, else the same as the event's payload.
+  let lastPayload: Record<string, unknown> | null = null;
+  beforeEach(() => {
+    mocks.current = null;
+    lastPayload = null;
+    mocks.retrieve.mockImplementation(async () => mocks.current ?? lastPayload);
+  });
+  const event = (type: string, object: Record<string, unknown>, id = `evt_${Math.random()}`) => {
+    lastPayload = object;
+    mocks.constructEvent.mockResolvedValueOnce({ id, type, data: { object } });
+    return POST(new Request('https://app.whiteroom.tech/api/stripe/webhook', { method: 'POST', headers: { 'stripe-signature': 't=1,v1=sig' }, body: '{}' }));
+  };
+  const sub = (status: string, id = 'sub_1') => ({ ...subscription([{ price: 'price_pro_share', quantity: 1 }]), id, status });
+  const upserts = () => mocks.query.mock.calls.filter((c) => String(c[0]).includes('INSERT INTO subscriptions'));
+  const sqlLog = () => mocks.query.mock.calls.map((c) => String(c[0]).trim().split(/\s+/).slice(0, 3).join(' '));
+
+  it('a stale "active" update after the cancellation writes what Stripe says now: canceled', async () => {
+    mocks.current = sub('canceled');
+    expect((await event('customer.subscription.deleted', sub('canceled'))).status).toBe(200);
+    expect((await event('customer.subscription.updated', sub('active'))).status).toBe(200); // delivered late
+    expect(upserts().map((c) => (c[1] as unknown[])[4])).toEqual(['canceled', 'canceled']);
+    expect(mocks.retrieve).toHaveBeenCalledWith('sub_1');
+  });
+
+  it('in the other order it ends the same', async () => {
+    mocks.current = sub('canceled');
+    await event('customer.subscription.updated', sub('active'));
+    await event('customer.subscription.deleted', sub('canceled'));
+    expect((upserts().at(-1)![1] as unknown[])[4]).toBe('canceled');
+  });
+
+  it('a replayed event writes nothing and pushes nothing', async () => {
+    mocks.query.mockImplementation(async (sql: string) => (String(sql).includes('INSERT INTO stripe_events') ? { rowCount: 0, rows: [] } : { rowCount: 1, rows: [] }));
+    const res = await event('customer.subscription.updated', sub('active'), 'evt_dup');
+    expect(await res.text()).toBe('duplicate');
+    expect(upserts()).toHaveLength(0);
+    expect(mocks.sync).not.toHaveBeenCalled();
+  });
+
+  it('an old subscription\'s late cancellation doesn\'t replace the current one: no outbox row, no push', async () => {
+    mocks.current = sub('canceled', 'sub_old');
+    // The guarded upsert updates nothing: the row holds an active sub_new.
+    mocks.query.mockImplementation(async (sql: string) => {
+      const q = String(sql);
+      if (q.includes('INSERT INTO subscriptions')) return { rowCount: 0, rows: [] };
+      if (q.includes('SELECT stripe_subscription_id')) return { rowCount: 1, rows: [{ stripe_subscription_id: 'sub_new' }] };
+      return { rowCount: 1, rows: [] };
+    });
+    expect((await event('customer.subscription.deleted', sub('canceled', 'sub_old'))).status).toBe(200);
+    expect(String(upserts()[0][0])).toContain('OR EXCLUDED.status = ANY($8)');
+    expect(String(upserts()[0][0])).toContain('subscriptions.stripe_subscription_id = EXCLUDED.stripe_subscription_id');
+    expect(mocks.query.mock.calls.some((c) => String(c[0]).includes('INSERT INTO entitlement_outbox'))).toBe(false);
+    expect(mocks.sync).not.toHaveBeenCalled();
+  });
+
+  it('the write and its outbox row commit together, then the push; an acknowledged push marks that row delivered', async () => {
+    await event('customer.subscription.updated', sub('active'));
+    const log = sqlLog();
+    const begin = log.indexOf('BEGIN');
+    expect(log.slice(begin, begin + 4)).toEqual(['BEGIN', 'INSERT INTO subscriptions', 'INSERT INTO entitlement_outbox', 'COMMIT']);
+    expect(mocks.sync).toHaveBeenCalledWith('u1');
+    expect(mocks.mark).toHaveBeenCalledWith('u1', '41');
+  });
+
+  it('a failed push: still 200 (the subscription is written), and the outbox row stays pending for the sweep', async () => {
+    mocks.sync.mockResolvedValue(false);
+    expect((await event('customer.subscription.updated', sub('active'))).status).toBe(200);
+    expect(sqlLog()).toContain('INSERT INTO entitlement_outbox');
+    expect(mocks.mark).not.toHaveBeenCalled();
+  });
+
+  it('a failure after the commit (before the push): 500 for a Stripe retry, with the outbox row already committed', async () => {
+    mocks.getClosing.mockRejectedValue(new Error('db blip'));
+    expect((await event('customer.subscription.updated', sub('active'))).status).toBe(500);
+    const log = sqlLog();
+    expect(log.indexOf('COMMIT')).toBeGreaterThan(log.indexOf('INSERT INTO entitlement_outbox'));
+    expect(mocks.sync).not.toHaveBeenCalled();
+  });
+
+  it('Stripe unreachable: 500, the claim released so Stripe retries, nothing written', async () => {
+    mocks.retrieve.mockRejectedValue(new Error('stripe down'));
+    expect((await event('customer.subscription.updated', sub('active'))).status).toBe(500);
+    expect(mocks.query.mock.calls.some((c) => String(c[0]).includes('DELETE FROM stripe_events'))).toBe(true);
+    expect(upserts()).toHaveLength(0);
+  });
+
+  it('a write that fails rolls back, and fails the delivery', async () => {
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (String(sql).includes('INSERT INTO subscriptions')) throw new Error('constraint');
+      return { rowCount: 1, rows: [] };
+    });
+    expect((await event('customer.subscription.updated', sub('active'))).status).toBe(500);
+    expect(sqlLog()).toContain('ROLLBACK');
+    expect(mocks.sync).not.toHaveBeenCalled();
+  });
+
+  it('past_due and trialing count as active for the replacement rule', async () => {
+    await event('customer.subscription.updated', sub('past_due'));
+    expect((upserts()[0][1] as unknown[])[7]).toEqual(['active', 'trialing', 'past_due']);
+  });
+
+  it('checkout completion applies the subscription as Stripe has it now', async () => {
+    mocks.current = sub('active');
+    expect((await event('checkout.session.completed', { subscription: 'sub_1' })).status).toBe(200);
+    expect(mocks.retrieve).toHaveBeenCalledWith('sub_1');
+    expect((upserts()[0][1] as unknown[])[4]).toBe('active');
   });
 });
