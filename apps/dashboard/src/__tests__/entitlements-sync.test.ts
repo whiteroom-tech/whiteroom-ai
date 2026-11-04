@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({ query: vi.fn() }));
 const lock = vi.hoisted(() => ({
   held: new Map<string, Promise<void>>(), fail: false, log: [] as string[],
   connectFails: false, unlockFails: false, open: 0, maxOpen: 0,
-  errorHandlers: [] as Array<(e: Error) => void>, ended: 0,
+  errorHandlers: [] as Array<(e: Error) => void>, ended: 0, timeouts: [] as number[],
 }));
 
 vi.mock('@/auth', () => ({ auth: async () => null }));
@@ -22,6 +22,7 @@ vi.mock('@/lib/db', () => ({
       on: (event: string, handler: (e: Error) => void) => { if (event === 'error') lock.errorHandlers.push(handler); },
       query: async (sql: string, params: unknown[]) => {
         const key = String(params[0]);
+        if (sql.includes("set_config('statement_timeout'")) { lock.timeouts.push(Number(params[0])); return { rows: [] }; }
         if (sql.includes('pg_advisory_lock(')) {
           if (lock.fail) throw new Error('canceling statement due to statement timeout');
           while (lock.held.has(key)) await lock.held.get(key);
@@ -65,7 +66,7 @@ function pushed() {
 beforeEach(() => {
   vi.clearAllMocks();
   lock.held.clear(); lock.fail = false; lock.log = [];
-  Object.assign(lock, { connectFails: false, unlockFails: false, open: 0, maxOpen: 0, errorHandlers: [], ended: 0 });
+  Object.assign(lock, { connectFails: false, unlockFails: false, open: 0, maxOpen: 0, errorHandlers: [], ended: 0, timeouts: [] });
   process.env.WR_ENTITLEMENT_SYNC_SECRET = 'secret';
   fetchMock.mockResolvedValue(new Response('{}', { status: 200 }));
   vi.stubGlobal('fetch', fetchMock);
@@ -304,7 +305,7 @@ describe('waiting for a lock connection is bounded', () => {
       const late = withUserEntitlementLock('u-d', async () => 'ran');
       const outcome = late.then(() => 'ran', (e: Error) => e.message);
       await vi.advanceTimersByTimeAsync(15_000);
-      expect(await outcome).toBe('timed out waiting for an entitlement lock connection');
+      expect(await outcome).toBe('entitlement lock unavailable: timed out waiting for a lock connection');
       // The waiter that gave up took no slot: once the three finish, a new caller gets one.
       gates.forEach((g) => g());
       await Promise.all(held);
@@ -397,5 +398,63 @@ describe('the delayed re-push, end to end', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('review follow-ups: deadline, refusals, error labels', () => {
+  const PAST = new Date(Date.now() - 86_400_000).toISOString();
+  const onPro = () => account({ sub: { plan: 'pro', status: 'active', plan_override: null, stripe_customer_id: 'cus_1' }, trialEndsAt: PAST });
+  const delayedRows = () => mocks.query.mock.calls.filter((c) => String(c[0]).includes("'unacknowledged_push'"));
+
+  it('the slot wait and the lock wait share one 15s deadline: the lock gets only what is left', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      const gates: Array<() => void> = [];
+      const held = ['a', 'b', 'c'].map((u) => withUserEntitlementLock(`u-${u}`, () => new Promise<void>((r) => { gates.push(r); })));
+      for (let i = 0; i < 40; i++) await Promise.resolve();
+      expect(lock.timeouts).toEqual([15_000, 15_000, 15_000]);
+      const late = withUserEntitlementLock('u-d', async () => 'ran');
+      await vi.advanceTimersByTimeAsync(10_000); // 10s waiting for a slot
+      gates[0]();
+      expect(await late).toBe('ran');
+      expect(lock.timeouts.at(-1)).toBeLessThanOrEqual(5_000);
+      expect(lock.timeouts.at(-1)).toBeGreaterThan(0);
+      gates.slice(1).forEach((g) => g());
+      await Promise.all(held);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([400, 401, 403])('an engine refusal (%i) queues no delayed re-push', async (status) => {
+    onPro();
+    fetchMock.mockResolvedValue(new Response('no', { status }));
+    expect(await syncEntitlementsToEngine('u1')).toBe(false);
+    expect(delayedRows()).toHaveLength(0);
+  });
+
+  it('a 5xx still does', async () => {
+    onPro();
+    fetchMock.mockResolvedValue(new Response('down', { status: 502 }));
+    expect(await syncEntitlementsToEngine('u1')).toBe(false);
+    expect(delayedRows()).toHaveLength(1);
+  });
+
+  it('an error in the push itself is logged as the push, not the lock', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mocks.query.mockRejectedValue(new Error('relation "subscriptions" does not exist'));
+    expect(await syncEntitlementsToEngine('u1')).toBe(false);
+    expect(log.mock.calls.map((c) => String(c[0]))).toContain('[entitlements] push failed: relation "subscriptions" does not exist');
+    expect(log.mock.calls.some((c) => String(c[0]).includes('could not take the entitlement lock'))).toBe(false);
+    log.mockRestore();
+  });
+
+  it('a lock that can\'t be had is logged as the lock', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    lock.connectFails = true;
+    onPro();
+    expect(await syncEntitlementsToEngine('u1')).toBe(false);
+    expect(log.mock.calls.some((c) => String(c[0]).startsWith('[entitlements] could not take the entitlement lock: entitlement lock unavailable: connect ECONNREFUSED'))).toBe(true);
+    log.mockRestore();
   });
 });

@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
   mark: vi.fn(),
 }));
 
-vi.mock('@/lib/db', () => ({ lockClient: () => ({ connect: async () => {}, query: async () => ({ rows: [] }), end: async () => {}, on: () => {} }), db: () => ({ query: mocks.query }) }));
+vi.mock('@/lib/db', () => ({ db: () => ({ query: mocks.query }) }));
 vi.mock('@/lib/entitlements', () => ({
   syncEntitlementsToEngine: mocks.sync,
   // Its SQL (only rows that are due) is tested in entitlements-sync.test.ts.

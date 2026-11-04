@@ -249,31 +249,47 @@ export async function markOutboxDelivered(userId: string, upToId: number | strin
  *
  * The lock is a Postgres advisory lock on a connection of its own, outside the
  * pool: `fn` uses the pool for its queries, and waiters holding pool slots
- * could otherwise starve the holder. Waiting gives up after statement_timeout
- * (15s) with an error. If the lock connection drops, Postgres releases it.
+ * could otherwise starve the holder. Getting the lock (a connection slot,
+ * then the lock itself) has one deadline, LOCK_WAIT_MS; past it this rejects
+ * with LockUnavailableError. If the lock connection drops, Postgres releases it.
  */
 export async function withUserEntitlementLock<T>(userId: string, fn: (push: () => Promise<boolean>) => Promise<T>): Promise<T> {
+  const deadline = Date.now() + LOCK_WAIT_MS;
   // At most LOCK_CONNECTIONS of these connections per instance: a burst of
-  // webhooks waits here, holding nothing, rather than opening one each. The
-  // wait is bounded like the lock's own (statement_timeout), so a slow engine
-  // or a busy user makes others fail fast (a retry), never hang.
-  const release = await lockSlot(LOCK_SLOT_WAIT_MS);
+  // webhooks waits here, holding nothing, rather than opening one each. A slow
+  // engine or a busy user makes others fail fast (a retry), never hang.
+  const release = await lockSlot(LOCK_WAIT_MS);
   try {
     const lock = lockClient();
     // A held connection that drops (a Cloud SQL restart, a proxy reset) emits
     // 'error'; unheard, that's an uncaught exception that takes the instance down.
     // Postgres releases the lock with the connection; the failing query rejects.
     lock.on('error', () => console.error('[entitlements] lock connection failed'));
-    return await holdLock(lock, userId, fn);
+    return await holdLock(lock, userId, deadline, fn);
   } finally {
     release();
   }
 }
 
-async function holdLock<T>(lock: ReturnType<typeof lockClient>, userId: string, fn: (push: () => Promise<boolean>) => Promise<T>): Promise<T> {
+/** Getting the lock failed (no slot or lock in time, or no connection): nothing was read or pushed. */
+class LockUnavailableError extends Error {
+  constructor(reason: string) {
+    super(`entitlement lock unavailable: ${reason}`);
+    this.name = 'LockUnavailableError';
+  }
+}
+
+async function holdLock<T>(lock: ReturnType<typeof lockClient>, userId: string, deadline: number, fn: (push: () => Promise<boolean>) => Promise<T>): Promise<T> {
   try {
-    await lock.connect();
-    await lock.query(`SELECT pg_advisory_lock(hashtext($1))`, [`entitlements:${userId}`]);
+    try {
+      await lock.connect();
+      // Whatever the slot wait left of the one deadline, so the two waits never add up.
+      const left = Math.max(1, deadline - Date.now());
+      await lock.query(`SELECT set_config('statement_timeout', $1, false)`, [String(left)]);
+      await lock.query(`SELECT pg_advisory_lock(hashtext($1))`, [`entitlements:${userId}`]);
+    } catch (err) {
+      throw new LockUnavailableError(err instanceof Error ? err.message : 'unknown error');
+    }
     try {
       return await fn(() => pushEntitlements(userId));
     } finally {
@@ -286,8 +302,8 @@ async function holdLock<T>(lock: ReturnType<typeof lockClient>, userId: string, 
 
 /** Lock connections open at once, per instance (Cloud SQL's limit is shared with the pool). */
 const LOCK_CONNECTIONS = 3;
-/** How long to wait for one: the same as waiting for the lock itself (db.ts statement_timeout). */
-const LOCK_SLOT_WAIT_MS = 15_000;
+/** How long getting the lock may take in all (a slot, then the lock): db.ts's statement_timeout. */
+const LOCK_WAIT_MS = 15_000;
 let lockSlotsInUse = 0;
 const lockSlotQueue: Array<() => void> = [];
 
@@ -305,12 +321,13 @@ function lockSlot(waitMs: number): Promise<() => void> {
   };
   if (lockSlotsInUse < LOCK_CONNECTIONS) { lockSlotsInUse++; return Promise.resolve(release); }
   return new Promise((resolve, reject) => {
+    // Rejects as LockUnavailableError, like a lock wait that runs out.
     // The slot is handed over (lockSlotsInUse unchanged) by the one released.
     const take = () => { clearTimeout(timer); resolve(release); };
     const timer = setTimeout(() => {
       const i = lockSlotQueue.indexOf(take);
       if (i >= 0) lockSlotQueue.splice(i, 1);
-      reject(new Error('timed out waiting for an entitlement lock connection'));
+      reject(new LockUnavailableError('timed out waiting for a lock connection'));
     }, waitMs);
     lockSlotQueue.push(take);
   });
@@ -339,9 +356,12 @@ export async function syncEntitlementsToEngine(userId: string): Promise<boolean>
   try {
     return await withUserEntitlementLock(userId, (push) => push());
   } catch (err) {
-    // The lock couldn't be had (another push held it past statement_timeout, or
-    // the database is unreachable): not delivered; a queued row stays pending.
-    console.error('[entitlements] could not take the entitlement lock');
+    // Not delivered either way; a queued row stays pending. Said apart, so a
+    // log points at the right place: the lock (contention, the database) or
+    // the push's own reads.
+    const why = err instanceof Error ? err.message : 'unknown error';
+    if (err instanceof LockUnavailableError) console.error(`[entitlements] could not take the entitlement lock: ${why}`);
+    else console.error(`[entitlements] push failed: ${why}`);
     return false;
   }
 }
@@ -394,6 +414,8 @@ async function pushEntitlements(userId: string): Promise<boolean> {
   // Sent but not acknowledged (a timeout, a dropped connection, a 5xx) doesn't
   // mean not applied: the engine may still apply it after a newer push has
   // landed. So queue a re-push of the current state for after that can happen.
+  // A 4xx is the engine refusing it outright (nothing applied, nothing late):
+  // no re-push, which would only repeat the refusal every few minutes.
   const sentUnacknowledged = async (): Promise<false> => {
     // One waiting re-push per user is enough: it sends whatever is current when it runs.
     await db().query(
@@ -418,7 +440,7 @@ async function pushEntitlements(userId: string): Promise<boolean> {
     });
     if (!res.ok) {
       console.error(`[entitlements] engine sync failed: HTTP ${res.status}`);
-      return sentUnacknowledged();
+      return res.status >= 500 ? sentUnacknowledged() : false;
     }
     const body = (await res.json().catch(() => null)) as { closed?: unknown } | null;
     const closed = Array.isArray(body?.closed) ? body.closed : null;
@@ -426,8 +448,9 @@ async function pushEntitlements(userId: string): Promise<boolean> {
     // dropped the time: not delivered, so the outbox keeps it until one does.
     // Otherwise a deleted account could be removed with its fleets still open.
     if (closing && !closed) {
+      // It answered, so nothing can land late; the pending row brings it back.
       console.error('[entitlements] engine did not take the closing time; leaving pending');
-      return sentUnacknowledged();
+      return false;
     }
     // The engine has the final say on closing: a fleet it reports closed
     // while this side thinks it open (a cancel that came too late) is
