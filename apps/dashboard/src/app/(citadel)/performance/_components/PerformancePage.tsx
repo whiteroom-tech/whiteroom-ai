@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { performanceIndex, performanceEvidence, performanceFeedback, performanceRecommendationGet, performanceFleetHourly, auditSummary, ruleActions as fetchRuleActions, performanceCostForecast, governanceList } from '@/lib/whiteroom/client';
+import { performanceIndex, performanceEvidence, performanceFeedback, performanceRecommendationGet, performanceFleetHourly, auditSummary, ruleActions as fetchRuleActions, performanceCostForecast, governanceList, isAuthError } from '@/lib/whiteroom/client';
 import { addDays, clampSpan, dayStart, localDay, runsDays, runsWindow, spanLabel, viewInstants, type RunsRange, type RunsView } from '@/lib/runs';
 import { legacyHoursBack, NEEDS_WINDOWS, PERF_MAX_DAYS, perfOldest, perfRangeParams, perfViewFromParams, windowUnsupported } from '@/lib/performance-range';
 import { syncQueryParams } from '@/lib/url';
@@ -131,7 +131,9 @@ export function PerformancePage({ retentionDays }: {
       const [idx, hourly, audit, week, forecast, rules, weekHourlyOwn] = await Promise.all([
         // An engine older than explicit windows refuses 30 days with its own reason.
         performanceIndex(fleetId, undefined, authKey, w).catch((e: unknown) => { if (windowUnsupported({ error: e }, w.to)) return null; throw e; }),
-        performanceFleetHourly(fleetId, legacyHoursBack(w), authKey, w),
+        // Extra like the reads below: a failure leaves the chart out, not the page. A rejected
+        // session still fails the read, since this request can be the one that sees it.
+        performanceFleetHourly(fleetId, legacyHoursBack(w), authKey, w).catch((e: unknown) => { if (isAuthError(e)) throw e; return null; }),
         auditSummary(fleetId, w.from, authKey, undefined, undefined, w.to).catch(() => null),
         auditSummary(fleetId, weekStart, authKey).catch(() => null),
         // Hourly cost: the fleet's rate per working hour, last 14 days.
@@ -151,7 +153,7 @@ export function PerformancePage({ retentionDays }: {
       if (idx.error) { setError(idx.error); return; }
       const loadedNow = Date.now();
       // A failed hourly read clears the chart rather than leave the last range's under the new label (M13).
-      const hourlyShown = hourly.error ? null : hourly;
+      const hourlyShown = !hourly || hourly.error ? null : hourly;
       const daysShown = week?.savingsBuckets ? dailySavingsFromBuckets(week.savingsBuckets, 7, loadedNow) : null;
       // The engine's savings (audit M07): per agent-day, each agent at its own input price.
       const fromAudit = audit?.savingsBuckets ? governanceFromSummary(audit.governance) : null;
