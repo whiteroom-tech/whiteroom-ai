@@ -110,10 +110,11 @@
 .rowFix { margin-top:8px; padding:10px 12px; border:1px solid var(--line); border-left:3px solid var(--bad); border-radius:8px; }
 .chip { font-family:var(--font-mono); font-size:75%; font-weight:500; letter-spacing:.03em; border:1px solid var(--ok); color:var(--ok); border-radius:4px; padding:1px 6px; margin-left:6px; white-space:nowrap; vertical-align:1px; }
 
-/* Two columns (eight checks mockup Rev 3): the step on the left, lighter
-   reference cards on the right; one column, step first, on a narrow page. */
+/* Two equal columns (eight checks mockup Rev 3, widths evened Nov 3): the
+   step on the left, reference cards on the right; one column, step first,
+   on a narrow page. */
 .lead2 { margin:0; font-size:var(--fs-md); color:var(--tx2); }
-.cols { display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:20px; align-items:start; min-width:0; }
+.cols { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; align-items:start; min-width:0; }
 .mainCol { display:grid; gap:14px; min-width:0; }
 .rcol { display:grid; gap:12px; min-width:0; }
 @container (max-width: 860px) { .cols { grid-template-columns:minmax(0,1fr); } }
