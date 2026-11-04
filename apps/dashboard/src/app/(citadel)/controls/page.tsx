@@ -171,7 +171,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     // A suggestion being added, or a link to another rule, comes first; the draft waits.
     if (suggestionRec || (ruleParam && ruleParam !== saved.ruleId)) return;
     const rule = rules.find((r) => r.id === saved.ruleId);
-    if (!rule) { removeDraft(fleetId); return; }
+    // Gone, or not that rule any more (the id was reused for another kind): nothing to bring back.
+    if (!rule || rule.ruleType !== saved.draft.ruleType) { removeDraft(fleetId); return; }
     if (rule.version !== saved.version) {
       removeDraft(fleetId);
       setNotice(`${RULE_LABELS[rule.ruleType]} changed since you edited it, so your unsaved change was dropped.`);

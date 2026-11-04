@@ -180,16 +180,17 @@ export function RunsTable({ preview, retentionDays }: {
   // The day strip shows 30 days ending on `stripEnd`, following the shown
   // days. Pinned to a day only when paged back; null follows today, so a tab
   // left open past midnight moves on with it.
-  const [stripPinFor, setStripPinFor] = useState<{ epoch: number; pin: string | null }>(() => {
+  const [stripPin, setStripPin] = useState<string | null>(() => {
     const end = runsWindow(view).toDay;
-    return { epoch: 0, pin: end === localDay() ? null : end };
+    return end === localDay() ? null : end;
   });
   if (seen.key !== filterKey) {
     // React's "adjust state when a prop changes": re-renders before paint, so no frame shows old paging.
     const nextEpoch = seen.epoch + 1;
     setSeen({ key: filterKey, epoch: nextEpoch });
-    const end = stripEndFor(runsWindow(view), stripPinFor.pin ?? localDay(), STRIP_DAYS);
-    setStripPinFor({ epoch: nextEpoch, pin: end >= localDay() ? null : end });
+    // The strip follows the shown days to the new filter.
+    const end = stripEndFor(runsWindow(view), stripPin ?? localDay(), STRIP_DAYS);
+    setStripPin(end >= localDay() ? null : end);
     listGen.current++;
     // The preview fetches nothing: it keeps its sample, and lists it below.
     if (!preview) setLoading(true);
@@ -197,8 +198,8 @@ export function RunsTable({ preview, retentionDays }: {
   const epoch = seen.key === filterKey ? seen.epoch : seen.epoch + 1;
   const epochNow = useRef(epoch);
   epochNow.current = epoch;
-  const stripEnd = stripPinFor.pin ?? localDay();
-  const pinStrip = (end: string) => setStripPinFor({ epoch, pin: end >= localDay() ? null : end });
+  const stripEnd = stripPin ?? localDay();
+  const pinStrip = (end: string) => setStripPin(end >= localDay() ? null : end);
   // /dev/runs only: how many sample rows Show more has revealed.
   const [previewFor, setPreviewFor] = useState({ epoch: 0, limit: PAGE });
   const previewLimit = previewFor.epoch === epoch ? previewFor.limit : PAGE;

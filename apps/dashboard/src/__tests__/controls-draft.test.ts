@@ -37,3 +37,14 @@ it('a malformed entry reads as none', () => {
   sessionStorage.setItem('wr_controls_draft:f1', JSON.stringify({ ruleId: 'r1' }));
   expect(readDraft('f1')).toBeNull();
 });
+
+it.each([
+  ['an empty draft', {}],
+  ['no params', { ...draft, params: undefined }],
+  ['params not an object', { ...draft, params: 'x' }],
+  ['appliesTo of the wrong kind', { ...draft, appliesTo: 'some' }],
+  ['a number that is not text', { ...draft, number: 100 }],
+])('a draft the editor couldn\'t open (%s) reads as none', (_name, bad) => {
+  sessionStorage.setItem('wr_controls_draft:f1', JSON.stringify({ ruleId: 'r1', version: 1, draft: bad }));
+  expect(readDraft('f1')).toBeNull();
+});

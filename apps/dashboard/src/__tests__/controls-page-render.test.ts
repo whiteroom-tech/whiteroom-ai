@@ -1808,4 +1808,51 @@ describe('Controls › an unsaved edit comes back', () => {
     }
     expect(saved()).toBeNull();
   });
+
+  it('a save refused because the rule changed elsewhere drops the kept edit too', async () => {
+    const { WhiteRoomApiError } = await import('@/lib/whiteroom/client');
+    api.update.mockRejectedValueOnce(new WhiteRoomApiError('HTTP 409', 409));
+    const m = await mount();
+    await m.open('$190');
+    await type(m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '150');
+    expect(saved()).not.toBeNull();
+    await m.click(m.button('Save'));
+    expect(m.text()).toContain('This rule changed somewhere else');
+    expect(saved()).toBeNull();
+    m.root.unmount();
+  });
+
+  it('"Discard changes" in the leave dialog drops the kept edit', async () => {
+    const m = await mount();
+    await m.open('Only claude');
+    await m.pick('Block the call');
+    expect(saved()?.ruleId).toBe('r2');
+    await m.click(m.button('‹ Controls'));
+    await m.click([...[...m.el.querySelectorAll('dialog[open]')].at(-1)!.querySelectorAll('button')].find((b) => b.textContent === 'Discard changes'));
+    expect(saved()).toBeNull();
+    m.root.unmount();
+  });
+
+  it('a suggestion being added (?rec=) comes first; the kept edit waits for a later visit', async () => {
+    await editAndLeave();
+    nav.params = new URLSearchParams('rec=rec_123');
+    let m = await mount();
+    expect(m.text()).toContain('Suggestion draft');
+    expect(m.text()).not.toContain('is back');
+    expect(saved()?.draft.number).toBe('250');
+    m.root.unmount(); document.body.innerHTML = '';
+    nav.params = new URLSearchParams();
+    m = await mount();
+    expect(limit(m)).toBe('250');
+    m.root.unmount();
+  });
+
+  it('a kept edit for a rule that is now another kind is dropped', async () => {
+    await editAndLeave();
+    sessionStorage.setItem(KEY, JSON.stringify({ ...saved()!, draft: { ...saved()!.draft, ruleType: 'call_rate' } }));
+    const m = await mount();
+    expect(saved()).toBeNull();
+    expect(m.text()).not.toContain('is back');
+    m.root.unmount();
+  });
 });

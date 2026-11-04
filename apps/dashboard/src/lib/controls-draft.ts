@@ -17,15 +17,30 @@ export interface SavedDraft {
   draft: RuleDraft;
 }
 
+/**
+ * The saved draft, or null when there's none or it isn't one this build can
+ * open: sessionStorage outlives deploys in a tab, and anything that reads it is
+ * untrusted, so a draft the editor couldn't render never reaches it.
+ */
 export function readDraft(fleetId: string): SavedDraft | null {
   const raw = safeSessionGet(PREFIX + fleetId);
   if (!raw) return null;
   try {
     const v = JSON.parse(raw) as Partial<SavedDraft>;
-    return typeof v.ruleId === 'string' && typeof v.version === 'number' && v.draft && typeof v.draft === 'object' ? (v as SavedDraft) : null;
+    return typeof v.ruleId === 'string' && typeof v.version === 'number' && isRuleDraft(v.draft) ? (v as SavedDraft) : null;
   } catch {
     return null;
   }
+}
+
+/** The fields the rule editor reads, of the right kinds. */
+function isRuleDraft(d: unknown): d is RuleDraft {
+  if (!d || typeof d !== 'object') return false;
+  const x = d as Record<string, unknown>;
+  const isObject = (v: unknown) => !!v && typeof v === 'object' && !Array.isArray(v);
+  return typeof x.ruleType === 'string' && typeof x.mode === 'string' && typeof x.response === 'string'
+    && typeof x.alsoNotify === 'boolean' && typeof x.number === 'string' && isObject(x.params)
+    && (x.appliesTo === 'all' || (Array.isArray(x.appliesTo) && x.appliesTo.every((a) => typeof a === 'string')));
 }
 
 export function writeDraft(fleetId: string, saved: SavedDraft): void {
