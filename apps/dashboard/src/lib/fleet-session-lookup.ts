@@ -7,7 +7,7 @@ import { isAuthError, tokenLogin } from '@/lib/whiteroom/client';
 // Shared by the /api/fleet/session routes: what fleet a token or the signed-in
 // account's linked fleets amount to, answered as those routes answer.
 
-export function invalidToken(): Response {
+function invalidToken(): Response {
   return Response.json({ error: 'invalid_token' }, { status: 401 });
 }
 
@@ -15,7 +15,7 @@ export function invalidToken(): Response {
  * Engine down / unreachable — distinguishable from a credential rejection so
  * the client keeps the session and offers retry instead of wiping it.
  */
-export function engineUnreachable(): Response {
+function engineUnreachable(): Response {
   return Response.json({ error: 'engine_unreachable', retryable: true }, { status: 502 });
 }
 

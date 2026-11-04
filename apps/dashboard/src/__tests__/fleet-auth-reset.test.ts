@@ -263,3 +263,26 @@ it.each([
   expect(server.calls.filter((c) => c === 'GET').length).toBe(gets);
   expect(rechecks()).toBe(1);
 });
+
+it('a session check already in flight when a reset starts does not show the page again', async () => {
+  await mount();
+  // A ping starts a check whose GET is slow.
+  let getAnswer!: (r: Response) => void;
+  vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+    if ((init?.method ?? 'GET') === 'GET') { server.calls.push('GET'); return new Promise<Response>((r) => { getAnswer = r; }); }
+    return fakeFetch(url, init);
+  }));
+  await ping();
+  // Then an auth error: the page hides and waits for the verdict.
+  let verdict!: (r: Response) => void;
+  server.verdict = () => new Promise((r) => { verdict = r; });
+  await act(async () => { auth.resetSession(); }); await flush();
+  expect(auth.status).toBe('checking');
+  // The in-flight GET answers "fleet A": it must not sign the page back in.
+  await act(async () => getAnswer(json({ fleetId: 'fleet-a' }))); await flush();
+  expect(auth.status).toBe('checking');
+  expect(el.textContent).not.toContain('fleet-a-agent');
+  await act(async () => verdict(json({ cleared: false, fleetId: 'fleet-a' }))); await flush();
+  expect(auth.status).toBe('unauthenticated');
+  expect(auth.retryableError).toMatch(/still signed in/);
+});

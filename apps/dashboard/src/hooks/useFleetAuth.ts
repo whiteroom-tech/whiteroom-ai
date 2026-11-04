@@ -229,14 +229,23 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
     if (!active) return;
     let cancelled = false;
 
+    // Whether this check must stand down: superseded, or a verdict is pending
+    // (resetSession hid the page; only the verdict may show it again). Checked
+    // after every await, since a reset can start while the check is in flight.
+    const standDown = () => {
+      if (cancelled) return true;
+      if (resetting.current) { checkWaiting.current = true; return true; }
+      return false;
+    };
+
     async function bootstrap() {
-      if (resetting.current) { checkWaiting.current = true; return; }
+      if (standDown()) return;
       const legacy = getFleetCredentials();
 
       if (legacy.fleetToken) {
         // One-time migration of a pre-cookie session.
         const result = await createSession(legacy.fleetToken);
-        if (cancelled) return;
+        if (standDown()) return;
         if (result.outcome === 'ok') {
           clearFleetCredentials(); // token leaves the browser for good
           const next = result.fleetId || legacy.fleetId;
@@ -268,9 +277,10 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
           credentials: 'same-origin',
           cache: 'no-store',
         });
-        if (cancelled) return;
+        if (standDown()) return;
         if (res.ok) {
           const data = (await res.json()) as { fleetId?: string };
+          if (standDown()) return;
           // Another tab signed in as a different fleet: this one starts fresh.
           if (shownFleet.current && data.fleetId && data.fleetId !== shownFleet.current) { switchedFleet(); return; }
           setFleetId(data.fleetId ?? null);
@@ -280,7 +290,7 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
           setStatus('authenticated');
         } else if (res.status === 401) {
           const body = (await res.json().catch(() => ({}))) as { signedIn?: boolean };
-          if (cancelled) return;
+          if (standDown()) return;
           // Also how a tab hears that another tab signed out (ping, re-check, 401).
           signedOut(body.signedIn ? 'setup' : 'sign_in');
         } else {
@@ -288,7 +298,7 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
           setStatus('unauthenticated');
         }
       } catch {
-        if (cancelled) return;
+        if (standDown()) return;
         setRetryableError(RETRYABLE_MESSAGE);
         setStatus('unauthenticated');
       }
