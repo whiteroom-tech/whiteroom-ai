@@ -12,7 +12,7 @@
 // TONE_BG below use this app's own theme tokens from app/globals.css instead.
 
 import type { AuditEntry, ToolDetail } from '@/lib/whiteroom/types';
-import { blockedByPhrase, occurrences, ruleLabel } from '@/lib/governance';
+import { blockedByPhrase, GOVERNANCE_SENSITIVE_DATA, occurrences, ruleLabel } from '@/lib/governance';
 import { fmtCount, HOUR_MS, plural, timeAgo } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
 import { MODE_LABEL } from '@/lib/vocab';
@@ -82,7 +82,7 @@ const EVENT_COPY: Record<string, EventCopy> = {
   agent_resumed: { icon: '▶', tone: 'start', code: 'RES', say: () => 'was resumed' },
   governance_block: { icon: '⛔', tone: 'block', code: 'BLK', say: (e) => `was blocked by ${governancePhrase(e)}` },
   governance_would_block: { icon: '⚠', tone: 'wouldBlock', code: 'W/B', say: (e) => `would have been blocked by ${governancePhrase(e)}` },
-  governance_sensitive_data: { icon: '🛡', tone: 'idle', code: 'S/D', say: sensitiveDataSay },
+  [GOVERNANCE_SENSITIVE_DATA]: { icon: '🛡', tone: 'idle', code: 'S/D', say: sensitiveDataSay },
   governance_rule_changed: { icon: '⚙', tone: 'idle', code: 'GOV', who: 'Controls', say: (e) => String(e.message ?? `${ruleLabel(e.ruleType)} changed`) },
   // Calls WhiteRoom couldn't tie to an agent while the fleet has Pause/Stop or
   // an Enforce rule on. Fleet-level: there's no agent to name.
