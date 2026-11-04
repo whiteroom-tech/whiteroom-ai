@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, FONT_MONO } from '@whiteroom/ui';
 import { SettingsCard } from '@/components/settings/SettingsCard';
 import { LoadFailed } from '@/components/citadel/States';
@@ -26,16 +26,23 @@ export function AlertsSection({ preview }: { preview?: AlertsStatus } = {}) {
   const authStatus = auth.status;
   const [status, setStatus] = useState<AlertsStatus | null>(preview ?? null);
   const [failed, setFailed] = useState(false);
-  // Bumped by Try again to read once more.
+  // Bumped by Try again to read once more. While that read runs the failed card
+  // stays up with its button busy, rather than the card vanishing and coming back.
   const [attempt, setAttempt] = useState(0);
+  const [retrying, setRetrying] = useState(false);
+  const retry = useRef(false);
 
   useEffect(() => {
     if (preview) return;
-    setStatus(null);
-    setFailed(false);
-    if (authStatus !== 'authenticated' || !fleetId) return;
+    const again = retry.current;
+    retry.current = false;
+    if (!again) { setStatus(null); setFailed(false); }
+    if (authStatus !== 'authenticated' || !fleetId) { setRetrying(false); return; }
     let live = true;
-    alertsGet(fleetId).then((s) => { if (live) setStatus(s); }, () => { if (live) setFailed(true); });
+    alertsGet(fleetId).then(
+      (s) => { if (live) { setStatus(s); setFailed(false); setRetrying(false); } },
+      () => { if (live) { setFailed(true); setRetrying(false); } },
+    );
     return () => { live = false; };
   }, [fleetId, authStatus, preview, attempt]);
 
@@ -43,7 +50,7 @@ export function AlertsSection({ preview }: { preview?: AlertsStatus } = {}) {
   if (failed) {
     return (
       <SettingsCard id="alerts" title="Alerts" sub="A Slack or Teams message when a rule alerts, pauses or stops an agent.">
-        <LoadFailed what="alert settings" onRetry={() => setAttempt((n) => n + 1)} />
+        <LoadFailed what="alert settings" busy={retrying} onRetry={() => { retry.current = true; setRetrying(true); setAttempt((n) => n + 1); }} />
       </SettingsCard>
     );
   }

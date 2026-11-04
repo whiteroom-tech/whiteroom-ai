@@ -42,6 +42,27 @@ it('a failed read keeps the card and offers Try again', async () => {
   expect(el.textContent).not.toContain('Couldn’t load');
 });
 
+it('while Try again reads, the failed card stays up with its button busy', async () => {
+  api.alerts.mockRejectedValueOnce(new Error('HTTP 503'));
+  await mount();
+  let finish!: (value: unknown) => void;
+  api.alerts.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+  await act(async () => buttons('Try again')[0].click()); await flush();
+  expect(el.textContent).toContain('Couldn’t load alert settings.');
+  expect(el.querySelector('[aria-busy="true"], button[disabled]')).not.toBeNull();
+  await act(async () => finish({ slack: { ending: 'aaaa' } })); await flush();
+  expect(el.textContent).toContain('Webhook ending …aaaa');
+  expect(el.textContent).not.toContain('Couldn’t load');
+});
+
+it('a Try again that fails again keeps the card and frees the button', async () => {
+  api.alerts.mockRejectedValue(new Error('HTTP 503'));
+  await mount();
+  await act(async () => buttons('Try again')[0].click()); await flush();
+  expect(el.textContent).toContain('Couldn’t load alert settings.');
+  expect(buttons('Try again')[0]?.disabled ?? false).toBe(false);
+});
+
 it('an engine without alerts still hides the card', async () => {
   api.alerts.mockResolvedValueOnce(null);
   await mount();
