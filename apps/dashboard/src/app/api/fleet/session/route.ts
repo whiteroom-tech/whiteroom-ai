@@ -7,6 +7,9 @@
 //   GET           -> report the current session (cookie, else the signed-in
 //                    user's linked fleets), setting/refreshing the cookie
 //   DELETE        -> clear the cookie (sign out)
+//
+// After a page's auth error, /api/fleet/session/recheck decides (on proof)
+// whether the session is really gone.
 
 import { checkSameOrigin } from '@/lib/origin-check';
 import { isSandboxFleetId, SANDBOX_KEY_MESSAGE } from '@/lib/fleet-helpers';
@@ -14,39 +17,11 @@ import {
   clearFleetAuthCookie,
   getFleetAuthCookie,
   setFleetAuthCookie,
-  tokenFromUserFleets,
 } from '@/lib/fleet-session';
-import { isAuthError, tokenLogin } from '@/lib/whiteroom/client';
-import { auth } from '@/auth';
+import { linkedFleet, resolveFleetId } from '@/lib/fleet-session-lookup';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-function invalidToken(): Response {
-  return Response.json({ error: 'invalid_token' }, { status: 401 });
-}
-
-/**
- * Engine down / unreachable — distinguishable from a credential rejection so
- * the client keeps the session and offers retry instead of wiping it.
- */
-function engineUnreachable(): Response {
-  return Response.json({ error: 'engine_unreachable', retryable: true }, { status: 502 });
-}
-
-/** Validates a fleet token against the engine and resolves its fleet id. */
-async function resolveFleetId(
-  token: string,
-): Promise<{ fleetId: string } | { error: Response }> {
-  try {
-    const data = await tokenLogin(token);
-    if (data.error || !data.fleetId) return { error: invalidToken() };
-    return { fleetId: data.fleetId };
-  } catch (e) {
-    if (isAuthError(e)) return { error: invalidToken() };
-    return { error: engineUnreachable() };
-  }
-}
 
 export async function POST(req: Request) {
   const originError = await checkSameOrigin();
@@ -90,29 +65,7 @@ export async function GET() {
 
   // No (valid) cookie: a next-auth session user may still have fleets linked
   // in user_fleets — adopt the preferred one into the cookie.
-  let linked = await tokenFromUserFleets();
-  // Rows that predate fleet ids being stored are resolved from the engine; one
-  // that turns out to be a Sandbox fleet's is skipped and the next tried (at most 5).
-  const skipped = new Set<string>();
-  while (linked && !linked.fleetId && skipped.size < 5) {
-    const resolved = await resolveFleetId(linked.token);
-    if ('error' in resolved) return resolved.error;
-    if (!isSandboxFleetId(resolved.fleetId)) {
-      await setFleetAuthCookie(linked.token);
-      return Response.json({ fleetId: resolved.fleetId });
-    }
-    skipped.add(linked.token);
-    linked = await tokenFromUserFleets(skipped);
-  }
-  if (!linked?.fleetId) {
-    // signedIn tells the page where to send the visitor: sign-in when the
-    // account session is gone, Fleet key (which provisions) when it isn't.
-    const signedIn = !!(await auth())?.user;
-    return Response.json({ error: 'No fleet session.', signedIn }, { status: 401 });
-  }
-
-  await setFleetAuthCookie(linked.token);
-  return Response.json({ fleetId: linked.fleetId });
+  return linkedFleet({ adopt: true });
 }
 
 export async function DELETE() {
