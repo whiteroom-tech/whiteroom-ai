@@ -2,7 +2,8 @@
 // The practice pages' shared poll and clock (usePracticePoll, useClock): 5 s
 // while visible and 30 s while hidden, one read at a time, a read at once on
 // coming back, 'stop' ends it, a refusal that asking again won't fix goes to
-// onError once and stops, and the clock starts at now.
+// onError once and stops, a network blip keeps polling, a read answered after
+// the page is left goes nowhere, and the clock starts at now.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement as h } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -83,6 +84,30 @@ describe('usePracticePoll', () => {
     await tick(PRACTICE_POLL_MS.visible * 3);
     expect(onError2).not.toHaveBeenCalled();
     expect(reads()).toBe(3);
+  });
+
+  it('a network blip (no answer at all) keeps polling, without onError', async () => {
+    const onError = vi.fn();
+    fetchMock.mockImplementation(async () => { throw new TypeError('Failed to fetch'); });
+    await act(async () => { root.render(h(Poll, { onRead: () => {}, onError })); });
+    await tick(PRACTICE_POLL_MS.visible * 3);
+    expect(onError).not.toHaveBeenCalled();
+    expect(reads()).toBe(3);
+  });
+
+  it('leaving the page mid-read: the late answer never reaches onRead, and no more reads', async () => {
+    let release = () => {};
+    const onRead = vi.fn();
+    fetchMock.mockImplementation(() => new Promise<Response>((r) => { release = () => r(Response.json({ id: RUN, lifecycle: 'active' })); }));
+    await act(async () => { root.render(h(Poll, { onRead, onError: () => {} })); });
+    await tick(PRACTICE_POLL_MS.visible);
+    expect(reads()).toBe(1);
+    act(() => root.unmount());
+    await act(async () => { release(); });
+    await tick(PRACTICE_POLL_MS.visible * 3);
+    expect(onRead).not.toHaveBeenCalled();
+    expect(reads()).toBe(1);
+    root = createRoot(document.body.appendChild(document.createElement('div')));
   });
 });
 

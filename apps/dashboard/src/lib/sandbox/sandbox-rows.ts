@@ -111,6 +111,14 @@ const PASSED_SHORT: Record<string, string> = {
   '07': 'Waited while held, then carried on.',
 };
 const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+/** How the engine words a block it made (engine sandbox-check.ts): a rule's, or the check's own test block. */
+const BLOCKED_A_CALL = 'We blocked a call';
+const BLOCKED_OR_TEST_BLOCK = new RegExp(`^(?:${BLOCKED_A_CALL}|We sent one test block)\\b`);
+/** The provider error the engine's check sends back (engine sandbox-check.ts: a provider-shaped 529, overloaded). */
+export const PROVIDER_ERROR_STATUS = 529;
+/** The status the engine says it sent ("We returned a provider error (529) → …"), else the one it sends today. */
+export const providerErrorStatus = (detail: string | undefined): number =>
+  Number(detail?.match(/provider error \((\d{3})\)/)?.[1] ?? PROVIDER_ERROR_STATUS);
 /**
  * A failed live result in a few words: what the agent did, from the engine's
  * own words ("We blocked a call → your agent retried it 3 times within 5 s. Fix: …"
@@ -128,7 +136,7 @@ export function failedShort(detail: string): string {
  * the agent cope ("We blocked a call → …", "We sent one test block → …"); "Would have blocked 2 calls
  * (in Watch)" didn't stop anything, so it keeps the engine's words.
  */
-const exercised = (num: string, c: CheckResult | CheckPart) => num === '02' || num === '07' || /^We (blocked a call|sent one test block)\b/.test(c.detail);
+const exercised = (num: string, c: CheckResult | CheckPart) => num === '02' || num === '07' || BLOCKED_OR_TEST_BLOCK.test(c.detail);
 /** A live result's short line: the passed words for its row when they're true of this run, or the failure in a few words, else the engine's own. */
 const shortText = (num: string, c: CheckResult | CheckPart | undefined) =>
   c?.status === 'passed' && PASSED_SHORT[num] && exercised(num, c) ? PASSED_SHORT[num] : c?.status === 'failed' ? failedShort(c.detail) || liveText(c) : liveText(c);
@@ -183,10 +191,10 @@ type Coped = { status: 'passed' | 'failed' | 'not_checked'; text: string; row: s
 function copes(state: CheckState): Coped {
   const tb = state.parts?.find((p) => p.id === 'test_block');
   if (tb && tb.status !== 'pending') return { status: partState(tb), text: liveText(tb), row: null, testBlock: true };
-  // Which row's block was tested: its failure, or a pass the engine words as a block. Text matching is the cheap way to tell (engine sandbox-check.ts says "We blocked a call").
+  // Which row's block was tested: its failure, or a pass the engine words as a block. Text matching is the cheap way to tell (engine sandbox-check.ts starts it with BLOCKED_A_CALL).
   const tested = RULE_ROWS.find((r) => {
     const c = state.checks.find((x) => x.id === r.check);
-    return c && (c.status === 'failed' || (c.status === 'passed' && /^We blocked a call/.test(c.detail)));
+    return c && (c.status === 'failed' || (c.status === 'passed' && c.detail.startsWith(BLOCKED_A_CALL)));
   });
   if (tested) {
     const c = state.checks.find((x) => x.id === tested.check)!;
@@ -241,7 +249,7 @@ function ruleRow(state: CheckState, r: (typeof RULE_ROWS)[number], coped: Coped,
   const elsewhere = !own && copingAt !== null && copingAt !== r.num;
   const agent: RowPart = own ? { label: 'Your agent', text: shortText(r.num, check), state: partState(check) }
     : elsewhere ? { label: 'Your agent', text: `How it copes with a refusal: see row ${copingAt}.`, state: coped.status, seeRow: copingAt }
-    : { label: 'Your agent', text: coped.status === 'passed' && /^We (blocked a call|sent one test block)\b/.test(coped.text) ? PASSED_SHORT[r.num] : coped.status === 'failed' ? failedShort(coped.text) : coped.text, state: coped.status };
+    : { label: 'Your agent', text: coped.status === 'passed' && BLOCKED_OR_TEST_BLOCK.test(coped.text) ? PASSED_SHORT[r.num] : coped.status === 'failed' ? failedShort(coped.text) : coped.text, state: coped.status };
   // Every rule row decided its own check, and this one holds the test block's result: shown beside it, so it's never lost.
   const refusal: RowPart | null = own && copingAt === r.num && coped.testBlock ? { label: 'Refused call', text: coped.text, state: coped.status } : null;
   const parts: RowPart[] = [{ label: 'Your rule', text: ruleText, state: failedProbe ? 'failed' : 'passed' }, agent, ...(refusal ? [refusal] : [])];
@@ -302,8 +310,10 @@ export function sandboxRows(state: CheckState, practice?: BoundPractice, limits:
   const peState = partState(pe);
   const waitState = wait ? partState(wait) : null;
   // In a few words (mockup Rev 3): "Retried a 529 4 times in 5 s · waited as told after a rate limit".
-  const peShort = peState === 'passed' ? 'Backed off a 529' : pe?.status === 'failed'
-    ? failedShort(pe.detail).replace(/^Retried it /, 'Retried a 529 ').replace(' within ', ' in ').replace(/\.$/, '') : liveText(pe);
+  // The status named is the one the engine says it sent, so these words never name another.
+  const peStatus = providerErrorStatus(pe?.detail);
+  const peShort = peState === 'passed' ? `Backed off a ${peStatus}` : pe?.status === 'failed'
+    ? failedShort(pe.detail).replace(/^Retried it /, `Retried a ${peStatus} `).replace(' within ', ' in ').replace(/\.$/, '') : liveText(pe);
   const waitShort = !wait ? null : waitState === 'passed' ? 'waited as told after a rate limit' : waitState === 'failed' ? 'called again too soon after a rate limit' : liveText(wait);
   // The same words once: an error and a wait cut short by one cause (a restart) say it once, not twice.
   const here = [...new Set([peShort, waitShort].filter(Boolean))].join(' · ');
@@ -435,7 +445,7 @@ export function nowExplained(check: CheckId, stage: CheckStage, agent: string): 
     case 'pause_stop': return stage === 'stop'
       ? `We stopped ${agent} for 5 seconds. Its calls are refused until it’s let go. A good agent waits, then carries on.`
       : `We paused ${agent} for 5 seconds. Next we stop it for 5 seconds. A good agent waits while it’s held, then carries on.`;
-    case 'provider_errors': return 'We send back one provider error (529). A good agent backs off before it tries again.';
+    case 'provider_errors': return `We send back one provider error (${PROVIDER_ERROR_STATUS}). A good agent backs off before it tries again.`;
     default: return '';
   }
 }
