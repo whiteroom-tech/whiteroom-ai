@@ -356,6 +356,17 @@ describe('POST /api/fleet/session/recheck', () => {
     expect(jar.has('wr_fleet_auth')).toBe(false);
   });
 
+  it('no cookie, and the engine is unreachable while resolving a linked row: 502, nothing cleared', async () => {
+    session.current = { user: { id: 'u-bob' } };
+    // A row from before fleet ids were stored has to be resolved from the engine.
+    mockGetUserFleets.mockResolvedValue([{ id: '1', fleet_token: 'ft-old', fleet_id: null, label: 'o', created_at: '' }]);
+    mockTokenLogin.mockRejectedValue(new WhiteRoomApiError('timeout'));
+    const res = await RECHECK();
+    expect(res.status).toBe(502);
+    expect(await res.json()).toMatchObject({ error: 'engine_unreachable', retryable: true });
+    expect(setCalls).toHaveLength(0);
+  });
+
   it('a plain DELETE still just clears (sign-out is unchanged)', async () => {
     jar.set('wr_fleet_auth', 'ft-a');
     mockTokenLogin.mockResolvedValue({ success: true, fleetId: 'fleet-a' });

@@ -33,7 +33,7 @@ type Auth = ReturnType<typeof useFleetAuth>;
 const server = vi.hoisted(() => ({
   session: 'fleet-a' as string | null,
   signedIn: true,
-  deleteVerdict: null as null | (() => Promise<Response>),
+  verdict: null as null | (() => Promise<Response>),
   post: null as null | (() => Promise<Response>),
   calls: [] as string[],
 }));
@@ -42,7 +42,7 @@ function fakeFetch(url: string, init?: RequestInit) {
   const method = init?.method ?? 'GET';
   server.calls.push(method);
   if (method === 'GET') return Promise.resolve(server.session ? json({ fleetId: server.session }) : json({ error: 'No fleet session.', signedIn: server.signedIn }, 401));
-  if (method === 'POST' && url.endsWith('/recheck')) { server.calls.push('RECHECK'); return server.deleteVerdict ? server.deleteVerdict() : Promise.resolve(json({ cleared: true })); }
+  if (method === 'POST' && url.endsWith('/recheck')) { server.calls.push('RECHECK'); return server.verdict ? server.verdict() : Promise.resolve(json({ cleared: true })); }
   if (method === 'DELETE') return Promise.resolve(json({ ok: true }));
   if (method === 'POST') return server.post ? server.post() : Promise.reject(new Error('unexpected POST'));
   return Promise.reject(new Error(`unexpected ${method} ${url}`));
@@ -65,14 +65,14 @@ async function mount() {
   await act(async () => root.render(h(Page))); await flush();
 }
 const ping = async () => { await act(async () => { window.dispatchEvent(new StorageEvent('storage', { key: 'wr_auth_ping', newValue: String(Date.now()) })); }); await flush(); };
-// The recheck after an auth error (deleteVerdict answers it); a plain DELETE is the no-fleet fallback.
-const deletes = () => server.calls.filter((c) => c === 'RECHECK').length;
+// The recheck after an auth error (verdict answers it); a plain DELETE is the no-fleet fallback.
+const rechecks = () => server.calls.filter((c) => c === 'RECHECK').length;
 const plainDeletes = () => server.calls.filter((c) => c === 'DELETE').length;
 
 beforeEach(() => {
   vi.clearAllMocks();
   pings.log = [];
-  Object.assign(server, { session: 'fleet-a', signedIn: true, deleteVerdict: null, post: null, calls: [] });
+  Object.assign(server, { session: 'fleet-a', signedIn: true, verdict: null, post: null, calls: [] });
   legacy.creds = { fleetId: null, fleetToken: null };
   vi.stubGlobal('fetch', vi.fn(fakeFetch));
   Object.defineProperty(window, 'location', { configurable: true, value: { ...window.location, reload, assign: vi.fn() } });
@@ -115,7 +115,7 @@ async function reset() { await act(async () => { auth.resetSession('Your session
 
 it('cleared (token rejected): signs out to setup, tells other tabs', async () => {
   await mount();
-  server.deleteVerdict = () => Promise.resolve(json({ cleared: true }));
+  server.verdict = () => Promise.resolve(json({ cleared: true }));
   await reset();
   expect(auth.status).toBe('unauthenticated');
   expect(auth.needs).toBe('setup');
@@ -126,35 +126,35 @@ it('cleared (token rejected): signs out to setup, tells other tabs', async () =>
 
 it('cleared with no account session: signs out to sign-in', async () => {
   await mount();
-  server.deleteVerdict = () => Promise.resolve(json({ cleared: true, signedIn: false }));
+  server.verdict = () => Promise.resolve(json({ cleared: true, signedIn: false }));
   await reset();
   expect(auth.needs).toBe('sign_in');
 });
 
-it('another fleet holds the session now: reloads, deletes nothing more', async () => {
+it('another fleet holds the session now: reloads, with one recheck and nothing cleared', async () => {
   await mount();
-  server.deleteVerdict = () => Promise.resolve(json({ cleared: false, fleetId: 'fleet-b' }));
+  server.verdict = () => Promise.resolve(json({ cleared: false, fleetId: 'fleet-b' }));
   await reset();
   expect(reload).toHaveBeenCalledTimes(1);
-  expect(deletes()).toBe(1);
+  expect(rechecks()).toBe(1);
   expect(pings.log).toHaveLength(0);
 });
 
 it('same fleet, session fine: keeps it and offers Try again, without looping', async () => {
   await mount();
-  server.deleteVerdict = () => Promise.resolve(json({ cleared: false, fleetId: 'fleet-a' }));
+  server.verdict = () => Promise.resolve(json({ cleared: false, fleetId: 'fleet-a' }));
   await reset();
   expect(auth.status).toBe('unauthenticated');
   expect(auth.retryableError).toMatch(/still signed in/);
   expect(local.clear).not.toHaveBeenCalled();
   await flush(); await flush(); await flush();
-  expect(deletes()).toBe(1);
+  expect(rechecks()).toBe(1);
   expect(reload).not.toHaveBeenCalled();
 });
 
 it('server unreachable (502): nothing cleared, retryable', async () => {
   await mount();
-  server.deleteVerdict = () => Promise.resolve(json({ error: 'engine_unreachable' }, 502));
+  server.verdict = () => Promise.resolve(json({ error: 'engine_unreachable' }, 502));
   await reset();
   expect(auth.status).toBe('unauthenticated');
   expect(auth.retryableError).toMatch(/session was kept/);
@@ -162,21 +162,21 @@ it('server unreachable (502): nothing cleared, retryable', async () => {
   expect(pings.log).toHaveLength(0);
 });
 
-it('network failure on the check: nothing cleared, retryable, no second DELETE', async () => {
+it('network failure on the check: nothing cleared, retryable, no second recheck', async () => {
   await mount();
-  server.deleteVerdict = () => Promise.reject(new TypeError('Failed to fetch'));
+  server.verdict = () => Promise.reject(new TypeError('Failed to fetch'));
   await reset();
   expect(auth.retryableError).toMatch(/session was kept/);
-  expect(deletes()).toBe(1);
+  expect(rechecks()).toBe(1);
 });
 
 it('several auth errors at once send one check', async () => {
   await mount();
   let answer!: (r: Response) => void;
-  server.deleteVerdict = () => new Promise((resolve) => { answer = resolve; });
+  server.verdict = () => new Promise((resolve) => { answer = resolve; });
   await act(async () => { auth.resetSession(); auth.resetSession(); auth.resetSession(); });
   await flush();
-  expect(deletes()).toBe(1);
+  expect(rechecks()).toBe(1);
   await act(async () => answer(json({ cleared: true }))); await flush();
   expect(auth.status).toBe('unauthenticated');
 });
@@ -189,7 +189,7 @@ it('the private feed leaves the screen the moment an auth error starts, and a la
   await act(async () => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Show live feed')!.click()); await flush();
   expect(el.textContent).toContain('fleet-a-agent');
   feed.fn.mockReturnValue(new Promise((resolve) => { lateFeed = resolve; }));
-  server.deleteVerdict = () => new Promise(() => {}); // the verdict never arrives
+  server.verdict = () => new Promise(() => {}); // the verdict never arrives
   await act(async () => { auth.resetSession(); }); await flush();
   expect(el.textContent).not.toContain('fleet-a-agent');
   await act(async () => lateFeed?.({ entries: [{ id: 'a2', type: 'task_complete', timestamp: '2026-11-03T16:01:00Z', agentId: 'fleet-a-agent', taskName: 'late' }], total: 1 })); await flush();
@@ -204,7 +204,7 @@ it('resetSession with no fleet known yet: plain sign-out (DELETE), to setup, and
   expect(auth.fleetId).toBeNull();
   await act(async () => { auth.resetSession('Your session expired. Please sign in again.'); }); await flush();
   expect(plainDeletes()).toBe(1);
-  expect(deletes()).toBe(0);
+  expect(rechecks()).toBe(0);
   expect(auth.status).toBe('unauthenticated');
   expect(auth.needs).toBe('setup');
   expect(pings.log.length).toBeGreaterThan(0);
