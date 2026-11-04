@@ -130,7 +130,6 @@ export function ScopeField({ scope, agents, onChange }: { scope: GovernanceScope
   );
 }
 
-/** A number typed in a sentence; kept as text until Save, so "1,0" isn't forced into 10. */
 /**
  * A Sensitive data rule's three checkboxes, kept in the engine's order so a
  * saved rule and its draft compare equal. Shared by Controls and Sandbox.
@@ -150,6 +149,7 @@ export function SensitiveKindsField({ detect, onChange }: { detect: SensitiveDat
   );
 }
 
+/** A number typed in a sentence; kept as text until Save, so "1,0" isn't forced into 10. */
 export function NumberField({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) {
   return (
     <input

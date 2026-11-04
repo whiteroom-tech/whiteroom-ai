@@ -1012,6 +1012,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         body={dialog?.kind === "downgrade" ? (
           <>
             <p style={{ margin: "0 0 8px" }}><strong>{RULE_LABELS[dialog.rule.ruleType]}</strong> · {ruleConditionText(dialog.rule)}</p>
+            {/* Only leaving Enforce with nothing else weaker opens this (see save): Watch and Off both remove nothing. */}
             <p style={{ margin: 0 }}>{dialog.rule.ruleType === "sensitive_data" ? `What it finds will reach your model provider for ${whoFor(dialog.next.appliesTo)}.` : (dialog.rule.response ?? "block") === "notify" ? `You won’t get alerts for ${whoFor(dialog.next.appliesTo)} any more.` : `Matching calls will go through for ${whoFor(dialog.next.appliesTo)}.`} {dialog.next.mode === "watch" ? "They’ll still be recorded." : "Nothing will be recorded."} You can undo it.</p>
           </>
         ) : null}

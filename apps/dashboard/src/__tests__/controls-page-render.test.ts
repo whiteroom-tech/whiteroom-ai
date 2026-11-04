@@ -1727,6 +1727,19 @@ describe('Controls: the Sensitive data rule', () => {
     m.root.unmount();
   });
 
+  it('a weaker change that stays in Enforce lists what changes, not the stop-removing message', async () => {
+    api.created = [{ ...SD, mode: 'enforce', response: 'notify' }];
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...SD, mode: 'enforce', ...ch, id, version: 2 } }));
+    const m = await mount();
+    await m.open('A call holds');
+    await m.pick('Remove it and send');
+    await m.click(m.button('Save'));
+    const dialog = [...m.el.querySelectorAll('dialog[open]')].at(-1)!;
+    expect(dialog.textContent).toContain('It stops sending you an alert');
+    expect(dialog.textContent).not.toContain('will reach your model provider');
+    m.root.unmount();
+  });
+
   it('a Watch rule shows Paused by WhiteRoom too, since it records nothing while switched off; other rules keep their tags', async () => {
     api.created = [SD];
     api.sdPaused = true;
