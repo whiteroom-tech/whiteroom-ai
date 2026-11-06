@@ -3,7 +3,7 @@ import Google from 'next-auth/providers/google';
 import Resend from 'next-auth/providers/resend';
 import { db } from '@/lib/db';
 import { authAdapter } from '@/lib/auth-adapter';
-import { authCookieOptions, csrfCookieName, sessionCookieName } from '@/lib/auth-cookies';
+import { authCookieOptions, csrfCookieName, flowCookieNames, sessionCookieName } from '@/lib/auth-cookies';
 import { resolvePostLoginUrl } from '@/lib/auth-redirect';
 import { magicLinkEmail } from '@/lib/magic-link-email';
 import { tooManyMagicLinks } from '@/lib/magic-link-limit';
@@ -99,11 +99,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     // or console. can complete on app. (AUTH_URL) and the session still works
     // on the host the user came from. See lib/auth-cookies.ts.
     sessionToken: { name: sessionCookieName(), options: authCookieOptions() },
-    callbackUrl: { options: authCookieOptions() },
+    callbackUrl: { name: flowCookieNames().callbackUrl, options: authCookieOptions() },
     csrfToken: { name: csrfCookieName(), options: authCookieOptions() },
-    pkceCodeVerifier: { options: authCookieOptions() },
-    state: { options: authCookieOptions() },
-    nonce: { options: authCookieOptions() },
+    pkceCodeVerifier: { name: flowCookieNames().pkceCodeVerifier, options: authCookieOptions() },
+    state: { name: flowCookieNames().state, options: authCookieOptions() },
+    nonce: { name: flowCookieNames().nonce, options: authCookieOptions() },
   },
   // Required off Vercel — Cloud Run sits behind a proxy that sets
   // X-Forwarded-* headers rather than terminating TLS itself.

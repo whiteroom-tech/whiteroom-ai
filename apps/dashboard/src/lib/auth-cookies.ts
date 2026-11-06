@@ -13,6 +13,11 @@
  * forbids a Domain attribute, so browsers drop the cookie and the Google
  * callback on app. fails with MissingCSRF — which sends the user to the
  * customer app instead of back to admin. or console.
+ *
+ * AUTH_COOKIE_PREFIX renames every Auth.js cookie (default "authjs", Auth.js's
+ * own names). The EU deployment sets its own prefix: the US cookies carry
+ * Domain=.whiteroom.tech, so browsers also send them to eu.*.whiteroom.tech,
+ * and with the same names the EU dashboard couldn't tell its cookies apart.
  */
 
 const secure = process.env.NODE_ENV === 'production';
@@ -42,14 +47,30 @@ export function authCookieOptions(): {
   };
 }
 
-export function sessionCookieName(): string {
-  return secure ? '__Secure-authjs.session-token' : 'authjs.session-token';
+function cookiePrefix(): string {
+  return process.env.AUTH_COOKIE_PREFIX?.trim() || 'authjs';
 }
 
-/**
- * `__Secure-` (not `__Host-`) so Domain=AUTH_COOKIE_DOMAIN is legal.
- * Pass `useSecure` in tests; production follows NODE_ENV.
- */
+/** `__Secure-` (not `__Host-`) so Domain=AUTH_COOKIE_DOMAIN is legal. */
+function cookieName(suffix: string, useSecure = secure): string {
+  return `${useSecure ? '__Secure-' : ''}${cookiePrefix()}.${suffix}`;
+}
+
+export function sessionCookieName(useSecure = secure): string {
+  return cookieName('session-token', useSecure);
+}
+
+/** Pass `useSecure` in tests; production follows NODE_ENV. */
 export function csrfCookieName(useSecure = secure): string {
-  return useSecure ? '__Secure-authjs.csrf-token' : 'authjs.csrf-token';
+  return cookieName('csrf-token', useSecure);
+}
+
+/** The other Auth.js cookies, under the same prefix as the session and CSRF ones. */
+export function flowCookieNames(): { callbackUrl: string; pkceCodeVerifier: string; state: string; nonce: string } {
+  return {
+    callbackUrl: cookieName('callback-url'),
+    pkceCodeVerifier: cookieName('pkce.code_verifier'),
+    state: cookieName('state'),
+    nonce: cookieName('nonce'),
+  };
 }
