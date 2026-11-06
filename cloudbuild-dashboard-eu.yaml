@@ -37,6 +37,22 @@ substitutions:
   _ENGINE: https://eu.proxy.whiteroom.tech
 
 steps:
+  # NEXT_PUBLIC_ANALYTICS=off only works if the checkout declares the build
+  # arg and lib/analytics.ts reads it. On an older commit the arg is silently
+  # ignored and the EU image reports to PostHog's US host, so stop instead.
+  - id: Guards
+    name: 'gcr.io/cloud-builders/docker'
+    entrypoint: bash
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        grep -q '^ARG NEXT_PUBLIC_ANALYTICS' apps/dashboard/Dockerfile \
+          || { echo "Dockerfile has no NEXT_PUBLIC_ANALYTICS build arg: analytics would stay on"; exit 1; }
+        grep -q "NEXT_PUBLIC_ANALYTICS === 'off'" apps/dashboard/src/lib/analytics.ts \
+          || { echo "lib/analytics.ts doesn't read NEXT_PUBLIC_ANALYTICS: analytics would stay on"; exit 1; }
+        echo "analytics switch present"
+
   - id: Build
     name: 'gcr.io/cloud-builders/docker'
     args:
