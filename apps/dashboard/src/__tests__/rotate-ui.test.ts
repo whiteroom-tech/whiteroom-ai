@@ -6,6 +6,7 @@ vi.mock('@/lib/owner-credentials', () => ({ rotateApiKey: vi.fn(), replaceProxyU
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { attempt, canConfirm, dialogReducer, INITIAL_DIALOG, nextStep, RotationResult } from '@/app/fleet-key/rotate';
+import { PROXY_ORIGIN } from '@/lib/setup';
 
 const CLOUD = [{ prefix: 'sk-wr-dddddddddddddddd', provider: 'bedrock-sigv4', keyHint: 'none', cloudIdentity: true }];
 const KEY = { prefix: 'sk-wr-aaaaaaaaaaaaaaaa', provider: 'anthropic', keyHint: 'abcd', cloudIdentity: false, wrKey: 'sk-wr-' + 'a'.repeat(40) };
@@ -77,7 +78,8 @@ describe('RotationResult', () => {
 
   it('shows each new proxy URL and its environment line, and the key without printing it', () => {
     const out = html({ ok: true, apiKey: 'sk-wr-' + 'b'.repeat(64), proxyKeys: [KEY], disconnected: [] });
-    expect(out).toContain(`https://proxy.whiteroom.tech/${KEY.wrKey}`);
+    // The build's engine address (NEXT_PUBLIC_PROXY_URL), prod's by default.
+    expect(out).toContain(`${PROXY_ORIGIN}/${KEY.wrKey}`);
     expect(out).toContain('ANTHROPIC_BASE_URL');
     expect(out).toContain('New fleet key (hidden)');
     expect(out).not.toContain('b'.repeat(64));

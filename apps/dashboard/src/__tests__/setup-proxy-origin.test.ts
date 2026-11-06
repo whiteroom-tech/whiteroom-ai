@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // PROXY_ORIGIN is read when lib/setup loads (NEXT_PUBLIC_* is baked in at
-// build time), so each case loads a fresh copy with the variable set.
+// build time), so each case loads a fresh copy with the variable set. No URL
+// stubs it empty, so a value in the shell or CI env can't leak in.
 async function loadSetup(proxyUrl?: string) {
   vi.resetModules();
-  if (proxyUrl) vi.stubEnv('NEXT_PUBLIC_PROXY_URL', proxyUrl);
+  vi.stubEnv('NEXT_PUBLIC_PROXY_URL', proxyUrl ?? '');
   return import('@/lib/setup');
 }
 
