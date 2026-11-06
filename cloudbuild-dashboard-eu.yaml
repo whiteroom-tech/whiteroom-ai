@@ -21,7 +21,14 @@
 #     service. An owner made it public once:
 #       gcloud run services update whiteroom-dashboard --no-invoker-iam-check \
 #         --region=europe-west1 --project=whiteroom-eu
-#     and the Reachable step fails the build if that is ever undone.
+#     and the Verify step fails the build if that is ever undone.
+#
+# A sanctioned exception to "Staging, then Promote" (CLAUDE.md): the EU has
+# no staging project yet, so this file does the safety parts itself. Deploy
+# only a commit staging is already running. The new revision starts with no
+# traffic, is checked at its own URL, and only then gets traffic; if the live
+# check fails, traffic returns to the previous revision. Rollback by hand and
+# the plan to fold this into the workflows: ops/eu/README.md.
 # Stripe isn't live yet (test key, like the US). The webhook secret belongs to
 # the EU endpoint (https://eu.app.whiteroom.tech/api/stripe/webhook). When
 # billing goes live, add the live key, a live webhook secret and the
@@ -69,37 +76,41 @@ steps:
     name: 'gcr.io/cloud-builders/docker'
     args: ['push', '${_IMAGE}:${COMMIT_SHA}']
 
+  # The new revision gets no traffic and the tag "candidate". On the very
+  # first deploy (no service yet) Cloud Run can't create one without traffic,
+  # which is fine: nobody is using it. The revision serving before this
+  # deploy is written to /workspace/prev for Promote's rollback.
   - id: Deploy
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
-    entrypoint: gcloud
+    entrypoint: bash
     args:
-      - 'run'
-      - 'deploy'
-      - '${_SERVICE}'
-      - '--project=${_PROJECT}'
-      - '--platform=managed'
-      - '--region=${_REGION}'
-      - '--image=${_IMAGE}:${COMMIT_SHA}'
-      - '--service-account=whiteroom-dashboard-run@whiteroom-eu.iam.gserviceaccount.com'
-      - '--set-cloudsql-instances=${_DB}'
-      # Replaces the whole list on every deploy. The three shared secrets are
-      # the EU engine's copies, in this project.
-      - '--set-secrets=AUTH_SECRET=whiteroom-dashboard-auth-secret:latest,DB_PASSWORD=whiteroom-dashboard-db-password:latest,AUTH_GOOGLE_SECRET=whiteroom-dashboard-google-client-secret:latest,AUTH_RESEND_KEY=whiteroom-dashboard-resend-key:latest,STRIPE_SECRET_KEY=whiteroom-dashboard-stripe-secret-key:latest,STRIPE_WEBHOOK_SECRET=whiteroom-dashboard-stripe-webhook-secret:latest,WR_ENTITLEMENT_SYNC_SECRET=whiteroom-entitlement-sync-secret:latest,WR_SANDBOX_SERVICE_SECRET=whiteroom-sandbox-service-secret:latest,WR_DASHBOARD_SERVICE_SECRET=whiteroom-dashboard-service-secret:latest,WR_CRED_ENCRYPTION_KEY=whiteroom-dashboard-cred-key:1'
-      # Split on "|": AUTH_EMAIL_FROM contains spaces and "<>".
-      - '--set-env-vars=^|^DB_SOCKET_PATH=/cloudsql/${_DB}|DB_USER=whiteroom_dashboard_app|DB_NAME=whiteroom_dashboard|AUTH_GOOGLE_ID=272235454263-pbmhape0njeuhtr700s9ae8qct4f14e5.apps.googleusercontent.com|AUTH_URL=${_URL}|AUTH_TRUST_HOST=true|AUTH_EMAIL_FROM=WhiteRoom <no-reply@whiteroom.tech>|AUTH_COOKIE_PREFIX=authjs-eu|NEXT_PUBLIC_PROXY_URL=${_ENGINE}'
-      # Same scaling as the US dashboard.
-      - '--min-instances=0'
-      - '--max-instances=2'
-      - '--cpu-boost'
-      - '--memory=512Mi'
-      - '--cpu=1'
-      - '--port=8080'
-      - '--labels=managed-by=cloud-build,commit-sha=${COMMIT_SHA}'
-      - '--quiet'
+      - '-c'
+      - |
+        set -euo pipefail
+        if gcloud run services describe ${_SERVICE} --region=${_REGION} --project=${_PROJECT} >/dev/null 2>&1; then
+          gcloud run services describe ${_SERVICE} --region=${_REGION} --project=${_PROJECT} \
+            --format="value(status.traffic[0].revisionName)" > /workspace/prev
+          staged=(--no-traffic --tag=candidate)
+        else
+          : > /workspace/prev
+          staged=()
+        fi
+        echo "serving before deploy: $$(cat /workspace/prev || true)"
+        gcloud run deploy ${_SERVICE} \
+          --project=${_PROJECT} --platform=managed --region=${_REGION} \
+          --image=${_IMAGE}:${COMMIT_SHA} \
+          --service-account=whiteroom-dashboard-run@whiteroom-eu.iam.gserviceaccount.com \
+          --set-cloudsql-instances=${_DB} \
+          --set-secrets=AUTH_SECRET=whiteroom-dashboard-auth-secret:latest,DB_PASSWORD=whiteroom-dashboard-db-password:latest,AUTH_GOOGLE_SECRET=whiteroom-dashboard-google-client-secret:latest,AUTH_RESEND_KEY=whiteroom-dashboard-resend-key:latest,STRIPE_SECRET_KEY=whiteroom-dashboard-stripe-secret-key:latest,STRIPE_WEBHOOK_SECRET=whiteroom-dashboard-stripe-webhook-secret:latest,WR_ENTITLEMENT_SYNC_SECRET=whiteroom-entitlement-sync-secret:latest,WR_SANDBOX_SERVICE_SECRET=whiteroom-sandbox-service-secret:latest,WR_DASHBOARD_SERVICE_SECRET=whiteroom-dashboard-service-secret:latest,WR_CRED_ENCRYPTION_KEY=whiteroom-dashboard-cred-key:1 \
+          '--set-env-vars=^|^DB_SOCKET_PATH=/cloudsql/${_DB}|DB_USER=whiteroom_dashboard_app|DB_NAME=whiteroom_dashboard|AUTH_GOOGLE_ID=272235454263-pbmhape0njeuhtr700s9ae8qct4f14e5.apps.googleusercontent.com|AUTH_URL=${_URL}|AUTH_TRUST_HOST=true|AUTH_EMAIL_FROM=WhiteRoom <no-reply@whiteroom.tech>|AUTH_COOKIE_PREFIX=authjs-eu|NEXT_PUBLIC_PROXY_URL=${_ENGINE}' \
+          --min-instances=0 --max-instances=2 --cpu-boost --memory=512Mi --cpu=1 --port=8080 \
+          --labels=managed-by=cloud-build,commit-sha=${COMMIT_SHA} \
+          "$${staged[@]}" --quiet
 
-  # Fails the build if the service is private (see the header) or the
-  # sign-in page doesn't render without credentials.
-  - id: Reachable
+  # Checks the new revision before it gets traffic: the service must be
+  # public (see the header) and /sign-in must render without credentials at
+  # the candidate's own URL. A failure here leaves users on the old revision.
+  - id: Verify
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
     entrypoint: bash
     args:
@@ -112,12 +123,35 @@ steps:
           echo "  gcloud run services update ${_SERVICE} --no-invoker-iam-check --region=${_REGION} --project=${_PROJECT}"
           exit 1
         fi
-        url="$$(describe status.url)"
+        url="$$(describe "status.traffic[].url" | tr ';,' '\n\n' | grep -m1 'candidate---' || true)"
+        [[ -n "$$url" ]] || url="$$(describe status.url)"   # first deploy: no tag
         for i in 1 2 3 4 5 6; do
-          if curl -fsS -m 15 "$$url/sign-in" | grep -q "Sign in"; then echo "/sign-in renders"; exit 0; fi
-          echo "/sign-in not rendering yet, retrying"; sleep 10
+          if curl -fsS -m 15 "$$url/sign-in" | grep -q "Sign in"; then echo "candidate renders /sign-in: $$url"; exit 0; fi
+          echo "candidate not rendering /sign-in yet, retrying"; sleep 10
         done
-        echo "/sign-in never rendered without credentials"; exit 1
+        echo "candidate never rendered /sign-in; users stay on the previous revision"; exit 1
+
+  # Moves all traffic to the new revision, then checks the live URL. If that
+  # check fails, traffic goes straight back to the revision that was serving.
+  - id: Promote
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
+    entrypoint: bash
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        prev="$$(cat /workspace/prev || true)"
+        gcloud run services update-traffic ${_SERVICE} --to-latest --region=${_REGION} --project=${_PROJECT} --quiet
+        url="$$(gcloud run services describe ${_SERVICE} --region=${_REGION} --project=${_PROJECT} --format='value(status.url)')"
+        for i in 1 2 3 4 5 6; do
+          if curl -fsS -m 15 "$$url/sign-in" | grep -q "Sign in"; then echo "live: $$url serves ${COMMIT_SHA}"; exit 0; fi
+          sleep 10
+        done
+        if [[ -n "$$prev" ]]; then
+          echo "live check failed; rolling back to $$prev"
+          gcloud run services update-traffic ${_SERVICE} --to-revisions="$$prev=100" --region=${_REGION} --project=${_PROJECT} --quiet
+        fi
+        exit 1
 
 images:
   - '${_IMAGE}:${COMMIT_SHA}'
