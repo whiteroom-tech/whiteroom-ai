@@ -20,6 +20,7 @@ import { SANDBOX_STEPS, sandboxStepOf, type SandboxStep } from '@/lib/sandbox/st
 import { checkStateOf, type CheckState } from '@/lib/sandbox/checks';
 import { SandboxRules, type SandboxRulesPreview } from './SandboxRules';
 import { SANDBOX_RULES_ID, type SandboxRulesState } from '@/lib/sandbox/rules';
+import { PROXY_ORIGIN } from '@/lib/setup';
 import s from '../guided.module.css';
 import v from './v2.module.css';
 
@@ -152,7 +153,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
 
   async function connect(req: ConnectRequest, detected = false): Promise<string | null> {
     if (preview) {
-      setIssued({ proxyKey: 'sk-wr-<preview-key>', proxyUrl: 'https://proxy.whiteroom.tech/sk-wr-<preview-key>', provider: req.provider, keyHint: req.api_key.slice(-4) });
+      setIssued({ proxyKey: 'sk-wr-<preview-key>', proxyUrl: `${PROXY_ORIGIN}/sk-wr-<preview-key>`, provider: req.provider, keyHint: req.api_key.slice(-4) });
       setReplacing(false);
       return null;
     }

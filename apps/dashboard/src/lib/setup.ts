@@ -1,6 +1,8 @@
 // The setup lines, shown on Home with no agents and on Fleet key.
 // One copy, so the pages can't drift if the proxy URL or header changes.
-export const PROXY_ORIGIN = 'https://proxy.whiteroom.tech';
+// NEXT_PUBLIC_PROXY_URL is baked in at build time: staging and the EU
+// deployment build with their own engine's address.
+export const PROXY_ORIGIN = process.env.NEXT_PUBLIC_PROXY_URL || 'https://proxy.whiteroom.tech';
 
 export const SETUP_LINES = {
   anthropic: `export ANTHROPIC_BASE_URL=${PROXY_ORIGIN}`,
