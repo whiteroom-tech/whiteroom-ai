@@ -47,8 +47,20 @@ export function authCookieOptions(): {
   };
 }
 
+// Letters, digits, _ and - only: anything else could break the Set-Cookie
+// header (;, =, spaces) or double the __Secure-/__Host- prefix we add.
+const VALID_PREFIX = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+let warnedBadPrefix = false;
+
 function cookiePrefix(): string {
-  return process.env.AUTH_COOKIE_PREFIX?.trim() || 'authjs';
+  const raw = process.env.AUTH_COOKIE_PREFIX?.trim();
+  if (!raw) return 'authjs';
+  if (VALID_PREFIX.test(raw)) return raw;
+  if (!warnedBadPrefix) {
+    warnedBadPrefix = true;
+    console.warn('[auth] AUTH_COOKIE_PREFIX may only use letters, digits, _ and -; using "authjs".');
+  }
+  return 'authjs';
 }
 
 /** `__Secure-` (not `__Host-`) so Domain=AUTH_COOKIE_DOMAIN is legal. */
@@ -66,11 +78,11 @@ export function csrfCookieName(useSecure = secure): string {
 }
 
 /** The other Auth.js cookies, under the same prefix as the session and CSRF ones. */
-export function flowCookieNames(): { callbackUrl: string; pkceCodeVerifier: string; state: string; nonce: string } {
+export function flowCookieNames(useSecure = secure): { callbackUrl: string; pkceCodeVerifier: string; state: string; nonce: string } {
   return {
-    callbackUrl: cookieName('callback-url'),
-    pkceCodeVerifier: cookieName('pkce.code_verifier'),
-    state: cookieName('state'),
-    nonce: cookieName('nonce'),
+    callbackUrl: cookieName('callback-url', useSecure),
+    pkceCodeVerifier: cookieName('pkce.code_verifier', useSecure),
+    state: cookieName('state', useSecure),
+    nonce: cookieName('nonce', useSecure),
   };
 }

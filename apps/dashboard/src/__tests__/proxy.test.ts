@@ -11,11 +11,11 @@ const CONSOLE = 'console.whiteroom.tech';
  * Builds a request as it arrives behind the load balancer: the host the user
  * typed is in X-Forwarded-Host, not in the URL.
  */
-function req(host: string, pathname: string, { forwarded = true, withSession = false } = {}) {
+function req(host: string, pathname: string, { forwarded = true, withSession = false, cookie = '__Secure-authjs.session-token' } = {}) {
   const headers = new Headers();
   if (forwarded) headers.set('x-forwarded-host', host);
   else headers.set('host', host);
-  if (withSession) headers.set('cookie', '__Secure-authjs.session-token=test-token');
+  if (withSession) headers.set('cookie', `${cookie}=test-token`);
   return new NextRequest(`https://internal.run.app${pathname}`, { headers });
 }
 
@@ -47,6 +47,21 @@ function verdict(res: Response | undefined): 'pass' | 'notFound' | string {
 afterEach(() => {
   delete process.env.ADMIN_HOST;
   delete process.env.CONSOLE_HOST;
+  delete process.env.AUTH_COOKIE_PREFIX;
+});
+
+describe('AUTH_COOKIE_PREFIX (EU deployment)', () => {
+  // The proxy and auth.ts must agree on the name, or EU users would loop
+  // between a protected page and /sign-in.
+  it('accepts the prefixed session cookie', () => {
+    process.env.AUTH_COOKIE_PREFIX = 'authjs-eu';
+    expect(verdict(proxy(req(APP, '/settings', { withSession: true, cookie: '__Secure-authjs-eu.session-token' })))).toBe('pass');
+  });
+
+  it('rejects a US-named session cookie', () => {
+    process.env.AUTH_COOKIE_PREFIX = 'authjs-eu';
+    expect(verdict(proxy(req(APP, '/settings', { withSession: true })))).toBe('redirect:/sign-in');
+  });
 });
 
 describe('single-host mode (ADMIN_HOST unset)', () => {
