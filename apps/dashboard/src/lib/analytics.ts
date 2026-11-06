@@ -7,6 +7,10 @@ let loaded: Promise<PostHog> | null = null;
 
 export function initAnalytics() {
   if (loaded || typeof window === 'undefined') return;
+  // Baked in at build time. The EU dashboard builds with "off": PostHog's
+  // host is in the US, and nothing about its users should leave the EU.
+  // With analytics never started, capture() and identify() below do nothing.
+  if (process.env.NEXT_PUBLIC_ANALYTICS === 'off') return;
   loaded = import('posthog-js').then(({ default: posthog }) => {
     posthog.init('phc_kkHTFEiVyW2Bto9QDvoBK5JB8aS62cwzYZBZNexerM9J', {
       api_host: 'https://us.i.posthog.com',
