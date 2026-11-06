@@ -1,6 +1,8 @@
 // The setup lines, shown on Home with no agents and on Fleet key.
 // One copy, so the pages can't drift if the proxy URL or header changes.
-export const PROXY_ORIGIN = 'https://proxy.whiteroom.tech';
+// NEXT_PUBLIC_PROXY_URL is baked in at build time: staging and the EU
+// deployment build with their own engine's address.
+export const PROXY_ORIGIN = process.env.NEXT_PUBLIC_PROXY_URL || 'https://proxy.whiteroom.tech';
 
 export const SETUP_LINES = {
   anthropic: `export ANTHROPIC_BASE_URL=${PROXY_ORIGIN}`,
@@ -88,6 +90,9 @@ await client.messages.create({
 });`,
 } as const;
 
+/** The production engine, the only one serving the Bedrock role routes (see below). */
+const BEDROCK_ROLE_ORIGIN = 'https://proxy.whiteroom.tech';
+
 /**
  * Native Bedrock Runtime adapter: no API key at all. The customer's agent
  * keeps its own AWS credentials and signs calls as itself; WhiteRoom proves
@@ -101,8 +106,15 @@ await client.messages.create({
  * secret: an ARN is a public identifier, meant to be pasted into customer
  * IAM policies, same as a username. The access key behind it is the secret,
  * held only in the engine's own deployment config.
+ *
+ * The whole role recipe stays on the production engine's address, whatever
+ * NEXT_PUBLIC_PROXY_URL this build uses: the role routes mount only where
+ * WHITEROOM_BEDROCK_SERVER_ID is set (prod; staging and EU leave it unset),
+ * the server ID must equal that value, and the trust policy above names the
+ * prod engine's IAM user. Following the build's URL would pair a staging or
+ * EU address with prod's principal.
  */
-export const BEDROCK_ROLE_SERVER_ID = new URL(PROXY_ORIGIN).hostname;
+export const BEDROCK_ROLE_SERVER_ID = new URL(BEDROCK_ROLE_ORIGIN).hostname;
 export const BEDROCK_ROLE_PRINCIPAL_ARN = 'arn:aws:iam::867709894307:user/whiteroom-engine-prod';
 
 /** The IAM trust policy the customer attaches to the role they create, naming WhiteRoom's principal and their chosen external ID. */
@@ -132,11 +144,11 @@ import whiteroom_bedrock
 client = boto3.client(
     "bedrock-runtime",
     region_name="${region}",
-    endpoint_url="${PROXY_ORIGIN}",
+    endpoint_url="${BEDROCK_ROLE_ORIGIN}",
 )
 whiteroom_bedrock.install(
     client,
-    proxy_base_url="${PROXY_ORIGIN}",
+    proxy_base_url="${BEDROCK_ROLE_ORIGIN}",
     server_id="${BEDROCK_ROLE_SERVER_ID}",
     region="${region}",
 )

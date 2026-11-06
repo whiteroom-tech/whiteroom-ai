@@ -26,6 +26,7 @@ import { PRACTICE_POLL_MS } from '../practice/usePracticePoll';
 import { leftMs } from '@/lib/sandbox/seen-times';
 import { otherRunLine, practiceTaskLines, tasksDone } from '@/lib/sandbox/sandbox-practice';
 import type { PracticeProfile, PracticeResult } from '@/lib/sandbox/practice/types';
+import { PROXY_ORIGIN } from '@/lib/setup';
 import s from '../guided.module.css';
 import v from './v2.module.css';
 
@@ -729,7 +730,7 @@ export function LiveChecks({ state, agent = 'your agent', now: clock = Date.now(
 /** No call yet: the usual fixes, with this Sandbox's setting (mockup Rev 3 "2 · Waiting"). */
 export function NothingHappening({ provider }: { provider: string }) {
   const [howName, setHowName] = useState(false);
-  const setting = sandboxSetting(provider, 'https://proxy.whiteroom.tech').name;
+  const setting = sandboxSetting(provider, PROXY_ORIGIN).name;
   return (
     <div className={v.tipsBlock}>
       <b>Nothing after a minute? Usually one of these:</b>
