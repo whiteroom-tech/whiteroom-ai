@@ -1,0 +1,114 @@
+# Build and deploy the EU dashboard (eu.app.whiteroom.tech) to Cloud Run in
+# europe-west1 (Belgium), in its own project, whiteroom-eu, next to the EU
+# engine (eu.proxy.whiteroom.tech). EU accounts live only there: the project's
+# location policy refuses resources outside the EU.
+# Manual only. Run from repo root:
+#   gcloud builds submit --config=cloudbuild-dashboard-eu.yaml \
+#     --substitutions=COMMIT_SHA=$(git rev-parse HEAD) --project=whiteroom-eu \
+#     --region=europe-west1 \
+#     --service-account=projects/whiteroom-eu/serviceAccounts/whiteroom-deployer@whiteroom-eu.iam.gserviceaccount.com \
+#     --gcs-source-staging-dir=gs://whiteroom-eu-build-src/source
+#
+# Differences from the US dashboard, on purpose:
+#   - NEXT_PUBLIC_PROXY_URL is the EU engine, so setup lines and server calls
+#     go to Belgium.
+#   - NEXT_PUBLIC_ANALYTICS=off: no product analytics to PostHog's US host.
+#   - AUTH_COOKIE_PREFIX=authjs-eu: the US cookies carry Domain=.whiteroom.tech
+#     and reach eu.* too; the EU ones need other names (lib/auth-cookies.ts).
+#   - One host only: no AUTH_COOKIE_DOMAIN, ADMIN_HOST or CONSOLE_HOST.
+#     /admin answers 404 to anyone without an admin row in the EU database.
+#   - Deploys as whiteroom-deployer, which can't change who may call the
+#     service. An owner made it public once:
+#       gcloud run services update whiteroom-dashboard --no-invoker-iam-check \
+#         --region=europe-west1 --project=whiteroom-eu
+#     and the Reachable step fails the build if that is ever undone.
+# Stripe isn't live yet (test key, like the US). The webhook secret belongs to
+# the EU endpoint (https://eu.app.whiteroom.tech/api/stripe/webhook). When
+# billing goes live, add the live key, a live webhook secret and the
+# STRIPE_PRICE_* variables plans.ts reads.
+
+substitutions:
+  _IMAGE: europe-west1-docker.pkg.dev/whiteroom-eu/whiteroom/whiteroom-dashboard
+  _SERVICE: whiteroom-dashboard
+  _REGION: europe-west1
+  _PROJECT: whiteroom-eu
+  _DB: whiteroom-eu:europe-west1:whiteroom-db-eu
+  _URL: https://eu.app.whiteroom.tech
+  _ENGINE: https://eu.proxy.whiteroom.tech
+
+steps:
+  - id: Build
+    name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-f'
+      - 'apps/dashboard/Dockerfile'
+      - '--build-arg=NEXT_PUBLIC_PROXY_URL=${_ENGINE}'
+      - '--build-arg=NEXT_PUBLIC_ANALYTICS=off'
+      - '-t'
+      - '${_IMAGE}:${COMMIT_SHA}'
+      - '.'
+
+  - id: Push
+    name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_IMAGE}:${COMMIT_SHA}']
+
+  - id: Deploy
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_SERVICE}'
+      - '--project=${_PROJECT}'
+      - '--platform=managed'
+      - '--region=${_REGION}'
+      - '--image=${_IMAGE}:${COMMIT_SHA}'
+      - '--service-account=whiteroom-dashboard-run@whiteroom-eu.iam.gserviceaccount.com'
+      - '--set-cloudsql-instances=${_DB}'
+      # Replaces the whole list on every deploy. The three shared secrets are
+      # the EU engine's copies, in this project.
+      - '--set-secrets=AUTH_SECRET=whiteroom-dashboard-auth-secret:latest,DB_PASSWORD=whiteroom-dashboard-db-password:latest,AUTH_GOOGLE_SECRET=whiteroom-dashboard-google-client-secret:latest,AUTH_RESEND_KEY=whiteroom-dashboard-resend-key:latest,STRIPE_SECRET_KEY=whiteroom-dashboard-stripe-secret-key:latest,STRIPE_WEBHOOK_SECRET=whiteroom-dashboard-stripe-webhook-secret:latest,WR_ENTITLEMENT_SYNC_SECRET=whiteroom-entitlement-sync-secret:latest,WR_SANDBOX_SERVICE_SECRET=whiteroom-sandbox-service-secret:latest,WR_DASHBOARD_SERVICE_SECRET=whiteroom-dashboard-service-secret:latest,WR_CRED_ENCRYPTION_KEY=whiteroom-dashboard-cred-key:1'
+      # Split on "|": AUTH_EMAIL_FROM contains spaces and "<>".
+      - '--set-env-vars=^|^DB_SOCKET_PATH=/cloudsql/${_DB}|DB_USER=whiteroom_dashboard_app|DB_NAME=whiteroom_dashboard|AUTH_GOOGLE_ID=272235454263-pbmhape0njeuhtr700s9ae8qct4f14e5.apps.googleusercontent.com|AUTH_URL=${_URL}|AUTH_TRUST_HOST=true|AUTH_EMAIL_FROM=WhiteRoom <no-reply@whiteroom.tech>|AUTH_COOKIE_PREFIX=authjs-eu|NEXT_PUBLIC_PROXY_URL=${_ENGINE}'
+      # Same scaling as the US dashboard.
+      - '--min-instances=0'
+      - '--max-instances=2'
+      - '--cpu-boost'
+      - '--memory=512Mi'
+      - '--cpu=1'
+      - '--port=8080'
+      - '--labels=managed-by=cloud-build,commit-sha=${COMMIT_SHA}'
+      - '--quiet'
+
+  # Fails the build if the service is private (see the header) or the
+  # sign-in page doesn't render without credentials.
+  - id: Reachable
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
+    entrypoint: bash
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        describe() { gcloud run services describe ${_SERVICE} --region=${_REGION} --project=${_PROJECT} --format="value($$1)"; }
+        if [[ "$$(describe "metadata.annotations.'run.googleapis.com/invoker-iam-disabled'")" != "true" ]]; then
+          echo "Dashboard is private: an owner must run"
+          echo "  gcloud run services update ${_SERVICE} --no-invoker-iam-check --region=${_REGION} --project=${_PROJECT}"
+          exit 1
+        fi
+        url="$$(describe status.url)"
+        for i in 1 2 3 4 5 6; do
+          if curl -fsS -m 15 "$$url/sign-in" | grep -q "Sign in"; then echo "/sign-in renders"; exit 0; fi
+          echo "/sign-in not rendering yet, retrying"; sleep 10
+        done
+        echo "/sign-in never rendered without credentials"; exit 1
+
+images:
+  - '${_IMAGE}:${COMMIT_SHA}'
+
+options:
+  machineType: 'E2_HIGHCPU_8'
+  # Required when the build runs as a user-chosen service account.
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: '1800s'
