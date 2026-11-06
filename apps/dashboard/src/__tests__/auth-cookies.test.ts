@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { csrfCookieName, flowCookieNames, sessionCookieName } from '@/lib/auth-cookies';
+import { authCookies, csrfCookieName, flowCookieNames, sessionCookieName } from '@/lib/auth-cookies';
 
 describe('csrfCookieName', () => {
   it('uses the __Secure- prefix so a shared Domain is allowed', () => {
@@ -35,10 +35,44 @@ describe('AUTH_COOKIE_PREFIX', () => {
     expect(Object.values(flowCookieNames(false)).every((n) => n.startsWith('authjs-eu.'))).toBe(true);
   });
 
-  it('ignores a prefix that would break the cookie header or double the __Secure- prefix', () => {
-    for (const bad of ['eu;x', 'a=b', 'two words', '__Secure-eu', '__Host-eu', '-eu', 'eu.x']) {
+  it('refuses a prefix that would break the cookie header or double the __Secure- prefix', () => {
+    // Falling back to "authjs" would give the EU dashboard the US names, so it throws.
+    for (const bad of ['eu;x', 'a=b', 'eu prefix', '__Secure-eu', '__Host-eu', '-eu', 'authjs.eu']) {
       process.env.AUTH_COOKIE_PREFIX = bad;
-      expect(sessionCookieName(true)).toBe('__Secure-authjs.session-token');
+      expect(() => sessionCookieName(true)).toThrow(/AUTH_COOKIE_PREFIX/);
+      expect(() => authCookies(true)).toThrow(/AUTH_COOKIE_PREFIX/);
     }
+  });
+
+  it('trims surrounding whitespace', () => {
+    process.env.AUTH_COOKIE_PREFIX = '  authjs-eu  ';
+    expect(sessionCookieName(true)).toBe('__Secure-authjs-eu.session-token');
+  });
+});
+
+describe('authCookies (the NextAuth cookies config)', () => {
+  afterEach(() => { delete process.env.AUTH_COOKIE_PREFIX; });
+
+  const KEYS = ['sessionToken', 'callbackUrl', 'csrfToken', 'pkceCodeVerifier', 'state', 'nonce'];
+
+  it('names all six Auth.js cookies, so none is left on its default name', () => {
+    process.env.AUTH_COOKIE_PREFIX = 'authjs-eu';
+    const cookies = authCookies(true);
+    expect(Object.keys(cookies).sort()).toEqual([...KEYS].sort());
+    for (const { name, options } of Object.values(cookies)) {
+      expect(name.startsWith('__Secure-authjs-eu.')).toBe(true);
+      expect(options).toMatchObject({ httpOnly: true, sameSite: 'lax', path: '/' });
+    }
+  });
+
+  it('gives the Auth.js defaults when unset (production form)', () => {
+    expect(Object.fromEntries(Object.entries(authCookies(true)).map(([k, v]) => [k, v.name]))).toEqual({
+      sessionToken: '__Secure-authjs.session-token',
+      callbackUrl: '__Secure-authjs.callback-url',
+      csrfToken: '__Secure-authjs.csrf-token',
+      pkceCodeVerifier: '__Secure-authjs.pkce.code_verifier',
+      state: '__Secure-authjs.state',
+      nonce: '__Secure-authjs.nonce',
+    });
   });
 });

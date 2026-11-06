@@ -50,17 +50,20 @@ export function authCookieOptions(): {
 // Letters, digits, _ and - only: anything else could break the Set-Cookie
 // header (;, =, spaces) or double the __Secure-/__Host- prefix we add.
 const VALID_PREFIX = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
-let warnedBadPrefix = false;
 
+/**
+ * Throws on an invalid value rather than falling back to "authjs": the prefix
+ * exists to keep the EU dashboard off the US cookies, and a silent fallback
+ * would quietly give it exactly those names. auth.ts builds its cookie config
+ * when it loads, so a bad value stops the dashboard at startup.
+ */
 function cookiePrefix(): string {
   const raw = process.env.AUTH_COOKIE_PREFIX?.trim();
   if (!raw) return 'authjs';
-  if (VALID_PREFIX.test(raw)) return raw;
-  if (!warnedBadPrefix) {
-    warnedBadPrefix = true;
-    console.warn('[auth] AUTH_COOKIE_PREFIX may only use letters, digits, _ and -; using "authjs".');
+  if (!VALID_PREFIX.test(raw)) {
+    throw new Error(`AUTH_COOKIE_PREFIX "${raw}" is invalid: use letters, digits, _ and - only, starting with a letter or digit.`);
   }
-  return 'authjs';
+  return raw;
 }
 
 /** `__Secure-` (not `__Host-`) so Domain=AUTH_COOKIE_DOMAIN is legal. */
@@ -84,5 +87,31 @@ export function flowCookieNames(useSecure = secure): { callbackUrl: string; pkce
     pkceCodeVerifier: cookieName('pkce.code_verifier', useSecure),
     state: cookieName('state', useSecure),
     nonce: cookieName('nonce', useSecure),
+  };
+}
+
+type CookieOption = { name: string; options: ReturnType<typeof authCookieOptions> };
+
+/**
+ * The whole `cookies` config for NextAuth, so every Auth.js cookie gets the
+ * prefix and the shared options in one place (auth.ts passes it through).
+ */
+export function authCookies(useSecure = secure): {
+  sessionToken: CookieOption;
+  callbackUrl: CookieOption;
+  csrfToken: CookieOption;
+  pkceCodeVerifier: CookieOption;
+  state: CookieOption;
+  nonce: CookieOption;
+} {
+  const options = authCookieOptions();
+  const flow = flowCookieNames(useSecure);
+  return {
+    sessionToken: { name: sessionCookieName(useSecure), options },
+    callbackUrl: { name: flow.callbackUrl, options },
+    csrfToken: { name: csrfCookieName(useSecure), options },
+    pkceCodeVerifier: { name: flow.pkceCodeVerifier, options },
+    state: { name: flow.state, options },
+    nonce: { name: flow.nonce, options },
   };
 }
