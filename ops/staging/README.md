@@ -55,5 +55,5 @@ https://whiteroom-dashboard-667088277671.us-central1.run.app/api/auth/callback/g
 ## Known gaps
 
 - The staging engine has no Anthropic platform key (`WR_PLATFORM_ANTHROPIC_KEY` was removed on 2026-10-01 so staging can't bill to prod). That key only seeds task-cost estimates, so on staging those estimates are the built-in defaults. Give staging its own capped key if you need real estimates there.
-- The copy-paste setup snippets in `onboarding.tsx` hard-code `https://proxy.whiteroom.tech`, so on staging they point at the prod engine.
+- The Bedrock cross-account role recipe always shows `https://proxy.whiteroom.tech`: its routes only run on the prod engine (`WHITEROOM_BEDROCK_SERVER_ID` is unset on staging), and its trust policy names the prod engine's IAM user. Every other setup snippet uses the staging engine's address (`NEXT_PUBLIC_PROXY_URL`).
 - No Stripe keys are set on staging (none are set on prod either yet).
