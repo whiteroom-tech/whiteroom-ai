@@ -109,8 +109,9 @@ export async function run(a: RunArgs, env: NodeJS.ProcessEnv = process.env): Pro
   say(runCopy.running(setting.name));
   const [cmd, ...args] = a.command;
   return new Promise<number>((resolve) => {
-    // In a terminal, Ctrl+C already reaches the agent (it's in the same process group): this process
-    // only waits for it, so the agent never gets a second one. Other signals sent to this process are passed on.
+    // Ctrl+C already reaches the agent (it's in the same process group, whether or not stdin is a
+    // terminal): this process only waits for it, so the agent never gets a second one. SIGTERM and
+    // SIGHUP sent to this process are passed on.
     const handlers = new Map<NodeJS.Signals, () => void>();
     const done = (code: number) => {
       for (const [sig, h] of handlers) process.off(sig, h);
@@ -123,9 +124,8 @@ export async function run(a: RunArgs, env: NodeJS.ProcessEnv = process.env): Pro
       // Windows refuses some commands (a .cmd without a shell) before starting them.
       return done(fail(runCopy.couldntStart(cmd, (err as Error).message)));
     }
-    const terminal = process.stdin.isTTY;
     for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as NodeJS.Signals[]) {
-      const h = () => { if (!(sig === "SIGINT" && terminal)) child.kill(sig); };
+      const h = () => { if (sig !== "SIGINT") child.kill(sig); };
       handlers.set(sig, h);
       process.on(sig, h);
     }
