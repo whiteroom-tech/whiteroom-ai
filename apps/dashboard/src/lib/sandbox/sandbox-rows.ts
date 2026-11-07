@@ -321,7 +321,7 @@ export function sandboxRows(state: CheckState, practice?: BoundPractice, limits:
   // The same words once: an error and a wait cut short by one cause (a restart) say it once, not twice.
   const here = [...new Set([peShort, waitShort].filter(Boolean))].join(' · ');
   const line3 = peState === 'failed' ? 'Retried a provider error too fast.' : waitState === 'failed' ? 'Called again too soon after a rate limit.' : '';
-  const hereState: RowPart['state'] = peState === 'failed' || waitState === 'failed' ? 'failed' : peState === 'not_proven' ? 'not_proven'
+  const hereState: RowPart['state'] = peState === 'failed' || waitState === 'failed' ? 'failed' : peState === 'not_proven' || waitState === 'not_proven' ? 'not_proven'
     : peState === 'not_checked' || waitState === 'not_checked' ? 'not_checked' : 'passed';
   const prac3 = practicePart(practice, ['c.timeout', 'c.keeps_failing']);
   const p3: RowPart[] = [{ label: 'Here', text: here, state: hereState }, prac3.part];

@@ -71,6 +71,11 @@ describe('the eight rows', () => {
     expect(r['04'].parts[1]).toMatchObject({ label: 'Your agent', state: 'not_proven', text: np('we blocked a call') });
     expect(r['07']).toMatchObject({ state: 'not_proven', line: np('we stopped your agent and let it go') });
     expect(rowsHeadline(sandboxRows(parsed))).toEqual({ headline: 'Nothing to fix · 3 of 8 checked', sub: '3 not proven · 2 need practice tasks', tone: 'neutral' });
+    // A not-proven wait after a rate limit holds row 03 back too, even with the provider error passed.
+    const wait = raw(state({ parts: [{ id: 'rate_limit_wait', status: 'not_checked', detail: 'Not proven: …' }] }));
+    wait.parts[0].notProven = true;
+    expect(by(checkStateOf(wait)!)['03']).toMatchObject({ state: 'not_proven', parts: [{ label: 'Here', state: 'not_proven' }, { label: 'Practice' }] });
+    expect(rowsSummary(sandboxRows(parsed), { when: 'now', calls: 17 })).toContain('Not proven');
     // Never "Ready for live traffic" while a row is not proven, even with every practice part passed.
     const allPractice: BoundPractice = { runId: 'r1', endedAt: '2026-11-02T10:05:00Z', checks: ['a.result', 'c.timeout', 'c.keeps_failing', 'd.injection', 'b.long'].map((id) => ({ id, label: id, status: 'passed' as const, summary: 'Passed.', fix: null })) };
     const proven = nextSteps(sandboxRows(checkStateOf(raw(state()))!, allPractice), { few: false, sample: false });

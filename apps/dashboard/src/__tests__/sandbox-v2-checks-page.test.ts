@@ -244,6 +244,18 @@ describe('Check your agent', () => {
     expect(text()).toContain('Also called during this check: billing-agent (not checked).');
   });
 
+  it('a not-proven row in the report: an amber ? and the engine\u2019s Not proven line', async () => {
+    const answer = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z', agentId: 'support-bot' }, { long_task: 'passed', pause_stop: 'not_checked' });
+    const ps = answer.checks.find((c) => c.id === 'pause_stop')!;
+    Object.assign(ps, { notProven: true, detail: 'Not proven: we stopped your agent and let it go, then your agent made no new calls, so we can’t tell if it carried on or crashed. Run a longer task to check this.' });
+    checks = answer;
+    await render(checksEl());
+    const r07 = document.querySelector('li[data-row="07"]');
+    expect(r07?.getAttribute('data-state')).toBe('not_proven');
+    expect(r07?.querySelector('[aria-hidden="true"]')?.textContent).toBe('?');
+    expect(r07?.textContent).toContain('we stopped your agent and let it go, then your agent made no new calls');
+  });
+
   it('a decided test block shows its result and detail', async () => {
     checks = { ...checkAnswer({ stage: 'pause' }, { long_task: 'passed' }), parts: [{ id: 'test_block', status: 'passed', detail: 'We blocked a call → it didn’t retry that call.' }] };
     await render(checksEl());
