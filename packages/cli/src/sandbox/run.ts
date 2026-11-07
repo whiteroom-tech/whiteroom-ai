@@ -45,10 +45,16 @@ export function sandboxSetting(provider: RunProvider, url: string): { name: stri
   return { name: "ANTHROPIC_BASE_URL", value: base };
 }
 
+/** Every setting the agent gets: OpenAI's also under the older OPENAI_API_BASE, which some SDKs still read, so none of them bypasses the Sandbox. */
+export function sandboxSettings(provider: RunProvider, url: string): Record<string, string> {
+  const s = sandboxSetting(provider, url);
+  return provider === "openai" ? { [s.name]: s.value, OPENAI_API_BASE: s.value } : { [s.name]: s.value };
+}
+
 /** Other base-URL settings in the environment that point at WhiteRoom (whiteroom.tech; a local proxy on localhost is the user's own). */
-export function whiteRoomBaseUrls(env: NodeJS.ProcessEnv, except: string): string[] {
+export function whiteRoomBaseUrls(env: NodeJS.ProcessEnv, except: readonly string[]): string[] {
   return BASE_URL_VARS.filter((name) => {
-    if (name === except || !env[name]?.trim()) return false;
+    if (except.includes(name) || !env[name]?.trim()) return false;
     try {
       const host = new URL(env[name]!.trim()).hostname;
       return host === "whiteroom.tech" || host.endsWith(".whiteroom.tech");
@@ -94,11 +100,12 @@ export async function run(a: RunArgs, env: NodeJS.ProcessEnv = process.env): Pro
   const checked = sandboxUrlOf(raw);
   if ("problem" in checked) return fail(checked.problem);
   const setting = sandboxSetting(a.provider, checked.url);
-  const clash = whiteRoomBaseUrls(env, setting.name);
+  const settings = sandboxSettings(a.provider, checked.url);
+  const clash = whiteRoomBaseUrls(env, Object.keys(settings));
   if (clash.length) return fail(runCopy.pointsAtWhiteRoom(clash));
 
   // The agent gets the user's environment (without WHITEROOM_*), with its base URL set to the Sandbox.
-  const childEnv = { ...helperEnv(env), [setting.name]: setting.value };
+  const childEnv = { ...helperEnv(env), ...settings };
   say(runCopy.running(setting.name));
   const [cmd, ...args] = a.command;
   return new Promise<number>((resolve) => {

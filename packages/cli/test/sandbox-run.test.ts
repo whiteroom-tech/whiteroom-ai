@@ -17,7 +17,7 @@ const dir = mkdtempSync(join(tmpdir(), "wr-cli-sandbox-run-"));
 /** A stand-in agent: prints the settings it sees and its arguments, then exits with the code it's given. */
 const AGENT = join(dir, "agent.mjs");
 writeFileSync(AGENT, `
-const seen = Object.fromEntries(Object.entries(process.env).filter(([k]) => /_BASE_URL$|_ENDPOINT$|^WHITEROOM_/.test(k)));
+const seen = Object.fromEntries(Object.entries(process.env).filter(([k]) => /_BASE_URL$|_API_BASE$|_ENDPOINT$|^WHITEROOM_/.test(k)));
 process.stdout.write(JSON.stringify({ seen, args: process.argv.slice(2) }) + "\\n");
 process.exit(Number(process.argv[2] ?? 0));
 `);
@@ -52,9 +52,16 @@ describe("sandbox run", () => {
   it("OpenAI gets OPENAI_BASE_URL with /v1, Azure OpenAI gets AZURE_OPENAI_ENDPOINT, as the Sandbox page's .env line", async () => {
     const openai = await cli(["--provider", "openai", "--", process.execPath, AGENT], { WHITEROOM_SANDBOX_URL: `${SANDBOX_URL}/v1` });
     assert.equal(openai.code, 0);
-    assert.deepEqual(seenBy(openai.stdout).seen, { OPENAI_BASE_URL: `${SANDBOX_URL}/v1` });
+    assert.deepEqual(seenBy(openai.stdout).seen, { OPENAI_BASE_URL: `${SANDBOX_URL}/v1`, OPENAI_API_BASE: `${SANDBOX_URL}/v1` });
     const azure = await cli(["--provider", "azure-openai", "--", process.execPath, AGENT], { WHITEROOM_SANDBOX_URL: SANDBOX_URL });
     assert.deepEqual(seenBy(azure.stdout).seen, { AZURE_OPENAI_ENDPOINT: SANDBOX_URL });
+    for (const provider of ["foundry", "bedrock-mantle"]) {
+      const r = await cli(["--provider", provider, "--", process.execPath, AGENT], { WHITEROOM_SANDBOX_URL: SANDBOX_URL });
+      assert.deepEqual(seenBy(r.stdout).seen, { ANTHROPIC_BASE_URL: SANDBOX_URL });
+    }
+    // An older OPENAI_API_BASE of the user's own is replaced too, so no SDK bypasses the Sandbox.
+    const legacy = await cli(["--provider", "openai", "--", process.execPath, AGENT], { WHITEROOM_SANDBOX_URL: SANDBOX_URL, OPENAI_API_BASE: "https://api.openai.com/v1" });
+    assert.equal(seenBy(legacy.stdout).seen.OPENAI_API_BASE, `${SANDBOX_URL}/v1`);
   });
 
   it("refuses, running nothing, when another base URL points at WhiteRoom (production)", async () => {
@@ -62,6 +69,9 @@ describe("sandbox run", () => {
     assert.equal(r.code, 2);
     assert.equal(r.stdout.includes("seen"), false);
     assert.match(r.stderr, /OPENAI_BASE_URL already points at WhiteRoom, so your agent's calls could go to production/);
+    const old = await cli(["--provider", "anthropic", "--", process.execPath, AGENT], { WHITEROOM_SANDBOX_URL: SANDBOX_URL, OPENAI_API_BASE: "https://proxy.whiteroom.tech/v1", AZURE_OPENAI_ENDPOINT: "https://proxy.whiteroom.tech" });
+    assert.equal(old.code, 2);
+    assert.match(old.stderr, /OPENAI_API_BASE and AZURE_OPENAI_ENDPOINT already point at WhiteRoom/);
     // The one it sets is replaced, not refused: the agent's old WhiteRoom URL is overridden.
     const same = await cli(["--provider", "anthropic", "--", process.execPath, AGENT], { WHITEROOM_SANDBOX_URL: SANDBOX_URL, ANTHROPIC_BASE_URL: "https://proxy.whiteroom.tech" });
     assert.equal(same.code, 0);
@@ -77,6 +87,13 @@ describe("sandbox run", () => {
     const code = await new Promise<number | null>((resolve) => child.on("close", resolve));
     assert.equal(code, 5);
     assert.equal(out.match(/SIGTERM/g)?.length, 1);
+  });
+
+  it("an agent ended by a signal exits 128 plus its number, as a shell reports it", async () => {
+    const KILLED = join(dir, "killed.mjs");
+    writeFileSync(KILLED, `process.kill(process.pid, "SIGKILL");`);
+    const r = await cli(["--provider", "anthropic", "--", process.execPath, KILLED], { WHITEROOM_SANDBOX_URL: SANDBOX_URL });
+    assert.equal(r.code, 137);
   });
 
   it("usage and setup problems exit 2 with plain words", async () => {
@@ -108,6 +125,6 @@ describe("sandbox run", () => {
     assert.deepEqual(sandboxSetting("foundry", SANDBOX_URL), { name: "ANTHROPIC_BASE_URL", value: SANDBOX_URL });
     assert.deepEqual(sandboxSetting("bedrock-mantle", `${SANDBOX_URL}/`), { name: "ANTHROPIC_BASE_URL", value: SANDBOX_URL });
     // A local proxy of the user's own isn't WhiteRoom.
-    assert.deepEqual(whiteRoomBaseUrls({ OPENAI_BASE_URL: "http://localhost:4000", AZURE_OPENAI_ENDPOINT: "https://app.whiteroom.tech/x", ANTHROPIC_BASE_URL: "https://proxy.whiteroom.tech" }, "ANTHROPIC_BASE_URL"), ["AZURE_OPENAI_ENDPOINT"]);
+    assert.deepEqual(whiteRoomBaseUrls({ OPENAI_BASE_URL: "http://localhost:4000", AZURE_OPENAI_ENDPOINT: "https://app.whiteroom.tech/x", ANTHROPIC_BASE_URL: "https://proxy.whiteroom.tech" }, ["ANTHROPIC_BASE_URL"]), ["AZURE_OPENAI_ENDPOINT"]);
   });
 });

@@ -17,7 +17,8 @@ Usage:
             which you paste when asked (or set WHITEROOM_SANDBOX_URL).
             Example: whiteroom sandbox run --provider anthropic -- python agent.py
             Providers: ${RUN_PROVIDERS.join(", ")}.
-            Exits with your agent's exit code.
+            Exits with your agent's exit code; 2 for a setup or usage problem,
+            130 if you press Ctrl+C before it starts.
 
   listen    Connects this computer to your Sandbox with the helper code from
             the Sandbox page (Run agent), then runs each task sent from that
