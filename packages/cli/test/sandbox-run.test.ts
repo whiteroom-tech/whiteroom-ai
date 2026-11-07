@@ -68,6 +68,17 @@ describe("sandbox run", () => {
     assert.deepEqual(seenBy(same.stdout).seen, { ANTHROPIC_BASE_URL: SANDBOX_URL });
   });
 
+  it("a signal sent to the CLI alone reaches the agent once", async () => {
+    const TRAP = join(dir, "trap.mjs");
+    writeFileSync(TRAP, `let n = 0; process.on("SIGTERM", () => { n += 1; process.stdout.write("SIGTERM " + n + "\\n"); setTimeout(() => process.exit(5), 100); }); process.stdout.write("ready\\n"); setInterval(() => {}, 1000);`);
+    const child = spawn(process.execPath, ["--import", "tsx", "src/index.ts", "sandbox", "run", "--provider", "anthropic", "--", process.execPath, TRAP], { cwd: PKG, env: testEnv({ WHITEROOM_SANDBOX_URL: SANDBOX_URL }), stdio: ["pipe", "pipe", "pipe"] });
+    let out = "";
+    child.stdout.on("data", (d) => { out += d; if (out.includes("ready") && !child.killed) child.kill("SIGTERM"); });
+    const code = await new Promise<number | null>((resolve) => child.on("close", resolve));
+    assert.equal(code, 5);
+    assert.equal(out.match(/SIGTERM/g)?.length, 1);
+  });
+
   it("usage and setup problems exit 2 with plain words", async () => {
     const noDash = await cli(["--provider", "anthropic", process.execPath, AGENT]);
     assert.equal(noDash.code, 2);
@@ -88,6 +99,9 @@ describe("sandbox run", () => {
   it("units: the Sandbox URL is checked, and only whiteroom.tech base URLs count as WhiteRoom", () => {
     assert.deepEqual(sandboxUrlOf(` ${SANDBOX_URL}/ `), { url: SANDBOX_URL });
     assert.deepEqual(sandboxUrlOf(`${SANDBOX_URL}/openai`), { url: SANDBOX_URL });
+    // The Sandbox page's .env line, pasted whole.
+    assert.deepEqual(sandboxUrlOf(`ANTHROPIC_BASE_URL=${SANDBOX_URL}`), { url: SANDBOX_URL });
+    assert.deepEqual(sandboxUrlOf(`export OPENAI_BASE_URL="${SANDBOX_URL}/v1"`), { url: SANDBOX_URL });
     assert.ok("problem" in sandboxUrlOf("https://proxy.whiteroom.tech/sk-wr-short"));
     assert.ok("problem" in sandboxUrlOf(`https://evil.example/${SANDBOX_KEY}`));
     assert.deepEqual(sandboxUrlOf(`http://localhost:8787/${SANDBOX_KEY}`), { url: `http://localhost:8787/${SANDBOX_KEY}` });

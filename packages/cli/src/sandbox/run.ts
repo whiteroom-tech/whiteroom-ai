@@ -22,6 +22,9 @@ export type RunProvider = typeof RUN_PROVIDERS[number];
 /** Base-URL settings agents read: one pointing at WhiteRoom other than the one this sets could send calls to production. */
 const BASE_URL_VARS = ["ANTHROPIC_BASE_URL", "OPENAI_BASE_URL", "OPENAI_API_BASE", "AZURE_OPENAI_ENDPOINT"];
 
+/** Without a shell, Windows can't start .cmd commands such as npx: WSL runs them as on macOS and Linux. */
+const WINDOWS = process.platform === "win32" ? " On Windows, run this in WSL." : "";
+
 export const runCopy = {
   needUrl: "Paste your Sandbox URL from the Sandbox page (it won't show): ",
   badUrl: "That isn't a Sandbox URL. Copy it again from the Sandbox page (it ends with /sk-wr-…). Nothing was run.",
@@ -30,8 +33,8 @@ export const runCopy = {
   pointsAtWhiteRoom: (vars: string[]) => `${vars.join(" and ")} already ${vars.length === 1 ? "points" : "point"} at WhiteRoom, so your agent's calls could go to production instead of your Sandbox. Unset ${vars.length === 1 ? "it" : "them"}, then run this again. Nothing was run.`,
   running: (name: string) => `Running your agent with ${name} set to your Sandbox URL. The checks start on its first call; results are on the Sandbox page.`,
   cancelled: "Stopped. Nothing was run.",
-  notFound: (cmd: string) => `Couldn't start \`${cmd}\`: no such command. Check the command, then run this again.`,
-  couldntStart: (cmd: string, why: string) => `Couldn't start \`${cmd}\`: ${why}.`,
+  notFound: (cmd: string) => `Couldn't start \`${cmd}\`: no such command. Check the command, then run this again.${WINDOWS}`,
+  couldntStart: (cmd: string, why: string) => `Couldn't start \`${cmd}\`: ${why}.${WINDOWS}`,
 };
 
 /** The setting that points an agent at the Sandbox, as the Sandbox page's .env line has it (dashboard issuedEnvHint). */
@@ -55,9 +58,14 @@ export function whiteRoomBaseUrls(env: NodeJS.ProcessEnv, except: string): strin
   });
 }
 
-/** The Sandbox URL, checked: null when it isn't one, or isn't on a WhiteRoom address. */
+/**
+ * The Sandbox URL, checked: a problem when it isn't one, or isn't on a
+ * WhiteRoom address. The Sandbox page's .env line works too
+ * (ANTHROPIC_BASE_URL=…, with or without export or quotes).
+ */
 export function sandboxUrlOf(raw: string): { url: string } | { problem: string } {
-  const m = raw.trim().match(SANDBOX_URL);
+  const value = raw.trim().replace(/^export\s+/, "").replace(/^[A-Z][A-Z0-9_]*=/, "").replace(/^(["'])(.*)\1$/, "$2");
+  const m = value.trim().match(SANDBOX_URL);
   if (!m) return { problem: runCopy.badUrl };
   if (targetOrigin(m[1], {}) === null) return { problem: runCopy.notWhiteRoom };
   return { url: `${new URL(m[1]).origin}/${m[2]}` };
@@ -94,18 +102,26 @@ export async function run(a: RunArgs, env: NodeJS.ProcessEnv = process.env): Pro
   say(runCopy.running(setting.name));
   const [cmd, ...args] = a.command;
   return new Promise<number>((resolve) => {
-    const child = spawn(cmd, args, { stdio: "inherit", env: childEnv });
-    // Ctrl+C reaches the agent from the terminal; a signal sent to this process alone is passed on.
-    const forward = (sig: NodeJS.Signals) => () => { child.kill(sig); };
-    const onInt = forward("SIGINT");
-    const onTerm = forward("SIGTERM");
-    process.on("SIGINT", onInt);
-    process.on("SIGTERM", onTerm);
+    // In a terminal, Ctrl+C already reaches the agent (it's in the same process group): this process
+    // only waits for it, so the agent never gets a second one. Other signals sent to this process are passed on.
+    const handlers = new Map<NodeJS.Signals, () => void>();
     const done = (code: number) => {
-      process.off("SIGINT", onInt);
-      process.off("SIGTERM", onTerm);
+      for (const [sig, h] of handlers) process.off(sig, h);
       resolve(code);
     };
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(cmd, args, { stdio: "inherit", env: childEnv });
+    } catch (err) {
+      // Windows refuses some commands (a .cmd without a shell) before starting them.
+      return done(fail(runCopy.couldntStart(cmd, (err as Error).message)));
+    }
+    const terminal = process.stdin.isTTY;
+    for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as NodeJS.Signals[]) {
+      const h = () => { if (!(sig === "SIGINT" && terminal)) child.kill(sig); };
+      handlers.set(sig, h);
+      process.on(sig, h);
+    }
     child.on("error", (err: NodeJS.ErrnoException) => done(fail(err.code === "ENOENT" ? runCopy.notFound(cmd) : runCopy.couldntStart(cmd, err.message))));
     // The agent's own exit code; killed by a signal, 128 + its number, as a shell reports it.
     child.on("exit", (code, signal) => done(code ?? 128 + (signal ? constants.signals[signal] ?? 0 : 0)));
