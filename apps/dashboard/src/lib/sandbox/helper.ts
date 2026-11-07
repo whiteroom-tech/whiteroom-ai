@@ -27,6 +27,9 @@ export function isSandboxHelperAction(v: unknown): v is SandboxHelperAction {
 
 export const PROMPT_MAX = 4000;
 
+/** Step 2's one-command option: runs the agent once against the Sandbox; the CLI asks for the Sandbox URL, so it's never in the command. */
+export const runCommand = (provider: string) => `npx @whiteroom-ai/cli@${CLI_VERSION} sandbox run --provider ${provider} -- <your agent command>`;
+
 /** The command the page shows: the agent command stays a placeholder the user fills in. */
 export const LISTEN_COMMAND = `npx @whiteroom-ai/cli@${CLI_VERSION} sandbox listen --adapter "<your agent command>"`;
 

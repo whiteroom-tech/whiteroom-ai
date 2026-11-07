@@ -63,6 +63,21 @@ The CLI starts the adapter once per practice task and talks to it in JSON lines:
 - Write logs to stderr. Lines on stdout that aren't JSON are shown in your terminal and never sent to WhiteRoom.
 - Limits: lines up to 1 MiB, tool calls up to 64 KiB, 200 tool calls per practice task. The adapter is stopped (its whole process group) at the task's deadline.
 
+## Running your agent against the Sandbox once
+
+Instead of setting the Sandbox URL in your agent's `.env`, run it with one command:
+
+```sh
+whiteroom sandbox run --provider anthropic -- python agent.py
+```
+
+- It asks for your Sandbox URL (it won't show; or set `WHITEROOM_SANDBOX_URL`), sets the base URL your SDK reads (`ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL` ending in `/v1`, or `AZURE_OPENAI_ENDPOINT`) and runs your command once, as typed, without a shell. The Sandbox page's checks start on its first call.
+- Providers: `anthropic`, `openai`, `azure-openai`, `foundry`, `bedrock-mantle`.
+- If another base URL in your environment points at WhiteRoom, it stops without running anything, so calls can't go to production by mistake.
+- It exits with your agent's exit code (`128` plus the signal's number if a signal ended it), `2` for a setup or usage problem, or `130` if you press Ctrl+C at the Sandbox URL prompt.
+- For `openai` it also sets `OPENAI_API_BASE`, which older SDKs read.
+- Ctrl+C reaches your agent once, from the terminal. To stop a run from a script, send `SIGTERM` to the CLI; it passes that on (a `SIGINT` sent to the CLI alone isn't).
+
 ## Running your agent from the Sandbox page
 
 The Sandbox page's **Run agent** button sends a task to a helper on your computer, which runs your agent through your adapter. Point your agent at the Sandbox first (the Sandbox URL from the Sandbox page), then start the helper with the helper code that Run agent shows:

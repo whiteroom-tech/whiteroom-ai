@@ -36,4 +36,5 @@ invite-only beta: invited owners install a packed CLI build.
 - [x] Promote that dashboard to prod after checking it on staging (b72944c, prod Oct 14 2026).
 - Ongoing: bump `CLI_VERSION` together with every later CLI release.
 - 2.0.1 (Oct 29 2026): `sandbox listen` for the Sandbox Run agent button, the pasted-twice key check, and the split-paste fix. `CLI_VERSION` bumped with it (PR #349). Publish as above, then promote the dashboard only once `npm view` shows `2.0.1`.
+- 2.0.2 (Nov 7 2026): `sandbox run` (run the agent once against the Sandbox; Sandbox step 2's one-command option). `CLI_VERSION` bumped with it (PR #386). Publish as above (`--auth-type=web` from a real terminal), then promote the dashboard only once `npm view` shows `2.0.2`.
 - [x] `WR_READINESS` on in production (owner sign-off, Oct 13 2026).

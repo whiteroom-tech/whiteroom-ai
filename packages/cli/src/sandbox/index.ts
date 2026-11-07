@@ -1,14 +1,24 @@
-// `whiteroom sandbox`: the helper behind the Sandbox page's Run agent button.
+// `whiteroom sandbox`: run an agent against the Sandbox once (run), or the
+// helper behind the Sandbox page's Run agent button (listen).
 // Usage problems exit 2; so does anything unexpected.
 
 import { parseArgs } from "node:util";
 import { listen } from "./listen.js";
+import { run, RUN_PROVIDERS, type RunProvider } from "./run.js";
 import { warn } from "../practice/text.js";
 
 export const SANDBOX_USAGE = `whiteroom sandbox — run your agent from the Sandbox page
 
 Usage:
+  whiteroom sandbox run --provider <provider> -- <your agent command>
   whiteroom sandbox listen --adapter "<command>" [--code-stdin] [--url <https url>]
+
+  run       Runs your agent once with its base URL set to your Sandbox URL,
+            which you paste when asked (or set WHITEROOM_SANDBOX_URL).
+            Example: whiteroom sandbox run --provider anthropic -- python agent.py
+            Providers: ${RUN_PROVIDERS.join(", ")}.
+            Exits with your agent's exit code; 2 for a setup or usage problem,
+            130 if you press Ctrl+C before it starts.
 
   listen    Connects this computer to your Sandbox with the helper code from
             the Sandbox page (Run agent), then runs each task sent from that
@@ -22,7 +32,7 @@ Options:
   --code-stdin           Read the helper code from stdin instead of asking for it
   --url <https url>      Only for testing WhiteRoom itself (a whiteroom.tech address or localhost)
 
-Exit codes: 0 stopped with Ctrl+C, 2 a setup or usage problem, 3 the session ended (get a new code).
+Exit codes (listen): 0 stopped with Ctrl+C, 2 a setup or usage problem, 3 the session ended (get a new code).
 `;
 
 function usage(problem?: string): number {
@@ -34,6 +44,7 @@ function usage(problem?: string): number {
 export async function sandbox(argv: string[]): Promise<number> {
   const [sub, ...rest] = argv;
   if (!sub || sub === "--help" || sub === "-h" || sub === "help") return usage();
+  if (sub === "run") return runCommand(rest);
   if (sub !== "listen") return usage(`Unknown sandbox command: ${sub}`);
   let values: { adapter?: string; "code-stdin"?: boolean; url?: string; help?: boolean };
   try {
@@ -52,6 +63,29 @@ export async function sandbox(argv: string[]): Promise<number> {
     return await listen({ adapter: values.adapter, codeStdin: !!values["code-stdin"], url: values.url });
   } catch (err) {
     // Any adapter still running is killed as the process exits (adapter.ts).
+    warn(`Something went wrong in the CLI: ${(err as Error)?.message ?? String(err)}`);
+    return 2;
+  }
+}
+
+/** `sandbox run`: its options before `--`, the agent's command after, as typed. */
+async function runCommand(argv: string[]): Promise<number> {
+  const at = argv.indexOf("--");
+  const own = at < 0 ? argv : argv.slice(0, at);
+  const command = at < 0 ? [] : argv.slice(at + 1);
+  let values: { provider?: string; help?: boolean };
+  try {
+    ({ values } = parseArgs({ args: own, strict: true, allowPositionals: false, options: { provider: { type: "string" }, help: { type: "boolean", short: "h" } } }));
+  } catch (err) {
+    return usage(at < 0 ? "Put -- before your agent's command, e.g. whiteroom sandbox run --provider anthropic -- python agent.py" : (err as Error).message);
+  }
+  if (values.help) return usage();
+  const provider = values.provider as RunProvider | undefined;
+  if (!provider || !(RUN_PROVIDERS as readonly string[]).includes(provider)) return usage(`--provider needs one of: ${RUN_PROVIDERS.join(", ")}.`);
+  if (!command.length || !command[0].trim()) return usage("Put your agent's command after --, e.g. -- python agent.py");
+  try {
+    return await run({ provider, command });
+  } catch (err) {
     warn(`Something went wrong in the CLI: ${(err as Error)?.message ?? String(err)}`);
     return 2;
   }
