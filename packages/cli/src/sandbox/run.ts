@@ -84,14 +84,18 @@ export interface RunArgs {
 
 const fail = (line: string) => (warn(line), 2);
 
-export async function run(a: RunArgs, env: NodeJS.ProcessEnv = process.env): Promise<number> {
+/** How the Sandbox URL is asked for: a hidden prompt on the terminal (tests pass their own). */
+export interface Asker { terminal: boolean; ask: (question: string) => Promise<string> }
+const TERMINAL: Asker = { get terminal() { return !!process.stdin.isTTY; }, ask: (q) => hiddenPrompt(q) };
+
+export async function run(a: RunArgs, env: NodeJS.ProcessEnv = process.env, asker: Asker = TERMINAL): Promise<number> {
   const old = nodeTooOld();
   if (old) return fail(old);
   let raw = env.WHITEROOM_SANDBOX_URL ?? "";
   if (!raw) {
-    if (!process.stdin.isTTY) return fail(runCopy.noTerminal);
+    if (!asker.terminal) return fail(runCopy.noTerminal);
     try {
-      raw = await hiddenPrompt(runCopy.needUrl);
+      raw = await asker.ask(runCopy.needUrl);
     } catch (err) {
       if (err instanceof Interrupted) return warn(runCopy.cancelled), 130;
       throw err;
@@ -110,8 +114,8 @@ export async function run(a: RunArgs, env: NodeJS.ProcessEnv = process.env): Pro
   const [cmd, ...args] = a.command;
   return new Promise<number>((resolve) => {
     // Ctrl+C already reaches the agent (it's in the same process group, whether or not stdin is a
-    // terminal): this process only waits for it, so the agent never gets a second one. SIGTERM and
-    // SIGHUP sent to this process are passed on.
+    // terminal): this process only waits for it, so the agent never gets a second one. A SIGINT sent
+    // to this process alone isn't passed on either (it can't be told apart); SIGTERM and SIGHUP are.
     const handlers = new Map<NodeJS.Signals, () => void>();
     const done = (code: number) => {
       for (const [sig, h] of handlers) process.off(sig, h);

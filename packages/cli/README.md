@@ -76,6 +76,7 @@ whiteroom sandbox run --provider anthropic -- python agent.py
 - If another base URL in your environment points at WhiteRoom, it stops without running anything, so calls can't go to production by mistake.
 - It exits with your agent's exit code (`128` plus the signal's number if a signal ended it), `2` for a setup or usage problem, or `130` if you press Ctrl+C at the Sandbox URL prompt.
 - For `openai` it also sets `OPENAI_API_BASE`, which older SDKs read.
+- Ctrl+C reaches your agent once, from the terminal. To stop a run from a script, send `SIGTERM` to the CLI; it passes that on (a `SIGINT` sent to the CLI alone isn't).
 
 ## Running your agent from the Sandbox page
 

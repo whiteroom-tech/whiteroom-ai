@@ -7,7 +7,8 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { sandboxSetting, sandboxUrlOf, whiteRoomBaseUrls } from "../src/sandbox/run.js";
+import { run, sandboxSetting, sandboxUrlOf, whiteRoomBaseUrls } from "../src/sandbox/run.js";
+import { Interrupted } from "../src/practice/preflight.js";
 import { PKG, testEnv } from "./stub.js";
 
 const SANDBOX_KEY = `sk-wr-${"a".repeat(40)}`;
@@ -87,6 +88,35 @@ describe("sandbox run", () => {
     const code = await new Promise<number | null>((resolve) => child.on("close", resolve));
     assert.equal(code, 5);
     assert.equal(out.match(/SIGTERM/g)?.length, 1);
+  });
+
+  it("in a terminal it asks for the Sandbox URL (the .env line works too); Ctrl+C at the prompt runs nothing and exits 130", async () => {
+    const asked: string[] = [];
+    const code = await run({ provider: "anthropic", command: [process.execPath, "-e", `process.exit(process.env.ANTHROPIC_BASE_URL === ${JSON.stringify(SANDBOX_URL)} ? 7 : 1)`] }, testEnv(),
+      { terminal: true, ask: async (q) => (asked.push(q), `ANTHROPIC_BASE_URL=${SANDBOX_URL}`) });
+    assert.equal(code, 7);
+    assert.deepEqual(asked, ["Paste your Sandbox URL from the Sandbox page (it won't show): "]);
+    const cancelled = await run({ provider: "anthropic", command: ["no-such-agent-command-xyz"] }, testEnv(), { terminal: true, ask: async () => { throw new Interrupted(); } });
+    assert.equal(cancelled, 130);
+  });
+
+  it("a SIGINT sent to the CLI alone isn't passed on (Ctrl+C reaches the agent from the terminal); SIGTERM is", async () => {
+    const TRAP = join(dir, "trap-int.mjs");
+    writeFileSync(TRAP, `process.on("SIGINT", () => process.stdout.write("SIGINT\\n")); process.on("SIGTERM", () => { process.stdout.write("SIGTERM\\n"); process.exit(6); }); process.stdout.write("ready\\n"); setInterval(() => {}, 1000);`);
+    const child = spawn(process.execPath, ["--import", "tsx", "src/index.ts", "sandbox", "run", "--provider", "anthropic", "--", process.execPath, TRAP], { cwd: PKG, env: testEnv({ WHITEROOM_SANDBOX_URL: SANDBOX_URL }), stdio: ["pipe", "pipe", "pipe"] });
+    let out = "";
+    child.stdout.on("data", (d) => {
+      out += d;
+      if (out.includes("ready") && !out.includes("sent")) {
+        out += "sent";
+        child.kill("SIGINT");
+        setTimeout(() => child.kill("SIGTERM"), 300);
+      }
+    });
+    const code = await new Promise<number | null>((resolve) => child.on("close", resolve));
+    assert.equal(code, 6);
+    assert.equal(out.includes("SIGINT"), false);
+    assert.ok(out.includes("SIGTERM"));
   });
 
   it("an agent ended by a signal exits 128 plus its number, as a shell reports it", async () => {
