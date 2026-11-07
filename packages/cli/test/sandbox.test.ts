@@ -1,0 +1,477 @@
+// `whiteroom sandbox listen` end to end: the CLI (from source) against a stub
+// of the engine's /api/sandbox-helper routes and a fake model on the Sandbox
+// key's URL. Placeholders only (public repo).
+
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { createServer, type IncomingMessage } from "node:http";
+import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { after, describe, it } from "node:test";
+import { findSandboxUrl, helperEnv, helperHost, taskResult } from "../src/sandbox/listen.js";
+import { alive, KEY, PKG, testEnv, waitFor } from "./stub.js";
+
+const HELPER_CODE = `wrhc_${"H".repeat(43)}`;
+const HELPER_SESSION = `wrhs_${"S".repeat(43)}`;
+/** The Sandbox key in the agent's base URL (placeholder). */
+const SANDBOX_KEY = `sk-wr-${"a".repeat(40)}`;
+
+const dir = mkdtempSync(join(tmpdir(), "wr-cli-sandbox-"));
+const script = (name: string, code: string) => {
+  const p = join(dir, name);
+  writeFileSync(p, code);
+  return p;
+};
+
+/** An adapter that records the task line and its environment, makes one model call to base_url, and answers with the model's text. */
+const RECORD = join(dir, "seen.jsonl");
+const ADAPTER = script("adapter.mjs", `
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+const rl = createInterface({ input: process.stdin });
+for await (const line of rl) {
+  const msg = JSON.parse(line);
+  appendFileSync(${JSON.stringify(RECORD)}, JSON.stringify({ msg, env: Object.keys(process.env).filter((k) => /^WHITEROOM_|_API_KEY$|_BASE_URL$/.test(k)) }) + "\\n");
+  const res = await fetch(msg.base_url + "/v1/messages", { method: "POST", headers: { "content-type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY }, body: JSON.stringify({ model: "m", max_tokens: 10, messages: [{ role: "user", content: msg.task }] }) });
+  const body = await res.json();
+  console.error("adapter log: key " + process.env.ANTHROPIC_API_KEY);
+  process.stdout.write(JSON.stringify({ type: "final", output: body.content?.[0]?.text ?? "HTTP " + res.status }) + "\\n");
+  break;
+}
+`);
+/** Answers with the secrets it can see: the provider key and its Sandbox URL (with the Sandbox key). */
+const ECHO = script("echo.mjs", `process.stdin.once("data", () => process.stdout.write(JSON.stringify({ type: "final", output: "key " + process.env.ANTHROPIC_API_KEY + " url " + process.env.ANTHROPIC_BASE_URL }) + "\\n"));`);
+const CRASH = script("crash.mjs", `process.stdin.once("data", () => { console.error("boom"); process.exit(4); });`);
+/** Records its pid, then answers after 400 ms (SLOW) or never (HANG). */
+const PID = join(dir, "pid");
+const SLOW = script("slow.mjs", `
+import { writeFileSync } from "node:fs";
+writeFileSync(${JSON.stringify(PID)}, String(process.pid));
+process.stdin.once("data", () => setTimeout(() => process.stdout.write(JSON.stringify({ type: "final", output: "slow done" }) + "\\n"), 400));
+`);
+const HANG = script("hang.mjs", `
+import { writeFileSync } from "node:fs";
+writeFileSync(${JSON.stringify(PID)}, String(process.pid));
+process.stdin.resume();
+setInterval(() => {}, 1000);
+`);
+/** The adapter (pid from PID) is gone once the CLI has exited. */
+const adapterGone = async () => {
+  const pid = Number(readFileSync(PID, "utf8"));
+  assert.ok(pid > 0);
+  await waitFor(() => !alive(pid), 5_000);
+};
+/** Short heartbeats and task deadline (internal test settings). */
+const fast = (st: Stub, extra: Record<string, string> = {}) => testEnv({ ANTHROPIC_API_KEY: KEY, ANTHROPIC_BASE_URL: `${st.url}/${SANDBOX_KEY}`, WHITEROOM_TEST_HEARTBEAT_MS: "50", ...extra });
+
+interface Stub {
+  url: string;
+  claims: any[];
+  results: any[];
+  modelCalls: Array<{ path: string; key: string | undefined }>;
+  disconnects: number;
+  heartbeats: number;
+  resultFails: number;
+  close: () => Promise<void>;
+}
+
+/**
+ * The engine's helper routes: claim checks the code and key prefix; `next`
+ * hands out `tasks` in order (each once, unless `redeliver`), then answers idle
+ * or (`endAfter`) the session's end, or (`next`) that reply. `result` scripts
+ * the result route's replies by call (null: the usual); a 3xx redirects.
+ */
+async function startStub(o: { tasks?: string[]; endAfter?: string; provider?: string; claim?: [number, unknown]; proxyUrl?: string; redeliver?: boolean; heartbeat?: [number, unknown]; failResults?: number; next?: [number, unknown]; result?: (call: number) => [number, unknown] | null } = {}): Promise<Stub> {
+  const queue = [...(o.tasks ?? [])];
+  const s = { claims: [] as any[], results: [] as any[], modelCalls: [] as Stub["modelCalls"], disconnects: 0, heartbeats: 0, resultFails: 0 };
+  let origin = "";
+  let n = 0;
+  let last: any = null;
+  let resultCalls = 0;
+  const reply = (req: IncomingMessage, path: string, body: any): [number, unknown] => {
+    if (path === "/api/sandbox-helper/claim") {
+      s.claims.push(body);
+      if (o.claim) return o.claim;
+      if (body.code !== HELPER_CODE) return [410, { reason: "code_invalid" }];
+      if (body.keyPrefix !== SANDBOX_KEY.slice(0, 22)) return [401, { reason: "key_mismatch", triesLeft: 3 }];
+      return [200, { session: HELPER_SESSION, sandboxFleetId: "sandbox-placeholder", proxyUrl: o.proxyUrl ?? origin, provider: o.provider ?? "anthropic" }];
+    }
+    if (path.startsWith("/api/sandbox-helper/")) {
+      if (req.headers.authorization !== `Bearer ${HELPER_SESSION}`) return [401, { reason: "session_lost" }];
+      if (path.endsWith("/next")) {
+        if (o.redeliver && last && s.results.length + s.resultFails === 1 && n === 1) return n++, [200, { task: last }];
+        const prompt = queue.shift();
+        if (prompt !== undefined) return (last = { taskId: `ht-${++n}`, kind: "prompt", prompt }), [200, { task: last }];
+        if (o.endAfter) return [401, { reason: o.endAfter }];
+        if (o.next) return o.next;
+        return [200, { idle: true }];
+      }
+      if (path.endsWith("/result")) {
+        const scripted = o.result?.(resultCalls++);
+        if (scripted) return s.resultFails++, scripted;
+        if (s.resultFails < (o.failResults ?? 0)) return s.resultFails++, [400, { error: "Bad request." }];
+        return s.results.push(body), [200, { recorded: true, duplicate: false }];
+      }
+      if (path.endsWith("/heartbeat")) return s.heartbeats++, o.heartbeat ?? [200, { ok: true }];
+      if (path.endsWith("/disconnect")) return s.disconnects++, [200, { connected: false }];
+    }
+    if (path === `/${SANDBOX_KEY}/v1/messages`) {
+      s.modelCalls.push({ path, key: req.headers["x-api-key"] as string | undefined });
+      return [200, { content: [{ type: "text", text: `Sandbox says: ${body.messages[0].content}` }] }];
+    }
+    return [404, { error: "Not found." }];
+  };
+  const server = createServer((req, res) => {
+    let raw = "";
+    req.setEncoding("utf8");
+    req.on("data", (c) => (raw += c));
+    req.on("end", () => {
+      const path = (req.url ?? "/").split("?")[0];
+      let body: any = null;
+      try { body = raw ? JSON.parse(raw) : null; } catch { /* a bad body */ }
+      const [status, json] = reply(req, path, body);
+      // An idle long-poll answers after a short wait, as the engine's would after 25 s.
+      const wait = path.endsWith("/next") && (json as any)?.idle ? 100 : 0;
+      setTimeout(() => {
+        res.writeHead(status, { "content-type": "application/json", ...(status >= 300 && status < 400 && { location: "https://elsewhere.example/" }) });
+        res.end(JSON.stringify(json));
+      }, wait);
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  return Object.assign(s, { url: origin, close: () => new Promise<void>((r) => { server.closeAllConnections(); server.close(() => r()); }) });
+}
+
+const stubs: Stub[] = [];
+const stub = async (...a: Parameters<typeof startStub>) => {
+  const st = await startStub(...a);
+  stubs.push(st);
+  return st;
+};
+after(() => Promise.all(stubs.map((x) => x.close())));
+
+/** Runs `whiteroom sandbox listen` from source with the code on stdin; `during` gets the child once it has started. */
+function listen(st: Stub | null, o: { adapter?: string; env?: NodeJS.ProcessEnv; stdin?: string; extra?: string[]; during?: (pid: number, out: () => string) => void } = {}) {
+  const args = ["sandbox", "listen", "--code-stdin", ...(st ? ["--url", st.url] : []), "--adapter", o.adapter ?? `node ${ADAPTER}`, ...(o.extra ?? [])];
+  const env = o.env ?? testEnv({ ANTHROPIC_API_KEY: KEY, ANTHROPIC_BASE_URL: `${st?.url ?? "http://127.0.0.1:1"}/${SANDBOX_KEY}` });
+  const child = spawn(process.execPath, ["--import", "tsx", "src/index.ts", ...args], { cwd: PKG, env });
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (c) => (stdout += c));
+  child.stderr.on("data", (c) => (stderr += c));
+  child.stdin.end(o.stdin ?? `${HELPER_CODE}\n`);
+  o.during?.(child.pid!, () => stdout + stderr);
+  return new Promise<{ code: number | null; stdout: string; stderr: string }>((r) => child.on("close", (code) => r({ code, stdout, stderr })));
+}
+
+const noSecrets = (out: string) => {
+  for (const secret of [KEY, HELPER_CODE, HELPER_SESSION, SANDBOX_KEY]) assert.ok(!out.includes(secret), `printed a secret: ${secret.slice(0, 8)}…`);
+};
+
+describe("sandbox listen", () => {
+  it("claims, runs each task through the adapter against the Sandbox URL, posts the result, and exits 3 with plain words when the session ends", async () => {
+    writeFileSync(RECORD, "");
+    const st = await stub({ tasks: ["Summarize the inbox."], endAfter: "session_lost" });
+    const r = await listen(st, { env: testEnv({ ANTHROPIC_API_KEY: KEY, ANTHROPIC_BASE_URL: `${st.url}/${SANDBOX_KEY}`, WHITEROOM_SANDBOX_NOTE: "not for the adapter" }) });
+    assert.equal(r.code, 3, r.stderr);
+    assert.match(r.stdout, /Helper connected · waiting for tasks from the Sandbox page \(Ctrl\+C to stop\)/);
+    assert.match(r.stdout, /Task 1: Summarize the inbox\./);
+    assert.match(r.stdout, /Task 1 finished\. The result is on the Sandbox page\./);
+    assert.match(r.stderr, /session has ended .*click Run agent to get a new code/);
+    // The claim sends the code, the key's prefix (never the key) and this computer's name.
+    assert.deepEqual(st.claims[0], { code: HELPER_CODE, keyPrefix: SANDBOX_KEY.slice(0, 22), host: helperHost() });
+    // The agent's call went to the Sandbox URL with the user's own key.
+    assert.deepEqual(st.modelCalls, [{ path: `/${SANDBOX_KEY}/v1/messages`, key: KEY }]);
+    assert.deepEqual(st.results, [{ taskId: "ht-1", ok: true, summary: "Sandbox says: Summarize the inbox." }]);
+    const seen = JSON.parse(readFileSync(RECORD, "utf8").trim());
+    assert.deepEqual(seen.msg, { type: "task", task: "Summarize the inbox.", tools: [], headers: {}, model: null, base_url: `${st.url}/${SANDBOX_KEY}` });
+    // No WhiteRoom setting reaches the adapter; the agent's own settings do.
+    assert.deepEqual(seen.env.sort(), ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"]);
+    // The adapter's log printed the key: the CLI hides it.
+    assert.match(r.stderr, /adapter log: key \[hidden\]/);
+    noSecrets(r.stdout + r.stderr);
+  });
+
+  it("OpenAI: base_url ends in /v1", async () => {
+    writeFileSync(RECORD, "");
+    const st = await stub({ tasks: ["hi"], endAfter: "disconnected", provider: "openai" });
+    const r = await listen(st);
+    assert.equal(r.code, 3, r.stderr);
+    assert.equal(JSON.parse(readFileSync(RECORD, "utf8").trim()).msg.base_url, `${st.url}/${SANDBOX_KEY}/v1`);
+    assert.match(r.stderr, /disconnected from the Sandbox page/);
+  });
+
+  it("Azure OpenAI: base_url ends in /openai/v1", async () => {
+    writeFileSync(RECORD, "");
+    const st = await stub({ tasks: ["hi"], endAfter: "disconnected", provider: "azure-openai" });
+    const r = await listen(st, { env: testEnv({ AZURE_OPENAI_API_KEY: KEY, OPENAI_BASE_URL: `${st.url}/${SANDBOX_KEY}/openai/v1` }) });
+    assert.equal(r.code, 3, r.stderr);
+    assert.equal(JSON.parse(readFileSync(RECORD, "utf8").trim()).msg.base_url, `${st.url}/${SANDBOX_KEY}/openai/v1`);
+  });
+
+  it("WhiteRoom unreachable at claim: a setup problem (2), the code still unused", async () => {
+    const r = await listen(null, { extra: ["--url", "http://127.0.0.1:9"], env: testEnv({ ANTHROPIC_API_KEY: KEY, ANTHROPIC_BASE_URL: `http://127.0.0.1:9/${SANDBOX_KEY}` }) });
+    assert.equal(r.code, 2, r.stderr);
+    noSecrets(r.stdout + r.stderr);
+  });
+
+  it("a crashed adapter is reported as not ok, and the helper keeps listening", async () => {
+    const st = await stub({ tasks: ["a", "b"], endAfter: "replaced" });
+    const r = await listen(st, { adapter: `node ${CRASH}` });
+    assert.equal(r.code, 3, r.stderr);
+    assert.equal(st.results.length, 2);
+    assert.equal(st.results[0].ok, false);
+    assert.match(st.results[0].summary, /Your adapter exited \(exit code 4\) before finishing\. Last output: boom/);
+    assert.match(r.stdout, /Task 2 didn't finish: Your adapter exited/);
+    assert.match(r.stderr, /Another helper connected to this Sandbox/);
+  });
+
+  it("a task handed out again is not run twice: its result is sent again", async () => {
+    writeFileSync(RECORD, "");
+    const st = await stub({ tasks: ["once"], endAfter: "session_lost", redeliver: true });
+    const r = await listen(st);
+    assert.equal(r.code, 3, r.stderr);
+    assert.equal(st.results.length, 2);
+    assert.deepEqual(st.results[0], st.results[1]);
+    assert.equal(st.modelCalls.length, 1);
+  });
+
+  it("Ctrl+C disconnects and exits 0", async () => {
+    const st = await stub();
+    const r = await listen(st, {
+      during: (pid, out) => void waitFor(() => /Helper connected/.test(out())).then(() => process.kill(pid, "SIGINT")),
+    });
+    assert.equal(r.code, 0, r.stderr);
+    assert.equal(st.disconnects, 1);
+    assert.match(r.stdout, /Helper stopped\. The Sandbox page shows it disconnected\./);
+  });
+
+  for (const sig of ["SIGTERM", "SIGHUP"] as const) {
+    it(`${sig} disconnects and exits 0, like Ctrl+C`, async () => {
+      const st = await stub();
+      const r = await listen(st, {
+        during: (pid, out) => void waitFor(() => /Helper connected/.test(out())).then(() => process.kill(pid, sig)),
+      });
+      assert.equal(r.code, 0, r.stderr);
+      assert.equal(st.disconnects, 1);
+      assert.match(r.stdout, /Helper stopped\./);
+    });
+  }
+
+  it("a result post refused (401) ends listening with plain words (3), nothing announced", async () => {
+    const st = await stub({ tasks: ["once"], result: () => [401, { reason: "replaced" }] });
+    const r = await listen(st);
+    assert.equal(r.code, 3, r.stderr);
+    assert.match(r.stderr, /Another helper connected to this Sandbox, so this one stopped\./);
+    assert.doesNotMatch(r.stdout + r.stderr, /Task 1 finished|couldn't be sent|Something went wrong/);
+    noSecrets(r.stdout + r.stderr);
+  });
+
+  it("a final answer that echoes the provider key or Sandbox key is posted redacted", async () => {
+    const st = await stub({ tasks: ["echo"], endAfter: "session_lost" });
+    const r = await listen(st, { adapter: `node ${ECHO}` });
+    assert.equal(r.code, 3, r.stderr);
+    assert.equal(st.results.length, 1);
+    const posted = JSON.stringify(st.results);
+    for (const secret of [KEY, SANDBOX_KEY, HELPER_CODE, HELPER_SESSION]) assert.ok(!posted.includes(secret), `posted a secret: ${secret.slice(0, 8)}…`);
+    assert.equal(st.results[0].summary, `key [hidden] url ${st.url}/[hidden]`);
+    noSecrets(r.stdout + r.stderr);
+  });
+
+  it("sends heartbeats while a task runs", async () => {
+    const st = await stub({ tasks: ["slow"], endAfter: "session_lost" });
+    const r = await listen(st, { adapter: `node ${SLOW}`, env: fast(st) });
+    assert.equal(r.code, 3, r.stderr);
+    assert.ok(st.heartbeats >= 2, `heartbeats: ${st.heartbeats}`);
+    assert.deepEqual(st.results, [{ taskId: "ht-1", ok: true, summary: "slow done" }]);
+  });
+
+  it("a heartbeat refused (401) stops the adapter, posts no result, and exits 3", async () => {
+    const st = await stub({ tasks: ["hang"], heartbeat: [401, { reason: "lost_contact" }] });
+    const r = await listen(st, { adapter: `node ${HANG}`, env: fast(st) });
+    assert.equal(r.code, 3, r.stderr);
+    assert.equal(st.results.length, 0);
+    assert.match(r.stderr, /WhiteRoom didn't hear from this helper for a while/);
+    assert.doesNotMatch(r.stdout, /Task 1 (finished|didn't finish)/);
+    await adapterGone();
+  });
+
+  it("a task past its deadline: the adapter is stopped and the result says so plainly", async () => {
+    const st = await stub({ tasks: ["hang"], endAfter: "session_lost" });
+    const r = await listen(st, { adapter: `node ${HANG}`, env: fast(st, { WHITEROOM_TEST_TASK_MS: "500" }) });
+    assert.equal(r.code, 3, r.stderr);
+    assert.deepEqual(st.results, [{ taskId: "ht-1", ok: false, summary: "Your agent didn't finish within 1 second, so it was stopped." }]);
+    assert.match(r.stdout, /Task 1 didn't finish: Your agent didn't finish within 1 second, so it was stopped\./);
+    await adapterGone();
+  });
+
+  it("Ctrl+C while a task runs stops the adapter, posts no result, and disconnects", async () => {
+    writeFileSync(PID, "");
+    const st = await stub({ tasks: ["hang"] });
+    const r = await listen(st, {
+      adapter: `node ${HANG}`,
+      during: (pid, out) => void waitFor(() => /Task 1:/.test(out()) && readFileSync(PID, "utf8") !== "").then(() => process.kill(pid, "SIGINT")),
+    });
+    assert.equal(r.code, 0, r.stderr);
+    assert.equal(st.results.length, 0);
+    assert.equal(st.disconnects, 1);
+    assert.match(r.stdout, /Helper stopped\./);
+    await adapterGone();
+  });
+
+  it("a result WhiteRoom didn't take is not announced; a task handed out again sends it then", async () => {
+    let st = await stub({ tasks: ["once"], endAfter: "session_lost", failResults: 1 });
+    let r = await listen(st);
+    assert.equal(r.code, 3, r.stderr);
+    assert.equal(st.results.length, 0);
+    assert.doesNotMatch(r.stdout, /Task 1 finished/);
+    assert.match(r.stderr, /Task 1 ran, but its result couldn't be sent to WhiteRoom\./);
+
+    st = await stub({ tasks: ["once"], endAfter: "session_lost", failResults: 1, redeliver: true });
+    r = await listen(st);
+    assert.equal(r.code, 3, r.stderr);
+    assert.equal(st.results.length, 1);
+    assert.equal(st.modelCalls.length, 1);
+    assert.equal(r.stdout.match(/Task 1 finished/g)?.length, 1);
+  });
+
+  it("WhiteRoom unreachable while listening or sending a result: plain words, exit 3, never a CLI error", async () => {
+    const offline = (st: Stub) => fast(st, { WHITEROOM_TEST_OFFLINE_MS: "300" });
+    // While waiting for a task.
+    let st = await stub({ next: [500, { error: "Internal error." }] });
+    let r = await listen(st, { env: offline(st) });
+    assert.equal(r.code, 3, r.stderr);
+    assert.match(r.stderr, /Couldn't reach WhiteRoom\. Check your connection, then start the helper again\./);
+    assert.doesNotMatch(r.stderr, /Something went wrong/);
+
+    // Sending a task's result.
+    st = await stub({ tasks: ["once"], result: () => [500, { error: "Internal error." }] });
+    r = await listen(st, { env: offline(st) });
+    assert.equal(r.code, 3, r.stderr);
+    assert.match(r.stderr, /Couldn't reach WhiteRoom\./);
+    assert.doesNotMatch(r.stdout + r.stderr, /Something went wrong|Task 1 finished/);
+
+    // Sending it again for a task handed out again: the task isn't run twice.
+    st = await stub({ tasks: ["once"], redeliver: true, result: (i) => (i === 0 ? [400, { error: "Bad request." }] : [500, { error: "Internal error." }]) });
+    r = await listen(st, { env: offline(st) });
+    assert.equal(r.code, 3, r.stderr);
+    assert.equal(st.modelCalls.length, 1);
+    assert.match(r.stderr, /Task 1 ran, but its result couldn't be sent/);
+    assert.match(r.stderr, /Couldn't reach WhiteRoom\./);
+    assert.doesNotMatch(r.stderr, /Something went wrong/);
+    noSecrets(r.stdout + r.stderr);
+  });
+
+  it("a reply this CLI doesn't understand while listening (another status, a malformed task): update the CLI, exit 3", async () => {
+    for (const next of [[400, { error: "Bad request." }], [200, { task: { taskId: 7, kind: "prompt", prompt: "hi" } }], [200, { task: { taskId: "ht-9", kind: "script", prompt: "hi" } }], [200, "not an object"]] as Array<[number, unknown]>) {
+      const st = await stub({ next });
+      const r = await listen(st);
+      assert.equal(r.code, 3, `${JSON.stringify(next)}: ${r.stderr}`);
+      assert.match(r.stderr, /WhiteRoom sent something this CLI doesn't understand\. Update the CLI/);
+      assert.equal(st.modelCalls.length, 0);
+      assert.doesNotMatch(r.stderr, /Something went wrong/);
+    }
+  });
+
+  it("a redirect while listening or sending a result stops the helper with plain words (3), following nothing", async () => {
+    let st = await stub({ next: [302, {}] });
+    let r = await listen(st);
+    assert.equal(r.code, 3, r.stderr);
+    assert.match(r.stderr, /tried to send the helper to another address, so it stopped/);
+    assert.doesNotMatch(r.stderr, /Something went wrong/);
+
+    st = await stub({ tasks: ["once"], result: () => [307, {}] });
+    r = await listen(st);
+    assert.equal(r.code, 3, r.stderr);
+    assert.match(r.stderr, /tried to send the helper to another address/);
+    assert.doesNotMatch(r.stdout + r.stderr, /Something went wrong|Task 1 finished|couldn't be sent/);
+    noSecrets(r.stdout + r.stderr);
+  });
+
+  it("refusals at claim: wrong Sandbox key (tries left), used code, no key connected", async () => {
+    const wrongKey = await stub();
+    let r = await listen(wrongKey, { env: testEnv({ ANTHROPIC_BASE_URL: `${wrongKey.url}/sk-wr-${"b".repeat(40)}` }) });
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /isn't this Sandbox's current one .*3 tries left/);
+
+    const used = await stub();
+    r = await listen(used, { stdin: `wrhc_${"Z".repeat(43)}\n` });
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /This helper code doesn't work any more\./);
+
+    const unknown = await stub({ claim: [401, { reason: "something_new" }] });
+    r = await listen(unknown);
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /Update the CLI/);
+    assert.equal(unknown.disconnects, 0);
+
+    const noKey = await stub({ claim: [409, { reason: "not_connected" }] });
+    r = await listen(noKey);
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /Connect a provider key/);
+  });
+
+  it("stops if WhiteRoom names another host for the Sandbox", async () => {
+    const st = await stub({ tasks: ["x"], proxyUrl: "https://elsewhere.example.test" });
+    const r = await listen(st);
+    assert.equal(r.code, 3);
+    assert.match(r.stderr, /another host/);
+    assert.equal(st.modelCalls.length, 0);
+    assert.equal(st.disconnects, 1);
+  });
+
+  it("sends nothing without a Sandbox URL, with two, with one on another host, or with a malformed code", async () => {
+    const st = await stub();
+    let r = await listen(st, { env: testEnv({ ANTHROPIC_API_KEY: KEY }) });
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /Point your agent at your Sandbox first/);
+    r = await listen(st, { env: testEnv({ ANTHROPIC_BASE_URL: `${st.url}/${SANDBOX_KEY}`, OPENAI_BASE_URL: `${st.url}/sk-wr-${"c".repeat(40)}` }) });
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /More than one Sandbox URL is set \(ANTHROPIC_BASE_URL, OPENAI_BASE_URL\)/);
+    r = await listen(st, { env: testEnv({ ANTHROPIC_BASE_URL: `https://proxy.whiteroom.tech/${SANDBOX_KEY}` }) });
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /Your Sandbox URL is on proxy\.whiteroom\.tech, but the helper connects to 127\.0\.0\.1/);
+    r = await listen(st, { stdin: "wrrt_not-a-helper-code\n" });
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /That isn't a helper code/);
+    assert.equal(st.claims.length, 0);
+    noSecrets(r.stdout + r.stderr);
+  });
+
+  it("usage: --adapter is required; --url must be WhiteRoom's or loopback", async () => {
+    let r = await listen(null, { adapter: " " });
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /--adapter needs the command/);
+    r = await listen(null, { extra: ["--url", "https://example.com"] });
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /--url must be a WhiteRoom address/);
+  });
+});
+
+describe("sandbox listen units", () => {
+  it("findSandboxUrl takes Sandbox URLs only, once per key", () => {
+    const env = { A_BASE_URL: `https://proxy.whiteroom.tech/${SANDBOX_KEY}`, B: `https://proxy.whiteroom.tech/${SANDBOX_KEY}/v1`, C: "https://api.anthropic.com", D: `https://proxy.whiteroom.tech/sk-wr-short` };
+    assert.deepEqual(findSandboxUrl(env), [{ variable: "A_BASE_URL", origin: "https://proxy.whiteroom.tech", key: SANDBOX_KEY }]);
+    assert.deepEqual(findSandboxUrl({ X: `https://user:pw@proxy.whiteroom.tech/${SANDBOX_KEY}` }), []);
+  });
+
+  it("helperEnv drops WhiteRoom's settings and keeps the agent's", () => {
+    assert.deepEqual(helperEnv({ WHITEROOM_URL: "x", whiteroom_api_key: "y", ANTHROPIC_API_KEY: "k", PATH: "/bin" }), { ANTHROPIC_API_KEY: "k", PATH: "/bin" });
+  });
+
+  it("helperHost is safe to show", () => {
+    assert.equal(helperHost("Rashad's MacBook\u001b[2J"), "Rashad-s-MacBook--2J");
+    assert.equal(helperHost(""), "computer");
+    assert.equal(helperHost("x".repeat(100)).length, 64);
+  });
+
+  it("taskResult: ok only for a final answer, summaries capped at 2,000", () => {
+    assert.deepEqual(taskResult({ kind: "final", output: "y".repeat(3000) }), { ok: true, summary: "y".repeat(2000) });
+    assert.equal(taskResult({ kind: "deadline" }).summary, "Your agent didn't finish within 10 minutes, so it was stopped.");
+    assert.match(taskResult({ kind: "deadline" }, 90_000).summary, /within 90 seconds/);
+    assert.match(taskResult({ kind: "broke", why: "sent a line longer than 1 MiB" }).summary, /^Your adapter sent a line/);
+  });
+});

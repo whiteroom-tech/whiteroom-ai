@@ -28,11 +28,20 @@ export interface PracticeCheck {
   fix: string | null;
   mode?: string | null;
   agents?: 'all' | string[];
+  /** Control checks: whether the rule is set up for the agent under test (engine E1); absent reads as set up. */
+  setup?: PracticeRuleSetup;
+  /** The agent under test, when the rule doesn't cover it. */
+  notCoveredAgent?: string;
   failedCalls?: PracticeFailedCalls;
 }
 
+/** Whether a control check's rule applies to the agent under test: Off in Controls, not covering it, or set up. */
+export type PracticeRuleSetup = 'ok' | 'not_set_up' | 'off';
+
 export interface PracticeReport {
   testVersion: number;
+  /** How thorough the test was (test version 3); absent from older reports. */
+  profile?: PracticeProfile;
   verdict: PracticeVerdict;
   runs: number;
   sample: boolean;
@@ -71,7 +80,13 @@ export interface PracticeRun {
   codeTriesLeft: number | null;
   /** Only the WhiteRoom server running the test knows these. */
   progress: { done: number; total: number; lastContactAt: string } | null;
+  /** How thorough, and where it was started: a rerun keeps both. The tasks the engine settled at claim, in the order they play. Absent from older engines. */
+  profile?: PracticeProfile | null;
+  origin?: 'sandbox' | null;
+  plan?: { tasks: Array<{ scenario: string; runIndex: number }> } | null;
 }
+
+export type PracticeProfile = 'quick' | 'deep';
 
 /** GET /runs?fleet=: a Past tests row. */
 export interface PracticeRunRow {
@@ -88,8 +103,12 @@ export interface PracticeRunRow {
   createdAt: string;
   endedAt: string | null;
   checks: { passed: number; total: number } | null;
+  /** The required checks that failed (engine E1), so the row that failed can be named; absent from older engines. */
+  failed?: string[];
   /** Tasks finished of those planned; the control checks count as one task a run. */
   tasks: { finished: number; total: number };
+  /** How thorough: only runs with one fill a Sandbox report. Absent from older engines. */
+  profile?: PracticeProfile | null;
 }
 
 /** Where the source agent's calls go, so setup can refuse a fleet practice tests can't run yet before Start. */
@@ -118,6 +137,8 @@ export interface PracticeControlCheck {
   agents: 'all' | string[];
   checked: boolean;
   note: string | null;
+  setup?: PracticeRuleSetup;
+  notCoveredAgent?: string;
   calls: number | null;
 }
 
@@ -156,6 +177,14 @@ export interface PracticeStart {
   scope?: string[];
   /** R7: the Fleet key provider key to test with ("sk-wr-" and 16 hex, as Fleet key lists it). */
   proxyKeyDisplayPrefix?: string;
+  /** How thorough (absent on an engine without profiles), and a test started from the Sandbox, on its key and rules. */
+  profile?: PracticeProfile;
+  origin?: 'sandbox';
+}
+
+/** GET /capabilities: what the engine's practice tests offer; null from an engine without profiles. */
+export interface PracticeCapabilities {
+  profiles: PracticeProfile[];
 }
 
 export interface RunCode {

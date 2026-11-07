@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-// README › Labels: users read "shift", never "watch". Engine identifiers keep
-// their names.
+// The engine calls a run a "watch"; users never read that word. Engine
+// identifiers keep their names.
 const FILES = [
   '../lib/diagnosis/copy.ts',
   '../lib/diagnosis/model.ts',
   '../app/(citadel)/performance/_components/Diagnosis.tsx',
-  '../app/(citadel)/performance/page.tsx',
+  '../app/(citadel)/performance/_components/PerformancePage.tsx',
   '../components/agent/AgentDetail.tsx',
   '../lib/home.ts',
   '../components/sandbox/TestRunFlow.tsx',
@@ -25,9 +25,110 @@ function userFacingWatch(source: string): string[] {
     (/\bwatch(es)?\b/.test(s) || /\bWatch\s*#?\d/.test(s)) && !/^['"`](watches|watch)['"`]$|check_watch/.test(s));
 }
 
+// Customer copy says what WhiteRoom does, never how: runs, progress notes and
+// smaller context, not shifts, handovers or compression. Engine identifiers
+// keep their names. Rule modes use lib/vocab.ts: Watch and Enforce (Oct 28),
+// never Watch only or the retired Record only.
+const COPY_FILES = [
+  ...FILES,
+  '../lib/activity.ts',
+  '../lib/agent-detail.ts',
+  '../lib/runs.ts',
+  '../lib/metric-definitions.ts',
+  '../lib/smaller-handovers.ts',
+  '../lib/governance.ts',
+  '../lib/controls-guard.ts',
+  '../components/ActivityFeed.tsx',
+  '../components/home/HomeContent.tsx',
+  '../components/runs/RunsTable.tsx',
+  '../components/runs/RunDetail.tsx',
+  '../components/agent/AgentWeekCard.tsx',
+  '../components/agent/RulesOnAgent.tsx',
+  '../components/settings/DataPrivacySection.tsx',
+  '../components/settings/SmallerHandoversSection.tsx',
+  '../app/(citadel)/controls/page.tsx',
+  '../app/(citadel)/controls/_components/RuleEditor.tsx',
+  '../app/(citadel)/controls/_components/AddRuleDialog.tsx',
+  '../app/(citadel)/controls/_components/SuggestionDraft.tsx',
+  '../app/fleet-key/onboarding.tsx',
+  '../app/fleet-key/rotate.tsx',
+  '../app/fleet-key/page.tsx',
+  '../components/performance/SavingsPanels.tsx',
+  '../components/Sidebar.tsx',
+  '../hooks/useFleetAuth.ts',
+  '../../../../packages/ui/src/primitives/StatusPill.tsx',
+];
+
+const BANNED = /\bshifts?\b|\bhand(s|ed|ing)? (work )?over\b|\bhandovers?\b|\bcompress(ed|ion)?\b|\bWatch only\b|\bRecord only\b|\byour API key\b/i;
+
+function userFacingText(source: string, jsx: boolean): string[] {
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  // Template holes are code (shift.watchNumber), not words.
+  const strings = (code.match(/(['`"])(?:(?!\1)[^\n\\]|\\.)*\1/g) ?? []).map((s) => s.replace(/\$\{[^}]*\}/g, ''));
+  // JSX text only in .tsx: in plain .ts the pattern would match code between template holes.
+  // Line breaks are folded first, so a sentence on its own line after a tag is still read.
+  // Runs with ; or =, or that start with a comma (object entries), are code between braces, not text.
+  const jsxText = jsx ? (code.replace(/\s*\n\s*/g, ' ').match(/(?<=[>}])[^<>{}]+(?=[<{])/g) ?? []).filter((s) => !/[;=]|\bimport\b|^\s*,/.test(s)) : [];
+  // String literals count only as sentences (a space inside), so identifiers
+  // like 'handover_out' pass; JSX text is always visible, even one word.
+  return [...strings.filter((s) => /[a-z] [a-z]/i.test(s)), ...jsxText].filter((s) => BANNED.test(s));
+}
+
+describe('customer copy', () => {
+  it.each(COPY_FILES)('%s keeps internal mechanics and old mode names out', (rel) => {
+    const src = readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
+    expect(userFacingText(src, rel.endsWith('.tsx'))).toEqual([]);
+  });
+});
+
 describe('shift wording', () => {
-  it.each(FILES)('%s shows "shift", not "watch"', (rel) => {
+  it.each(FILES)('%s never says "watch" for a run', (rel) => {
     const src = readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
     expect(userFacingWatch(src)).toEqual([]);
+  });
+});
+
+// The agent page, Settings, Fleet key and Sandbox say what WhiteRoom does,
+// never how it keeps an agent going: no breaks, progress notes, summaries,
+// "carries forward" or "picks up where it left off" (IP rule, gap audit A12).
+const HOW_FILES = [
+  '../components/agent/AgentDetail.tsx',
+  '../components/agent/AgentWeekCard.tsx',
+  '../components/agent/RecentRuns.tsx',
+  '../components/agent/RulesOnAgent.tsx',
+  '../lib/agent-detail.ts',
+  '../lib/agent-scores.ts',
+  '../lib/activity.ts',
+  '../app/settings/settings-view.tsx',
+  '../components/settings/DataPrivacySection.tsx',
+  '../components/settings/SmallerHandoversSection.tsx',
+  '../components/settings/AlertsSection.tsx',
+  '../components/settings/AuditIntegritySection.tsx',
+  '../lib/smaller-handovers.ts',
+  '../app/fleet-key/onboarding.tsx',
+  '../app/fleet-key/page.tsx',
+  '../app/fleet-key/rotate.tsx',
+  '../components/citadel/FleetLogin.tsx',
+  '../components/sandbox/TestRunFlow.tsx',
+  '../components/sandbox/PastTests.tsx',
+  '../components/sandbox/CloudProviderParts.tsx',
+  '../components/sandbox/practice/PracticeCard.tsx',
+  '../components/sandbox/practice/PracticeSetup.tsx',
+  '../components/sandbox/practice/PracticeResults.tsx',
+  '../components/sandbox/practice/PracticeRunView.tsx',
+  '../lib/sandbox/practice/model.ts',
+  '../lib/sandbox/report.ts',
+];
+
+const HOW_IT_WORKS = /\bbreaks?\b|\bnotes?\b|\bsummar(y|ies|ise|ize)\b|carr(y|ies|ied) forward|where it left off|context limit/i;
+
+describe('how-it-works wording', () => {
+  it.each(HOW_FILES)('%s says what WhiteRoom does, not how', (rel) => {
+    const src = readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    const strings = (code.match(/(['`"])(?:(?!\1)[^\n\\]|\\.)*\1/g) ?? []).map((s) => s.replace(/\$\{[^}]*\}/g, ''));
+    const jsxText = rel.endsWith('.tsx') ? (code.replace(/\s*\n\s*/g, ' ').match(/(?<=[>}])[^<>{}]+(?=[<{])/g) ?? []).filter((s) => !/[;=]|\bimport\b|^\s*,/.test(s)) : [];
+    // Sentences only (a space inside), so identifiers like 'handover_notes_resealed' pass.
+    expect([...strings.filter((s) => /[a-z] [a-z]/i.test(s)), ...jsxText].filter((s) => HOW_IT_WORKS.test(s))).toEqual([]);
   });
 });

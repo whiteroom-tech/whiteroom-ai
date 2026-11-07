@@ -4,11 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { Logo, FONT_DISPLAY, FONT_MONO } from '@whiteroom/ui';
+import { Logo, FONT_DISPLAY } from '@whiteroom/ui';
 import { ROUTES, isNavActive } from '@/lib/routes';
 import { ROLE_LABELS, type OrgRole } from '@/lib/org-roles';
 import { applyTheme, storedTheme } from '@/lib/theme';
-import { AccountMenu } from '@/components/AccountMenu';
+import { SidebarPreferences } from '@/components/SidebarPreferences';
+import { AccountClosingBanner } from '@/components/AccountClosingBanner';
 
 /**
  * Chrome for the enterprise console (console.whiteroom.tech).
@@ -44,10 +45,10 @@ export function ConsoleShell({
         <div className="wr-sidebar__brand">
           <Logo width={22} height={30} gradientId="wr-console-mark" />
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, fontWeight: 700, letterSpacing: '.02em', lineHeight: 1.1, color: 'var(--tx)' }}>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 'var(--fs-md)', fontWeight: 700, letterSpacing: '.02em', lineHeight: 1.1, color: 'var(--tx)' }}>
               WhiteRoom
             </div>
-            <div style={{ fontSize: 11, color: 'var(--tx2)', marginTop: 4 }}>Organization</div>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', marginTop: 4 }}>Organization</div>
           </div>
         </div>
 
@@ -62,15 +63,16 @@ export function ConsoleShell({
           </Link>
         </nav>
 
+        <SidebarPreferences organization={orgName} invitations={invitations} />
+
         <div className="wr-sidebar__account">
           <span aria-hidden="true" className="wr-sidebar__avatar">{person.charAt(0).toUpperCase()}</span>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{person}</div>
-            <div style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: 'var(--tx2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--tx)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{person}</div>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {roleLabel ?? 'Console'}
             </div>
           </div>
-          <AccountMenu organization={orgName} invitations={invitations} />
         </div>
       </aside>
 
@@ -81,6 +83,7 @@ export function ConsoleShell({
           </svg>
           {menuOpen ? 'Close menu' : 'Menu'}
         </button>
+        <AccountClosingBanner />
         {children}
       </div>
     </div>

@@ -20,12 +20,13 @@
 // - Only a real 401 (credential rejection) signs the user out. A network
 //   blip / 5xx keeps the session and exposes retryableError + retry().
 
-import { createContext, createElement, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, createElement, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { clearFleetCredentials, getFleetCredentials } from '@/lib/fleet-credentials';
 import { claimFleet, isAuthError, listFleets } from '@/lib/whiteroom/client';
-import { isApiKey, preferProductionFleet, resolveAuthKey } from '@/lib/fleet-helpers';
+import { isApiKey, loginFleet, resolveAuthKey } from '@/lib/fleet-helpers';
 import { safeSet } from '@/lib/safe-storage';
 import { clearSnapshots } from '@/lib/performance-snapshot';
+import { clearSessionLocalState } from '@/lib/session-local-state';
 
 export type FleetAuthStatus = 'checking' | 'authenticated' | 'unauthenticated';
 
@@ -48,7 +49,12 @@ export interface FleetAuthState {
   login: (token: string) => Promise<void>;
   /** Re-run the stored-session check after a retryable failure. */
   retry: () => void;
-  /** Sign out: clears credentials and returns to the login form. */
+  /**
+   * A call was refused as unauthorised. Hides the page at once, then lets the
+   * server decide: signs out only when the session really is gone, reloads
+   * when another tab has switched this browser to a different fleet, and
+   * otherwise keeps the session and offers Try again.
+   */
   resetSession: (loginError?: string) => void;
   /**
    * Where a session-less visitor belongs instead of the key form: 'sign_in'
@@ -61,13 +67,21 @@ export interface FleetAuthState {
 export type FleetAuthNeeds = 'sign_in' | 'setup' | null;
 
 const SESSION_URL = '/api/fleet/session';
+/** After an auth error: is the session really gone? (Clears it only if so.) */
+const RECHECK_URL = '/api/fleet/session/recheck';
 const RETRYABLE_MESSAGE =
   'Could not reach the WhiteRoom server. Your session was kept — retry when you are back online.';
 
 /** Nudges other tabs to re-check the cookie session (storage events only fire cross-tab). */
-function pingOtherTabs(): void {
+export function broadcastAuthChange(): void {
   safeSet('wr_auth_ping', String(Date.now()));
 }
+
+/** Said when the session is fine but a page's call was still refused. */
+const REFUSED_MESSAGE = 'This page couldn’t load. You’re still signed in, so try again.';
+
+/** What the recheck answers (app/api/fleet/session/recheck). */
+type ResetVerdict = { cleared: true; signedIn?: boolean } | { cleared: false; fleetId: string };
 
 /**
  * POST the token to the session route, which validates it against the engine
@@ -129,23 +143,85 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
   const [needs, setNeeds] = useState<FleetAuthNeeds>(null);
   // Bumped to re-run the bootstrap effect (retry, cross-tab pings).
   const [attempt, setAttempt] = useState(0);
+  // The fleet this tab is showing, for telling a sign-out from an account switch.
+  const shownFleet = useRef<string | null>(null);
+  useEffect(() => { shownFleet.current = fleetId; }, [fleetId]);
+  // One verdict at a time: a page can hit several auth errors in one poll.
+  const resetting = useRef(false);
+  // A session check (a ping, Try again) that came while a verdict was pending: it
+  // waits, so it can't show the page again before the verdict says whether to.
+  const checkWaiting = useRef(false);
 
-  const resetSession = useCallback((message?: string) => {
-    // Clear legacy localStorage leftovers AND the server-side cookie. The
-    // DELETE is fire-and-forget: the UI signs out immediately either way,
-    // and the cookie clear is idempotent.
-    clearFleetCredentials();
-    clearSnapshots(); // figures from this session don't outlive it
-    fetch(SESSION_URL, { method: 'DELETE', credentials: 'same-origin' }).catch(() => {});
+  /** This browser now holds a different fleet's session: start the tab fresh. */
+  const switchedFleet = useCallback(() => {
+    setStatus('checking'); // pages unmount their content now
+    clearSnapshots();
+    window.location.reload();
+  }, []);
+
+  /** A confirmed sign-out: nothing of the session stays in this tab. */
+  const signedOut = useCallback((next: FleetAuthNeeds, message?: string) => {
+    clearSessionLocalState();
     setFleetId(null);
     setFleetToken(null);
     setRetryableError(null);
+    setNeeds(next);
     setStatus('unauthenticated');
-    // The engine rejected the session: Fleet key re-provisions and re-links it.
-    setNeeds('setup');
     if (message) setLoginError(message);
-    pingOtherTabs();
   }, []);
+
+  const resetSession = useCallback((message?: string) => {
+    if (resetting.current) return;
+    // Hide the page before anything else: whatever it shows may belong to a
+    // session that's gone.
+    setStatus('checking');
+    const expectFleetId = shownFleet.current;
+    if (!expectFleetId) {
+      // No fleet to check against: sign out as before.
+      clearFleetCredentials();
+      fetch(SESSION_URL, { method: 'DELETE', credentials: 'same-origin' }).catch(() => {});
+      signedOut('setup', message);
+      broadcastAuthChange();
+      return;
+    }
+    resetting.current = true;
+    (async () => {
+      let verdict: ResetVerdict | null = null;
+      try {
+        const res = await fetch(RECHECK_URL, { method: 'POST', credentials: 'same-origin', cache: 'no-store' });
+        if (res.ok) verdict = (await res.json()) as ResetVerdict;
+      } catch {
+        /* network: no verdict */
+      }
+      if (!verdict) {
+        // The server couldn't say. Nothing was cleared: keep the session.
+        // Its Try again re-checks, so a check that waited is dropped.
+        checkWaiting.current = false;
+        setRetryableError(RETRYABLE_MESSAGE);
+        setStatus('unauthenticated');
+      } else if (verdict.cleared) {
+        clearFleetCredentials();
+        // The engine rejected the session: Fleet key re-provisions and re-links it.
+        // With no session at all, the account's own state decides.
+        signedOut(verdict.signedIn === false ? 'sign_in' : 'setup', message);
+        broadcastAuthChange();
+      } else if (verdict.fleetId !== expectFleetId) {
+        checkWaiting.current = false; // the reload checks afresh
+        switchedFleet();
+      } else {
+        // Same fleet, session fine: the refusal was about something else.
+        // Not straight back in, or the page would hit the same refusal again;
+        // so a check that waited is dropped too (Try again is the way back).
+        checkWaiting.current = false;
+        setRetryableError(REFUSED_MESSAGE);
+        setStatus('unauthenticated');
+      }
+    })().finally(() => {
+      resetting.current = false;
+      // A check that waited runs now (only after a sign-out), against the session as the verdict left it.
+      if (checkWaiting.current) { checkWaiting.current = false; setAttempt((a) => a + 1); }
+    });
+  }, [signedOut, switchedFleet]);
 
   // Bootstrap: migrate legacy localStorage creds into the cookie, else ask
   // the server whether a cookie/next-auth session already exists.
@@ -153,16 +229,28 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
     if (!active) return;
     let cancelled = false;
 
+    // Whether this check must stand down: superseded, or a verdict is pending
+    // (resetSession hid the page; only the verdict may show it again). Checked
+    // after every await, since a reset can start while the check is in flight.
+    const standDown = () => {
+      if (cancelled) return true;
+      if (resetting.current) { checkWaiting.current = true; return true; }
+      return false;
+    };
+
     async function bootstrap() {
+      if (standDown()) return;
       const legacy = getFleetCredentials();
 
       if (legacy.fleetToken) {
         // One-time migration of a pre-cookie session.
         const result = await createSession(legacy.fleetToken);
-        if (cancelled) return;
+        if (standDown()) return;
         if (result.outcome === 'ok') {
           clearFleetCredentials(); // token leaves the browser for good
-          setFleetId(result.fleetId || legacy.fleetId);
+          const next = result.fleetId || legacy.fleetId;
+          if (shownFleet.current && next && next !== shownFleet.current) { switchedFleet(); return; }
+          setFleetId(next);
           setFleetToken(null);
           setRetryableError(null);
           setNeeds(null);
@@ -172,7 +260,7 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
           setFleetId(null);
           setFleetToken(null);
           setStatus('unauthenticated');
-          setLoginError('Fleet token invalid. Please enter your API key.');
+          setLoginError('Fleet token invalid. Please enter your WhiteRoom fleet key.');
         } else {
           // Engine/route unreachable: the token may be perfectly fine.
           // Keep the legacy creds and let the user retry the migration.
@@ -189,9 +277,12 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
           credentials: 'same-origin',
           cache: 'no-store',
         });
-        if (cancelled) return;
+        if (standDown()) return;
         if (res.ok) {
           const data = (await res.json()) as { fleetId?: string };
+          if (standDown()) return;
+          // Another tab signed in as a different fleet: this one starts fresh.
+          if (shownFleet.current && data.fleetId && data.fleetId !== shownFleet.current) { switchedFleet(); return; }
           setFleetId(data.fleetId ?? null);
           setFleetToken(null);
           setRetryableError(null);
@@ -199,17 +290,15 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
           setStatus('authenticated');
         } else if (res.status === 401) {
           const body = (await res.json().catch(() => ({}))) as { signedIn?: boolean };
-          if (cancelled) return;
-          setFleetId(null);
-          setFleetToken(null);
-          setNeeds(body.signedIn ? 'setup' : 'sign_in');
-          setStatus('unauthenticated');
+          if (standDown()) return;
+          // Also how a tab hears that another tab signed out (ping, re-check, 401).
+          signedOut(body.signedIn ? 'setup' : 'sign_in');
         } else {
           setRetryableError(RETRYABLE_MESSAGE);
           setStatus('unauthenticated');
         }
       } catch {
-        if (cancelled) return;
+        if (standDown()) return;
         setRetryableError(RETRYABLE_MESSAGE);
         setStatus('unauthenticated');
       }
@@ -217,7 +306,7 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
 
     bootstrap();
     return () => { cancelled = true; };
-  }, [attempt, active]);
+  }, [attempt, active, signedOut, switchedFleet]);
 
   // Keep tabs in sync. Legacy wr_* keys still trigger a re-check (a
   // pre-deploy tab may write them); `wr_auth_ping` is the nudge this hook
@@ -251,12 +340,12 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
         // (both calls carry the typed key explicitly, so they go direct to
         // the engine — no cookie involved yet).
         const listData = await listFleets(token);
-        const fleets = preferProductionFleet(listData.fleets ?? []);
-        if (!fleets.length) {
-          setLoginError('No fleets found for this API key. Register an agent first.');
+        const fleet = loginFleet(listData.fleets ?? []);
+        if ('error' in fleet) {
+          setLoginError(fleet.error);
           return;
         }
-        const claim = await claimFleet(fleets[0].fleetId, token);
+        const claim = await claimFleet(fleet.fleetId, token);
         if (claim.error || !claim.fleetToken) {
           setLoginError(claim.error || 'Could not retrieve fleet token.');
           return;
@@ -279,7 +368,7 @@ function useOwnFleetAuth(active: boolean): FleetAuthState {
       setFleetToken(null);
       setNeeds(null);
       setStatus('authenticated');
-      pingOtherTabs();
+      broadcastAuthChange();
     } catch (e) {
       setLoginError(isAuthError(e)
         ? 'That key or token was rejected. Check it and try again.'

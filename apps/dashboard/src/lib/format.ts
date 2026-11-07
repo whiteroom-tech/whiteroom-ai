@@ -1,10 +1,7 @@
-// Shared display formatters for the Citadel pages. Pure functions, no React.
-//
-// These consolidate copies that had drifted apart across the pages: the local
-// fmtK helpers rendered 1.5M tokens as "1500.0K", while the performance page's
-// fmtTokens handled millions correctly — that behavior is canonical here.
+// Shared display formatters for the dashboard pages. Pure functions, no React.
 
 import { estimateCost } from './analytics-metrics';
+import { dayKey, formatInZone } from './zone-time';
 
 // Re-exported so display code has one import for cost math + formatting; the
 // implementation (and its tests) stay in analytics-metrics.
@@ -29,10 +26,42 @@ export function partialMark(partial: boolean): string {
   return partial ? '+' : '';
 }
 
-/** Token counts: 999 → "999", 1500 → "1.5K", 1_500_000 → "1.50M". */
+/**
+ * Token counts, short, never with a trailing ".0": exact below 1,000 ("980");
+ * thousands with one decimal below 100K ("4K", "4.1K", "12.3K"), whole above
+ * ("120K"); millions with two decimals below 10M ("1.5M", "4.03M"), one above ("12.5M").
+ */
 export function fmtTokens(n: number): string {
-  if (n < 1000) return String(n);
-  return n < 1_000_000 ? `${(n / 1000).toFixed(1)}K` : `${(n / 1_000_000).toFixed(2)}M`;
+  const trim = (v: number, digits: number) => String(Number(v.toFixed(digits)));
+  if (n >= 999_500) { const m = n / 1_000_000; return `${trim(m, m < 10 ? 2 : 1)}M`; }
+  if (n >= 1000) { const k = n / 1000; return `${k < 99.95 ? trim(k, 1) : Math.round(k)}K`; }
+  return String(Math.round(n));
+}
+
+/** A plain count with thousands separators, the same in every locale: "12,345", or "12,345+" for a lower bound. */
+export function fmtCount(n: number, atLeast = false): string {
+  return `${n.toLocaleString('en-US')}${atLeast ? '+' : ''}`;
+}
+
+/** One hour and one day in milliseconds. */
+export const HOUR_MS = 3_600_000;
+export const DAY_MS = 86_400_000;
+
+/** "1st", "2nd", "3rd", "11th", "100th", "102nd". */
+export function ordinal(n: number): string {
+  const tens = n % 100;
+  const suffix = tens >= 11 && tens <= 13 ? 'th' : (['th', 'st', 'nd', 'rd'][n % 10] ?? 'th');
+  return `${n}${suffix}`;
+}
+
+/** "run" or "runs": the singular only for exactly one, never for a lower bound ("1+ runs"). */
+export function plural(n: number, one: string, many = `${one}s`, atLeast = false): string {
+  return n === 1 && !atLeast ? one : many;
+}
+
+/** "3 checks": the count with its word. */
+export function counted(n: number, one: string, many?: string): string {
+  return `${n} ${plural(n, one, many)}`;
 }
 
 /** Cost in micro-dollars: more precision the smaller the amount. */
@@ -46,15 +75,15 @@ export function fmtCost(micros: number): string {
 export function fmtDay(ts: string | number | Date, now: number = Date.now()): string {
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return '';
-  const sameYear = d.getFullYear() === new Date(now).getFullYear();
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(!sameYear && { year: 'numeric' }) });
+  const sameYear = dayKey(d.getTime()).slice(0, 4) === dayKey(now).slice(0, 4);
+  return formatInZone(d, { month: 'short', day: 'numeric', ...(!sameYear && { year: 'numeric' }) });
 }
 
 /** "2:15 pm" today, else "Oct 1": a time column that's never mistaken for today. '' for an unreadable time. */
 export function fmtWhen(ts: string | number | Date, now: number = Date.now()): string {
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return '';
-  return d.toDateString() === new Date(now).toDateString() ? fmtTime(d) : fmtDay(d, now);
+  return dayKey(d.getTime()) === dayKey(now) ? fmtTime(d) : fmtDay(d, now);
 }
 
 /** "2:15 pm" in the viewer's time zone: the one clock-time wording. '' for an unreadable time. */
@@ -62,7 +91,7 @@ export function fmtTime(ts: string | number | Date): string {
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return '';
   // ICU puts a narrow no-break space before "PM"; normalise it so copy and tests match.
-  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(/\s/g, ' ').toLowerCase();
+  return formatInZone(d, { hour: 'numeric', minute: '2-digit' }).replace(/\s/g, ' ').toLowerCase();
 }
 
 /** "just now", "5 min ago", "2 hours ago", "3 days ago": the one relative-time wording. '' for an unreadable time. */
@@ -75,7 +104,7 @@ export function timeAgo(ts: string | number | Date, now: number = Date.now()): s
   const m = Math.round(s / 60);
   if (m < 60) return `${m} min ago`;
   const h = Math.round(m / 60);
-  if (h < 24) return `${h} ${h === 1 ? 'hour' : 'hours'} ago`;
+  if (h < 24) return `${h} ${plural(h, 'hour')} ago`;
   const d = Math.round(h / 24);
-  return `${d} ${d === 1 ? 'day' : 'days'} ago`;
+  return `${d} ${plural(d, 'day')} ago`;
 }

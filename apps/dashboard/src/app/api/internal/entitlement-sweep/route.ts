@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { syncEntitlementsToEngine } from '@/lib/entitlements';
+import { markOutboxDelivered, syncEntitlementsToEngine } from '@/lib/entitlements';
 import { syncSecretMatches } from '@/lib/sync-secret';
 
 export const runtime = 'nodejs';
@@ -18,7 +18,7 @@ export async function POST(req: Request): Promise<Response> {
   const { rows: pending } = await db().query(
     `SELECT user_id, max(id) AS max_id
      FROM entitlement_outbox
-     WHERE delivered_at IS NULL
+     WHERE delivered_at IS NULL AND (not_before IS NULL OR not_before <= now())
      GROUP BY user_id
      ORDER BY min(created_at)
      LIMIT $1`,
@@ -26,6 +26,7 @@ export async function POST(req: Request): Promise<Response> {
   );
 
   if (pending.length === 0) {
+    await prune();
     return Response.json({ swept: 0 });
   }
 
@@ -36,16 +37,22 @@ export async function POST(req: Request): Promise<Response> {
         console.error(`[sweep] engine did not acknowledge user ${row.user_id}; leaving pending`);
         continue;
       }
-      await db().query(
-        `UPDATE entitlement_outbox SET delivered_at = now()
-         WHERE user_id = $1 AND id <= $2 AND delivered_at IS NULL`,
-        [row.user_id, row.max_id],
-      );
+      await markOutboxDelivered(row.user_id, row.max_id);
       delivered++;
     } catch {
       console.error(`[sweep] failed for user ${row.user_id}`);
     }
   }
 
+  await prune();
   return Response.json({ swept: delivered, pending: pending.length });
+}
+
+/**
+ * Delivered rows only matter for a while after: keep a month. After delivery,
+ * so it never holds it up; housekeeping, so it never fails the sweep. Uses the
+ * delivered_at index (migration 013).
+ */
+async function prune(): Promise<void> {
+  await db().query(`DELETE FROM entitlement_outbox WHERE delivered_at < now() - interval '30 days'`).catch(() => {});
 }

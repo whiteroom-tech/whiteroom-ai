@@ -14,6 +14,7 @@ vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 
 const { PracticeTest } = await import('@/components/sandbox/practice/PracticeTest');
 const { PracticeCard } = await import('@/components/sandbox/practice/PracticeCard');
+const { PracticeSetup } = await import('@/components/sandbox/practice/PracticeSetup');
 const { PastTests } = await import('@/components/sandbox/PastTests');
 const { TestRunFlow } = await import('@/components/sandbox/TestRunFlow');
 const { PRACTICE_ROWS, PRACTICE_STATES } = await import('@/app/dev/practice/states');
@@ -26,53 +27,96 @@ const DISCLAIMER = "Practice tasks use made-up records and WhiteRoom's test tool
 
 describe('practice test screens', () => {
   it.each(Object.keys(PRACTICE_STATES) as (keyof typeof PRACTICE_STATES)[])('%s: plain words only (rule 7, no "readiness")', (state) => {
-    // `Watch` is allowed only as the Controls mode label in a control row.
-    const words = text(render(state)).replace(/· Watch\b/g, '');
+    // `Watch` is allowed only as the Controls mode label: on a rule, and in a row's reason (D3).
+    const words = text(render(state)).replace(/· Watch\b|\band Watch\b|\bWatch: |Watch can’t see/g, '');
     expect(words).not.toMatch(/handover|hand over|\bshifts?\b|\bwatch|context|compress|readiness|\battempt|\bprobe|evidence|\bsafe\b|certified|guarantee/i);
   });
 
-  it('setup shows who runs it, cost and cap, the checks, the key and the disclaimer', () => {
+  it('setup: pick the agent, then the seven rows, the cost and cap, the key and the disclaimer (§7 steps 1–2)', () => {
     const t = text(render('setup'));
-    for (const s of ['Sample agent', 'No code, 1 run. Doesn’t test your agent.', 'Your agent', 'Needs a small adapter.', '1 run', '3 runs',
-      'Model: claude-haiku-4-5, the one support-bot used most recently · Change', 'Never more than 120 calls, including control checks and memory summaries.',
-      'Set ANTHROPIC_API_KEY to the key your agent uses with prod-eu.', 'Right result after its memory fills up', 'Loop breaker · Enforce · 2 extra calls',
-      'Spend cap · Enforce · Not checked: it would need real spending.', 'Start test', 'Start from your computer', DISCLAIMER]) expect(t).toContain(s);
+    for (const s of ['1. Pick agent', 'Agent · active most recently', 'Your agent needs a small adapter.', '1 run', '3 runs',
+      'Model: claude-haiku-4-5, the one support-bot used most recently · Change', '2. What we’ll test', 'Never more than 130 calls, including control checks.',
+      'Set ANTHROPIC_API_KEY to the key your agent uses with prod-eu.', 'Right result after its memory fills up',
+      'Loop breaker + call rate Will be checked · 2 rules · Enforce and Watch · 8 extra calls', 'Spend cap Will be checked · Enforce · 1 extra call',
+      'Allowlists + keywords Will be checked · 1 of 2 rules · Enforce · no extra calls', 'Start test', 'Test my guardrails · no code Test my own agent', 'Start from your computer', DISCLAIMER]) expect(t).toContain(s);
+    // What a person sees first: the guardrails test, with any key.
+    const g = text(render('setup-guardrails'));
+    for (const s of ['Test my guardrails · no code', 'WhiteRoom’s sample agent runs the tasks with your rules: no code, 1 run', 'Set ANTHROPIC_API_KEY or OPENAI_API_KEY to any key of yours', 'Start test']) expect(g).toContain(s);
+    for (const s of ['Your agent needs a small adapter', '3 runs', 'from Fleet key']) expect(g).not.toContain(s);
+    expect(render('setup')).toMatch(/<option value="support-bot" selected="">/);
     expect(text(render('setup-new-agent'))).toContain('Model your agent uses');
-    // A fleet with no agents yet: the sample agent, since Your agent needs one that has called through WhiteRoom.
+    // A fleet with no agents yet: the sample agent, since your agent needs to have called through WhiteRoom.
     const none = renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES.setup, setup: { ...PRACTICE_STATES.setup.setup!, agents: [] } } }));
-    expect(text(none)).toContain('Run your agent through WhiteRoom once first, so it shows up here.');
-    const radios = none.match(/<input[^>]*name="practice-who"[^>]*>/g) ?? [];
-    expect(radios).toHaveLength(2);
-    expect(radios[0]).toContain('checked=""');
-    expect(radios[1]).toContain('disabled=""');
-    expect(text(render('setup-new-agent'))).toContain('Pause and Stop: not checked on this fleet.');
+    expect(text(none)).toContain('It checks your guardrails, not your own agent. Testing your own agent opens once it has called through WhiteRoom.');
+    // "Test my own agent" is shown but can't be picked yet.
+    expect(none).toMatch(/<button[^>]*disabled=""[^>]*>Test my own agent<\/button>/);
+    expect(none).not.toContain('name="practice-who"');
+    expect(text(render('setup-new-agent'))).toContain('Human pause/stop Not checked · Pause and Stop aren’t on for this fleet.');
   });
 
-  it('the controls preview lists Pause and Stop on a fleet with no rules, and says so when the controls couldn’t be read', () => {
+  it('setup explains the adapter and links to how it works; the summary names no call count of its own', () => {
+    const html = render('setup');
+    expect(text(html)).toContain('Your agent needs a small adapter. A short script that passes each practice task to your agent. We give you a starter. How it works');
+    expect(html).toContain('href="https://www.npmjs.com/package/@whiteroom-ai/cli#connecting-your-own-agent"');
+    // The cost line is the only place the model calls are counted.
+    expect(text(html)).not.toMatch(/around \d+ model calls/);
+  });
+
+  it('opened from the Sandbox: the Sandbox’s agent and key, no Fleet key picker', () => {
+    const t = text(renderToStaticMarkup(createElement(PracticeTest, { preview: PRACTICE_STATES['setup-from-sandbox'] })));
+    expect(t).toContain('sbx-agent');
+    expect(t).toContain('the same key you connected to your Sandbox');
+    expect(t).not.toContain('Key to test with');
+  });
+
+  it('an engine with quick and deep tests: setup offers How thorough, quick first, and its rows say where each check happens', () => {
+    const t = text(renderToStaticMarkup(createElement(PracticeTest, { preview: PRACTICE_STATES['setup-quick'] })));
+    expect(t).toContain('How thorough');
+    expect(t).toContain('Quick · a few minutes');
+    expect(t).toContain('Your guardrails are checked live in your Sandbox.');
+    expect(t).not.toContain('3 runs show it passes every time');
+    expect(t).toContain('Check these in your Sandbox.');
+    expect(t).toContain('In the deep test.');
+    expect(t).toContain('Ignores a planted instruction');
+    // A quick test makes no control checks, so its cost line doesn't say they're included.
+    expect(t).toMatch(/Never more than 42 calls\./);
+    expect(t).not.toContain('including control checks');
+    // Start waits for the answer, so a test never starts without the profile the engine offers.
+    const askingHtml = renderToStaticMarkup(createElement(PracticeSetup, { fleet: 'prod-eu', data: PRACTICE_STATES['setup-quick'].setup!, busy: false, onStart: () => {} }));
+    const asking = text(askingHtml);
+    expect(askingHtml).toMatch(/<button[^>]*disabled=""[^>]*>Start test<\/button>/);
+    expect(asking).not.toContain('How thorough');
+    // An engine without profiles: today's setup, runs and all.
+    const old = text(renderToStaticMarkup(createElement(PracticeTest, { preview: PRACTICE_STATES.setup })));
+    expect(old).not.toContain('How thorough');
+    expect(old).toContain('3 runs show it passes every time');
+  });
+
+  it('the guardrail rows on a fleet with no rules, and when the controls couldn’t be read', () => {
     const setup = (controls: PracticeControlCheck[] | null) => text(renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES.setup, controls } })));
-    const pauseOnly = setup([{ id: 'ctl.pause_stop', label: 'Pause and Stop', mode: null, agents: [], checked: true, note: null, calls: 2 }]);
-    expect(pauseOnly).toContain('Pause and Stop');
-    expect(pauseOnly).not.toContain('No controls set');
-    expect(pauseOnly).not.toContain('Pause and Stop: not checked');
+    const pauseOnly = setup([{ id: 'ctl.pause_stop', label: 'Pause and Stop', mode: null, agents: [], checked: true, note: null, setup: 'ok', calls: 2 }]);
+    expect(pauseOnly).toContain('Human pause/stop Will be checked · 2 extra calls');
+    for (const name of ['Spend cap', 'Loop breaker + call rate', 'Allowlists + keywords']) expect(pauseOnly).toContain(`${name} Not set up · No rule yet.`);
+    // The Sandbox never sends anyone into production Controls.
+    expect(pauseOnly).not.toContain('Add in Controls');
     const unknown = setup(null);
-    expect(unknown).toContain('Couldn’t read this fleet’s controls just now.');
-    expect(unknown).not.toContain('No controls set');
-    expect(unknown).not.toContain('Pause and Stop: not checked');
-    expect(setup([])).toContain('No controls set on this fleet yet');
+    expect(unknown.match(/Not checked · Couldn’t read this fleet’s controls just now\./g)).toHaveLength(4);
+    expect(unknown).not.toContain('Add in Controls');
+    expect(setup([])).toContain('Human pause/stop Not checked · Pause and Stop aren’t on for this fleet.');
   });
 
-  it('a fleet whose calls go through a proxy URL or a cloud provider, with no Fleet key key to pick, is refused before Start', () => {
+  it('a fleet whose calls go through a proxy URL or a cloud provider, with no key from Fleet key to pick, is refused before Start', () => {
     const startButton = (html: string) => html.match(/<button[^>]*>Start test<\/button>/)?.[0] ?? '';
     const blocked = (provider: 'proxy-url' | 'cloud') => renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES['setup-blocked'], provider } }));
     expect(text(blocked('proxy-url'))).toContain('Practice tests don’t support this fleet’s provider yet. Use the connection test instead: Test my agent →');
     expect(text(blocked('cloud'))).toContain('To test an agent that uses Azure OpenAI, Claude on Azure (Foundry) or AWS Bedrock, add its key on Fleet key , then come back and pick it here.');
     expect(blocked('cloud')).toMatch(/<a[^>]*href="\/fleet-key"[^>]*>Fleet key<\/a>/);
     for (const provider of ['proxy-url', 'cloud'] as const) expect(startButton(blocked(provider))).toContain('disabled=""');
-    // The sample agent calls the provider itself: a cloud fleet can still run it; a proxy-URL fleet can't.
+    // The guardrails test calls the provider itself with any key: a cloud or proxy-URL fleet can run it.
     const sampleOnly = (provider: 'cloud' | 'proxy-url') => renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES['setup-blocked'], provider, setup: { ...PRACTICE_STATES['setup-blocked'].setup!, agents: [] } } }));
     expect(text(sampleOnly('cloud'))).not.toContain('provider yet');
     expect(startButton(sampleOnly('cloud'))).not.toContain('disabled=""');
-    expect(startButton(sampleOnly('proxy-url'))).toContain('disabled=""');
+    expect(startButton(sampleOnly('proxy-url'))).not.toContain('disabled=""');
     // Direct keys, or not yet known: Start stays open (its own checks still apply).
     for (const provider of ['direct-anthropic', 'direct-openai', 'unknown', undefined] as const) {
       const html = renderToStaticMarkup(createElement(PracticeTest, { preview: { ...PRACTICE_STATES.setup, provider } }));
@@ -92,7 +136,8 @@ describe('practice test screens', () => {
     const t = text(html);
     expect(t).toContain('Practice tests aren’t available yet');
     expect(t).toContain('Try again later.');
-    expect(html).toMatch(/<a[^>]*href="\/sandbox"[^>]*>← Back to Sandbox<\/a>/);
+    // The connection test, without the redirect back here.
+    expect(html).toMatch(/<a[^>]*href="\/sandbox\?connection=1"[^>]*>← Back to Sandbox<\/a>/);
     expect(html).not.toContain('role="alert"');
     expect(t).not.toMatch(/couldn’t read|Try again<|readiness|WhiteRoom server/i);
     // Even with a refusal left over, only the calm page shows.
@@ -111,23 +156,37 @@ describe('practice test screens', () => {
     expect(elsewhere).not.toMatch(/View it|End it|Continue it|Cancel it/);
   });
 
-  it('the terminal steps: the command, then the run code, which is never part of a command', () => {
+  it('the terminal steps: set the key, then one command that carries the run code', () => {
     const html = render('code');
     const t = text(html);
-    expect(t.indexOf('npx @whiteroom-ai/cli@2.0.0 practice run --adapter "node wr-adapter.mjs"')).toBeLessThan(t.indexOf('Paste this run code'));
-    expect(t).toContain('Expires in 29:48');
+    const run = `echo wrrt_PLACEHOLDERplaceholderPLACEHOLDERplace1 | npx @whiteroom-ai/cli@2.0.1 practice run --adapter 'node wr-adapter.mjs' --code-stdin`;
+    expect(t.indexOf('read -s ANTHROPIC_API_KEY && export ANTHROPIC_API_KEY')).toBeLessThan(t.indexOf(run));
+    // The commands are bash/zsh, as the CLI runs on macOS and Linux (WSL on Windows).
+    expect(t).toContain('In a macOS or Linux terminal (on Windows, use WSL): paste your key once and press Enter. Nothing shows');
+    expect(t).toContain('It includes your run code: expires in 29:48');
     expect(t).toContain('Get a new run code');
+    expect(t).not.toContain('Paste this run code');
     // On npm: no beta install step, no sha256 check.
     expect(t).not.toContain('Install the WhiteRoom CLI (beta)');
     expect(t).not.toContain('shasum');
     expect(t).toContain('Unknown command: practice');
     expect(t).toContain('End test');
-    const commands = [...html.matchAll(/<pre[^>]*>([^<]*)<\/pre>/g)].map((m) => m[1]);
-    expect(commands.some((c) => c.startsWith('wrrt_'))).toBe(true);
-    expect(commands.filter((c) => c.includes('practice')).every((c) => !c.includes('wrrt_'))).toBe(true);
-    expect(html).toContain('aria-label="Copy run code"');
-    expect(text(render('code-sample'))).not.toContain('starter adapter');
-    expect(text(render('code-gone'))).toContain('The run code is shown only once');
+    expect(html).toContain('aria-label="Copy the test command"');
+    expect(html).toContain('aria-label="Copy the key command"');
+    const sample = text(render('code-sample'));
+    expect(sample).not.toContain('starter adapter');
+    expect(sample).toContain('echo wrrt_PLACEHOLDERplaceholderPLACEHOLDERplace1 | npx @whiteroom-ai/cli@2.0.1 practice run --code-stdin');
+    expect(sample).toContain('Any Anthropic or OpenAI key of yours works: it pays for the test’s calls. Using OpenAI? Put OPENAI_API_KEY in place of ANTHROPIC_API_KEY');
+    const gone = text(render('code-gone'));
+    expect(gone).toContain('The run code is shown only once, when it’s made. Get a new one to see the command.');
+    expect(gone).not.toContain('echo wrrt_');
+    // An expired code is never shown in a command.
+    const expired = text(render('code-expired'));
+    expect(expired).toContain('This run code has expired. Get a new one to see the command.');
+    expect(expired).not.toContain('echo wrrt_');
+    // Provider not known yet: the key step offers OpenAI's variable too; a known provider names only its own.
+    expect(text(render('code'))).toContain('Using OpenAI? Put OPENAI_API_KEY in place of ANTHROPIC_API_KEY');
+    expect(text(render('code-azure'))).not.toContain('Using OpenAI?');
   });
 
   it('running, lost contact and finishing', () => {
@@ -143,16 +202,27 @@ describe('practice test screens', () => {
 
   it('results: verdict, fixes, how we know, what was tested, next step, disclaimer and retention', () => {
     const passed = text(render('passed'));
-    for (const s of ['Passed · all 11 checks · 3 runs', "How we know: Checked against the test tools' records", 'How we know: Seen by WhiteRoom',
+    for (const s of ['Passed · all 7 checks · 3 runs', 'The agent', 'The guardrails', 'Finishes the job correctly Passed · Passed in 3 of 3 runs.',
+      'Loop breaker + call rate Passed · Enforce: blocked. Watch: would have blocked.', 'Spend cap Passed · Enforce: blocked. Tested with a tiny limit.', "How we know: Checked against the test tools' records", 'How we know: Seen by WhiteRoom',
       'Call rate · Watch', 'Download report', 'What was tested', '(sent by the CLI, not verified)', 'Adapter (reported by the CLI)', DISCLAIMER,
       'Full details kept until', 'Test r-7f3a']) expect(passed).toContain(s);
     expect(text(render('passed-1run'))).toContain('Run it 3 times');
+    // A quick test takes no second run: no "Run it 3 times"; a deep one does.
+    const one = PRACTICE_STATES['passed-1run'];
+    const as = (profile: 'quick' | 'deep') => text(renderToStaticMarkup(createElement(PracticeTest, { preview: { ...one, result: { ...one.result!, report: { ...one.result!.report!, profile } } } })));
+    expect(as('quick')).not.toContain('Run it 3 times');
+    expect(as('quick')).toContain('A deep test can run 3 times to see that it passes every time.');
+    expect(as('deep')).toContain('Run it 3 times');
     const sample = text(render('passed-sample'));
     expect(sample).toContain('WhiteRoom’s sample agent, as support-bot');
-    expect(sample).toContain('Reports come from a test of your own agent.');
+    expect(sample).toContain('Download needs a test of your own agent.');
     expect(sample).not.toContain('Download report');
     const failed = text(render('failed'));
-    expect(failed).toMatch(/Didn't pass · 1 check failed.*What to fix.*Saves once when a tool times out.*Fix: create the key once/);
+    expect(failed).toMatch(/Didn't pass · Fails gracefully.*What to fix.*Saves once when a tool times out.*Fix: create the key once/);
+    expect(failed).toContain("Fails gracefully Didn't pass · Saves once when a tool times out: Passed in 2 of 3 runs.");
+    // A rule that doesn't cover the agent under test: Not set up for it, with the way to add it (§3b).
+    expect(text(render('not-set-up'))).toContain('Spend cap Not set up · Not set up for support-bot.');
+    expect(render('not-set-up')).not.toContain('href="/controls"');
     expect(failed).toContain('Rerun failed checks');
     const incomplete = text(render('incomplete'));
     expect(incomplete).toMatch(/What stopped the test.*Test problem \(not your agent\): Anthropic hit a rate limit or quota \(HTTP 429\)\./);
@@ -195,9 +265,9 @@ describe('practice tests on cloud providers (R7)', () => {
       expect(input).toContain('required=""');
       expect(startButton(html)).not.toContain('disabled=""');
     }
-    expect(text(render('setup-azure'))).toContain('Never more than 120 calls, billed by your Azure account. That includes control checks and memory summaries.');
+    expect(text(render('setup-azure'))).toContain('Never more than 130 calls, billed by your Azure account. That includes control checks.');
     expect(text(render('setup-foundry'))).toContain('billed by your Azure account');
-    expect(text(render('setup-bedrock'))).toMatch(/approx\. \$[\d.]+–\$[\d.]+ at Anthropic’s list prices\)\. Never more than 120 calls, billed by your AWS account/);
+    expect(text(render('setup-bedrock'))).toMatch(/approx\. \$[\d.]+–\$[\d.]+ at Anthropic’s list prices\)\. Never more than 130 calls, billed by your AWS account/);
   });
 
   it('a cloud key with no model yet: Start waits for one', () => {
@@ -247,9 +317,12 @@ describe('practice tests on cloud providers (R7)', () => {
   });
 
   it('the terminal steps name the key variable and Fleet key key for each provider', () => {
-    expect(text(render('code-azure'))).toContain('Needs Node 20 or later. Run this where AZURE_OPENAI_API_KEY is set to the same Azure OpenAI key you added on Fleet key (key ending a1b2). Keep');
+    expect(text(render('code-azure'))).toContain('Run this where AZURE_OPENAI_API_KEY is set to the same Azure OpenAI key you added on Fleet key (key ending a1b2).');
+    expect(text(render('code-azure'))).toContain('read -s AZURE_OPENAI_API_KEY && export AZURE_OPENAI_API_KEY');
+    expect(text(render('code-bedrock'))).toContain('read -s AWS_BEARER_TOKEN_BEDROCK && export AWS_BEARER_TOKEN_BEDROCK');
+    expect(text(render('code-foundry'))).toContain('read -s ANTHROPIC_FOUNDRY_API_KEY && export ANTHROPIC_FOUNDRY_API_KEY');
     // From the run's own fields, so any tab names the key; the command picks its variable, so other keys set on the computer don't matter.
-    expect(text(render('code-azure'))).toContain('npx @whiteroom-ai/cli@2.0.0 practice run --adapter "node wr-adapter.mjs" --key-env AZURE_OPENAI_API_KEY');
+    expect(text(render('code-azure'))).toContain(`npx @whiteroom-ai/cli@2.0.1 practice run --adapter 'node wr-adapter.mjs' --code-stdin --key-env AZURE_OPENAI_API_KEY`);
     expect(text(render('code'))).not.toContain('--key-env');
     expect(text(render('code-bedrock'))).toContain('AWS_BEARER_TOKEN_BEDROCK is set to the same AWS Bedrock key you added on Fleet key (key ending 7c3d)');
     expect(text(render('code-foundry'))).toContain('ANTHROPIC_FOUNDRY_API_KEY is set to the same Claude on Azure (Foundry) key you added on Fleet key (key ending 5e6f)');
@@ -269,36 +342,43 @@ describe('the Sandbox screens practice tests are added to', () => {
     { sandboxId: 's1', destroyedAt: '2026-10-10T10:00:00Z', overall: 'pass' as const, totalTasks: 6, isTrial: true },
   ];
 
-  it('Past tests without practice tests renders exactly as before', () => {
+  it('Past tests without practice tests renders the same with an empty practice list', () => {
     const before = renderToStaticMarkup(createElement(PastTests, { preview: sandboxOnly }));
     expect(renderToStaticMarkup(createElement(PastTests, { preview: sandboxOnly, practice: [] }))).toBe(before);
     expect(before).not.toContain('Practice');
-    expect(before).toContain('90px');
+    // Sandbox v2 phase 6: one Kind label per kind, and the old demo row waits behind Show all.
+    expect(before).toContain('>Connection test<');
+    expect(before).toContain('Show all (2)');
   });
 
   it('adds finished practice tests as rows, newest first; open ones stay on the card', () => {
     const rows = [...PRACTICE_ROWS, { ...PRACTICE_ROWS[0], id: 'r-00000000-0000-4000-8000-000000000000', lifecycle: 'active' as const, endedAt: null }];
-    const t = text(renderToStaticMarkup(createElement(PastTests, { preview: sandboxOnly, practice: rows })));
-    expect(t).toMatch(/Passed 18\/18 Practice/);
-    expect(t).toMatch(/Rerun · passed \(1 check\) 3\/3 Practice/);
-    expect(t).toMatch(/Didn't finish 2\/6 Practice \(sample\)/);
-    expect(t).toMatch(/All checks passed 4 Your agent/);
+    const t = text(renderToStaticMarkup(createElement(PastTests, { preview: sandboxOnly, practice: rows, previewShowAll: true })));
+    expect(t).toMatch(/Passed 18\/18 Practice tasks/);
+    // The failing row by name, from the engine's `failed` (no report fetched).
+    expect(t).toMatch(/Didn't pass · Fails gracefully 18\/18 Practice tasks/);
+    expect(t).toMatch(/Rerun · passed \(1 check\) 3\/3 Practice tasks/);
+    expect(t).toMatch(/Didn't finish 2\/6 Practice tasks \(sample\)/);
+    // A connection test shows its task count, as its detail does.
+    expect(t).toMatch(/Oct 11, \d{1,2}:00 [ap]m Passed 4 Connection test/);
+    expect(t).toMatch(/Passed 6 Connection test \(demo\)/);
     expect(t).toContain('Past tests 6');
+    expect(t).toContain('Show fewer');
     const open = renderToStaticMarkup(createElement(PastTests, { preview: sandboxOnly, practice: rows, previewOpen: PRACTICE_ROWS[0].id }));
-    expect(text(open)).toMatch(/Practice test ended .* 11 of 11 checks passed .* WhiteRoom keeps each practice test’s full details for 7 days and its result for 30 days\. Open the result/);
+    expect(text(open)).toMatch(/Practice test ended .* 12 of 12 checks passed .* WhiteRoom keeps each practice test’s full details for 7 days and its result for 30 days\. Open the result/);
   });
 
   it('the start screen card, only once practice tests answered', () => {
     expect(renderToStaticMarkup(createElement(PracticeCard, { entry: { fleet: 'prod-eu', rows: null, open: null } }))).toBe('');
     expect(text(renderToStaticMarkup(createElement(PracticeCard, { entry: { fleet: 'prod-eu', rows: [], open: null } }))))
-      .toContain('Try your agent on practice tasks 5 practice tasks and a check of your controls, about 5–10 min for one run, about 50 model calls on your key. Set up a practice test →');
+      .toContain('Try your agent on practice tasks 8 checks, 3 for your agent and 5 for its guardrails · about 5–10 min for one run Set up a practice test →');
   });
 
   it('Ready to go live gains one line, only when practice tests are available', () => {
     const passed = { sandboxId: 'p', mode: 'connected' as const, expiresInSeconds: 900, agents: [],
       controls: ['core.connect', 'core.handoff', 'core.resume'].map((controlId) => ({ controlId, name: controlId, result: { liveEvidence: { status: 'observed' } } })) } as unknown as RunStatusResult;
     const flow = (practice: PracticeEntry) => text(renderToStaticMarkup(createElement(TestRunFlow as FC<NonNullable<Parameters<typeof TestRunFlow>[0]>>, { previewUserId: 'u', previewRun: passed, previewPractice: practice })));
-    const line = 'Want more confidence before going live? Run a practice test : 5 practice tasks and a check of your controls, about 5–10 min for one run.';
+    const line = 'Want more confidence before going live? Run a practice test : 8 checks, 3 for your agent and 5 for its guardrails · about 5–10 min for one run.';
     const without = flow({ fleet: null, rows: null, open: null });
     expect(without).toContain('Ready to go live');
     expect(without).not.toContain('practice test');
@@ -312,7 +392,7 @@ describe('the Sandbox screens practice tests are added to', () => {
     const cloud = { sandboxId: 'p', mode: 'connected' as const, expiresInSeconds: 900, agents: [], provider: 'azure-openai', endpointHost: 'acme.openai.azure.com',
       controls: ['core.connect', 'core.handoff', 'core.resume'].map((controlId) => ({ controlId, name: controlId, result: { liveEvidence: { status: 'observed' } } })) } as unknown as RunStatusResult;
     const flow = (practice: PracticeEntry) => text(renderToStaticMarkup(createElement(TestRunFlow as FC<NonNullable<Parameters<typeof TestRunFlow>[0]>>, { previewUserId: 'u', previewRun: cloud, previewPractice: practice })));
-    const line = 'Want more confidence before going live? Run a practice test : 5 practice tasks and a check of your controls, about 5–10 min for one run.';
+    const line = 'Want more confidence before going live? Run a practice test : 8 checks, 3 for your agent and 5 for its guardrails · about 5–10 min for one run.';
     const without = flow({ fleet: null, rows: null, open: null });
     expect(without).toContain('Ready to go live');
     const withLine = flow({ fleet: 'prod-eu', rows: [], open: null });

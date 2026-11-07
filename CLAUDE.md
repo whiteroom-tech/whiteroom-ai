@@ -66,6 +66,13 @@ Never deploy to production any other way: no `gcloud builds submit` with
 `cloudbuild.yaml`, no `gcloud run deploy` against `whiteroom-prod`, and no
 manual traffic changes. Promote only when asked. See `ops/staging/README.md`.
 
+One sanctioned exception: the EU dashboard (`eu.app.whiteroom.tech`, project
+`whiteroom-eu`) has no staging of its own yet and deploys by hand with
+`cloudbuild-dashboard-eu.yaml`, only for a commit staging is already running.
+That file deploys with no traffic, checks the new revision, then moves traffic
+and rolls back on its own if the live check fails. Deploy it only when asked.
+See `ops/eu/README.md`.
+
 ## Pull requests
 
 The maintainer merges PRs themselves, sometimes mid-review. Before pushing

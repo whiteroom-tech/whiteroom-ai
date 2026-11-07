@@ -1,11 +1,14 @@
 // Pure helpers for Runs (README › Screens › 2a / 2b). A run is one agent's
 // shift; the engine's list_runs / get_run_events serve them.
 
-import type { AuditEntry, RunEvent, RunEventsResult, RunFlag, RunSummary } from '@/lib/whiteroom/types';
+import type { AuditEntry, CallRuleAction, GovernanceRuleType, RunEvent, RunEventsResult, RunFlag, RunHeader, RunRuleAction, RunSummary } from '@/lib/whiteroom/types';
 import type { Sheet } from '@/lib/xlsx';
-import type { IconName, TagTone } from '@whiteroom/ui';
-import { activityRow, clock } from '@/lib/home';
-import { fmtTime } from '@/lib/format';
+import type { TagTone } from '@whiteroom/ui';
+import { activityRow, clock, usd } from '@/lib/home';
+import { REASON_LABELS, RULE_LABELS } from '@/lib/governance';
+import { MODE_LABEL, NOTIFY } from '@/lib/vocab';
+import { counted, fmtTime, plural } from '@/lib/format';
+import { addDays as addZoneDays, daysBetween as zoneDaysBetween, clockOf, dayKey, formatDayKey, formatInZone, hourOf, offsetLabel, startOfDay, viewerZone, zoneAbbr } from '@/lib/zone-time';
 
 export type RunsPreset = 'today' | '7d' | '30d';
 export type RunsRange = RunsPreset | 'custom';
@@ -19,14 +22,21 @@ export type RunsView = { range: RunsRange; day: string | null; from?: string | n
 /** IANA zone names the engine accepts: "UTC", "GMT", "America/New_York", "America/Argentina/Salta". Matches run-id.ts in the engine. */
 export const TIME_ZONE_NAME = /^[A-Za-z]+(?:\/[A-Za-z0-9_+\-]+){0,2}$/;
 
+/** The column name for the viewer's zone in exports: its IANA name, or "local time" when it isn't one we trust. */
+export function exportZoneLabel(): string {
+  const tz = viewerZone();
+  return TIME_ZONE_NAME.test(tz) ? tz : 'local time';
+}
+
 /**
- * The viewer's IANA time zone, which Runs' days are in. Browsers report IANA
- * names; if one ever didn't fit, days here stay local while the engine would
- * read UTC, so that (unseen) case falls back to UTC rather than a 400.
+ * The viewer's IANA time zone (the saved one, else the browser's), which
+ * Runs' days are in and which the engine is sent as `tz`. Browsers report IANA
+ * names; if one ever didn't fit, the engine would refuse it, so that (unseen)
+ * case falls back to UTC rather than a 400.
  */
 export function viewerTimeZone(): string {
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  return tz && TIME_ZONE_NAME.test(tz) ? tz : 'UTC';
+  const tz = viewerZone();
+  return TIME_ZONE_NAME.test(tz) ? tz : 'UTC';
 }
 
 /** A ?day= that's a real date and not after today, else null. */
@@ -34,16 +44,14 @@ export function validDay(v: string | null, now: number = Date.now()): string | n
   return v && /^\d{4}-\d{2}-\d{2}$/.test(v) && addDays(v, 0) === v && v <= localDay(now) ? v : null;
 }
 
-/** "2026-09-30" for the viewer's local day holding `ms`. */
+/** "2026-09-30" for the viewer's day holding `ms`. */
 export function localDay(ms: number = Date.now()): string {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return dayKey(ms);
 }
 
 /** The calendar day `n` days after `day` (negative for before). */
 export function addDays(day: string, n: number): string {
-  const [y, m, d] = day.split('-').map(Number);
-  return localDay(new Date(y, m - 1, d + n, 12).getTime());
+  return addZoneDays(day, n);
 }
 
 /** The viewer's local days: today, or the last 7 / 30 including today. */
@@ -60,9 +68,19 @@ export function runsWindow(view: RunsView, now: number = Date.now()): { fromDay:
   return runsDays(view.range, now);
 }
 
+/**
+ * A view's window as resolved now, with the zone that resolved it: "today"
+ * means another day after midnight or in another zone, so data is matched to
+ * the window it was read for by this key, never by the relative pick.
+ */
+export function windowKey(view: RunsView, now: number = Date.now()): string {
+  const d = runsWindow(view, now);
+  return `${d.fromDay}|${d.toDay}|${viewerTimeZone()}`;
+}
+
 /** Whole days from `a` to `b` (b − a). */
 export function daysBetween(a: string, b: string): number {
-  return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
+  return zoneDaysBetween(a, b);
 }
 
 /**
@@ -70,22 +88,92 @@ export function daysBetween(a: string, b: string): number {
  * before `oldest` (what the plan keeps), and at most MAX_SPAN_DAYS long. When
  * it's too long, the end the person just moved (`moved`) wins.
  */
-export function clampSpan(from: string, to: string, opts: { today: string; oldest?: string | null; moved?: 'from' | 'to' }): { from: string; to: string } {
+export function clampSpan(from: string, to: string, opts: { today: string; oldest?: string | null; moved?: 'from' | 'to'; maxDays?: number }): { from: string; to: string } {
+  const max = opts.maxDays ?? MAX_SPAN_DAYS;
   let f = from <= to ? from : to;
   let t = from <= to ? to : from;
   if (t > opts.today) t = opts.today;
   if (opts.oldest && f < opts.oldest) f = opts.oldest;
   if (f > t) f = t;
-  if (daysBetween(f, t) + 1 > MAX_SPAN_DAYS) {
-    if (opts.moved === 'from') t = addDays(f, MAX_SPAN_DAYS - 1);
-    else f = addDays(t, 1 - MAX_SPAN_DAYS);
+  if (daysBetween(f, t) + 1 > max) {
+    if (opts.moved === 'from') t = addDays(f, max - 1);
+    else f = addDays(t, 1 - max);
   }
   return { from: f, to: t };
+}
+
+/** Midnight starting the viewer's `day`, as an instant. */
+export function dayStart(day: string): Date {
+  return new Date(startOfDay(day));
+}
+
+/**
+ * A view's days as instants: from local midnight of the first day; to local
+ * midnight after the last day, or null ("now") when the last day is today.
+ */
+export function viewInstants(view: RunsView, now: number = Date.now()): { from: Date; to: Date | null } {
+  const { fromDay, toDay } = runsWindow(view, now);
+  return { from: dayStart(fromDay), to: toDay >= localDay(now) ? null : dayStart(addDays(toDay, 1)) };
 }
 
 /** The first day the plan still keeps, or null when the plan isn't known. */
 export function oldestKept(retentionDays: number | null | undefined, now: number = Date.now()): string | null {
   return retentionDays && retentionDays > 0 ? addDays(localDay(now), 1 - retentionDays) : null;
+}
+
+/** The Runs list's filters. All of them live in the address; nothing else holds them. */
+export interface RunsFilters {
+  range: RunsRange;
+  agent: string;
+  show: RunsShow;
+  /** One picked day, which overrides the range. */
+  day: string | null;
+  /** A picked hour of the picked day. */
+  hour: number | null;
+  /** A custom range's ends. */
+  from: string | null;
+  to: string | null;
+}
+
+/**
+ * The filters an address names: unknown values fall back to the defaults, a
+ * day older than the plan keeps moves to the oldest kept (and drops its hour,
+ * which belonged to the day the link named), and a custom range is kept to
+ * what the engine takes (clampSpan).
+ */
+export function runsFiltersFromParams(params: { get(name: string): string | null }, retentionDays?: number, now: number = Date.now()): RunsFilters {
+  const oldest = oldestKept(retentionDays, now);
+  const r = params.get('range');
+  const s = params.get('show');
+  const named = validDay(params.get('day'), now);
+  const tooOld = !!(named && oldest && named < oldest);
+  const rawHour = params.get('hour');
+  const h = Number(rawHour);
+  const f = validDay(params.get('from'), now);
+  const t = validDay(params.get('to'), now);
+  const span = f && t ? clampSpan(f, t, { today: localDay(now), oldest }) : null;
+  return {
+    range: (RUNS_RANGES as (string | null)[]).includes(r) ? (r as RunsRange) : '7d',
+    agent: params.get('agent') ?? 'all',
+    show: s === 'flagged' || s === 'rules' ? s : 'all',
+    day: tooOld ? oldest : named,
+    hour: rawHour !== null && Number.isInteger(h) && h >= 0 && h <= 23 && named && !tooOld ? h : null,
+    from: span?.from ?? null,
+    to: span?.to ?? null,
+  };
+}
+
+/** The address for `f`: the path with its other query kept, and defaults dropped. */
+export function runsFiltersUrl(path: string, search: string, f: RunsFilters): string {
+  const sp = new URLSearchParams(search);
+  if (f.range === '7d') sp.delete('range'); else sp.set('range', f.range);
+  if (f.agent === 'all') sp.delete('agent'); else sp.set('agent', f.agent);
+  if (f.show !== 'all') sp.set('show', f.show); else sp.delete('show');
+  if (f.day) sp.set('day', f.day); else sp.delete('day');
+  if (f.day && f.hour !== null) sp.set('hour', String(f.hour)); else sp.delete('hour');
+  if (f.range === 'custom' && f.from && f.to) { sp.set('from', f.from); sp.set('to', f.to); } else { sp.delete('from'); sp.delete('to'); }
+  const qs = sp.toString();
+  return qs ? `${path}?${qs}` : path;
 }
 
 /**
@@ -99,8 +187,7 @@ export function stripEndFor(span: { fromDay: string; toDay: string }, end: strin
 
 /** "Tue, Sep 30"; with `relative`, "Today · Wed, Oct 1" and "Yesterday · …" for the two latest days. */
 export function dayLabel(day: string, now: number = Date.now(), relative = true): string {
-  const [y, m, d] = day.split('-').map(Number);
-  const text = new Date(y, m - 1, d, 12).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const text = formatDayKey(day, { weekday: 'short', month: 'short', day: 'numeric' });
   if (!relative) return text;
   const today = localDay(now);
   if (day === today) return `Today · ${text}`;
@@ -109,9 +196,9 @@ export function dayLabel(day: string, now: number = Date.now(), relative = true)
 }
 
 /** The day strip: the `n` days ending on `end` (default today), oldest first, zero where no runs started. */
-export function stripDays(counts: { day: string; runs: number }[], n = 30, end: string = localDay()): { day: string; runs: number }[] {
-  const byDay = new Map(counts.map((c) => [c.day, c.runs]));
-  return Array.from({ length: n }, (_, i) => { const day = addDays(end, i - n + 1); return { day, runs: byDay.get(day) ?? 0 }; });
+export function stripDays<C extends { day: string; runs: number }>(counts: C[], n = 30, end: string = localDay()): (C | { day: string; runs: number })[] {
+  const byDay = new Map(counts.map((c) => [c.day, c]));
+  return Array.from({ length: n }, (_, i) => { const day = addDays(end, i - n + 1); return byDay.get(day) ?? { day, runs: 0 }; });
 }
 
 /** "45 s", "23 min", "1 h 05 min". */
@@ -123,11 +210,35 @@ export function fmtLength(seconds: number): string {
   return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} min`;
 }
 
-export type StandOutTone = 'flag' | 'rule' | 'failed' | 'coverage' | 'clean';
+export type StandOutTone = 'flag' | 'blocked' | 'rule' | 'failed' | 'coverage' | 'clean';
 
 /** True when an engine without flags (P2.1) answered a `flagged` request with every run. */
 export function ignoresFlagged(runs: Pick<RunSummary, 'flags'>[]): boolean {
   return runs.length > 0 && runs.every((r) => r.flags === undefined);
+}
+
+/** The hour (0–23) a run started, in the viewer's time zone. */
+export function localHour(iso: string): number {
+  return hourOf(Date.parse(iso));
+}
+
+/** True when the engine ignored the hour filter (before it took `hour`): a run from another hour came back. */
+export function ignoresHour(runs: Pick<RunSummary, 'startedAt'>[], hour: number): boolean {
+  return runs.some((r) => localHour(r.startedAt) !== hour);
+}
+
+/** "9 am", "12 pm": an hour of the day, plainly. */
+export function hourLabel(hour: number): string {
+  const h = hour % 12 === 0 ? 12 : hour % 12;
+  return `${h} ${hour < 12 ? 'am' : 'pm'}`;
+}
+
+/** Runs › Show: every run, flagged ones, or ones where a rule acted or would have. */
+export type RunsShow = 'all' | 'flagged' | 'rules';
+
+/** True when the engine doesn't count rule actions per run (before E1a), so it ignored the Rule activity filter. */
+export function ignoresRuleActivity(runs: Pick<RunSummary, 'wouldActCalls'>[]): boolean {
+  return runs.length > 0 && runs.every((r) => r.wouldActCalls === undefined);
 }
 
 /** One flag in words: "Repeating the same call: fetch_page ×6", "4 failed calls in a row". */
@@ -137,27 +248,58 @@ export function flagText(f: RunFlag): string {
 
 /**
  * The run table's "What stood out", from what the run's record shows. A flag
- * leads, then a rule block or failed calls, and otherwise coverage: "Nothing
- * unusual" only when every call could be read, never a clean answer for
- * something that wasn't measured.
+ * leads, then a block, a Watch "would have blocked", or failed calls.
+ * Otherwise coverage: "Nothing unusual" (a dash in the table) only when every
+ * call could be read, never a clean answer for something that wasn't measured.
  */
-export function standOut(run: Pick<RunSummary, 'calls' | 'failedCalls' | 'blockedCalls' | 'coverage' | 'flags'>): { tone: StandOutTone; text: string } {
-  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+export function standOut(run: Pick<RunSummary, 'calls' | 'failedCalls' | 'blockedCalls' | 'coverage' | 'flags'> & Partial<Pick<RunSummary, 'wouldActCalls'>>): { tone: StandOutTone; text: string } {
   const [first, ...more] = run.flags ?? [];
-  if (first) return { tone: 'flag', text: more.length ? `${flagText(first)} · ${plural(more.length, 'more flag')}` : flagText(first) };
-  if (run.blockedCalls > 0) return { tone: 'rule', text: `A rule blocked ${plural(run.blockedCalls, 'call')}` };
-  if (run.failedCalls > 0) return { tone: 'failed', text: `${plural(run.failedCalls, 'call')} failed` };
+  if (first) return { tone: 'flag', text: more.length ? `${flagText(first)} · ${counted(more.length, 'more flag')}` : flagText(first) };
+  // wouldActCalls counts every Watch rule action (a would-block, pause, stop or alert), so it's
+  // worded as acting, never as blocking.
+  const would = run.wouldActCalls ?? 0;
+  if (run.blockedCalls > 0) return { tone: 'blocked', text: `Blocked ${counted(run.blockedCalls, 'call')}${would ? ` · ${wouldActText(would)}` : ''}` };
+  if (would > 0) return { tone: 'rule', text: wouldActText(would) };
+  if (run.failedCalls > 0) return { tone: 'failed', text: `${counted(run.failedCalls, 'call')} failed` };
   const { calls, checked } = run.coverage;
   if (calls > 0 && checked === 0) return { tone: 'coverage', text: 'Not assessed: none of its calls could be read' };
   if (checked < calls) return { tone: 'coverage', text: `Partly checked: ${checked} of ${calls} calls could be read` };
+  // The table shows a clean run as "—"; text-only places (an agent's recent runs, exports) use these words.
   return { tone: 'clean', text: 'Nothing unusual' };
+}
+
+/**
+ * "3 would have acted (Watch)": Watch rule actions when what they'd have done isn't known.
+ * The same words as Home's and the agent page's rule tallies.
+ */
+export function wouldActText(n: number): string {
+  return `${n} would have acted (${MODE_LABEL.watch})`;
+}
+
+/** "-05:00": the viewer's UTC offset at `d`, so an export's times are unambiguous in a daylight-saving fall-back hour. */
+export function utcOffset(d: Date): string {
+  return offsetLabel(d.getTime());
+}
+
+/** "0:24", "12:05", "1:02:09": a run's length as a clock, for the Runs table. */
+export function fmtClockLength(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = String(s % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+}
+
+/** "lead-agent #12": how a run is named in lists and exports. */
+export function runName(r: { agentId: string; shift: number }): string {
+  return `${r.agentId} #${r.shift}`;
 }
 
 /** "Sep 30" and "1:52 pm" in the viewer's time zone (ICU's narrow spaces normalised). */
 function dateAndTime(iso: string): { date: string; time: string } {
   const d = new Date(iso);
   return {
-    date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    date: formatInZone(d, { month: 'short', day: 'numeric' }),
     time: fmtTime(d),
   };
 }
@@ -170,19 +312,30 @@ export function fmtStarted(iso: string): string {
 
 /** The viewer's time zone abbreviation, e.g. "PDT", for the footer. */
 export function zoneName(now: number = Date.now()): string {
-  const part = new Intl.DateTimeFormat('en-US', { timeZoneName: 'short' }).formatToParts(new Date(now)).find((p) => p.type === 'timeZoneName');
-  return part?.value ?? 'local time';
+  return zoneAbbr(now);
 }
 
-/** "6 in the last 7 days" / "2 today" / "8 on Tue, Sep 30". */
-export function runsCount(total: number, view: RunsView, now: number = Date.now()): string {
-  if (view.day) return view.day === localDay(now) ? `${total} today` : `${total} on ${dayLabel(view.day, now, false)}`;
+/** The range a view covers, in words: "last 7 days", "today", "Oct 1 – Oct 20". */
+export function spanLabel(view: RunsView, now: number = Date.now()): string {
+  if (view.day) return dayLabel(view.day, now, false);
   if (view.range === 'custom') {
     const { fromDay, toDay } = runsWindow(view, now);
-    return `${total} from ${dayLabel(fromDay, now, false)} to ${dayLabel(toDay, now, false)}`;
+    const md = (d: string) => dayLabel(d, now, false).replace(/^\w+, /, '');
+    return fromDay === toDay ? dayLabel(fromDay, now, false) : `${md(fromDay)} – ${md(toDay)}`;
   }
-  const span = view.range === 'today' ? 'today' : view.range === '7d' ? 'in the last 7 days' : 'in the last 30 days';
-  return `${total} ${span}`;
+  return view.range === 'today' ? 'today' : view.range === '7d' ? 'last 7 days' : 'last 30 days';
+}
+
+/**
+ * The run table's title: "Showing 12 of 60 runs · last 7 days", or for a
+ * picked day "Sat, Oct 24 · 47 runs" (with the hour first when one is picked).
+ */
+export function runsTitle(o: { shown: number; total: number; view: RunsView; show: RunsShow; hour: number | null }, now: number = Date.now()): string {
+  const noun = o.show === 'flagged' ? 'flagged runs' : o.show === 'rules' ? 'runs with rule activity' : 'runs';
+  const one = o.show === 'flagged' ? 'flagged run' : o.show === 'rules' ? 'run with rule activity' : 'run';
+  const count = o.shown < o.total ? `Showing ${o.shown} of ${o.total} ${noun}` : `${o.total} ${o.total === 1 ? one : noun}`;
+  if (o.view.day) return `${o.hour !== null ? `${hourLabel(o.hour)} · ` : ''}${spanLabel(o.view, now)} · ${count}`;
+  return `${count} · ${spanLabel(o.view, now)}`;
 }
 
 /** Where Run detail's "← Runs" returns to (README › Runs › Leaving and returning). */
@@ -223,22 +376,42 @@ export function runHref(runId: string): string {
 
 // ── Run detail (screen 2b) ─────────────────────────────────────────────────
 
+/** A timeline row's mark: ▶ run started, ◇ model call, ✓ finished, ✕ blocked or failed, • another event. */
+export type TimelineGlyph = 'start' | 'call' | 'done' | 'bad' | 'event';
+export const GLYPH: Record<TimelineGlyph, string> = { start: '▶', call: '◇', done: '✓', bad: '✕', event: '•' };
+
 export interface TimelineRow {
   id: string;
   time: string;
-  icon: IconName;
-  iconColor: string;
+  /** Same minute as the row above: shown quieter. */
+  sameTime: boolean;
+  glyph: TimelineGlyph;
   text: string;
   tag?: { label: string; tone: TagTone };
+  /** A call a rule acted on, or would have: the row is shaded, with what the rule did and its mode. */
+  rule?: { text: string; mode: 'watch' | 'enforce' };
 }
 
 const CALL_OUTCOME: Record<string, { label: string; tone: TagTone } | undefined> = {
   upstream_error: { label: 'Failed', tone: 'warn' },
   stream_interrupted: { label: 'Interrupted', tone: 'warn' },
-  governance_blocked: { label: 'Blocked', tone: 'muted' },
+  governance_blocked: { label: 'Blocked', tone: 'block' },
   client_cancelled: { label: 'Cancelled', tone: 'muted' },
   unknown: { label: 'Status unknown', tone: 'muted' },
 };
+
+/** Why a rule acted, said plainly: "model not on the allowlist". Falls back to the engine's short reason. */
+const REASON_TEXT: Record<string, string> = {
+  model_not_allowed: 'model not on the allowlist',
+  tool_not_allowed: 'tool on the blocked list',
+  budget_exceeded: 'over the spend cap',
+  loop_detected: 'the same call repeated',
+  rate_exceeded: 'too many calls',
+  keyword_found: 'a keyword was found',
+};
+export function reasonText(reason: string | null | undefined): string | null {
+  return reason ? REASON_TEXT[reason] ?? REASON_LABELS[reason] ?? null : null;
+}
 
 /**
  * What a call row says about tools (audit M18): the tools the model asked to
@@ -256,41 +429,190 @@ export function callToolsText(e: Pick<RunEvent, 'requestedTools'>): string {
   return ` · asked for ${named.slice(0, 4).join(', ')}${named.length > 4 ? ` +${named.length - 4} more` : ''}`;
 }
 
+/** What a rule did to a call, past tense: "would have been blocked", "blocked", "paused the agent". */
+const CALL_OUTCOME_TEXT: Record<CallRuleAction['outcome'], string> = {
+  would_block: 'would have been blocked', blocked: 'blocked', paused: 'paused the agent', stopped: 'stopped the agent', notified: NOTIFY.done,
+};
+/** A Watch rule's would-be outcome, by its response: it only blocks when the response is Block. */
+const WOULD_TEXT: Record<string, string> = {
+  block: 'would have been blocked', pause: 'would have paused the agent', stop: 'would have stopped the agent', notify: `would have ${NOTIFY.done}`,
+};
+
+/** A call's rule note: "would have been blocked: model not on the allowlist". */
+function callRule(e: RunEvent): TimelineRow['rule'] {
+  const all = e.ruleActions ?? [];
+  // A rule that acted leads; else a Watch rule that would have blocked; else whatever came first.
+  const a = all.find((x) => x.mode === 'enforce') ?? all.find((x) => x.outcome === 'would_block') ?? all[0];
+  if (!a) return undefined;
+  const more = all.filter((x) => x !== a);
+  const why = reasonText(a.reason) ?? (a.ruleName ?? RULE_LABELS[a.ruleType as GovernanceRuleType] ?? 'a rule').toLowerCase();
+  const did = a.mode === 'enforce' ? CALL_OUTCOME_TEXT[a.outcome] : WOULD_TEXT[a.response];
+  return { text: `${did ?? 'a rule acted'}: ${why}${more.length ? ` (+${more.length} more)` : ''}`, mode: a.mode === 'enforce' ? 'enforce' : 'watch' };
+}
+
+const START_EVENT = /^(watch_start|run_started)$/;
+// A rule that really acted (a Watch "would block" is not one).
+const BAD_EVENT = /^governance_(block|blocked|pause|stop)$/;
+// The run's own end; a finished task within the run stays a plain event.
+const DONE_EVENT = /^(watch_end|run_ended|run_finished)$/;
+
 /**
  * One row of What happened. Calls say what the agent called and which tools
- * it asked for; events reuse the activity feed's plain-language copy, so the
- * same event reads the same everywhere.
+ * it asked for; the model shows only when it changes from the call before
+ * (`prevModel`; the summary line names the run's models). Events reuse the
+ * activity feed's plain-language copy, so the same event reads the same everywhere.
  */
-export function timelineRow(e: RunEvent): TimelineRow {
+export function timelineRow(e: RunEvent, prevModel: string | null = null): TimelineRow {
   if (e.kind === 'call') {
     const tools = callToolsText(e);
+    const outcome = CALL_OUTCOME[e.type];
+    const bad = e.type === 'governance_blocked' || e.type === 'upstream_error' || e.type === 'stream_interrupted';
+    const rule = callRule(e);
     return {
-      id: e.id, time: clock(e.at), icon: 'dash', iconColor: 'var(--tx2)',
-      text: `Model call${e.model ? ` · ${e.model}` : ''}${tools}`,
-      tag: CALL_OUTCOME[e.type],
+      id: e.id, time: clock(e.at), sameTime: false, glyph: bad ? 'bad' : 'call',
+      text: `Model call${e.model && e.model !== prevModel ? ` · ${e.model}` : ''}${tools}`,
+      // The rule note already says it was blocked; the tag would repeat it.
+      tag: rule && e.type === 'governance_blocked' ? undefined : outcome,
+      rule,
     };
   }
-  const rule = e.type.startsWith('governance');
+  const isRule = e.type.startsWith('governance');
   // A rule event's "×N" also counts repeats folded in from before it, which can
-  // be the previous run's; the Rule actions card above counts this run exactly.
-  const detail = rule ? { ...(e.detail ?? {}), occurrences: undefined } : e.detail;
-  const row = activityRow({ ...(detail ?? {}), id: e.id, type: e.type, timestamp: e.at } as Parameters<typeof activityRow>[0]);
-  const handover = /handover|watch_start|watch_end|rest/.test(e.type);
-  return {
-    id: e.id, time: row.time, text: row.text, tag: row.tag,
-    icon: handover ? 'swap' : rule ? 'lock' : 'info',
-    iconColor: handover ? 'var(--ho)' : rule ? 'var(--tx)' : 'var(--tx2)',
-  };
+  // be the previous run's; the Rule activity card above counts this run exactly.
+  const detail = isRule ? { ...(e.detail ?? {}), occurrences: undefined } : e.detail;
+  // A run is one agent's, named in the page title: rows skip its name.
+  const row = activityRow({ ...(detail ?? {}), id: e.id, type: e.type, timestamp: e.at } as Parameters<typeof activityRow>[0], Date.now(), { agentShown: true });
+  const glyph: TimelineGlyph = START_EVENT.test(e.type) ? 'start' : DONE_EVENT.test(e.type) ? 'done' : BAD_EVENT.test(e.type) ? 'bad' : 'event';
+  return { id: e.id, time: row.time, sameTime: false, text: glyph === 'start' ? 'Run started' : row.text, tag: row.tag, glyph };
 }
 
 /**
- * "Sep 30 · started 1:52 pm EDT · 23 min · shift 8". The zone name is the
- * start time's, so a run from before a DST change keeps its own abbreviation.
+ * A page of What happened, oldest first: a call shows its model only when it
+ * changed (`firstModel`, the run's first, is in the summary line), and a time
+ * repeated from the row above is quieter.
  */
-export function runMeta(run: { startedAt: string; endedAt: string; shift: number }): string {
-  const { date, time } = dateAndTime(run.startedAt);
-  const length = fmtLength((Date.parse(run.endedAt) - Date.parse(run.startedAt)) / 1000);
-  return `${date} · started ${time} ${zoneName(Date.parse(run.startedAt))} · ${length} · shift ${run.shift}`;
+export function timelineRows(events: RunEvent[], firstModel: string | null = null): TimelineRow[] {
+  let model = firstModel;
+  let prevTime = '';
+  return events.map((e) => {
+    const row = timelineRow(e, model);
+    if (e.kind === 'call' && e.model) model = e.model;
+    row.sameTime = row.time === prevTime;
+    prevTime = row.time;
+    return row;
+  });
+}
+
+/** Run totals as the runs list has them: Run detail's fallback on engines without them in get_run_events. */
+export type RunTotals = Pick<RunSummary, 'calls' | 'failedCalls' | 'blockedCalls' | 'spendMicros' | 'unpricedAttempts'> & Partial<Pick<RunSummary, 'wouldActCalls'>>;
+
+/** The run's summary line, as parts: "Oct 24, 8:45 pm EDT", "24 s", the counts that are known, its models. */
+export function runSummary(run: RunHeader, fallback?: RunTotals | null): {
+  started: string; length: string; calls?: number; spend?: string; failed?: number; blocked?: number;
+  /** Calls a Watch rule would have blocked; `atLeast` when some of the run's rule actions aren't linked to calls. */
+  wouldBlock?: { n: number; atLeast: boolean };
+  /** Watch rule actions, when no would-block calls are known (older or unlinked runs): worded as acting. */
+  wouldAct?: number;
+  models: string[];
+} {
+  const linked = run.wouldBlockCalls;
+  const acted = run.wouldActCalls ?? fallback?.wouldActCalls;
+  const unlinked = (run.ruleActions ?? []).some((a) => a.mode !== 'enforce' && !a.eventIds?.length);
+  const t = Date.parse(run.startedAt);
+  const micros = run.spendMicros ?? fallback?.spendMicros;
+  const unpriced = run.unpricedAttempts ?? fallback?.unpricedAttempts ?? 0;
+  return {
+    started: `${fmtStarted(run.startedAt)} ${zoneName(t)}`,
+    length: fmtLength((Date.parse(run.endedAt) - t) / 1000),
+    calls: run.calls ?? fallback?.calls,
+    // Some calls had no price: the spend is a lower bound.
+    spend: micros === undefined ? undefined : `${unpriced ? 'at least ' : ''}${usd(micros / 1e6)}`,
+    failed: run.failedCalls ?? fallback?.failedCalls,
+    blocked: run.blockedCalls ?? fallback?.blockedCalls,
+    // The linked would-block count is a lower bound: "at least" when some actions aren't linked, or it's
+    // below the run's Watch total. With none linked, the total is shown as actions. Zero is left out.
+    wouldBlock: linked ? { n: linked, atLeast: unlinked || (acted !== undefined && linked < acted) } : undefined,
+    wouldAct: !linked && acted ? acted : undefined,
+    models: run.models ?? [],
+  };
+}
+
+const RESPONSE_DONE: Record<string, string> = { pause: 'paused the agent', stop: 'stopped the agent', notify: NOTIFY.done };
+
+/**
+ * The run page's flags note. Flags never block, but a rule may have, so the
+ * note points to Rule activity rather than saying nothing was blocked.
+ */
+export function flagsNote(actions: RunRuleAction[] | undefined): string {
+  const acted = (actions ?? []).filter((a) => a.mode === 'enforce');
+  if (acted.some((a) => a.response === 'block')) return 'Flags don’t block. Blocks are under Rule activity.';
+  if (acted.length) return 'Flags don’t block. What rules did is under Rule activity.';
+  return 'Flags don’t block anything.';
+}
+
+/** A Rule activity row: "Model allowlist would have blocked |5| calls: model not on the allowlist" (count bold). */
+export function ruleActivityRow(a: RunRuleAction): { lead: string; count: number | null; tail: string } {
+  const name = a.ruleName ?? RULE_LABELS[a.ruleType] ?? 'A rule';
+  const why = reasonText(a.reason);
+  const n = a.occurrences;
+  const would = a.mode === 'enforce' ? '' : 'would have ';
+  if (a.response === 'block') return { lead: `${name} ${a.mode === 'enforce' ? 'blocked' : 'would have blocked'}`, count: n, tail: `${plural(n, 'call')}${why ? `: ${why}` : ''}` };
+  return { lead: `${name} ${would}${RESPONSE_DONE[a.response] ?? 'acted'}${n > 1 ? ` ×${n}` : ''}${why ? `: ${why}` : ''}`, count: null, tail: '' };
+}
+
+/** The Rule activity card's footer: what the modes meant for the calls. */
+export function ruleActivityFooter(actions: RunRuleAction[]): string {
+  const watch = actions.some((a) => a.mode !== 'enforce');
+  const enforce = actions.some((a) => a.mode === 'enforce');
+  if (watch && !enforce) return 'These rules are in Watch, so the calls went through.';
+  if (enforce && !watch) return 'These rules are set to Enforce, so they acted.';
+  return 'Rules in Watch let their calls through; rules set to Enforce acted.';
+}
+
+/** The Rule activity header link: one rule opens itself in Controls, several open Controls. */
+export function ruleActivityLink(actions: RunRuleAction[]): { href: string; text: string } {
+  const ids = [...new Set(actions.map((a) => a.ruleId))];
+  if (ids.length === 1) return { href: `/controls?rule=${encodeURIComponent(ids[0])}`, text: `Open ${RULE_LABELS[actions[0].ruleType] ?? 'the rule'} in Controls` };
+  return { href: '/controls', text: 'Open Controls' };
+}
+
+/** Every event of a run, for Export this run: page after page, up to `maxPages`; `truncated` when there were more. */
+export async function collectRunEvents(get: (cursor: string | null) => Promise<RunEventsResult>, maxPages = 100): Promise<{ events: RunEvent[]; truncated: boolean }> {
+  const events: RunEvent[] = [];
+  for (let page = 0; page < maxPages; page++) {
+    const res = await get(page === 0 ? null : String(page));
+    events.push(...res.events);
+    if (res.page + 1 >= res.pages) return { events, truncated: false };
+  }
+  return { events, truncated: true };
+}
+
+/** Export this run: the summary, then every call and event in order, times in the viewer's zone. */
+export function runSheets(run: RunHeader, events: RunEvent[], fallback?: RunTotals | null): Sheet[] {
+  const s = runSummary(run, fallback);
+  const summary: (string | number)[][] = [['Run', runName(run)], ['Agent', run.agentId], ['Started', s.started], ['Length', s.length]];
+  if (s.calls !== undefined) summary.push(['Model calls', s.calls]);
+  // A number, so it sums and sorts; a lower bound when some calls had no price (counted on the next row).
+  const micros = run.spendMicros ?? fallback?.spendMicros;
+  if (micros !== undefined) {
+    summary.push(['Spend (USD)', Math.round(micros) / 1e6]);
+    summary.push(['Unpriced calls', run.unpricedAttempts ?? fallback?.unpricedAttempts ?? 0]);
+  }
+  if (s.failed !== undefined) summary.push(['Failed calls', s.failed]);
+  if (s.blocked !== undefined) summary.push(['Blocked calls', s.blocked]);
+  if (s.wouldBlock) summary.push(['Would have blocked (calls)', s.wouldBlock.atLeast ? `at least ${s.wouldBlock.n}` : s.wouldBlock.n]);
+  if (s.wouldAct) summary.push(['Watch rule actions', s.wouldAct]);
+  if (s.models.length) summary.push(['Models', s.models.join(', ')]);
+  const rows = events.map((e) => {
+    const r = timelineRow(e);
+    const d = new Date(e.at);
+    return [`${localDay(d.getTime())} ${clockOf(d.getTime())} ${utcOffset(d)}`, e.kind === 'call' ? 'Model call' : 'Event', r.text, e.model ?? '', r.tag?.label ?? '', r.rule ? `${r.rule.text} (${MODE_LABEL[r.rule.mode]})` : ''];
+  });
+  return [
+    { name: 'Run', header: ['Field', 'Value'], rows: summary },
+    // Rows are in the viewer's zone, named by its IANA name; each time carries its UTC offset, so the fall-back hour is unambiguous.
+    { name: 'What happened', header: [`Time (${exportZoneLabel()})`, 'Kind', 'What', 'Model', 'Outcome', 'Rule'], rows },
+  ];
 }
 
 export type RunKind = 'all' | 'events';
@@ -317,9 +639,9 @@ export async function loadRunPage(
 
 /** The old event feed's export: every event, and the finished tasks alone. */
 export function eventFeedSheets(entries: AuditEntry[]): Sheet[] {
-  const header = ['Time', 'Agent', 'Shift', 'Type', 'Task / Event', 'Tokens', 'Minutes', 'Remaining', 'Tool Calls'];
+  const header = ['Time', 'Agent', 'Run number', 'Type', 'Task / Event', 'Tokens', 'Minutes', 'Remaining', 'Tool Calls'];
   const row = (e: AuditEntry) => [
-    new Date(e.timestamp).toLocaleString('en-US', { hour12: false }), e.agentId || '', e.watchNumber, e.type || '',
+    formatInZone(e.timestamp, { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: false }), e.agentId || '', e.watchNumber, e.type || '',
     e.type === 'task_complete' ? e.taskName || '' : '', e.tokensUsed, e.minutesSpent, e.remaining,
     (Array.isArray(e.details) ? e.details : []).map((d) => (d.args ? `${d.name}(${d.args})` : d.name)).join('  |  '),
   ];
@@ -329,10 +651,27 @@ export function eventFeedSheets(entries: AuditEntry[]): Sheet[] {
   ];
 }
 
-/** Runs export: spend is a lower bound when some calls had no price, so that count gets its own column. */
-export const RUNS_EXPORT_HEADER = ['Run', 'Agent', 'Shift', 'Started (UTC)', 'Length (s)', 'Calls', 'Failed', 'Blocked', 'Spend (USD)', 'Unpriced calls', 'What stood out'];
-export function runsExportRow(r: RunSummary): (string | number)[] {
-  return [r.runId, r.agentId, r.shift, r.startedAt, r.lengthSeconds, r.calls, r.failedCalls, r.blockedCalls, Math.round(r.spendMicros) / 1e6, r.unpricedAttempts, standOut(r).text];
+/**
+ * Runs export: one row per run, times in the viewer's zone (named in the
+ * header by its IANA name, which holds across a daylight-saving change), a
+ * link that opens the run. Spend is a lower bound when some calls
+ * had no price, so that count gets its own column.
+ */
+export function runsExportHeader(zone: string = exportZoneLabel()): string[] {
+  return ['Run', 'Agent', 'Run number', `Started (${zone})`, 'Length (s)', 'Calls', 'Failed', 'Blocked', 'Watch rule actions', 'Spend (USD)', 'Unpriced calls', 'What stood out', 'Link'];
+}
+export function runsExportRow(r: RunSummary, origin = ''): (string | number)[] {
+  const d = new Date(r.startedAt);
+  const started = `${localDay(d.getTime())} ${clockOf(d.getTime()).slice(0, 5)} ${utcOffset(d)}`;
+  const stood = standOut(r);
+  return [runName(r), r.agentId, r.shift, started, r.lengthSeconds, r.calls, r.failedCalls, r.blockedCalls, r.wouldActCalls ?? '', Math.round(r.spendMicros) / 1e6, r.unpricedAttempts, stood.tone === 'clean' ? '' : stood.text, `${origin}${runHref(r.runId)}`];
+}
+
+/** Export dialog › Which days: yesterday, the last 7 days, or the last 30, as the viewer's days ('shown' is the page's own view, handled by the page). */
+export type ExportSpan = 'shown' | 'yesterday' | '7d' | '30d';
+export function exportDays(span: Exclude<ExportSpan, 'shown'>, now: number = Date.now()): { fromDay: string; toDay: string } {
+  if (span === 'yesterday') { const y = addDays(localDay(now), -1); return { fromDay: y, toDay: y }; }
+  return runsDays(span, now);
 }
 
 // ── Unusual behaviour (P2.5) ────────────────────────────────────────

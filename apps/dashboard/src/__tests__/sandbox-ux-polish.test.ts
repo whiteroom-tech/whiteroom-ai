@@ -1,6 +1,6 @@
 // Sandbox polish from walking the flow as a new user: Connect offers "No code
 // change" only where it works, says what to put in x-whiteroom-agent, the
-// Start form asks for the API key first (fleet token as a side note) and says
+// Start form asks for the provider key first (an older WhiteRoom fleet key as a side note) and says
 // where to find it, and the remembered provider is tagged "Last used".
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -55,13 +55,12 @@ describe('Connect: the agent name', () => {
     expect(agentNameNote(live({ agents: [agent(PLACEHOLDER_AGENT)] }))).toBeNull();
   });
 
-  it('shows the line under a live test’s code, not once the agent’s own name is in it, nor in a demo', () => {
+  it('shows the line under a live test’s code, not once the agent’s own name is in it', () => {
     const note = 'Put your agent’s own name in place of test-agent.';
     expect(render(live())).toContain(note);
     expect(render(live({ provider: 'bedrock-mantle' }))).toContain(note);
     const named = live({ agents: [{ agentId: 'support-bot', role: 'worker', status: 'active', watchMinutes: 2, watchCount: 0, totalTasks: 0, totalTokens: 0, pairedWith: null, currentWatch: null }] });
     expect(render(named)).not.toContain(note);
-    expect(render(live({ mode: 'demo' }))).not.toContain(note);
   });
 });
 
@@ -70,16 +69,16 @@ describe('Start your test: the key field', () => {
   const field = (credential = '', provider: 'anthropic' | 'openai' = 'anthropic') =>
     renderToStaticMarkup(createElement(KeyField, { credential, showKey: false, provider, onChange: noop, onToggleShow: noop }));
 
-  it('asks for the API key, with the fleet token as a side note', () => {
+  it('asks for the provider key, with an older WhiteRoom fleet key as a side note', () => {
     const empty = field();
     expect(empty).toContain('<label class="');
-    expect(empty).toMatch(/for="sandbox-key">Your agent’s API key<\/label>/);
+    expect(empty).toMatch(/for="sandbox-key">Your agent’s provider key<\/label>/);
     expect(empty).not.toContain('or a WhiteRoom fleet token');
-    expect(empty).toContain('Have a WhiteRoom fleet token? Paste it instead.');
+    expect(empty).toContain('Have an older WhiteRoom fleet key (wr_…)? Paste it instead.');
     // Placeholder prefixes stay.
     expect(empty).toContain('placeholder="sk-ant-…, sk-…, or wr_…"');
     // The side note goes once something is pasted.
-    expect(field('sk-ant-x')).not.toContain('Have a WhiteRoom fleet token?');
+    expect(field('sk-ant-x')).not.toContain('Have an older WhiteRoom fleet key');
   });
 
   it('says where to find the key for the provider picked', () => {
@@ -113,10 +112,9 @@ describe('the test’s provider after a reload', () => {
     expect(directProviderOf(live({ provider: 'anthropic' }), 'openai')).toBe('anthropic');
   });
 
-  it('falls back to the page’s choice when the engine names none, for a demo, or before a test', () => {
+  it('falls back to the page’s choice when the engine names none, or before a test', () => {
     expect(directProviderOf(live({ provider: null }), 'openai')).toBe('openai');
     expect(directProviderOf(live(), 'anthropic')).toBe('anthropic');
-    expect(directProviderOf(live({ mode: 'demo', provider: 'anthropic' }), 'openai')).toBe('openai');
     expect(directProviderOf(null, 'openai')).toBe('openai');
     expect(directProviderOf(live({ provider: 'azure-openai' }), 'bedrock-mantle')).toBe('anthropic');
   });
@@ -168,22 +166,16 @@ describe('sign-out on a shared browser', () => {
 
 describe('Starting a test: what is sent', () => {
   it('a live Anthropic or OpenAI test names its provider and sends the pasted key', () => {
-    expect(runOptions('connected', 'openai', ' sk-abc ').opts).toMatchObject({ mode: 'connected', apiKey: 'sk-abc', provider: 'openai' });
-    expect(runOptions('connected', 'anthropic', 'sk-ant-abc').opts).toMatchObject({ apiKey: 'sk-ant-abc', provider: 'anthropic' });
+    expect(runOptions('openai', ' sk-abc ').opts).toMatchObject({ mode: 'connected', apiKey: 'sk-abc', provider: 'openai' });
+    expect(runOptions('anthropic', 'sk-ant-abc').opts).toMatchObject({ apiKey: 'sk-ant-abc', provider: 'anthropic' });
   });
   it('a fleet token goes as the token, not as a key', () => {
-    const r = runOptions('connected', 'anthropic', 'wr_tok');
+    const r = runOptions('anthropic', 'wr_tok');
     expect(r.pastedToken).toBe('wr_tok');
     expect(r.opts.apiKey).toBeUndefined();
   });
-  it('a demo names no provider and sends no key', () => {
-    const r = runOptions('demo', 'openai', 'sk-abc');
-    expect(r.opts).not.toHaveProperty('provider');
-    expect(r.opts.apiKey).toBeUndefined();
-    expect(r.pastedToken).toBeUndefined();
-  });
   it('a cloud test sends only its endpoint and provider', () => {
-    const r = runOptions('connected', 'azure-openai', 'sk-abc', { provider: 'azure-openai', endpoint: 'https://acme.openai.azure.com' });
+    const r = runOptions('azure-openai', 'sk-abc', { provider: 'azure-openai', endpoint: 'https://acme.openai.azure.com' });
     expect(r.opts).toMatchObject({ provider: 'azure-openai', endpoint: 'https://acme.openai.azure.com' });
     expect(r.opts.apiKey).toBeUndefined();
   });

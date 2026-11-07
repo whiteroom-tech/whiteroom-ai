@@ -51,7 +51,6 @@ export interface RunStatusResult {
   policyMode?: "observe" | "enforce";
   policyVersion?: number;
   liveReady?: boolean;
-  demoComplete?: boolean;
   overallControlResult?: ReadinessResult;
   agents?: {
     agentId: string;
@@ -80,14 +79,6 @@ export interface RunStatusResult {
   /** The engine keeps an ended test's report for Past tests (sandbox_report). Left out by engines that don't. */
   reportsKept?: boolean;
   error?: string;
-}
-
-export interface DemoStep {
-  step: number;
-  action: string;
-  detail: string;
-  assertion?: string;
-  timestamp: string;
 }
 
 // Only the short-lived sandbox token is ever read from storage. A production
@@ -230,7 +221,7 @@ async function bffFetch<T>(path: string, opts?: RequestInit, explicitToken?: str
 
 export function createRun(opts: {
   apiKey?: string;
-  mode: "demo" | "connected";
+  mode: "connected";
   ttlMinutes?: number;
   selectedCatalogIds?: string[];
   customControls?: CustomControlInput[];
@@ -248,15 +239,6 @@ export function createRun(opts: {
 
 export function getStatus(): Promise<RunStatusResult> {
   return bffFetch<RunStatusResult>("status");
-}
-
-export function startDemo(sandboxId: string): Promise<{
-  success?: boolean;
-  message?: string;
-  steps?: DemoStep[];
-  error?: string;
-}> {
-  return bffFetch(`${sandboxId}/demo`, { method: "POST" });
 }
 
 export function destroyRun(sandboxId: string): Promise<{

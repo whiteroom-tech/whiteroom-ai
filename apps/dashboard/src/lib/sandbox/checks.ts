@@ -1,0 +1,317 @@
+// Sandbox v2 checks (spec sandbox-v2 §2 steps 4–5, §5): a checking window on
+// the Sandbox fleet, judged stage by stage. The browser talks to
+// /api/sandbox/checks/<action>, which checks the signed-in user owns the
+// production fleet and calls only the engine's sandbox_check_* actions.
+//
+// Pure parts (the request check and the answer parsing) are shared with the
+// BFF, so both agree on what a valid request and a valid answer look like.
+
+import { timeAgo } from '@/lib/format';
+import { sandboxPost, SandboxFleetError } from './fleet';
+
+// No resume: a check lifts its own stop after 5 seconds, so the page never sends one.
+export const SANDBOX_CHECKS_ACTIONS = ['status', 'start', 'stop'] as const;
+export type SandboxChecksAction = (typeof SANDBOX_CHECKS_ACTIONS)[number];
+
+/** Each BFF action's engine action: Sandbox-only, all of them. */
+export const SANDBOX_CHECKS_ENGINE_ACTION: Record<SandboxChecksAction, string> = {
+  status: 'sandbox_check_status',
+  start: 'sandbox_check_start',
+  stop: 'sandbox_check_stop',
+};
+
+export function isSandboxChecksAction(v: unknown): v is SandboxChecksAction {
+  return typeof v === 'string' && (SANDBOX_CHECKS_ACTIONS as readonly string[]).includes(v);
+}
+
+/** The seven checks, in the engine's fixed order. */
+export const CHECK_IDS = ['spend_cap', 'loop_rate', 'allowlists_keywords', 'pause_stop', 'long_task', 'provider_errors', 'finishes_correctly'] as const;
+export type CheckId = (typeof CHECK_IDS)[number];
+
+/** Names used when the engine sends none. */
+export const CHECK_NAMES: Record<CheckId, string> = {
+  spend_cap: 'Spend cap',
+  loop_rate: 'Loops and call rate',
+  allowlists_keywords: 'Allowlists and keywords',
+  pause_stop: 'Pause and stop',
+  long_task: 'Long task',
+  provider_errors: 'Provider errors',
+  finishes_correctly: 'Finishes the job correctly',
+};
+
+export const CHECK_STATUSES = ['pending', 'passed', 'failed', 'not_triggered', 'not_checked'] as const;
+export type CheckStatus = (typeof CHECK_STATUSES)[number];
+export const CHECK_STAGES = ['observe', 'enforce', 'pause', 'stop', 'errors', 'done'] as const;
+export type CheckStage = (typeof CHECK_STAGES)[number];
+
+export interface CheckWindow {
+  id: string;
+  startedAt: string;
+  endedAt: string | null;
+  stage: CheckStage;
+  injectErrors: boolean;
+  calls: number;
+  /** The agent the window judges (its first named one), and other agents that called during it, not judged. Absent from older engines. */
+  agentId?: string | null;
+  otherAgents?: string[];
+}
+
+/** A saved Sandbox rule judged at its limit for the window's agent. */
+export interface RuleProbe {
+  ruleId: string;
+  ruleType: string;
+  status: 'passed' | 'failed' | 'not_set_up';
+  acts: 'would_act' | 'notifies' | 'blocks' | 'pauses' | 'stops' | null;
+  detail: string;
+}
+
+/** Live parts outside the checks: the wait after the hand-over's 429, and the test block. */
+export interface CheckPart {
+  id: 'rate_limit_wait' | 'test_block';
+  status: CheckStatus;
+  detail: string;
+}
+
+export interface CheckResult {
+  id: CheckId;
+  label: string;
+  status: CheckStatus;
+  detail: string;
+}
+
+export interface CheckRule {
+  ruleId: string;
+  ruleType: string;
+  check: CheckId | null;
+  wouldAct: boolean;
+  acted: boolean;
+  status: CheckStatus;
+  detail: string;
+}
+
+export interface CheckState {
+  window: CheckWindow | null;
+  checks: CheckResult[];
+  rules: CheckRule[];
+  /** The agent, live: its last call to the Sandbox and its calls outside a check. Absent from an older engine. */
+  activity?: { lastCallAt: string | null; callsOutsideWindow24h: number };
+  /** Absent from an older engine: rows 04–06 then read from their checks alone, and row 03 from the provider error. */
+  probes?: RuleProbe[];
+  parts?: CheckPart[];
+  streaming?: { streamed: boolean; lines: string[] };
+}
+
+const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+const str = (v: unknown, max = 512): v is string => typeof v === 'string' && v.length > 0 && v.length <= max;
+const text = (v: unknown, max = 500) => (typeof v === 'string' ? v.slice(0, max) : '');
+const oneOf = <T extends string>(list: readonly T[], v: unknown): v is T => typeof v === 'string' && (list as readonly string[]).includes(v);
+
+function windowOf(v: unknown): CheckWindow | null | undefined {
+  if (v === null) return null;
+  if (!isObj(v) || !str(v.id, 128) || !str(v.startedAt, 64) || !oneOf(CHECK_STAGES, v.stage)) return undefined;
+  return {
+    id: v.id,
+    startedAt: v.startedAt,
+    endedAt: str(v.endedAt, 64) ? v.endedAt : null,
+    stage: v.stage,
+    injectErrors: v.injectErrors !== false,
+    calls: typeof v.calls === 'number' && Number.isFinite(v.calls) && v.calls >= 0 ? Math.floor(v.calls) : 0,
+    ...('agentId' in v && { agentId: str(v.agentId, 128) ? v.agentId : null }),
+    ...(Array.isArray(v.otherAgents) && { otherAgents: v.otherAgents.filter((a): a is string => str(a, 128)).slice(0, 10) }),
+  };
+}
+
+const PROBE_STATUSES = ['passed', 'failed', 'not_set_up'] as const;
+const PROBE_ACTS = ['would_act', 'notifies', 'blocks', 'pauses', 'stops'] as const;
+const PART_IDS = ['rate_limit_wait', 'test_block'] as const;
+
+function probesOf(v: unknown): RuleProbe[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  return v.slice(0, 50).flatMap((p): RuleProbe[] => (isObj(p) && str(p.ruleId, 128) && str(p.ruleType, 64) && oneOf(PROBE_STATUSES, p.status)
+    ? [{ ruleId: p.ruleId, ruleType: p.ruleType, status: p.status, acts: oneOf(PROBE_ACTS, p.acts) ? p.acts : null, detail: text(p.detail) }] : []));
+}
+
+function partsOf(v: unknown): CheckPart[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  return v.flatMap((p): CheckPart[] => (isObj(p) && oneOf(PART_IDS, p.id) && oneOf(CHECK_STATUSES, p.status) ? [{ id: p.id, status: p.status, detail: text(p.detail) }] : []));
+}
+
+function streamingOf(v: unknown): CheckState['streaming'] {
+  if (!isObj(v)) return undefined;
+  return { streamed: v.streamed === true, lines: Array.isArray(v.lines) ? v.lines.filter((l): l is string => str(l, 300)).slice(0, 5) : [] };
+}
+
+/**
+ * The check status answer, with only the fields the page uses, or null when
+ * it isn't one. The seven checks always come back in the fixed order, a
+ * missing one as "pending".
+ */
+export function checkStateOf(data: unknown): CheckState | null {
+  if (!isObj(data)) return null;
+  const window = windowOf(data.window);
+  if (window === undefined || !Array.isArray(data.checks)) return null;
+  const given = new Map<string, Record<string, unknown>>();
+  for (const c of data.checks) if (isObj(c) && oneOf(CHECK_IDS, c.id)) given.set(c.id, c);
+  const checks = CHECK_IDS.map((id): CheckResult => {
+    const c = given.get(id);
+    return {
+      id,
+      label: c && str(c.label, 80) ? c.label : CHECK_NAMES[id],
+      status: c && oneOf(CHECK_STATUSES, c.status) ? c.status : 'pending',
+      detail: text(c?.detail),
+    };
+  });
+  const rules = (Array.isArray(data.rules) ? data.rules : []).slice(0, 50).flatMap((r): CheckRule[] => {
+    if (!isObj(r) || !str(r.ruleId, 128) || !str(r.ruleType, 64)) return [];
+    return [{
+      ruleId: r.ruleId,
+      ruleType: r.ruleType,
+      check: oneOf(CHECK_IDS, r.check) ? r.check : null,
+      wouldAct: r.wouldAct === true,
+      acted: r.acted === true,
+      status: oneOf(CHECK_STATUSES, r.status) ? r.status : 'pending',
+      detail: text(r.detail),
+    }];
+  });
+  const a = isObj(data.activity) ? data.activity : null;
+  const activity = a ? {
+    lastCallAt: str(a.lastCallAt, 40) && Number.isFinite(Date.parse(a.lastCallAt)) ? a.lastCallAt : null,
+    callsOutsideWindow24h: Number.isSafeInteger(a.callsOutsideWindow24h) && (a.callsOutsideWindow24h as number) >= 0 ? a.callsOutsideWindow24h as number : 0,
+  } : undefined;
+  const probes = probesOf(data.probes);
+  const parts = partsOf(data.parts);
+  const streaming = streamingOf(data.streaming);
+  return {
+    window, checks, rules, ...(activity && { activity }),
+    ...(probes && { probes }), ...(parts && { parts }), ...(streaming && { streaming }),
+  };
+}
+
+/** A call this recent means the agent is calling now. */
+export const CALLING_MS = 60_000;
+
+const ago = (ms: number, now: number) => {
+  const s = Math.floor(ms / 1000);
+  return s < 60 ? `${Math.max(1, s)} s ago` : timeAgo(now - ms, now);
+};
+
+/**
+ * Step 4's live line: is the agent calling, and is this run being checked? Null before the
+ * engine says (an older engine) or before any call while waiting for the first.
+ */
+export function activityLine(state: CheckState, now = Date.now(), sample = false): { calling: boolean; text: string } | null {
+  const a = state.activity;
+  if (!a?.lastCallAt) return null;
+  // The sample agent stops when its check ends: there's no next run to talk about.
+  if (sample && (!state.window || state.window.endedAt)) return null;
+  const since = Math.max(0, now - Date.parse(a.lastCallAt));
+  const calling = since < CALLING_MS;
+  const w = state.window;
+  const last = `last call ${ago(since, now)}`;
+  if (w && !w.endedAt) {
+    // During a check, the agent it's judging by name when the engine says (mockup Rev 3: "support-bot is calling").
+    const Who = w.agentId ?? (sample ? 'The sample agent' : 'Your agent');
+    const checked = `${w.calls} ${w.calls === 1 ? 'call' : 'calls'} checked`;
+    return calling
+      ? { calling, text: `${Who} is calling · ${last} · ${checked}` }
+      : { calling, text: `${Who} stopped calling · ${last} · ${checked}. The check carries on when it calls again.` };
+  }
+  return calling
+    ? { calling, text: `Your agent is calling the Sandbox · ${last}. This check has finished; its next run starts a new one.` }
+    : { calling, text: `Your agent’s ${last}. A new check starts on its next run.` };
+}
+
+export type StartCheck = { ok: true; request: { inject_errors?: boolean } } | { ok: false; error: string };
+
+/** What Start may send: the provider-error toggle only. */
+export function startCheck(body: Record<string, unknown>): StartCheck {
+  if (body.injectErrors === undefined) return { ok: true, request: {} };
+  if (typeof body.injectErrors !== 'boolean') return { ok: false, error: 'Invalid request.' };
+  return { ok: true, request: { inject_errors: body.injectErrors } };
+}
+
+// ── Wording ──
+
+/** The order rules are enforced in (spec §5 stage 2). */
+const ENFORCE_ORDER: CheckId[] = ['spend_cap', 'allowlists_keywords', 'loop_rate'];
+
+/**
+ * The check being tested now, by the window's stage (first-run UX spec §7.3):
+ * observe tests the long task, enforce the first rule check still pending, the
+ * pause and stop stages pause and stop, errors provider errors. Null when the
+ * window is over, or that check is already decided.
+ */
+export function currentCheckOf(state: CheckState): CheckId | null {
+  const w = state.window;
+  if (!w || w.endedAt) return null;
+  const pending = (id: CheckId) => state.checks.find((c) => c.id === id)?.status === 'pending';
+  const id: CheckId | null = w.stage === 'observe' ? 'long_task'
+    : w.stage === 'enforce' ? ENFORCE_ORDER.find(pending) ?? null
+    : w.stage === 'pause' || w.stage === 'stop' ? 'pause_stop'
+    : w.stage === 'errors' ? 'provider_errors'
+    : null;
+  return id && pending(id) ? id : null;
+}
+
+/** No call for this long during a check: the agent has stopped, so the page offers Finish now. */
+export const QUIET_MS = 2 * 60_000;
+
+/**
+ * A check is open and nothing has happened for QUIET_MS: no call, counted from the later of the
+ * agent's last call and the check's start (a check started by Check again isn't quiet at once).
+ */
+export function isQuiet(state: CheckState, now = Date.now()): boolean {
+  const w = state.window;
+  const last = state.activity?.lastCallAt;
+  if (!w || w.endedAt || !last) return false;
+  return now - Math.max(Date.parse(last), Date.parse(w.startedAt) || 0) >= QUIET_MS;
+}
+
+/** The live stage line in plain words; `sample`: about the sample agent, not yours. */
+export function stageLine(state: CheckState, sample = false): string {
+  const who = sample ? 'the sample agent' : 'your agent';
+  const w = state.window;
+  if (!w) return '';
+  if (w.endedAt) return 'Done';
+  switch (w.stage) {
+    case 'observe': return `Watching ${who}’s calls…`;
+    case 'enforce': {
+      const now = ENFORCE_ORDER.map((id) => state.checks.find((c) => c.id === id)).find((c) => c?.status === 'pending');
+      return now ? `Testing ${now.label}…` : 'Testing your rules…';
+    }
+    case 'pause': return `Paused ${who} for 5 seconds…`;
+    case 'stop': return `Stopped ${who} for 5 seconds…`;
+    case 'errors': return 'Sending a provider error…';
+    // The engine ends the window itself at done; this shows for at most one read.
+    case 'done': return 'Getting your results…';
+  }
+}
+
+export const STATUS_WORDS: Record<CheckStatus, string> = {
+  pending: 'Waiting',
+  passed: 'Passed',
+  failed: 'Failed',
+  not_triggered: 'Not triggered by this run',
+  not_checked: 'Not checked',
+};
+
+
+// ── Browser calls (through the BFF) ──
+
+const call = (action: SandboxChecksAction, body: Record<string, unknown>) => sandboxPost(`/api/sandbox/checks/${action}`, body);
+
+function mustState(data: unknown): CheckState {
+  const state = checkStateOf(data);
+  if (!state) throw new SandboxFleetError('WhiteRoom sent an answer the dashboard couldn’t read. Try again.', 502);
+  return state;
+}
+
+export async function getCheckState(fleet: string, sandboxFleetId: string): Promise<CheckState> {
+  return mustState(await call('status', { fleet, sandboxFleetId }));
+}
+
+/** Start (Check again) or Stop (Finish now); then the current state (the answer's own, or a fresh read). */
+export async function checkAction(action: Exclude<SandboxChecksAction, 'status'>, fleet: string, sandboxFleetId: string): Promise<CheckState> {
+  const data = await call(action, { fleet, sandboxFleetId });
+  return checkStateOf(data) ?? getCheckState(fleet, sandboxFleetId);
+}

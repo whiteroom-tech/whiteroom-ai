@@ -77,17 +77,19 @@ const label = (k: CredentialKey) => `${PROVIDER_LABELS[k.provider] ?? k.provider
 function consequences(kind: RotationKind) {
   return kind === 'api-key' ? (
     <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 4 }}>
-      <li>You get a new API key. The current one stops working at once, for the CLI and every agent using it.</li>
+      <li>You get a new fleet key. The current one stops working at once, for the CLI and every agent using it.</li>
       <li>Every proxy URL is replaced with a new one. Agents on the old URLs fail until you update them.</li>
       <li>Other WhiteRoom accounts that linked this fleet lose access. A Bedrock role connection is removed and has to be set up again.</li>
     </ul>
   ) : (
-    <p style={{ margin: 0 }}>Every proxy URL is replaced with a new one, with the same provider key behind it. Agents on the old URLs fail until you update them. Your API key stays the same.</p>
+    <p style={{ margin: 0 }}>Every proxy URL is replaced; the provider key behind each stays. Agents on old URLs fail until you update them. Your fleet key stays the same.</p>
   );
 }
 
-export function RotateDialog({ kind, open, onClose, onDone }: {
+export function RotateDialog({ kind, open, onClose, onDone, preview = false }: {
   kind: RotationKind;
+  /** /dev/fleet-key: confirming closes the dialog and changes nothing. */
+  preview?: boolean;
   open: boolean;
   onClose: () => void;
   /** The change went through: the new API key (on a rotation) and the new proxy URLs, to show once. */
@@ -98,6 +100,7 @@ export function RotateDialog({ kind, open, onClose, onDone }: {
   const { cloudKeys, error, unconfirmedKey } = state;
 
   async function run(reissueCloudIdentityKeys: boolean) {
+    if (preview) { onClose(); return; }
     if (!canConfirm(state, busy)) return;
     setBusy(true); dispatch({ type: 'start' });
     try {
@@ -112,7 +115,7 @@ export function RotateDialog({ kind, open, onClose, onDone }: {
   }
 
   const close = () => { dispatch({ type: 'close' }); onClose(); };
-  const title = kind === 'api-key' ? 'Rotate your API key?' : 'Replace every proxy URL?';
+  const title = kind === 'api-key' ? 'Rotate your WhiteRoom fleet key?' : 'Replace every proxy URL?';
 
   return (
     <>
@@ -123,11 +126,11 @@ export function RotateDialog({ kind, open, onClose, onDone }: {
           <div style={{ display: 'grid', gap: 10 }}>
             {consequences(kind)}
             {error && <p role="alert" style={{ margin: 0, color: 'var(--bad)' }}>{error}</p>}
-            {unconfirmedKey && <CopyChip text={unconfirmedKey} display="Possibly new API key (hidden)" label="Copy the possibly new API key" />}
+            {unconfirmedKey && <CopyChip text={unconfirmedKey} display="Possibly new fleet key (hidden)" label="Copy the possibly new fleet key" />}
             {unconfirmedKey && <p style={{ margin: 0 }}>Copy it, then reload this page to see which key is current before trying again.</p>}
           </div>
         }
-        confirmLabel={kind === 'api-key' ? 'Rotate API key' : 'Replace URLs'}
+        confirmLabel={kind === 'api-key' ? 'Rotate fleet key' : 'Replace URLs'}
         busy={!canConfirm(state, busy)}
         onConfirm={() => void run(false)}
         onCancel={close}
@@ -137,7 +140,7 @@ export function RotateDialog({ kind, open, onClose, onDone }: {
         title="Reissue keys that spend on WhiteRoom’s cloud account?"
         body={
           <div style={{ display: 'grid', gap: 10 }}>
-            <p style={{ margin: 0 }}>These keys call your model through WhiteRoom’s own cloud identity, so anyone holding one spends on that account. New ones are issued only if you confirm here.</p>
+            <p style={{ margin: 0 }}>These keys use WhiteRoom’s cloud identity, so anyone holding one spends on that account. New ones are issued only if you confirm here.</p>
             <ul style={{ margin: 0, paddingLeft: 18 }}>{cloudKeys?.map((k) => <li key={k.prefix}>{label(k)}</li>)}</ul>
             {error && <p role="alert" style={{ margin: 0, color: 'var(--bad)' }}>{error}</p>}
           </div>
@@ -157,14 +160,14 @@ export function RotationResult({ result, onDismiss }: { result: Extract<Credenti
     <Banner variant="info" icon="check">
       <div style={{ display: 'grid', gap: 8 }}>
         <span>
-          {result.apiKey ? 'Your API key is rotated. ' : 'Your proxy URLs are replaced. '}
+          {result.apiKey ? 'Your fleet key is rotated. ' : 'Your proxy URLs are replaced. '}
           These are shown once, so copy them now and update your agents.
         </span>
         {result.notSaved && <strong>Your new key couldn’t be saved to your account, so this is the only copy. Copy it before you leave this page.</strong>}
-        {result.apiKey && <CopyChip text={result.apiKey} display="New API key (hidden)" label="Copy the new API key" />}
+        {result.apiKey && <CopyChip text={result.apiKey} display="New fleet key (hidden)" label="Copy the new fleet key" />}
         {result.proxyKeys.map((k) => k.wrKey && (
           <div key={k.wrKey.slice(0, 22)} style={{ display: 'grid', gap: 4 }}>
-            <span style={{ fontSize: 12.5 }}>{label(k)}{k.endpoint ? ` · ${k.endpoint}` : ''}</span>
+            <span style={{ fontSize: 'var(--fs-sm)' }}>{label(k)}{k.endpoint ? ` · ${k.endpoint}` : ''}</span>
             <CopyChip text={`${PROXY_ORIGIN}/${k.wrKey}`} label={`Copy the new proxy URL for the ${label(k)}`} />
             <CopyChip text={issuedEnvHint(k.provider, `${PROXY_ORIGIN}/${k.wrKey}`)} label={`Copy the environment line for the ${label(k)}`} />
           </div>

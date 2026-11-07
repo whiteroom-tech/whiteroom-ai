@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  agentDaySavings, agentTotals, agentTotalsFromBuckets, auditSavingsEvent, dailySavings, dailySavingsFromBuckets,
-  handoverSaved, isHandoverEntry, localDayFromTs, savedFromBuckets, type SavingsBucket,
+  agentDaySavings, agentTotalsFromBuckets, auditSavingsEvent, dailySavings, dailySavingsFromBuckets,
+  handoverAgent, handoverSaved, isHandoverEntry, localDayFromTs, savedFromBuckets, type SavingsBucket,
 } from '@/lib/analytics-metrics';
 import { governanceFromSummary } from '@/lib/governance';
 
@@ -35,6 +35,20 @@ function engineBuckets(es: typeof events): SavingsBucket[] {
   return [...m.values()];
 }
 
+// The By agent rows worked out from raw events, most tokens first; events with no agent under ''.
+function agentTotals(entries: typeof events) {
+  const agentOf = (e: (typeof events)[number]) => ((isHandoverEntry(e) ? handoverAgent(e) : e.agentId) || '').toLowerCase();
+  const used = new Map<string, number>();
+  for (const e of entries) {
+    const agent = agentOf(e);
+    if (agent || e.tokensUsed) used.set(agent, (used.get(agent) ?? 0) + (e.tokensUsed ?? 0));
+  }
+  const saved = agentDaySavings(entries.map((e) => auditSavingsEvent(e, localDayFromTs(e.timestamp)))).byAgent;
+  return [...used.keys()]
+    .map((agent) => ({ agent, used: used.get(agent) ?? 0, saved: saved.get(agent) ?? 0 }))
+    .sort((a, b) => b.used - a.used || a.agent.localeCompare(b.agent));
+}
+
 describe('savings from engine buckets', () => {
   const buckets = engineBuckets(events);
 
@@ -50,7 +64,7 @@ describe('savings from engine buckets', () => {
   });
 
   it('builds the same By agent rows', () => {
-    expect(agentTotalsFromBuckets(buckets)).toEqual(agentTotals(events, 0));
+    expect(agentTotalsFromBuckets(buckets)).toEqual(agentTotals(events));
   });
 
   it('takes redone work off, per agent-day and never below zero, as the engine does', () => {
@@ -67,7 +81,7 @@ describe('savings from engine buckets', () => {
 describe('governance totals from the engine', () => {
   it('fills every rule type', () => {
     const g = governanceFromSummary({ blocks: 3, wouldBlocks: 7, byAgent: { a: { blocks: 3, wouldBlocks: 7 } }, byRule: { loop_breaker: { blocks: 0, wouldBlocks: 7 } } });
-    expect(g.byRule).toEqual({ spend_cap: { blocks: 0, wouldBlocks: 0 }, loop_breaker: { blocks: 0, wouldBlocks: 7 }, model_allowlist: { blocks: 0, wouldBlocks: 0 }, tool_list: { blocks: 0, wouldBlocks: 0 }, call_rate: { blocks: 0, wouldBlocks: 0 } });
+    expect(g.byRule).toEqual({ spend_cap: { blocks: 0, wouldBlocks: 0 }, loop_breaker: { blocks: 0, wouldBlocks: 7 }, model_allowlist: { blocks: 0, wouldBlocks: 0 }, tool_list: { blocks: 0, wouldBlocks: 0 }, call_rate: { blocks: 0, wouldBlocks: 0 }, keyword: { blocks: 0, wouldBlocks: 0 } });
     expect(g).toMatchObject({ blocks: 3, wouldBlocks: 7 });
   });
 });

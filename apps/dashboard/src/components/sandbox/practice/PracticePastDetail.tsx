@@ -7,9 +7,11 @@ import { pastKind, pastResult, pastTasks, practiceAgent, RETENTION } from '@/lib
 import type { PracticeRunRow } from '@/lib/sandbox/practice/types';
 import { ROUTES } from '@/lib/routes';
 import s from '../guided.module.css';
+import { plural } from '@/lib/format';
+import { formatInZone } from '@/lib/zone-time';
 
 /** "Sep 30, 2026, 1:52 pm". */
-const full = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).replace(/\s(AM|PM)$/, (m) => m.toLowerCase());
+const full = (iso: string) => formatInZone(iso, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).replace(/\s(AM|PM)$/, (m) => m.toLowerCase());
 
 /** A practice test's Past tests row, opened beneath it like a Sandbox test’s. */
 export function PracticePastDetail({ row, onClose }: { row: PracticeRunRow; onClose: () => void }) {
@@ -25,7 +27,7 @@ export function PracticePastDetail({ row, onClose }: { row: PracticeRunRow; onCl
       <dl className={s.pastDetailList}>
         <dt>Result</dt><dd><Tag tone={result.tone}>{result.label}</Tag>{row.checks && <span className={s.small}> {row.checks.passed} of {row.checks.total} checks passed</span>}</dd>
         <dt>Tasks</dt><dd>{pastTasks(row)} <span className={s.small}>(practice tasks and control checks)</span></dd>
-        <dt>Kind</dt><dd>{pastKind(row)} · {row.runs} run{row.runs === 1 ? '' : 's'}</dd>
+        <dt>Kind</dt><dd>{pastKind(row)} · {row.runs} {plural(row.runs, 'run')}</dd>
         <dt>Agent</dt><dd>{practiceAgent(row.sample, row.agentId)}</dd>
         <dt>Test ID</dt><dd style={{ fontFamily: FONT_MONO, overflowWrap: 'anywhere' }}>{row.id}</dd>
       </dl>

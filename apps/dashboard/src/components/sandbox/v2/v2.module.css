@@ -1,0 +1,228 @@
+/* Sandbox v2's page column. Surfaces, buttons, banners and copy chips are the
+   shared primitives (@whiteroom/ui, globals.css); this only lays them out. */
+.page { display:grid; gap:16px; min-width:0; container-type:inline-size; }
+.stack { display:grid; gap:12px; min-width:0; }
+.label { margin:0; font-size:var(--fs-sm); font-weight:600; color:var(--tx2); }
+.text { margin:0; font-size:var(--fs-sm); color:var(--tx2); line-height:1.5; }
+.mono { font-family:var(--font-mono); }
+.actions { display:flex; flex-wrap:wrap; gap:8px; }
+.formRow { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.reveal { margin-top:8px; }
+/* Sandbox rules (the editor under the step). */
+.source { display:grid; gap:4px; }
+.sourceText { margin:0; font-size:var(--fs-md); color:var(--tx); font-weight:600; }
+.linkButton { justify-self:start; background:none; border:0; padding:0; font:inherit; font-weight:600; color:var(--brand); cursor:pointer; text-decoration:underline; text-underline-offset:2px; }
+.linkButton:disabled { opacity:.5; cursor:default; }
+.rules { list-style:none; margin:0; padding:0; display:grid; border-top:1px solid var(--line); }
+.rule { display:grid; gap:6px; padding:12px 0; border-bottom:1px solid var(--line); min-width:0; }
+.ruleHead { display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-height:28px; }
+.ruleName { font-size:var(--fs-md); font-weight:600; color:var(--tx); }
+.push { margin-left:auto; }
+.editor { display:grid; gap:12px; padding:12px; margin-top:4px; border:1px solid var(--line2); border-radius:8px; background:var(--sunk); min-width:0; }
+.fields { border:0; padding:0; margin:0; min-width:0; display:grid; gap:8px; }
+.fields .label { margin-top:6px; }
+.fields .label:first-child { margin-top:0; }
+.sentence { display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:var(--fs-md); color:var(--tx); min-width:0; }
+.chips { display:flex; flex-wrap:wrap; gap:6px; }
+.segment { display:flex; max-width:100%; justify-self:start; }
+.check { display:inline-flex; align-items:center; gap:10px; font-size:var(--fs-sm); cursor:pointer; justify-self:start; min-height:32px; }
+.check input { width:16px; height:16px; margin:0; accent-color:var(--brand); }
+/* The checks card: live checks and the report. Rows reuse guided.module.css's check marks. */
+.live { display:flex; align-items:center; gap:8px; margin:0; font-size:var(--fs-sm); color:var(--tx2); }
+.live::before { content:''; width:8px; height:8px; border-radius:50%; background:var(--line2); flex:none; }
+.liveCalling::before { background:var(--ok); }
+.members { margin-top:6px; font-size:var(--fs-sm); }
+.members > summary { cursor:pointer; color:var(--tx2); min-height:24px; }
+.report { display:grid; gap:4px; }
+.reportHead { margin:0; font-size:var(--fs-xl); font-weight:700; line-height:1.2; color:var(--tx); }
+/* Run agent (the helper). */
+.steps { display:grid; gap:16px; min-width:0; }
+.step { display:grid; gap:8px; min-width:0; }
+.connected { margin:0; display:flex; align-items:baseline; gap:8px; font-size:var(--fs-md); font-weight:600; color:var(--tx); min-width:0; overflow-wrap:anywhere; }
+.dot { width:8px; height:8px; border-radius:50%; background:var(--ok); flex:none; }
+.prompt { width:100%; min-width:0; padding:8px 12px; line-height:1.5; resize:vertical; font-family:inherit; box-sizing:border-box; }
+.runRow { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
+.tasks { list-style:none; margin:0; padding:0; border-top:1px solid var(--line); }
+.task { display:grid; gap:4px; padding:10px 0; border-bottom:1px solid var(--line); min-width:0; }
+.taskPrompt { font-size:var(--fs-sm); color:var(--tx); min-width:0; overflow-wrap:anywhere; flex:1 1 160px; }
+/* The report: one card per check. */
+.reportPass { color:var(--ok); }
+.reportWarn { color:var(--warn-tx); }
+.reportHead:focus { outline:none; }
+.reportHead:focus-visible { outline:2px solid var(--brand); outline-offset:2px; }
+.cardFacts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:0; font-size:var(--fs-sm); line-height:1.5; }
+.cardFacts dt { color:var(--tx3); font-weight:400; }
+.cardFacts dd { margin:0; color:var(--tx); min-width:0; overflow-wrap:anywhere; }
+.cardRules { list-style:none; margin:0; padding:0 0 0 12px; border-left:2px solid var(--line); display:grid; gap:4px; font-size:var(--fs-sm); color:var(--tx2); overflow-wrap:anywhere; }
+@media(max-width:560px) {
+  .cardFacts { grid-template-columns:minmax(0,1fr); gap:0; }
+  .cardFacts dd { margin-bottom:8px; }
+}
+
+/* First-run structure: the steps bar and the run card's setup. */
+.steps3 { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; }
+.steps3 > li { display:flex; align-items:center; gap:8px; padding-top:8px; border-top:3px solid var(--line); font-size:var(--fs-sm); color:var(--tx3); min-width:0; }
+.stepNum { flex:none; width:22px; height:22px; border-radius:50%; display:grid; place-items:center; font-size:var(--fs-sm); font-weight:600; border:1.5px solid var(--line2); box-sizing:border-box; }
+.steps3 > li.stepDone { border-color:var(--ok); color:var(--tx2); }
+.stepDone .stepNum { border-color:transparent; background:var(--ok-bg); color:var(--ok); }
+.steps3 > li.stepNow { border-color:var(--brand); color:var(--tx); font-weight:600; }
+.stepNow .stepNum { border-color:var(--brand); background:var(--brand); color:var(--on-brand); }
+.setup { padding-bottom:16px; border-bottom:1px solid var(--line); }
+@media(max-width:560px) {
+  .steps3 > li { flex-direction:column; align-items:flex-start; gap:4px; }
+}
+
+/* Run your agent (first-run UX spec §7.2–7.3): copy-first setup, status rows, progress, help. */
+.codeRow { display:flex; align-items:center; gap:10px; padding:4px 4px 4px 12px; border:1px solid var(--line); border-radius:8px; background:var(--sunk); min-width:0; }
+.codeLine { flex:1; min-width:0; padding:6px 0; font-family:var(--font-mono); font-size:var(--fs-sm); color:var(--tx); overflow-wrap:anywhere; }
+.codeRow > button { flex:none; }
+.copiedLine { margin:0; display:flex; align-items:center; gap:6px; font-size:var(--fs-sm); font-weight:600; color:var(--ok); }
+.copiedLine:empty { display:none; }
+.status { margin:0; display:flex; align-items:center; gap:10px; font-size:var(--fs-md); font-weight:600; color:var(--tx); min-width:0; }
+.pulse, .still { width:10px; height:10px; border-radius:50%; flex:none; }
+.pulse { background:var(--brand); animation:sbxPulse 1.6s ease-in-out infinite; }
+.still { background:var(--line2); }
+@keyframes sbxPulse { 50% { opacity:.45; } }
+@media (prefers-reduced-motion: reduce) { .pulse { animation:none; } }
+.quiet { display:grid; gap:10px; padding:14px 16px; border:1px solid var(--line2); border-radius:8px; background:var(--sunk); min-width:0; }
+
+/* The sample agent (spec sandbox-sample-agent §5): its note above the report, and the Connect option. */
+.sampleNote { margin:0; padding:10px 12px; border:1px solid var(--brand); background:var(--brand-dim); border-radius:8px; font-size:var(--fs-sm); color:var(--tx2); }
+.sampleNote strong { color:var(--tx); }
+.sampleOr { display:grid; gap:8px; justify-items:start; border-top:1px solid var(--line); padding-top:14px; }
+.sampleOr > strong { font-size:var(--fs-sm); color:var(--tx); }
+
+/* The report's eight rows, in number order and two groups. */
+.rowGroup { display:grid; gap:6px; }
+.rowGroupHead { display:flex; justify-content:space-between; align-items:baseline; gap:8px; border-bottom:1px solid var(--line); padding-bottom:6px; margin-top:6px; }
+.rowGroupHead h4 { margin:0; font-size:var(--fs-md); font-weight:700; color:var(--tx); }
+.rowGroupHead span { font-size:var(--fs-sm); color:var(--tx3); }
+.rows { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
+.row { display:grid; grid-template-columns:26px 18px minmax(0,1fr); gap:6px; font-size:var(--fs-sm); line-height:1.5; color:var(--tx2); align-items:baseline; overflow-wrap:anywhere; }
+.row strong { color:var(--tx); font-weight:600; }
+.rowNum { font-family:var(--font-mono); font-size:var(--fs-sm); color:var(--brand); }
+.rowBody { min-width:0; }
+.rowParts { display:grid; gap:1px; margin:3px 0 0; }
+.rowParts > div { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:10px; }
+.rowParts dt { color:var(--tx3); min-width:76px; }
+.rowParts dd { margin:0; }
+.rowNote { display:block; color:var(--tx3); margin-top:2px; }
+.rowFix { margin-top:8px; padding:10px 12px; border:1px solid var(--line); border-left:3px solid var(--bad); border-radius:8px; }
+.chip { font-family:var(--font-mono); font-size:75%; font-weight:500; letter-spacing:.03em; border:1px solid var(--ok); color:var(--ok); border-radius:4px; padding:1px 6px; margin-left:6px; white-space:nowrap; vertical-align:1px; }
+
+/* Two equal columns (eight checks mockup Rev 3, widths evened Nov 3): the
+   step on the left, reference cards on the right; one column, step first,
+   on a narrow page. */
+.lead2 { margin:0; font-size:var(--fs-md); color:var(--tx2); }
+.cols { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; align-items:start; min-width:0; }
+.mainCol { display:grid; gap:14px; min-width:0; }
+.rcol { display:grid; gap:12px; min-width:0; }
+@container (max-width: 860px) { .cols { grid-template-columns:minmax(0,1fr); } }
+.rcard { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; display:grid; gap:10px; min-width:0; }
+.rcardHead { margin:0; font-family:var(--font-mono); font-size:var(--fs-sm); font-weight:500; letter-spacing:.07em; text-transform:uppercase; color:var(--tx3); }
+.rfoldHead { cursor:pointer; list-style:none; display:flex; justify-content:space-between; align-items:center; gap:8px; min-height:24px; }
+.rfoldHead::-webkit-details-marker { display:none; }
+.rfoldHead::after { content:'▸'; color:var(--tx3); font-size:var(--fs-sm); flex:none; }
+.rfold[open] > .rfoldHead::after { content:'▾'; }
+.rfold > .rsub { margin-top:-4px; }
+.rrow { display:flex; flex-wrap:wrap; gap:4px 8px; align-items:baseline; font-size:var(--fs-md); color:var(--tx2); min-width:0; overflow-wrap:anywhere; }
+.rrow b { color:var(--tx); font-weight:600; }
+.rdot { width:8px; height:8px; border-radius:50%; background:var(--line2); flex:none; align-self:center; }
+.rdotLive { background:var(--brand); animation:sbxPulse 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .rdotLive { animation:none; } }
+.rsub { margin:0; font-size:var(--fs-sm); color:var(--tx3); }
+.ractions { display:flex; flex-wrap:wrap; gap:8px; }
+.rsep { border-top:1px solid var(--line); padding-top:8px; }
+.dangerText { color:var(--bad) !important; padding-left:0 !important; }
+.pills { display:flex; flex-wrap:wrap; gap:6px; }
+.pill { font-size:var(--fs-sm); border:1px solid var(--line2); border-radius:999px; padding:2px 10px; color:var(--tx2); background:var(--sunk); }
+.tips { margin:0; padding-left:22px; list-style:decimal; display:grid; gap:6px; font-size:var(--fs-md); color:var(--tx2); }
+.tips > li { display:list-item; }
+.tips code { font-family:var(--font-mono); font-size:var(--fs-sm); background:var(--sunk); padding:1px 5px; border-radius:4px; border:1px solid var(--line); }
+.wgrp { display:grid; gap:2px; }
+.wgrpHead { display:flex; justify-content:space-between; gap:8px; align-items:baseline; border-bottom:1px solid var(--line); padding:6px 0 4px; font-size:var(--fs-sm); }
+.wgrpHead b { color:var(--tx); white-space:nowrap; }
+.wgrpHead span { color:var(--tx3); text-align:right; }
+.names { list-style:none; margin:0; padding:0; display:grid; }
+.names > li { border-top:1px solid var(--line); }
+.names > li:first-child { border-top:0; }
+.names details > summary { cursor:pointer; list-style:none; display:flex; justify-content:space-between; align-items:flex-start; gap:8px; padding:8px 0; font-size:var(--fs-md); font-weight:600; color:var(--tx); min-height:24px; }
+.names details > summary::-webkit-details-marker { display:none; }
+.names details > summary::after { content:'+'; color:var(--tx3); font-weight:400; }
+.names details[open] > summary::after { content:'–'; }
+.names details p { margin:0 0 9px; font-size:var(--fs-sm); color:var(--tx2); line-height:1.45; }
+.rowt { display:grid; grid-template-columns:24px minmax(0,1fr); gap:6px; align-items:baseline; }
+.where { display:block; font-family:var(--font-mono); font-size:var(--fs-sm); font-weight:500; letter-spacing:.03em; color:var(--tx3); margin-top:2px; }
+.wherePractice { color:var(--tx2); }
+.coverRow { padding:8px 0; font-size:var(--fs-md); color:var(--tx); }
+
+/* The step card (no title bar): a big status line, the check's track, its Now box. */
+.card { position:relative; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:20px; display:grid; gap:14px; min-width:0; }
+.card:focus { outline:none; }
+.cardTitle { margin:0; font-size:var(--fs-card); font-weight:600; line-height:1.3; color:var(--tx); }
+.cardTitle:focus { outline:none; }
+.cardTitle:focus-visible { outline:2px solid var(--brand); outline-offset:2px; }
+.big { margin:0; display:flex; gap:10px; align-items:center; font-size:var(--fs-card); font-weight:600; line-height:1.3; color:var(--tx); }
+.big:focus { outline:none; }
+.big:focus-visible { outline:2px solid var(--brand); outline-offset:2px; }
+.liveRow { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:8px; }
+.prog { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline; gap:8px; font-size:var(--fs-md); color:var(--tx2); margin:0; }
+.prog b { color:var(--tx); }
+.track { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:6px; }
+.track > li { position:relative; display:grid; gap:6px; align-content:start; font-size:var(--fs-sm); color:var(--tx3); min-width:0; overflow-wrap:anywhere; }
+.track > li > i { height:8px; border-radius:4px; background:var(--track, var(--line)); display:block; }
+.track > li.tPass > i { background:var(--ok); }
+.track > li.tFail > i { background:var(--bad); }
+.track > li.tSkip > i { background:var(--line2); }
+.track > li.tNow > i { background:var(--brand); animation:sbxPulse 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .track > li.tNow > i { animation:none; } }
+.track > li.tPass, .track > li.tFail, .track > li.tSkip { color:var(--tx2); }
+.track > li.tNow { color:var(--tx); font-weight:600; }
+.tMark { margin-right:3px; }
+.tPass .tMark { color:var(--ok); }
+.tFail .tMark { color:var(--bad); }
+/* Narrow: the labels go from sight (the bars stay), not from screen readers. */
+@container (max-width: 560px) { .track > li > span { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; } }
+.nowbox { border:1px solid var(--brand); background:var(--brand-dim); border-radius:8px; padding:14px 16px; display:grid; gap:6px; }
+.nowKey { font-family:var(--font-mono); font-size:var(--fs-sm); font-weight:500; letter-spacing:.07em; text-transform:uppercase; color:var(--brand); }
+.nowbox > b { font-size:var(--fs-md); color:var(--tx); }
+.donelist { list-style:none; margin:0; padding:0; display:grid; gap:4px; font-size:var(--fs-md); color:var(--tx2); }
+.donelist > li { display:grid; grid-template-columns:20px minmax(0,1fr); gap:8px; }
+.donelist b { color:var(--tx); font-weight:600; }
+.dOk { color:var(--ok); font-weight:700; }
+.dBad { color:var(--bad); font-weight:700; }
+.dSkip { color:var(--tx3); font-weight:700; }
+.muted { margin:0; font-size:var(--fs-sm); color:var(--tx3); }
+.tipsBlock { border-top:1px solid var(--line); padding-top:12px; display:grid; gap:8px; }
+.tipsBlock > b { font-size:var(--fs-md); color:var(--tx); }
+.nrun { color:var(--tx3); }
+/* Practice tasks in the Sandbox page (mockup Rev 3 states 4–6). */
+.field { display:grid; gap:6px; min-width:0; }
+.flbl { margin:0; font-size:var(--fs-sm); font-weight:600; color:var(--tx); }
+.notice { border:1px solid var(--warn-line, var(--warn)); background:var(--warn-bg); border-radius:8px; padding:12px 14px; display:grid; gap:8px; font-size:var(--fs-sm); color:var(--tx); }
+.codeDim { color:var(--tx3); }
+.ptasks { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+.ptasks > li { display:grid; grid-template-columns:22px minmax(0,1fr) auto; gap:8px; align-items:baseline; font-size:var(--fs-md); color:var(--tx3); }
+.ptasks > li b { color:var(--tx2); font-weight:600; }
+.ptDone { color:var(--tx2) !important; }
+.ptDone .ptIc { color:var(--ok); }
+.ptNow b { color:var(--tx) !important; }
+.ptNow .ptIc { color:var(--brand); }
+.ptIc { font-weight:700; text-align:center; }
+.when { font-family:var(--font-mono); font-size:var(--fs-sm); color:var(--tx3); }
+.apart { border:1px dashed var(--line2); border-radius:8px; padding:12px 14px; display:grid; gap:6px; font-size:var(--fs-sm); color:var(--tx2); }
+.apart b { color:var(--tx); }
+/* A narrow page: the line to copy gets the full width, its button under it. */
+@container (max-width: 560px) {
+  .codeRow { flex-wrap:wrap; padding:8px 12px; }
+  .codeRow > button { width:100%; }
+}
+/* Back to results: a 44 px hit area on a narrow page. */
+.backLink { min-height:24px; }
+@container (max-width: 560px) { .backLink { min-height:44px; display:inline-flex; align-items:center; } .field :global(.wr-seg__item) { min-height:44px !important; } }
+.rowMark { text-align:center; font-weight:700; }
+.ptRunning { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:10px 12px; border:1px solid var(--brand); background:var(--brand-dim); border-radius:8px; font-size:var(--fs-sm); color:var(--tx); }
+/* Links in running text are underlined, whether a link or a button (WCAG 1.4.1). */
+.page :global(.wr-link) { text-decoration:underline; text-underline-offset:2px; }
+.nowrap { flex-wrap:nowrap; white-space:nowrap; }
+.field :global(.wr-seg) { justify-self:start; }

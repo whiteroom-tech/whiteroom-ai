@@ -89,7 +89,8 @@ export async function POST(req: Request) {
   }
 
   if (body.mode !== undefined) {
-    if (body.mode !== "demo" && body.mode !== "connected") {
+    // Only connected tests: the Sandbox demo is the pre-flight's sample report now, and starts nothing here.
+    if (body.mode !== "connected") {
       return Response.json({ error: "Invalid request." }, { status: 400 });
     }
   }
@@ -101,11 +102,9 @@ export async function POST(req: Request) {
     selectedCatalogIds: body.selectedCatalogIds as string[] | undefined,
     customControls: body.customControls as unknown[] | undefined,
     policyMode: body.policyMode as "observe" | "enforce" | undefined,
-    mode: body.mode as "demo" | "connected" | undefined,
     // Anthropic or OpenAI is forwarded for a connected test so status reports
     // it back (a reload shows the right code). The engine has accepted and
-    // stored both since cloud Sandbox tests; older engines ignore it. A demo
-    // names none: the engine refuses a provider for one.
+    // stored both since cloud Sandbox tests; older engines ignore it.
     provider: cloud ? (body.provider as CloudProvider)
       : body.mode === "connected" && (body.provider === "anthropic" || body.provider === "openai") ? body.provider : undefined,
     endpoint: cloud ? (body.endpoint as string) : undefined,

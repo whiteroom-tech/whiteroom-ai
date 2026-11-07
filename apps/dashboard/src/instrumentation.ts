@@ -22,6 +22,15 @@ export async function register() {
     process.exit(1);
   }
 
+  // Account deletion and plan lapse read users.closes_at on every
+  // entitlement push, so migration 012 must be in before this revision
+  // serves. Same shape as the 011 check above.
+  const { closingColumnsPresent } = await import('@/lib/account-closing');
+  if (process.env.NODE_ENV === 'production' && (await closingColumnsPresent()) === false) {
+    console.error('[closing] users.closes_at is missing; apply migration 012. Exiting.');
+    process.exit(1);
+  }
+
   // Encrypt rows saved before encryption and clear their plain values, in the
   // background. A fresh instance's first database connection can fail, so
   // try a few times.

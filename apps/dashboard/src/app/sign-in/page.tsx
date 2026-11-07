@@ -64,11 +64,10 @@ const ERRORS: Record<string, string> = {
 };
 
 // Outcomes that land here deliberately, rather than failures. Settings
-// redirects to /sign-in after ending a session or deleting an account, and
-// without these the page would just look like an ordinary sign-out.
+// redirects to /sign-in after ending every session, and without this the
+// page would just look like an ordinary sign-out.
 const OUTCOMES: Record<string, string> = {
   'signedOut=all': 'Signed out on every device. Sign in again to continue.',
-  'deleted=1': 'Your account has been deleted.',
 };
 
 export default function SignInPage() {
@@ -133,16 +132,7 @@ export default function SignInPage() {
         const [name, value] = key.split('=');
         if (params.get(name) !== value) continue;
         setNotice(message);
-        if (name === 'deleted') {
-          // The opposite of a returning user: the account this pointed at is
-          // gone, and greeting them with "Welcome back" over the top of
-          // "Your account has been deleted" would be absurd.
-          safeRemove(LAST_METHOD_KEY);
-          safeRemove(LAST_EMAIL_KEY);
-          remembered = null;
-        } else {
-          wasSignedOut = true;
-        }
+        wasSignedOut = true;
         url.searchParams.delete(name);
         break;
       }
@@ -208,21 +198,22 @@ export default function SignInPage() {
   const subheading = enterprise
     ? 'This is the company console. Your team’s fleets stay in the workspace.'
     : returning
-      ? 'Sign in to pick up where you left off.'
+      ? 'Sign in to your dashboard.'
       : 'New here? Signing in creates your account and provisions your fleet.';
 
   return (
     <ThemedShell className="min-h-screen font-sans flex flex-col">
       {/* Header — matches whiteroom.tech */}
       <header className="sticky top-0 z-50" style={{ background: 'color-mix(in srgb, var(--bg) 74%, transparent)', backdropFilter: 'blur(16px)', borderBottom: '1px solid var(--line)' }}>
-        <nav className="max-w-[1200px] mx-auto flex items-center justify-between h-[66px] px-7">
+        <nav className="max-w-[1200px] mx-auto flex items-center justify-between gap-4 h-[66px] px-4 sm:px-7">
           <BrandLink />
+          {/* Narrow screens keep the brand and the main button; the site links come back with room. */}
           <div className="flex items-center gap-6">
-            <a href="https://whiteroom.tech/#how" className="text-sm transition-colors hover:text-[var(--tx)]" style={{ color: 'var(--tx2)', textDecoration: 'none' }}>How it works</a>
-            <a href="https://whiteroom.tech/#why" className="text-sm transition-colors hover:text-[var(--tx)]" style={{ color: 'var(--tx2)', textDecoration: 'none' }}>Why it matters</a>
-            <a href="https://whiteroom.tech/#pricing" className="text-sm transition-colors hover:text-[var(--tx)]" style={{ color: 'var(--tx2)', textDecoration: 'none' }}>Pricing</a>
-            <a href="https://whiteroom.tech/docs.html" className="inline-flex items-center justify-center h-[38px] px-5 rounded-lg text-sm font-semibold transition-all" style={{ border: '1px solid var(--line)', color: 'var(--tx)', textDecoration: 'none', fontFamily: FONT_DISPLAY }}>Docs</a>
-            <a href="https://whiteroom.tech/docs.html" className="inline-flex items-center justify-center h-[38px] px-5 rounded-lg text-sm font-semibold transition-all" style={{ background: 'var(--brand)', color: 'var(--on-brand)', textDecoration: 'none', fontFamily: FONT_DISPLAY }}>Try it instantly</a>
+            <a href="https://whiteroom.tech/#how" className="hidden md:inline text-sm transition-colors hover:text-[var(--tx)]" style={{ color: 'var(--tx2)', textDecoration: 'none' }}>How it works</a>
+            <a href="https://whiteroom.tech/#why" className="hidden md:inline text-sm transition-colors hover:text-[var(--tx)]" style={{ color: 'var(--tx2)', textDecoration: 'none' }}>Why it matters</a>
+            <a href="https://whiteroom.tech/#pricing" className="hidden md:inline text-sm transition-colors hover:text-[var(--tx)]" style={{ color: 'var(--tx2)', textDecoration: 'none' }}>Pricing</a>
+            <a href="https://whiteroom.tech/docs.html" className="hidden sm:inline-flex items-center justify-center h-[38px] px-5 rounded-lg text-sm font-semibold transition-all" style={{ border: '1px solid var(--line)', color: 'var(--tx)', textDecoration: 'none', fontFamily: FONT_DISPLAY }}>Docs</a>
+            <a href="https://whiteroom.tech/docs.html" className="inline-flex items-center justify-center h-[38px] px-4 sm:px-5 whitespace-nowrap rounded-lg text-sm font-semibold transition-all" style={{ background: 'var(--brand)', color: 'var(--on-brand)', textDecoration: 'none', fontFamily: FONT_DISPLAY }}>Try it instantly</a>
           </div>
         </nav>
       </header>

@@ -1,5 +1,4 @@
-// Sandbox follow-ups: the demo walkthrough and its checks tell the same story
-// as the engine's demo, a past test's details open under its own row, and the
+// Sandbox follow-ups: the checks' wording, a past test's details open under its own row, and the
 // Run your agent checklist doesn't claim the agent was seen before it called.
 
 import { describe, expect, it, vi } from 'vitest';
@@ -11,57 +10,19 @@ import type { RunStatusResult } from '@/lib/sandbox/api';
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'unauthenticated' }) }));
 vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 
-const { DEMO_STORY, checkGuidance, callArrived, connectProgress, diagStepState, hasNoCalls, recognizedStep } = await import('@/components/sandbox/TestRunFlow');
+const { checkGuidance, callArrived, connectProgress, diagStepState, hasNoCalls, recognizedStep } = await import('@/components/sandbox/TestRunFlow');
 const { PastTests } = await import('@/components/sandbox/PastTests');
-const { SANDBOX_CHECKS } = await import('@/lib/sandbox/report');
 
-const JARGON = /hand(s|ed)?[ -]?over|\bshifts?\b|\bwatch(es)?\b|context|compress/i;
-
-describe('Demo walkthrough matches the demo', () => {
-  // The engine's demo: demo-agent works, then passes its work to demo-agent-b with a summary.
-  const demo = {
-    sandboxId: 'd', mode: 'demo' as const,
-    agents: [{ agentId: 'demo-agent', totalTasks: 1 }, { agentId: 'demo-agent-b', totalTasks: 1 }],
-    auditLog: [{ id: '1', timestamp: '2026-10-12T10:00:00Z', type: 'handover', agentId: 'demo-agent' }],
-  } as unknown as RunStatusResult;
-
-  it('has one step per check', () => {
-    expect(DEMO_STORY.map((s) => s.title)).toEqual(SANDBOX_CHECKS.map((c) => c.label));
-  });
-
-  it('says the work goes to a second demo agent, in the step and in its check', () => {
-    expect(DEMO_STORY[1].text).toBe('Its memory fills up. WhiteRoom saves a short summary and passes the work to a second demo agent, which keeps going.');
-    const memory = checkGuidance('core.handoff', 'observed', demo, 'anthropic').detail;
-    expect(memory).toBe(DEMO_STORY[1].detail);
-    for (const words of [DEMO_STORY[1].text, memory]) {
-      expect(words).toMatch(/short summary/);
-      expect(words).toMatch(/second demo agent/);
-    }
-    // Not the live wording, which reads as one agent keeping its memory.
-    expect(memory).not.toMatch(/Kept its/);
-  });
-
-  it('says the second agent picks up and finishes the next task, in the step and in its check', () => {
-    const resume = checkGuidance('core.resume', 'observed', demo, 'anthropic').detail;
-    expect(resume).toBe(DEMO_STORY[2].detail);
-    for (const words of [DEMO_STORY[2].text, resume]) {
-      expect(words).toMatch(/second demo agent/);
-      expect(words).toMatch(/next task/);
-    }
-  });
-
-  it('counts the demo calls like a live test', () => {
-    expect(checkGuidance('core.connect', 'observed', demo, 'anthropic').detail).toBe('2 calls went through WhiteRoom and got a normal reply.');
-  });
-
-  it('uses plain words', () => {
-    for (const s of DEMO_STORY) for (const words of [s.title, s.text, s.detail ?? '']) expect(words).not.toMatch(JARGON);
+describe('Check wording', () => {
+  it('counts the calls that went through', () => {
+    const run = { sandboxId: 'd', mode: 'connected' as const, agents: [{ agentId: 'a', totalTasks: 1 }, { agentId: 'b', totalTasks: 1 }], auditLog: [] } as unknown as RunStatusResult;
+    expect(checkGuidance('core.connect', 'observed', run, 'anthropic').detail).toBe('2 calls went through WhiteRoom and got a normal reply.');
   });
 
   it('leaves the live wording alone', () => {
     const live = { mode: 'connected' as const, auditLog: [{ id: 'h', timestamp: '2026-10-12T10:00:00Z', type: 'self_handover', agentId: 'a' }] };
-    expect(checkGuidance('core.handoff', 'observed', live, 'anthropic').detail).toBe('Saved a summary once and kept its context.');
-    expect(checkGuidance('core.resume', 'observed', live, 'anthropic').detail).toBe('Its next call after the summary worked.');
+    expect(checkGuidance('core.handoff', 'observed', live, 'anthropic').detail).toBe('Kept going once as the task ran long.');
+    expect(checkGuidance('core.resume', 'observed', live, 'anthropic').detail).toBe('Its next call went through normally.');
   });
 });
 
@@ -73,7 +34,7 @@ describe('Past tests open under the clicked row', () => {
   ];
 
   it('puts the details directly beneath the open row, linked by aria-controls', () => {
-    const html = renderToStaticMarkup(createElement(PastTests, { preview: tests, previewOpen: 's1' }));
+    const html = renderToStaticMarkup(createElement(PastTests, { preview: tests, previewOpen: 's1', previewShowAll: true }));
     const rows = [...html.matchAll(/<div role="row"[^>]*>/g)].map((m) => m[0]).slice(1);
     expect(rows).toHaveLength(4);
     // Row s2 closed, then s1 open, then its details, then s0.
@@ -95,7 +56,7 @@ describe('Past tests open under the clicked row', () => {
   });
 
   it('shows no details while every row is closed', () => {
-    const html = renderToStaticMarkup(createElement(PastTests, { preview: tests }));
+    const html = renderToStaticMarkup(createElement(PastTests, { preview: tests, previewShowAll: true }));
     expect(html).not.toContain('wr-table__expanded');
     expect(html).not.toContain('aria-controls');
     expect(html.match(/aria-expanded="false"/g)).toHaveLength(3);

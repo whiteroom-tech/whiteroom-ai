@@ -37,7 +37,7 @@ export function ConfirmButton({
         border: 'none',
         borderRadius: 8,
         padding: '12px 28px',
-        fontSize: 14,
+        fontSize: 'var(--fs-md)',
         fontWeight: 600,
         cursor: busy ? 'not-allowed' : 'pointer',
         opacity: busy ? 0.6 : 1,

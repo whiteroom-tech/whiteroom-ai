@@ -19,7 +19,8 @@ export const PROVIDER_CHOICES: { value: SandboxProvider; sub: string }[] = [
 
 /** Native radios in a fieldset: arrow keys, focus and the group name come from the browser. */
 export function ProviderChoices({ value, unsupported, disabled, followsKey, lastUsed, onPick }: {
-  value: SandboxProvider;
+  /** Null: nothing picked yet (Sandbox v2 reads Anthropic and OpenAI from the key). */
+  value: SandboxProvider | null;
   /** Choices the engine refused: shown, but disabled. */
   unsupported: readonly CloudProvider[];
   disabled?: boolean;
@@ -51,10 +52,12 @@ export function ProviderChoices({ value, unsupported, disabled, followsKey, last
   );
 }
 
-export function CloudEndpointField({ provider, value, error, onChange, onSubmit }: {
+export function CloudEndpointField({ provider, value, error, onChange, onSubmit, keyNote }: {
   provider: CloudProvider;
   value: string;
   error: string;
+  /** Replaces the provider's key note (Sandbox v2 takes the key, so it says so). */
+  keyNote?: string;
   onChange: (v: string) => void;
   onSubmit: () => void;
 }) {
@@ -67,7 +70,7 @@ export function CloudEndpointField({ provider, value, error, onChange, onSubmit 
         onKeyDown={e => { if (e.key === 'Enter' && value.trim()) onSubmit(); }}
         placeholder={f.endpointPlaceholder} aria-invalid={error ? true : undefined} aria-describedby="sandbox-endpoint-hint" />
       <p id="sandbox-endpoint-hint" className={s.small} style={{ marginTop: 6 }} aria-live="polite">
-        {error ? <span style={{ color: 'var(--bad)' }}>{error}</span> : <>{f.endpointHelp} {f.keyNote}</>}
+        {error ? <span style={{ color: 'var(--bad)' }}>{error}</span> : <>{f.endpointHelp} {keyNote ?? f.keyNote}</>}
       </p>
     </div>
   );
@@ -78,7 +81,7 @@ export function ProxyKeyNotice({ disabled, onRecover }: { disabled?: boolean; on
   return (
     <div className={s.notice} style={{ marginTop: 10 }}>
       This tab doesn’t have this test’s proxy URL, so the code shows a placeholder.{' '}
-      <button className={`${s.btn} ${s.btnSecondary}`} onClick={onRecover} disabled={disabled} style={{ marginLeft: 8, minHeight: 28, padding: '4px 12px', fontSize: 12 }}>Get a new proxy URL</button>
+      <button className={`${s.btn} ${s.btnSecondary}`} onClick={onRecover} disabled={disabled} style={{ marginLeft: 8, minHeight: 28, padding: '4px 12px', fontSize: 'var(--fs-sm)' }}>Get a new proxy URL</button>
       <span className={s.small} style={{ display: 'block', marginTop: 6 }}>Your agent’s current URL stops working as soon as you do.</span>
     </div>
   );

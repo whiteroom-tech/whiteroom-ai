@@ -1,24 +1,20 @@
 // Sandbox ease of use: the no-code setup says only what works, the workspace
-// tabs are a real tablist, the demo reveals its checks one step at a time,
+// tabs are a real tablist,
 // detail text stays readable, status changes send the right analytics (with
 // nothing identifying) and open help or results when they should.
 
 import { describe, expect, it, vi } from 'vitest';
 import { createElement, type FC } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import type { RunStatusResult } from '@/lib/sandbox/api';
 
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'unauthenticated' }) }));
 vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 
-const { allChecksPassed, CheckPreview, checkGuidance, checksPassedCount, hasNoCalls, helpReducer, IDLE_HELP_AFTER_MS, idleHelpDelay, isObserved, runSnapshot, runTransition, testStartedEvent, TestRunFlow, WorkspacePanel, WorkspaceTabs } = await import('@/components/sandbox/TestRunFlow');
+const { allChecksPassed, CheckPreview, checksPassedCount, hasNoCalls, helpReducer, IDLE_HELP_AFTER_MS, idleHelpDelay, isObserved, runSnapshot, runTransition, testStartedEvent, TestRunFlow, WorkspacePanel, WorkspaceTabs } = await import('@/components/sandbox/TestRunFlow');
 const { PastTestDetail, PastTests } = await import('@/components/sandbox/PastTests');
-const { MIN_TEXT_PX, SMALL_LABEL_CLASSES } = await import('@/components/sandbox/type-scale');
 const { noCodeSetup } = await import('@/lib/sandbox/providers');
 
-const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 const opts = { proxyUrl: 'https://proxy.whiteroom.tech/', base: 'https://proxy.whiteroom.tech/sk-wr-test', fleetId: 'sandbox-1234' };
 
 describe('No code change', () => {
@@ -67,13 +63,6 @@ describe('workspace tabs', () => {
   });
 });
 
-describe('demo walkthrough', () => {
-  it('names the step that reveals a check', () => {
-    expect(checkGuidance('core.handoff', 'unrevealed', { mode: 'demo' }, 'anthropic').detail).toBe('Shown in step 2 of the walkthrough.');
-    expect(checkGuidance('core.resume', 'unrevealed', { mode: 'demo' }, 'anthropic').detail).toBe('Shown in step 3 of the walkthrough.');
-  });
-});
-
 // A live test as status reads report it. The secrets and names in it must
 // never reach an analytics event.
 const SECRETS = ['sk-ant-secret', 'acme.openai.azure.com', 'sandbox-live-1', 'live-1', 'support-bot'];
@@ -105,12 +94,6 @@ describe('Sandbox analytics and status changes', () => {
     expect(runTransition(snap(), runSnapshot(live({ ...called, sandboxId: 'other' }), 'anthropic')).events).toEqual([]);
   });
 
-  it('never sends first call or checks passed for a demo, nor opens Checks for it', () => {
-    const demo = (o: Partial<RunStatusResult>) => runSnapshot(live({ mode: 'demo', ...o }), 'anthropic');
-    const demoPassed = ['core.connect', 'core.handoff', 'core.resume'].map((controlId) => ({ controlId, name: controlId, result: { demoEvidence: { status: 'observed', timestamp: '2026-10-12T10:00:00Z' } } })) as unknown as RunStatusResult['controls'];
-    expect(runTransition(demo({}), demo({ ...called, controls: demoPassed }))).toMatchObject({ events: [], showResults: false });
-  });
-
   it('sends test ended once when the test expires, and opens Checks', () => {
     const expired = runTransition(snap(called), snap({ ...called, expiresInSeconds: 0 }));
     expect(expired.events).toEqual([{ name: 'sandbox_test_ended', props: { mode: 'connected', checks_passed: 1, ended_by: 'expired' } }]);
@@ -125,21 +108,18 @@ describe('Sandbox analytics and status changes', () => {
   it('sends test ended when the user ends it or it is gone, with why', () => {
     expect(runTransition(snap(called), null, 'user').events).toEqual([{ name: 'sandbox_test_ended', props: { mode: 'connected', checks_passed: 1, ended_by: 'user' } }]);
     expect(runTransition(snap(), null, 'other').events).toEqual([{ name: 'sandbox_test_ended', props: { mode: 'connected', checks_passed: 0, ended_by: 'other' } }]);
-    expect(runTransition(runSnapshot(live({ mode: 'demo' }), 'anthropic'), null, 'user').events).toEqual([{ name: 'sandbox_test_ended', props: { mode: 'demo', checks_passed: 0, ended_by: 'user' } }]);
     // Gone for no known reason (another account signed in): nothing.
     expect(runTransition(snap(called), null).events).toEqual([]);
     expect(runTransition(null, null, 'user').events).toEqual([]);
   });
 
   it('describes a start by mode and provider only', () => {
-    expect(testStartedEvent('connected', 'bedrock-mantle')).toEqual({ name: 'sandbox_test_started', props: { mode: 'connected', provider: 'bedrock-mantle' } });
-    expect(testStartedEvent('demo', 'anthropic')).toEqual({ name: 'sandbox_test_started', props: { mode: 'demo', provider: undefined } });
+    expect(testStartedEvent('bedrock-mantle')).toEqual({ name: 'sandbox_test_started', props: { mode: 'connected', provider: 'bedrock-mantle' } });
   });
 
-  it('reads demo evidence in a demo and live evidence otherwise', () => {
+  it('reads the live evidence', () => {
     const run = live({ controls: observed(2) });
     expect(checksPassedCount(run)).toBe(2);
-    expect(checksPassedCount({ ...run, mode: 'demo' })).toBe(0);
     expect(isObserved(run, run.controls![0])).toBe(true);
     expect(allChecksPassed(live({ controls: observed(3) }))).toBe(true);
     expect(allChecksPassed(live({ controls: [] }))).toBe(false);
@@ -160,7 +140,7 @@ describe('Nothing happening?', () => {
     expect(idleHelpDelay({ run: fresh({ expiresInSeconds: 600 }), firstSeenAt: t0, now: t0, autoOpenedFor: null })).toBe(IDLE_HELP_AFTER_MS);
   });
 
-  it('stays shut once opened, after any call, in a demo, or once the test ended', () => {
+  it('stays shut once opened, after any call, or once the test ended', () => {
     const base = { firstSeenAt: t0, now: t0 + 120_000, autoOpenedFor: null };
     expect(idleHelpDelay({ ...base, run: fresh(), autoOpenedFor: 'live-1' })).toBeNull();
     expect(idleHelpDelay({ ...base, run: live(called) })).toBeNull();
@@ -168,7 +148,6 @@ describe('Nothing happening?', () => {
     expect(idleHelpDelay({ ...base, run: live() })).toBeNull();
     expect(idleHelpDelay({ ...base, run: fresh({ auditLog: [{ id: 'u', timestamp: '2026-10-12T10:00:00Z', type: 'unnamed_call_refused', agentId: 'system' }] }) })).toBeNull();
     expect(idleHelpDelay({ ...base, run: fresh({ failedCalls: { count: 1, last: { at: '', agentId: 'a', status: 401, reason: 'upstream_error', message: '' } } }) })).toBeNull();
-    expect(idleHelpDelay({ ...base, run: fresh({ mode: 'demo' }) })).toBeNull();
     expect(idleHelpDelay({ ...base, run: fresh({ expiresInSeconds: 0 }) })).toBeNull();
     expect(hasNoCalls(fresh())).toBe(true);
   });
@@ -203,60 +182,17 @@ describe('Nothing happening? per test', () => {
   });
 });
 
-/** Every rule in a stylesheet, nested @media included, with its selectors split. */
-function cssRules(css: string): { selectors: string[]; body: string }[] {
-  const src = css.replace(/\/\*[\s\S]*?\*\//g, '');
-  const rules: { selectors: string[]; body: string }[] = [];
-  let i = 0;
-  const block = (): void => {
-    while (i < src.length) {
-      const open = src.indexOf('{', i);
-      const close = src.indexOf('}', i);
-      if (close !== -1 && (open === -1 || close < open)) { i = close + 1; return; }
-      if (open === -1) { i = src.length; return; }
-      const prelude = src.slice(i, open).trim();
-      i = open + 1;
-      if (prelude.startsWith('@')) { block(); continue; }
-      const end = src.indexOf('}', i);
-      rules.push({ selectors: prelude.split(',').map((x) => x.trim()).filter(Boolean), body: src.slice(i, end) });
-      i = end + 1;
-    }
-  };
-  block();
-  return rules;
-}
-
+// The same floor as the --fs-* tokens (type-scale.test.ts): nothing renders smaller.
+const MIN_TEXT_PX = 14;
 const SMALL_PX = (html: string) => [...html.matchAll(/font-size:\s*([\d.]+)px/g)].map((m) => Number(m[1])).filter((n) => n < MIN_TEXT_PX);
 
 describe('readable text', () => {
-  it('parses comma selectors, multi-line rules and @media blocks', () => {
-    const rules = cssRules('/* x */ .a,\n.b .c { font-size: 10px;\n color: red }\n@media (max-width:1px) { .d { font-size: 9px } }');
-    expect(rules).toEqual([{ selectors: ['.a', '.b .c'], body: ' font-size: 10px;\n color: red ' }, { selectors: ['.d'], body: ' font-size: 9px ' }]);
-  });
-
-  it('keeps guided.module.css at 12px or more, apart from the small labels', () => {
-    const small = new Set<string>();
-    for (const r of cssRules(read('../components/sandbox/guided.module.css'))) {
-      const px = /font-size:\s*([\d.]+)px/.exec(r.body);
-      if (!px || Number(px[1]) >= MIN_TEXT_PX) continue;
-      for (const sel of r.selectors) {
-        const subject = [...sel.matchAll(/\.([\w-]+)/g)].at(-1)?.[1] ?? sel;
-        expect(SMALL_LABEL_CLASSES).toContain(subject);
-        small.add(subject);
-      }
-    }
-    // The allow-list stays as small as the stylesheet needs.
-    expect([...small].sort()).toEqual([...SMALL_LABEL_CLASSES].sort());
-  });
-
-  it('renders no inline text below 12px in the Sandbox', () => {
+  it('renders no inline text below the 14px floor in the Sandbox', () => {
     const user = { previewUserId: 'u', previewPastTests: [] };
-    const demoPassed = ['core.connect', 'core.handoff', 'core.resume'].map((controlId) => ({ controlId, name: controlId, result: { demoEvidence: { status: 'observed', timestamp: '2026-10-12T10:00:00Z' } } })) as unknown as RunStatusResult['controls'];
     const runs: RunStatusResult[] = [
       live(),
       live({ ...called, controls: observed(3), agents: live().agents!.map((a) => ({ ...a, totalTasks: 3 })) }),
       live({ provider: 'azure-openai', failedCalls: { count: 2, last: { at: '', agentId: 'support-bot', status: 401, reason: 'upstream_error', message: 'denied' } } }),
-      live({ mode: 'demo', controls: demoPassed, ...{ auditLog: called.auditLog } }),
       live({ expiresInSeconds: 0 }),
     ];
     for (const previewRun of runs) {

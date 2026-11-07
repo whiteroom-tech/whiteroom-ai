@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { act, createElement as h } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Row } from '@/components/performance/AgentHealth';
+import { UnusualRow as Row } from '@/components/performance/AgentHealth';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const row = { tone: 'warn' as const, text: '1 problem' };
@@ -12,7 +12,7 @@ function mount() {
   const el = document.createElement('div');
   document.body.appendChild(el);
   const root = createRoot(el);
-  const render = (open: boolean) => act(() => root.render(h(Row, { label: 'Health check', row, open }, h('p', null, 'detail'))));
+  const render = (open: boolean) => act(() => root.render(h(Row, { row, open }, h('p', null, 'detail'))));
   const details = () => el.querySelector('details') as HTMLDetailsElement;
   // What the browser does on a click: flip `open`, then fire `toggle`.
   const click = () => act(() => { const d = details(); d.open = !d.open; d.dispatchEvent(new Event('toggle')); });

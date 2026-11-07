@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const posthog = vi.hoisted(() => ({ init: vi.fn() }));
+const posthog = vi.hoisted(() => ({ init: vi.fn(), capture: vi.fn() }));
 vi.mock('posthog-js', () => ({ default: posthog }));
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -9,9 +9,20 @@ describe('initAnalytics', () => {
   beforeEach(() => {
     vi.resetModules();
     posthog.init.mockReset();
+    posthog.capture.mockReset();
     vi.stubGlobal('window', { location: { pathname: '/home' } });
   });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+
+  it('never starts, and sends nothing, when the build turned analytics off (EU)', async () => {
+    vi.stubEnv('NEXT_PUBLIC_ANALYTICS', 'off');
+    const { initAnalytics, analytics } = await import('@/lib/analytics');
+    initAnalytics();
+    analytics.capture('cta_click');
+    await flush();
+    expect(posthog.init).not.toHaveBeenCalled();
+    expect(posthog.capture).not.toHaveBeenCalled();
+  });
 
   it('starts once, with the Sept 22 privacy settings', async () => {
     const { initAnalytics } = await import('@/lib/analytics');

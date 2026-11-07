@@ -6,7 +6,7 @@
 
 Report privately via
 [GitHub private vulnerability reporting](https://github.com/whiteroom-tech/whiteroom-ai/security/advisories/new)
-or email **security@whiteroom.tech**.
+or email **info@whiteroom.tech**.
 
 You will receive an acknowledgment confirming receipt, a severity assessment, and updates
 as a fix progresses. Credit is given in the release notes unless you request otherwise.

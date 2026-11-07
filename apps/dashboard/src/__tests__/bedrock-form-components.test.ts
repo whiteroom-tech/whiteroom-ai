@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest';
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { AgentNaming } from '@/components/citadel/AgentNaming';
-import { EMPTY_KEY_FORM, agentNamingFor, canSubmitKey, keyFormReducer } from '@/lib/provider-key-form';
+import { EMPTY_KEY_FORM, agentNamingFor, boundAgentError, canSubmitKey, keyFormReducer, keyFormRequest } from '@/lib/provider-key-form';
 import type { KeyFormAction, KeyFormState } from '@/lib/provider-key-form';
 
 const run = (actions: KeyFormAction[], from: KeyFormState = EMPTY_KEY_FORM) => actions.reduce(keyFormReducer, from);
@@ -14,7 +14,13 @@ const run = (actions: KeyFormAction[], from: KeyFormState = EMPTY_KEY_FORM) => a
 describe('add-key form state', () => {
   // Switching provider tab remounts the form (key={tab}), so it starts here.
   it('starts empty', () => {
-    expect(EMPTY_KEY_FORM).toEqual({ value: '', endpoint: '', status: 'idle', msg: '' });
+    expect(EMPTY_KEY_FORM).toEqual({ value: '', endpoint: '', agent: '', status: 'idle', msg: '' });
+  });
+
+  it('keeps an "Only for agent" name while editing, and clears it once connected', () => {
+    const typed = run([{ type: 'edit', field: 'value', text: 'sk-ant-x' }, { type: 'edit', field: 'agent', text: 'billing agent' }]);
+    expect(typed).toMatchObject({ agent: 'billing agent', status: 'idle' });
+    expect(run([{ type: 'saving' }, { type: 'connected' }], typed).agent).toBe('');
   });
 
   it('keeps what was typed while editing, and clears it once connected', () => {
@@ -78,5 +84,29 @@ describe('Claude Code naming line', () => {
   it('defaults to shown when the flag is not passed', () => {
     expect(renderToStaticMarkup(h(AgentNaming, {}))).toContain(claudeCodeLine);
     expect(renderToStaticMarkup(h(AgentNaming, { provider: 'anthropic' }))).toContain(claudeCodeLine);
+  });
+});
+
+describe('what Connect sends', () => {
+  const form = (agent: string) => ({ value: 'sk-ant-api03-example-key-1234', endpoint: '', agent });
+
+  it('names no agent when the field is empty or blank', () => {
+    for (const agent of ['', '   ']) {
+      const check = keyFormRequest('direct', form(agent));
+      expect(check.ok && check.request.boundAgent).toBeFalsy();
+    }
+  });
+
+  it('sends the trimmed agent name', () => {
+    const check = keyFormRequest('direct', form('  billing agent '));
+    expect(check).toMatchObject({ ok: true, request: { boundAgent: 'billing agent' } });
+  });
+
+  it('refuses a name the engine would, before anything is sent', () => {
+    for (const bad of ['__proto__', 'a'.repeat(129), 'tab\tname', 'evil\u202eagent']) {
+      expect(boundAgentError(bad), bad).not.toBeNull();
+      expect(keyFormRequest('direct', form(bad)).ok, bad).toBe(false);
+    }
+    expect(boundAgentError('Research Agent')).toBeNull();
   });
 });

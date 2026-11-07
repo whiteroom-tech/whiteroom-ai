@@ -1,10 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { countsFromRuleActions, responseOptions, ruleActionsByAgent, tallyTotal, tallyWords,
+import { blockedByPhrase, countsFromRuleActions, ruleLabel, ruleActionsByAgent, tallyTotal, tallyWords,
   convertSpendCap,
   computeSuggestions,
   governanceCounts,
   occurrences,
-  recentBlocksByAgent,
   REASON_LABELS,
   RULE_LABELS,
 } from '../lib/governance';
@@ -70,7 +69,7 @@ describe('call rate rules', () => {
 
 describe('rule actions from one source', () => {
   it('takes the per-rule split from the same rows as the totals', () => {
-    const fallback = { spend_cap: { blocks: 9, wouldBlocks: 9 }, loop_breaker: { blocks: 0, wouldBlocks: 0 }, model_allowlist: { blocks: 0, wouldBlocks: 0 }, tool_list: { blocks: 0, wouldBlocks: 0 }, call_rate: { blocks: 0, wouldBlocks: 0 } };
+    const fallback = { spend_cap: { blocks: 9, wouldBlocks: 9 }, loop_breaker: { blocks: 0, wouldBlocks: 0 }, model_allowlist: { blocks: 0, wouldBlocks: 0 }, tool_list: { blocks: 0, wouldBlocks: 0 }, call_rate: { blocks: 0, wouldBlocks: 0 }, keyword: { blocks: 0, wouldBlocks: 0 } };
     const c = countsFromRuleActions({
       fleetId: 'f',
       totals: { blocked: 4, paused: 0, stopped: 0, toldYou: 0, wouldAct: 2 },
@@ -82,19 +81,6 @@ describe('rule actions from one source', () => {
     expect(c.byRule.spend_cap).toEqual({ blocks: 0, wouldBlocks: 0 });
     // Older engines without byRule keep the audit-log split.
     expect(countsFromRuleActions({ fleetId: 'f', totals: { blocked: 0, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 }, byAgent: {} }, fallback).byRule).toBe(fallback);
-  });
-});
-
-describe('recentBlocksByAgent', () => {
-  it('keeps the newest block per agent inside the window', () => {
-    const recent = recentBlocksByAgent([
-      ev('governance_block', { agentId: 'a1', timestamp: ago(10), reason: 'loop_detected' }),
-      ev('governance_block', { agentId: 'a1', timestamp: ago(2), reason: 'budget_exceeded' }),
-      ev('governance_block', { agentId: 'a2', timestamp: ago(40) }),
-      ev('governance_would_block', { agentId: 'a3', timestamp: ago(1) }),
-    ], NOW);
-    expect(Object.keys(recent)).toEqual(['a1']);
-    expect(recent.a1.reason).toBe('budget_exceeded');
   });
 });
 
@@ -130,10 +116,20 @@ describe('activity feed governance rows', () => {
     expect(technicalLine(m)).toContain('reason budget_exceeded');
   });
 
-  it('marks would-blocks as Watch only', () => {
+  it('marks would-blocks as Watch', () => {
     const m = eventModel(ev('governance_would_block', { agentId: 'a1', ruleType: 'model_allowlist', reason: 'model_not_allowed', model: 'gpt-4o' }), NOW);
     expect(m.code).toBe('W/B');
-    expect(m.said).toBe('would have been blocked by the model allowlist (model not allowed) (Watch only)');
+    expect(m.said).toBe('would have been blocked by the model allowlist (model not allowed)');
+    expect(eventModel(ev('governance_would_block', { agentId: 'a1', ruleType: 'keyword', reason: 'keyword_found' })).said).toBe('would have been blocked by the Keywords rule');
+    expect(eventModel(ev('governance_block', { agentId: 'a1', ruleType: 'keyword', reason: 'keyword_found' })).said).toBe('was blocked by the Keywords rule');
+    expect(eventModel(ev('governance_block', { agentId: 'a1', ruleType: 'keyword', reason: 'keyword_found', occurrences: 3 })).said).toBe('was blocked by the Keywords rule ×3');
+    // The Home chip says the same.
+    expect(blockedByPhrase('keyword', 'keyword_found', false)).toBe('the Keywords rule');
+    expect(blockedByPhrase('spend_cap', 'budget_exceeded', false)).toBe('Spend cap (budget exceeded)');
+    expect(blockedByPhrase('spend_cap', 'budget_exceeded', true)).toBe('the spend cap (budget exceeded)');
+    expect(blockedByPhrase('spend_cap', 'something_new', true)).toBe('the spend cap');
+    expect(blockedByPhrase(undefined, undefined, false)).toBe(ruleLabel(undefined));
+    expect(blockedByPhrase('mystery', undefined, true)).toBe(`the ${ruleLabel('mystery').toLowerCase()}`);
     expect(technicalLine(m)).toContain('model gpt-4o');
   });
 
@@ -173,21 +169,15 @@ describe('governanceCounts agent keys', () => {
 });
 
 describe('rule responses and rule actions (P2.3/P2.4)', () => {
-  it('offers Pause and Stop only on Gov v1 fleets, but keeps a rule’s current one', () => {
-    expect(responseOptions(false, 'block').map((o) => o.value)).toEqual(['notify', 'block']);
-    expect(responseOptions(false, 'stop').map((o) => o.value)).toEqual(['notify', 'block', 'stop']);
-    expect(responseOptions(true, 'block').map((o) => o.label)).toEqual(['Just tell me', 'Block the call', 'Pause the agent', 'Stop the agent']);
-  });
-
   it('words every action, worst first, and totals them', () => {
     const t = { blocks: 3, wouldBlocks: 2, paused: 1, stopped: 0, toldYou: 4 };
-    expect(tallyWords(t).map((w) => w.text)).toEqual(['1 paused', '3 blocked', '4 told you', '2 would act (Watch only)']);
+    expect(tallyWords(t).map((w) => w.text)).toEqual(['1 paused', '3 blocked', '4 alerted you', '2 would have acted (Watch)']);
     expect(tallyTotal(t)).toBe(10);
     expect(tallyWords({ blocks: 0, wouldBlocks: 0 })).toEqual([]);
   });
 
   it('takes durable counts from rule_actions, keeping the audit log’s per-rule split', () => {
-    const byRule = { spend_cap: { blocks: 1, wouldBlocks: 0 }, loop_breaker: { blocks: 0, wouldBlocks: 0 }, model_allowlist: { blocks: 0, wouldBlocks: 0 }, tool_list: { blocks: 0, wouldBlocks: 0 }, call_rate: { blocks: 0, wouldBlocks: 0 } };
+    const byRule = { spend_cap: { blocks: 1, wouldBlocks: 0 }, loop_breaker: { blocks: 0, wouldBlocks: 0 }, model_allowlist: { blocks: 0, wouldBlocks: 0 }, tool_list: { blocks: 0, wouldBlocks: 0 }, call_rate: { blocks: 0, wouldBlocks: 0 }, keyword: { blocks: 0, wouldBlocks: 0 } };
     const c = countsFromRuleActions({
       fleetId: 'f',
       totals: { blocked: 5, paused: 1, stopped: 0, toldYou: 2, wouldAct: 3 },

@@ -3,7 +3,7 @@
 // only; it is held in the page and never stored.
 
 import { KEY_REFUSALS, PRACTICE_UNAVAILABLE, PROXY_KEY_PREFIX_RE } from './model';
-import type { PracticeControlCheck, PracticeKeyRefusal, PracticeProviderKey, PracticeResult, PracticeRun, PracticeRunRow, PracticeSource, PracticeSourceProvider, PracticeStart, RunCode } from './types';
+import type { PracticeCapabilities, PracticeControlCheck, PracticeKeyRefusal, PracticeProviderKey, PracticeResult, PracticeRun, PracticeRunRow, PracticeSource, PracticeSourceProvider, PracticeStart, RunCode } from './types';
 
 /** A refusal from the BFF or the engine, with the engine's reason when it sent one. */
 export class PracticeError extends Error {
@@ -77,8 +77,8 @@ function providerKey(k: unknown): PracticeProviderKey | null {
 }
 
 /** The agent's latest model, where its calls go, the keys setup can pick from, and the control checks a test would make. */
-export const sourceModel = (fleet: string, agent: string) =>
-  call<Record<string, unknown>>(`/source-model${q(fleet)}&agent=${encodeURIComponent(agent)}`).then((r): PracticeSource => {
+export const sourceModel = (fleet: string, agent: string, origin?: 'sandbox') =>
+  call<Record<string, unknown>>(`/source-model${q(fleet)}&agent=${encodeURIComponent(agent)}${origin ? `&origin=${origin}` : ''}`).then((r): PracticeSource => {
     const controls = r.controls as { checks?: PracticeControlCheck[]; calls?: number } | undefined;
     return {
       model: str(r.model),
@@ -90,6 +90,18 @@ export const sourceModel = (fleet: string, agent: string) =>
       usedProxyKeyDisplayPrefix: str(r.usedProxyKeyDisplayPrefix),
     };
   });
+/** What the engine's practice tests offer, or null from an engine that predates profiles (it answers 404). */
+export const practiceCapabilities = (fleet: string) =>
+  call<PracticeCapabilities>(`/capabilities${q(fleet)}`).then(
+    (c) => (Array.isArray(c.profiles) && c.profiles.includes('quick') ? c : null),
+    (e) => { if (e instanceof PracticeError && e.status === 404) return null; throw e; },
+  );
 export const startPractice = (s: PracticeStart) => call<RunCode & { runId: string }>('/start', { body: { ...s } });
 export const newRunCode = (fleet: string, id: string) => call<RunCode>(`/${id}/code`, { body: { fleet } });
 export const endPractice = (fleet: string, id: string) => call<{ lifecycle: string }>(`/${id}/end`, { body: { fleet } });
+
+/** A refusal in words, for both practice pages: a key refusal in the catalog's words, else the engine's or the BFF's own. */
+export function refusalText(e: unknown, fallback = 'That didn’t work. Check your connection and try again.'): string {
+  if (!(e instanceof PracticeError)) return fallback;
+  return (e.reason && Object.hasOwn(KEY_REFUSALS, e.reason) && KEY_REFUSALS[e.reason as keyof typeof KEY_REFUSALS]) || e.message || fallback;
+}

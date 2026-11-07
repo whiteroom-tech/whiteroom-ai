@@ -72,7 +72,6 @@ export function createRun(
     selectedCatalogIds?: string[];
     customControls?: unknown[];
     policyMode?: "observe" | "enforce";
-    mode?: "demo" | "connected";
     /** Cloud providers only; left out, the request is exactly as before. */
     provider?: string;
     endpoint?: string;
@@ -82,7 +81,7 @@ export function createRun(
   return proxyCall({
     action: "create_sandbox",
     user_id: ownerSubject,
-    is_trial: opts.mode === "demo",
+    is_trial: false,
     api_key: opts.apiKey,
     ttl_minutes: opts.ttlMinutes,
     selected_catalog_ids: opts.selectedCatalogIds,
@@ -95,10 +94,6 @@ export function createRun(
 
 export function getStatus(ownerSubject: string, key?: string) {
   return proxyCall({ action: "sandbox_status", user_id: ownerSubject }, key);
-}
-
-export function startDemo(ownerSubject: string, sandboxId: string, key?: string) {
-  return proxyCall({ action: "start_demo", user_id: ownerSubject, sandbox_id: sandboxId }, key);
 }
 
 export function destroyRun(ownerSubject: string, sandboxId: string, key?: string) {

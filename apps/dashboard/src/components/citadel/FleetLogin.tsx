@@ -51,51 +51,51 @@ export function FleetLogin({ auth }: { auth: FleetAuthState }) {
           <Logo width={22} height={30} gradientId="wr-l" />
           <span style={{ fontFamily: FONT_DISPLAY, fontSize: 26, fontWeight: 700, letterSpacing: 0.5, color: 'var(--tx)' }}>WhiteRoom</span>
         </div>
-        <p style={{ fontSize: 11.5, letterSpacing: 1, color: 'var(--tx3)', marginBottom: 32 }}>FLEET MONITORING DASHBOARD</p>
+        <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', marginBottom: 32 }}>Sign in to your fleet</p>
 
         {auth.retryableError && (
           <div className="text-left" style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn)', borderRadius: 8, padding: '12px 16px', marginBottom: 24 }}>
-            <p style={{ color: 'var(--warn)', fontSize: 14.5, margin: 0 }}>{auth.retryableError}</p>
+            <p style={{ color: 'var(--warn)', fontSize: 'var(--fs-md)', margin: 0 }}>{auth.retryableError}</p>
             <button
               type="button"
               onClick={auth.retry}
-              style={{ marginTop: 10, fontSize: 12.5, fontWeight: 700, letterSpacing: 1, fontFamily: FONT_DISPLAY, color: 'var(--tx)', border: '1px solid var(--line2)', borderRadius: 6, padding: '6px 14px', background: 'var(--card)', cursor: 'pointer' }}
+              style={{ marginTop: 10, fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--tx)', border: '1px solid var(--line2)', borderRadius: 6, padding: '6px 14px', background: 'var(--card)', cursor: 'pointer' }}
             >
-              RETRY
+              Retry
             </button>
           </div>
         )}
 
         <form onSubmit={handleFleetLogin} className="space-y-4 text-left">
           <div>
-            <label htmlFor="fleet-token" style={{ display: 'block', fontSize: 11.5, color: 'var(--tx3)', marginBottom: 8, letterSpacing: 1, fontFamily: FONT_MONO }}>
-              YOUR API KEY OR FLEET TOKEN
+            <label htmlFor="fleet-token" style={{ display: 'block', fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--tx2)', marginBottom: 8 }}>
+              Your WhiteRoom fleet key
             </label>
             <input
               id="fleet-token"
               type="password"
               value={loginToken}
               onChange={(e) => setLoginToken(e.target.value)}
-              placeholder="wr_... or sk-ant-..."
+              placeholder="sk-wr-… or an older wr_…"
               required
-              style={{ width: '100%', background: 'var(--bg)', border: '1px solid var(--line)', borderRadius: 8, padding: '12px 16px', color: 'var(--tx)', fontSize: 14.5, fontFamily: FONT_MONO, outline: 'none' }}
+              style={{ width: '100%', background: 'var(--bg)', border: '1px solid var(--line)', borderRadius: 8, padding: '12px 16px', color: 'var(--tx)', fontSize: 'var(--fs-md)', fontFamily: FONT_MONO, outline: 'none' }}
             />
           </div>
 
           {auth.loginError && (
-            <p style={{ color: 'var(--bad)', fontSize: 14.5 }}>{auth.loginError}</p>
+            <p style={{ color: 'var(--bad)', fontSize: 'var(--fs-md)' }}>{auth.loginError}</p>
           )}
 
           <button
             type="submit"
             disabled={auth.loginLoading || !loginToken}
-            style={{ width: '100%', background: 'var(--brand)', color: 'var(--bg)', borderRadius: 8, padding: '12px 0', fontWeight: 700, fontSize: 15, letterSpacing: 1, fontFamily: FONT_DISPLAY, border: 'none', cursor: auth.loginLoading || !loginToken ? 'not-allowed' : 'pointer', opacity: auth.loginLoading || !loginToken ? 0.4 : 1, transition: 'opacity .15s' }}
+            style={{ width: '100%', background: 'var(--brand)', color: 'var(--bg)', borderRadius: 8, padding: '12px 0', fontWeight: 600, fontSize: 'var(--fs-md)', border: 'none', cursor: auth.loginLoading || !loginToken ? 'not-allowed' : 'pointer', opacity: auth.loginLoading || !loginToken ? 0.4 : 1, transition: 'opacity .15s' }}
           >
-            {auth.loginLoading ? 'CONNECTING...' : 'CONNECT TO MY FLEET →'}
+            {auth.loginLoading ? 'Connecting…' : 'Connect to my fleet →'}
           </button>
         </form>
 
-        <p style={{ color: 'var(--tx3)', fontSize: 11.5, textAlign: 'center', marginTop: 24, lineHeight: 1.6 }}>
+        <p style={{ color: 'var(--tx3)', fontSize: 'var(--fs-sm)', textAlign: 'center', marginTop: 24, lineHeight: 1.6 }}>
           Your key is never stored or sent to any third party.<br />
           It is used only to identify your fleet in this session.
         </p>

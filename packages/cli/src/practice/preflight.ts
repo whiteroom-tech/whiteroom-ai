@@ -126,6 +126,18 @@ export function keyHeader(p: Provider, key: string): Record<string, string> {
 /** A direct key's provider, by its shape: what an older WhiteRoom that names no provider means. */
 export const providerByShape = (key: string): Provider => (key.startsWith("sk-ant-") ? "anthropic" : "openai");
 
+/**
+ * What's wrong with a key's shape, before it's sent (uses no try), or null:
+ * pasted twice (a hidden prompt shows nothing, so a second paste is easy),
+ * or with spaces or line breaks inside.
+ */
+export function keyShapeProblem(key: string): "twice" | "spaces" | null {
+  const half = key.length / 2;
+  if (key.length >= 40 && Number.isInteger(half) && key.slice(0, half) === key.slice(half)) return "twice";
+  if (/\s/.test(key)) return "spaces";
+  return null;
+}
+
 /** Short-term Bedrock keys can expire during a test; WhiteRoom refuses them without using a try. */
 export const isShortTermBedrockKey = (key: string) => key.startsWith("bedrock-api-key-");
 
@@ -159,7 +171,7 @@ export function hiddenPrompt(question: string, stdin: Terminal = process.stdin):
   stdin.setEncoding("utf8");
   stdin.resume();
   return new Promise((resolvePrompt, reject) => {
-    let s = "";
+    let raw = "";
     const done = () => {
       stdin.off("data", onData);
       stdin.setRawMode(false);
@@ -167,13 +179,19 @@ export function hiddenPrompt(question: string, stdin: Terminal = process.stdin):
       stderr.write("\n");
     };
     const onData = (chunk: string) => {
-      // A terminal with bracketed paste wraps a paste in ESC[200~ … ESC[201~.
-      for (const ch of chunk.replace(/\x1b\[20[01]~/g, "")) {
-        if (ch === "\r" || ch === "\n") return done(), resolvePrompt(s.trim());
-        if (ch === "\u0003") return done(), reject(new Interrupted());
+      raw += chunk;
+      const end = raw.search(/[\r\n\u0003]/);
+      if (end < 0) return;
+      if (raw[end] === "\u0003") return done(), reject(new Interrupted());
+      // A terminal with bracketed paste wraps a paste in ESC[200~ … ESC[201~, and a
+      // marker can arrive split across chunks, so it's removed from the whole line.
+      let s = "";
+      for (const ch of raw.slice(0, end).replace(/\x1b\[20[01]~/g, "")) {
         if (ch === "\u007f" || ch === "\b") s = s.slice(0, -1);
         else if (ch >= " ") s += ch;
       }
+      done();
+      resolvePrompt(s.trim());
     };
     stdin.on("data", onData);
   });

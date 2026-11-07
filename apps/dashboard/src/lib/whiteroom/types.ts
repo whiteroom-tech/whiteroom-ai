@@ -9,7 +9,11 @@ export interface ToolDetail {
 }
 
 /** A durable pause or stop (engine gov-state.ts): the agent refuses calls until resumed. */
-export interface AgentHold { state: 'paused' | 'stopped'; by: string; reason: string | null; at: string }
+export interface AgentHold {
+  state: 'paused' | 'stopped'; by: string; reason: string | null; at: string;
+  /** When the agent was first held, if this hold replaced an earlier one (engine applyHold keeps it). */
+  since?: string;
+}
 
 export interface AgentInfo {
   agentId: string;
@@ -19,6 +23,8 @@ export interface AgentInfo {
   /** Whether this fleet has Pause/Stop as holds (Gov v1). The engine's check_watch returns it with `hold` (engine #90). */
   govV1?: boolean;
   taskType?: string | null;
+  /** The agent's last call had no x-whiteroom-agent, so its name came from its system prompt. */
+  nameInferred?: boolean;
   watchNumber?: number;
   minutesWorked?: number;
   minutesRemaining?: number;
@@ -157,14 +163,6 @@ export interface ListFleetsResult {
   error?: string;
 }
 
-export interface GetHandoverResult {
-  /** Pending, single-use: the agent gets it on its next call, then it's cleared. */
-  handoverDoc?: HandoverDoc;
-  /** The last doc already delivered, kept for people to read (engine #94). */
-  lastHandoverDoc?: HandoverDoc | null;
-  error?: string;
-}
-
 export interface ClaimFleetResult {
   success?: boolean;
   fleetId?: string;
@@ -185,6 +183,8 @@ export interface ProviderKey {
   keyHint: string;
   createdAt: string;
   endpoint?: string;
+  /** Set when the key is for one agent only: its calls are that agent's, whatever name they send. */
+  agentId?: string;
 }
 
 export interface ListKeysResult {
@@ -200,6 +200,8 @@ export interface StoreKeyResult {
   provider?: string;
   keyHint?: string;
   proxyUrl?: string;
+  /** The agent the key is for, when one was named. */
+  agentId?: string;
   error?: string;
 }
 
@@ -267,13 +269,29 @@ export interface PerformanceIndexResult {
     errorRate: number;
     /** Calls stopped by a governance rule in Enforce (absent on older engines). */
     blockedCount?: number;
+    /** Calls from agents without a name, in every total but credited to no agent (absent on older engines). */
+    unnamedCalls?: number;
     models: PerformanceModelSummary[];
     /** Prompt caching over the window, priced per model (absent on older engines). */
     cache?: CacheSummary;
   };
+  /** The same totals over the window of the same length just before this one (absent on older engines). */
+  previous?: PerformanceWindowTotals;
   recommendations: PerformanceRecommendation[];
   priceInfo: { version: string; ageDays: number; stale: boolean; expired: boolean };
   error?: string;
+}
+
+/** engine performance_index.previous: the "vs prior period" figures. */
+export interface PerformanceWindowTotals {
+  period: { start: string; end: string };
+  totalCalls: number;
+  /** Micros, as summary.totalCost. */
+  totalCost: number;
+  pricedAttempts: number;
+  unpricedAttempts: number;
+  /** Median response time (ms); null without calls. */
+  avgLatencyMs: number | null;
 }
 
 export interface HourlyDataPoint {
@@ -284,6 +302,17 @@ export interface HourlyDataPoint {
   avgLatencyMs: number | null;
   inputTokens: number;
   outputTokens: number;
+}
+
+/** One agent's calls and spend over a window (engine performance_agent): Controls reads its daily spend and call count. */
+export interface AgentPerformanceResult {
+  fleetId: string;
+  agentId: string;
+  period: { start: string; end: string };
+  hourly: HourlyDataPoint[];
+  /** Input totals (cached input included) are absent from older engines. */
+  totals: { calls: number; costMicros: number; inputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number };
+  error?: string;
 }
 
 export interface AgentScore {
@@ -303,26 +332,6 @@ export interface AgentScoresResult {
   fleetId: string;
   period: { start: string; end: string };
   agents: AgentScore[];
-  error?: string;
-}
-
-export interface AgentPerformanceResult {
-  fleetId: string;
-  agentId: string;
-  period: { start: string; end: string };
-  hourly: HourlyDataPoint[];
-  totals: {
-    calls: number;
-    costMicros: number;
-    inputTokens: number;
-    outputTokens: number;
-    cacheReadTokens: number;
-    cacheWriteTokens: number;
-    errorRate: number;
-    /** Calls stopped by a governance rule in Enforce (absent on older engines). */
-    blockedCount?: number;
-    avgLatencyMs: number | null;
-  };
   error?: string;
 }
 
@@ -461,42 +470,19 @@ export interface FleetHourlyResult {
   error?: string;
 }
 
+/**
+ * engine performance_cost_forecast, as the dashboard reads it: Hourly cost's
+ * figure. The engine also sends the old fleet-budget fields, which nothing
+ * here shows any more (per-agent budgets are on agent_budgets_get).
+ */
 export interface PerformanceCostForecastResult {
   fleetId: string;
-  budgetUsd: number | null;
-  spendToDateUsd: number;
+  /** Spend per working hour: the average over hours with calls in burnLookbackHours. */
   burnRateUsdPerHour: number;
-  // Legacy combined figure, kept for engines that predate the independent
-  // dollarRemainingTasks/tokenRemainingTasks fields below: dollar-based
-  // normally, token-based (against tokenBudget) when costUnavailable. The
-  // card now reads this only as a fallback (see resolveTasksLeft) — prefer
-  // the independent fields when the engine sends them.
-  remainingTasks: number | null;
-  // true when recent activity used a model with no price-catalog entry —
-  // burnRateUsdPerHour is $0 because it's unpriced, not because it's free.
-  // tokensPerHour/tokenBudget are the fallback signals in that case.
-  costUnavailable: boolean;
-  tokensPerHour: number | null;
-  tokenBudget: number | null;
-  /** Legacy: why remainingTasks is null. Superseded by dollarRemainingTasksReason/tokenRemainingTasksReason below; see resolveTasksLeft. */
-  remainingTasksReason?: 'budget_missing' | 'task_type_missing' | 'partial_coverage' | 'available';
-  /** The budget is daily: spend counts from local midnight in budgetTimeZone. */
-  budgetPeriod?: 'day';
-  budgetTimeZone?: string;
-  spentTodayUsd?: number;
-  /** burnRateUsdPerHour averages the hours with calls in this lookback. */
+  /** True when recent calls had no price on file: burnRateUsdPerHour is $0 because it's unpriced, not free. */
+  costUnavailable?: boolean;
   burnLookbackHours?: number;
   burnActiveHours?: number;
-  /**
-   * Dollar and token remaining-tasks, tracked independently (absent on
-   * older engines, which only ever returned the combined remainingTasks
-   * above). A fleet can have both budgets set; one being unavailable
-   * (stale pricing, no task-cost model yet) doesn't hide the other.
-   */
-  dollarRemainingTasks?: number | null;
-  dollarRemainingTasksReason?: 'budget_missing' | 'task_type_missing' | 'partial_coverage' | 'available';
-  tokenRemainingTasks?: number | null;
-  tokenRemainingTasksReason?: 'budget_missing' | 'task_type_missing' | 'available';
   error?: string;
 }
 
@@ -518,18 +504,43 @@ export interface CacheSummary {
   agentSavedMicros?: number;
 }
 
-export interface SetBudgetResult {
-  success: boolean;
-  fleetId: string;
+/** Why an agent has no tasks-left figure (engine PR 297), checked in this order. */
+export type TasksLeftReason = 'no_task_type' | 'not_enough_tasks' | 'no_budget' | 'partial_coverage';
+
+/** One agent's daily budget against its spend today, and its cost prediction (a planning figure, never a limit). */
+export interface AgentBudgetForecast {
+  agentId: string;
+  /** Null for an agent without a budget (listed when all agents are asked for). */
   budgetUsd: number | null;
-  error?: string;
+  /** Optional daily token budget beside the dollar one; absent on older engines. */
+  budgetTokens?: number | null;
+  spentTodayUsd: number;
+  tokensToday?: number;
+  /** Spend per working hour over the last 14 days; null without priced calls. Not shown; newer engines leave it out. */
+  burnRateUsdPerHour?: number | null;
+  /** Calls the rest of today's budget covers at the agent's own average cost per call. */
+  callsLeft: number | null;
+  callsLeftReason: 'available' | 'no_history' | 'partial_coverage' | 'no_budget';
+  /** The rest is the cost prediction (engine PR 297); all absent on older engines. */
+  taskType?: string | null;
+  /** Average cost and tokens of one predicted unit (see AgentBudgetsResult.unit); null without priced calls. */
+  costPerTaskUsd?: number | null;
+  tokensPerTask?: number | null;
+  /** Units left today: whichever of the dollar and token budgets runs out first. */
+  tasksLeft?: number | null;
+  limitedBy?: 'usd' | 'tokens' | null;
+  tasksLeftReason?: TasksLeftReason | null;
 }
 
-export interface SetTokenBudgetResult {
-  success: boolean;
+export interface AgentBudgetsResult {
   fleetId: string;
-  tokenBudget: number | null;
-  error?: string;
+  budgetPeriod: 'day';
+  budgetTimeZone: string;
+  /** What one predicted "task" is: "call" today. Absent on engines without the per-agent prediction. */
+  unit?: string;
+  /** How far back the per-unit averages look, in hours. */
+  rateLookbackHours?: number;
+  agents: AgentBudgetForecast[];
 }
 
 export interface PaginatedRecommendationsResult {
@@ -643,11 +654,11 @@ export interface CustomControlInput {
 
 // -- Fleet governance rules (Controls page) --
 
-export type GovernanceRuleType = 'spend_cap' | 'loop_breaker' | 'model_allowlist' | 'tool_list' | 'call_rate';
+export type GovernanceRuleType = 'spend_cap' | 'loop_breaker' | 'model_allowlist' | 'tool_list' | 'call_rate' | 'keyword';
 export type GovernanceMode = 'off' | 'watch' | 'enforce';
 /** What Enforce does (engine P2.3): notify, block, pause or stop. */
 export type GovernanceResponse = 'notify' | 'block' | 'pause' | 'stop';
-export type GovernanceReason = 'budget_exceeded' | 'loop_detected' | 'model_not_allowed' | 'tool_not_allowed' | 'rate_exceeded';
+export type GovernanceReason = 'budget_exceeded' | 'loop_detected' | 'model_not_allowed' | 'tool_not_allowed' | 'rate_exceeded' | 'keyword_found';
 export type GovernanceScope = 'all' | string[];
 
 export interface SpendCapParams { dailyCap: number; scope: 'run' | 'day'; unit: 'tokens' | 'dollars' }
@@ -657,7 +668,14 @@ export interface ModelAllowlistParams { allowedModels: string[] }
 export interface ToolListParams { blockedTools: string[] }
 /** More than maxCalls model calls in any 60 seconds. */
 export interface CallRateParams { maxCalls: number }
-export type GovernanceParams = SpendCapParams | LoopBreakerParams | ModelAllowlistParams | ToolListParams | CallRateParams;
+/** Keywords rule (engine E4): words to find in what a call sends ("incoming"), the model's reply, or both. */
+export type KeywordWhere = 'incoming' | 'replies' | 'both';
+export interface KeywordParams {
+  keywords: string[]; where: KeywordWhere; wholeWord: boolean;
+  /** Sent instead of the list to a caller without the dashboard's secret (keywords is then empty). */
+  keywordCount?: number;
+}
+export type GovernanceParams = SpendCapParams | LoopBreakerParams | ModelAllowlistParams | ToolListParams | CallRateParams | KeywordParams;
 
 export interface GovernanceRule {
   id: string;
@@ -667,12 +685,23 @@ export interface GovernanceRule {
   mode: GovernanceMode;
   /** Absent from older engines, where Enforce always blocks. */
   response?: GovernanceResponse;
+  /** With response block, also sends the fleet's alert (engine E2; absent from older engines). */
+  alsoNotify?: boolean;
   appliesTo: GovernanceScope;
   version: number;
   changedBy: string;
   changedAt: string;
   /** Set when the rule came from a Diagnosis suggestion. */
   sourceRecommendationId?: string;
+}
+
+/** What a rule was set to (engine 0058): enough to show old → new and to put it back. */
+export interface GovernanceRuleSnapshot {
+  mode: GovernanceMode;
+  response?: GovernanceResponse;
+  alsoNotify?: boolean;
+  appliesTo: GovernanceScope;
+  params: GovernanceParams;
 }
 
 export interface GovernanceHistoryEntry {
@@ -682,6 +711,9 @@ export interface GovernanceHistoryEntry {
   description: string;
   by: string;
   time: string;
+  /** Null before an add and after a removal; absent on older entries and older engines. */
+  before?: GovernanceRuleSnapshot | null;
+  after?: GovernanceRuleSnapshot | null;
 }
 
 export interface GovernanceListResult {
@@ -689,14 +721,27 @@ export interface GovernanceListResult {
   rules: GovernanceRule[];
   history: GovernanceHistoryEntry[];
   agents: string[];
+  /** When each agent was last active (null: never); absent from older engines. */
+  lastActiveAt?: Record<string, string | null>;
   /** Pause and Stop responses are offered (Gov v1 fleets). */
   govV1?: boolean;
 }
 
 /** Rule actions in words (engine rule_actions). */
 export interface RuleActionCounts { blocked: number; paused: number; stopped: number; toldYou: number; wouldAct: number }
-export interface RuleActionsResult { fleetId: string; totals: RuleActionCounts; byAgent: Record<string, RuleActionCounts>; /** Per rule type, from the same rows as totals (newer engines). */ byRule?: Record<string, RuleActionCounts> }
-export interface RunRuleAction { at: string; ruleId: string; ruleType: GovernanceRuleType; response: GovernanceResponse; mode: GovernanceMode; occurrences: number }
+export interface RuleActionsResult { fleetId: string; totals: RuleActionCounts; byAgent: Record<string, RuleActionCounts>; /** Per rule type, from the same rows as totals (newer engines). */ byRule?: Record<string, RuleActionCounts>; /** Per rule id (gr_…), from the same rows (engine E1a). */ byRuleId?: Record<string, RuleActionCounts> }
+export interface RunRuleAction {
+  at: string; ruleId: string; ruleType: GovernanceRuleType; response: GovernanceResponse; mode: GovernanceMode; occurrences: number;
+  /** Timeline ids of the calls it was for, in timeline order (engine PR 298; empty on older rows, absent on older engines). */
+  eventIds?: string[];
+  ruleName?: string | null;
+  outcome?: CallRuleAction['outcome'];
+  /** The decision's reason code (model_not_allowed, …). Absent on older engines. */
+  reason?: string | null;
+}
+
+/** A rule that acted, or would have, on one call (engine PR 298). */
+export interface CallRuleAction { ruleId: string; ruleType: string; ruleName?: string | null; mode: string; response: string; outcome: 'blocked' | 'paused' | 'stopped' | 'notified' | 'would_block'; reason?: string | null }
 
 // -- Runs (engine list_runs / get_run_events; a run is one agent's shift) --
 
@@ -715,6 +760,8 @@ export interface RunSummary {
   coverage: { calls: number; checked: number };
   /** What stood out (engine P2.1). Absent from older engines. */
   flags?: RunFlag[];
+  /** Times a Watch rule would have acted in this run (engine E1a). Absent from older engines. */
+  wouldActCalls?: number;
 }
 
 /** A run flag: flags only, nothing was blocked. */
@@ -724,9 +771,14 @@ export type RunFlag =
 
 export interface RunDaysResult {
   fleetId: string;
-  /** Oldest first; days with no runs are left out. */
-  days: { day: string; runs: number }[];
+  /** Oldest first; days with no runs are left out. `flagged` and `ruleActivity` from engine PR 298. */
+  days: RunDayCount[];
+  /** True when the range held too many calls to count flagged runs (engine PR 298). */
+  flaggedUnavailable?: boolean;
 }
+
+export interface RunDayCount { day: string; runs: number; flagged?: number; ruleActivity?: number }
+export interface RunHourCount { hour: number; runs: number; ruleActivity?: number }
 
 export interface ListRunsResult {
   fleetId: string;
@@ -748,12 +800,34 @@ export interface RunEvent {
   /** Tools the request offered the model. Not shown as use; kept for exports and investigations. */
   availableTools?: string[];
   durationMs?: number | null;
+  /** Calls: the rules that acted, or would have, on this call (engine PR 298). */
+  ruleActions?: CallRuleAction[];
   detail?: Record<string, unknown>;
+}
+
+/** A run's header on Run detail. The totals and models come from engine PR 298; older engines send only the first six fields. */
+export interface RunHeader {
+  runId: string; agentId: string; shift: number; startedAt: string; endedAt: string;
+  flags?: RunFlag[];
+  ruleActions?: RunRuleAction[];
+  calls?: number;
+  spendMicros?: number;
+  unpricedAttempts?: number;
+  failedCalls?: number;
+  blockedCalls?: number;
+  /** Calls a Watch rule would have blocked (distinct linked calls, a lower bound); null when it can't be told. */
+  wouldBlockCalls?: number | null;
+  /** list_runs' figure for the run (times a Watch rule would have acted): the fallback for older runs. */
+  wouldActCalls?: number;
+  /** The run's rule actions couldn't be read: Rule activity is unknown, not empty. */
+  ruleActionsUnavailable?: boolean;
+  /** Distinct models, in order of first use. */
+  models?: string[];
 }
 
 export interface RunEventsResult {
   fleetId: string;
-  run: { runId: string; agentId: string; shift: number; startedAt: string; endedAt: string; flags?: RunFlag[]; ruleActions?: RunRuleAction[] };
+  run: RunHeader;
   events: RunEvent[];
   page: number;
   pages: number;
@@ -767,13 +841,23 @@ export interface AuditSummaryResult {
   savingsBuckets: Array<{ day: string; agent: string; used: number; tasks: number; handovers: number; handoverSaved: number; offloadSaved: number; redoTokens?: number }>;
   /** The buckets' modelled savings, each agent's at its cache-aware input price (absent on older engines). */
   savings?: SavingsTotals;
+  /** Each agent's smaller-context savings at its own price, lower-cased ids (engine E1b; absent on older engines). */
+  savingsByAgent?: Record<string, { tokens: number; usdMicros: number | null }>;
+  /** The same savings per local day, oldest first, adding up to `savings` (absent on older engines). */
+  savingsByDay?: Array<{ day: string; tokens: number; usdMicros: number; unpricedTokens: number }>;
+  /** The prompt caching WhiteRoom added, per local day, net of write premiums; with savingsByDay, each day's "Saved by WhiteRoom" (absent on older engines). */
+  cacheByDay?: Array<{ day: string; usdMicros: number; unpricedReadTokens: number }>;
   governance: { blocks: number; wouldBlocks: number; byAgent: Record<string, { blocks: number; wouldBlocks: number }>; byRule: Record<string, { blocks: number; wouldBlocks: number }> };
 }
 
 /** engine rule_would_act. */
-export interface RuleWouldActResult { fleetId: string; ruleId: string; byAgent: Record<string, number>; unversioned: boolean }
+export interface RuleWouldActResult {
+  fleetId: string; ruleId: string; byAgent: Record<string, number>; unversioned: boolean;
+  /** When the counted version was saved; null when it's no longer current; absent from older engines (E3). */
+  since?: string | null;
+}
 
-/** Settings › Audit integrity (engine audit_integrity, Phase 1 spec H2). */
+/** Settings › Audit trail (engine audit_integrity, Phase 1 spec H2). */
 export interface AuditIntegrity {
   fleetId: string;
   mode: 'legacy' | 'sequenced';
@@ -784,6 +868,21 @@ export interface AuditIntegrity {
   legacyEvents: number;
   gaps: { count: number; recent: Array<{ type: string; from: string | null; to: string | null }> };
   anchoring: { enabled: boolean };
+}
+
+/**
+ * One page of the full signed export (engine export_audit_full). Events are
+ * passed through to the file as they come; the last page has the signed
+ * manifest (head seq and hash, count) and nextFromSeq null.
+ */
+export interface AuditExportPage {
+  fleetId: string;
+  firstSeq: number;
+  toSeq: number;
+  fromSeq: number;
+  events: Array<Record<string, unknown> & { seq: number }>;
+  nextFromSeq: number | null;
+  manifest?: Record<string, unknown> & { firstSeq: number; headSeq: number; count: number; signature: string };
 }
 
 export interface VerifyAuditResult {

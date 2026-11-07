@@ -2,25 +2,30 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { PageHeader } from '@/components/citadel/PageChrome';
+import { useSearchParams } from 'next/navigation';
+import { SkeletonCard } from '@whiteroom/ui';
+import { PageHeader, PageLead } from '@/components/citadel/PageChrome';
 import { analytics } from '@/lib/analytics';
 import { governanceList } from '@/lib/whiteroom/client';
-import { endPractice, getPracticeResult, getPracticeRun, keyGone, listPracticeRuns, newRunCode, PracticeError, retryable, sourceModel, startPractice, unavailable } from '@/lib/sandbox/practice/api';
+import { endPractice, getPracticeResult, getPracticeRun, keyGone, listPracticeRuns, newRunCode, PracticeError, refusalText, sourceModel, startPractice, unavailable } from '@/lib/sandbox/practice/api';
 import {
-  callEstimate, CATALOG, choiceOf, controlCalls, draftFromStart, headline, isOpen, KEY_REFUSALS, planOf, rerunConfirm, rerunKey, RUN_ID_RE, runKeyChoice, SAMPLE_AGENT, type PracticeKeyChoice,
+  callEstimate, CATALOG, choiceOf, controlCalls, draftFromStart, headline, isOpen, planOf, PREFLIGHT_STEPS, preflightStep, rerunConfirm, rerunKey, rerunPlacement, RUN_ID_RE, runKeyChoice, SAMPLE_AGENT, type PracticeKeyChoice,
 } from '@/lib/sandbox/practice/model';
 import { practiceReportFileName, practiceReportHtml } from '@/lib/sandbox/practice/report';
-import type { PracticeControlCheck, PracticeProviderKey, PracticeResult, PracticeRun, PracticeSource, PracticeSourceProvider, PracticeStart, RunCode } from '@/lib/sandbox/practice/types';
+import type { PracticeCapabilities, PracticeControlCheck, PracticeProviderKey, PracticeResult, PracticeRun, PracticeRunRow, PracticeSource, PracticeSourceProvider, PracticeStart, RunCode } from '@/lib/sandbox/practice/types';
+import { DEMO_RESULT, DEMO_RUN } from '@/lib/sandbox/practice/demo';
+import { PastTests } from '../PastTests';
+import { StepsRail } from '../StepsRail';
 import { ROUTES } from '@/lib/routes';
 import { PracticeDialog } from './PracticeDialog';
 import { PracticeResults, type ResultAction } from './PracticeResults';
 import { PracticeRunView } from './PracticeRunView';
+import { saveBlob } from '@/lib/download';
 import { PracticeSetup, type SetupData } from './PracticeSetup';
+import { useClock, usePracticePoll } from './usePracticePoll';
 import s from '../guided.module.css';
 import p from './practice.module.css';
 
-/** §10 Polling: every 5 s while the page is visible, 30 s while hidden. */
-const POLL_MS = { visible: 5_000, hidden: 30_000 };
 
 /** `run`: owner_busy's open test, with its ID when it's on this fleet; `otherFleet` when it's on another fleet (this account's or another one). */
 type Refusal = { message: string; reason?: string; run?: { id?: string; lifecycle: string; otherFleet?: boolean } };
@@ -30,6 +35,8 @@ type Confirm = { kind: 'end'; id: string } | { kind: 'rerun'; start: PracticeSta
 export interface PracticePreview {
   fleet: string;
   setup?: SetupData;
+  /** Which test setup starts on: the guardrails test unless a state shows the own-agent one. */
+  test?: 'guardrails' | 'agent';
   model?: string | null;
   /** Where the agent's calls go (source-model); unknown when left out. */
   provider?: PracticeSourceProvider;
@@ -39,6 +46,10 @@ export interface PracticePreview {
   blocked?: PracticeSource['blocked'];
   /** null: the engine couldn't say. */
   controls?: PracticeControlCheck[] | null;
+  /** What the engine offers: quick and deep tests (left out: an engine without profiles). */
+  capabilities?: PracticeCapabilities | null;
+  /** Opened from the Sandbox's report for this agent. */
+  sandboxAgent?: string;
   run?: PracticeRun;
   code?: RunCode | null;
   result?: PracticeResult | null;
@@ -47,19 +58,29 @@ export interface PracticePreview {
   now?: number;
   /** Practice tests aren't on for this engine. */
   unavailable?: boolean;
+  /** The sample report (?demo=1). */
+  demo?: boolean;
+  /** Past tests under setup: the owner's practice tests. */
+  rows?: PracticeRunRow[];
 }
 
 /** A refusal to show: the engine's or the BFF's own words (a key refusal in the catalog's), else `fallback`. */
 const fail = (e: unknown, fallback: Refusal): Refusal => e instanceof PracticeError
-  ? { message: (e.reason && Object.hasOwn(KEY_REFUSALS, e.reason) && KEY_REFUSALS[e.reason as keyof typeof KEY_REFUSALS]) || e.message, reason: e.reason, run: e.body?.run as Refusal['run'] }
+  ? { message: refusalText(e), reason: e.reason, run: e.body?.run as Refusal['run'] }
   : fallback;
 /** Key refusals fixed on Fleet key; the others mean the connection test is the way to test this fleet. */
 const FIX_ON_FLEET_KEY = new Set(['engine_access_key', 'short_term_key', 'key_not_found']);
 const USE_CONNECTION_TEST = new Set(['unsupported', 'bedrock_role', 'other_host', 'unsupported_provider']);
 
+/** A run ID from the address: only a well-formed one goes into a request. */
+const validRun = (v: string | null | undefined) => (v && RUN_ID_RE.test(v) ? v : null);
+
 /** First load only: the fleet or its controls couldn't be read, so offer a reload. */
 const LOAD_FAILED: Refusal = { message: 'Couldn’t load your fleet from WhiteRoom. Check your connection and try again.', reason: 'retry' };
 const ACTION_FAILED: Refusal = { message: 'That didn’t work. Check your connection and try again.' };
+
+/** An agent name from the address, as the engine bounds it (1–128 characters), else null. */
+const validAgent = (v: string | null | undefined) => (v && v.length <= 128 ? v : null);
 
 /** Sandbox › Practice test: setup, the terminal steps, progress and the result, one test at a time. */
 export function PracticeTest({ preview }: { preview?: PracticePreview }) {
@@ -71,6 +92,15 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
   const [refusal, setRefusal] = useState<Refusal | null>(preview?.refusal ?? null);
   const [confirm, setConfirm] = useState<Confirm | null>(preview?.confirm ?? null);
   const [loading, setLoading] = useState(!preview);
+  // The address drives what's shown, so a link that changes only the query switches views:
+  // ?demo=1 the sample report (§7 Demo: a fixed result, nothing runs), ?run= one test.
+  const params = useSearchParams();
+  const demo = preview ? !!preview.demo : params?.get('demo') === '1';
+  const askedRun = preview ? null : validRun(params?.get('run'));
+  // Opened from the Sandbox's report (eight checks §5.2a): a test of that agent, started from the Sandbox with its key.
+  const sandboxAgent = preview ? preview.sandboxAgent ?? null : params?.get('from') === 'sandbox' ? validAgent(params?.get('agent')) : null;
+  // Past tests under setup (§8: moved here from the old start screen); the connection tests come with them.
+  const [rows, setRows] = useState<PracticeRunRow[] | null>(preview?.rows ?? null);
   // Practice tests aren't on for this engine: a calm page instead of an error, and nothing is asked again.
   const [off, setOff] = useState(!!preview?.unavailable);
   const [busy, setBusy] = useState(false);
@@ -79,19 +109,21 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
   const [keyChoice, setKeyChoice] = useState<PracticeKeyChoice | null>(null);
   // Bumped when Start says the picked key is gone, so setup reads the keys again.
   const [refreshKeys, setRefreshKeys] = useState(0);
-  const [now, setNow] = useState(() => preview?.now ?? Date.now());
   const heading = useRef<HTMLHeadingElement>(null);
   const previewSrc = useMemo(() => previewSource(preview), [preview]);
   // Never a run code, fleet or agent name in an event (§10 A11y / PostHog). The preview sends none.
   const track = useCallback((name: string, props?: Record<string, string | number | boolean>) => { if (!preview) analytics.capture(name, props); }, [preview]);
 
   const open = !!run && isOpen(run.lifecycle);
-  const view = off ? 'unavailable' : loading ? 'loading' : run ? (open ? 'run' : 'results') : 'setup';
+  const view = off ? 'unavailable' : demo ? 'demo' : loading ? 'loading' : run ? (open ? 'run' : 'results') : 'setup';
 
   const loadSetup = useCallback(async (f: string) => {
-    setSetup({ agents: (await governanceList(f)).agents ?? [] });
+    // From the Sandbox the agent is the one its report named: it may never have called production.
+    if (sandboxAgent) { setSetup({ agents: [sandboxAgent] }); track('practice_setup_opened'); return; }
+    const gov = await governanceList(f);
+    setSetup({ agents: gov.agents ?? [], lastActiveAt: gov.lastActiveAt });
     track('practice_setup_opened');
-  }, [track]);
+  }, [track, sandboxAgent]);
 
   /** Shows a test: its progress while open, else its result. */
   const showRun = useCallback(async (f: string, id: string) => {
@@ -101,9 +133,16 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
     if (!isOpen(r.lifecycle)) history.replaceState(null, '', `${ROUTES.practiceTest}?run=${id}`);
   }, []);
 
-  // First load: the fleet, then the test in the address, the open one, or setup.
+  // First load (not for the sample report, which asks the engine nothing): the
+  // fleet, then the test in the address, the open one, or setup. Once only: the
+  // address changing later is handled below. Past tests' rows are best-effort,
+  // so a run named in the address opens even when the list can't be read.
+  const load = useRef<'idle' | 'loading' | 'done'>('idle');
+  const asked = useRef(askedRun);
+  asked.current = askedRun;
   useEffect(() => {
-    if (preview) return;
+    if (preview || demo || load.current !== 'idle') return;
+    load.current = 'loading';
     let live = true;
     (async () => {
       const session = await fetch('/api/fleet/session', { credentials: 'same-origin', cache: 'no-store' }).then((r) => (r.ok ? r.json() : null));
@@ -111,62 +150,63 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
       if (!f) throw new PracticeError('Sign in and connect a fleet first: practice tests run on your fleet’s key and controls.', 401);
       if (!live) return;
       setFleet(f);
-      // Only a well-formed run ID goes into a request; anything else opens setup.
-      const asked = new URLSearchParams(location.search).get('run');
-      const valid = asked && RUN_ID_RE.test(asked) ? asked : null;
-      const id = valid ?? (await listPracticeRuns(f)).find((r) => isOpen(r.lifecycle))?.id;
+      const named = asked.current;
+      if (named) {
+        // The run in the address decides the page; the rows only fill Past tests, so any list failure is ignored.
+        listPracticeRuns(f).then((listed) => { if (live) setRows(listed); }, () => {});
+        await showRun(f, named);
+        return;
+      }
+      // Practice tests off on this engine is the calm page; any other failure only leaves Past tests' practice rows out.
+      const listed = await listPracticeRuns(f).catch((e) => { if (unavailable(e)) throw e; return null; });
+      if (!live) return;
+      if (listed) setRows(listed);
+      const id = listed?.find((r) => isOpen(r.lifecycle))?.id;
       if (id) await showRun(f, id);
       else await loadSetup(f);
-    })().catch((e) => { if (!live) return; if (unavailable(e)) setOff(true); else setRefusal(fail(e, LOAD_FAILED)); }).finally(() => { if (live) setLoading(false); });
-    return () => { live = false; };
-  }, [preview, showRun, loadSetup]);
+    })().then(
+      () => { if (live) load.current = 'done'; },
+      (e) => { if (!live) return; load.current = 'done'; if (unavailable(e)) setOff(true); else setRefusal(fail(e, LOAD_FAILED)); },
+    ).finally(() => { if (live) setLoading(false); });
+    // Left before it finished (to the sample report): load again when back.
+    return () => { live = false; if (load.current === 'loading') load.current = 'idle'; };
+  }, [preview, demo, showRun, loadSetup]);
 
-  // While a test is open: a clock for the countdown, and polling for progress.
+  // After the first load, a link to another test (Past tests' Open the result) opens it, and a link
+  // back to setup (Start a new test) leaves a finished test's result. An open test stays: one at a time.
+  const shownAsk = useRef(askedRun);
   useEffect(() => {
-    if (!open || preview) return;
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [open, preview]);
+    const was = shownAsk.current;
+    shownAsk.current = askedRun;
+    if (preview || demo || !fleet || load.current !== 'done' || was === askedRun) return;
+    if (askedRun) {
+      if (askedRun !== run?.id) void act(() => showRun(fleet, askedRun));
+    } else if (run && !isOpen(run.lifecycle)) {
+      setRun(null); setResult(null); setRefusal(null);
+      if (!setup) void act(() => loadSetup(fleet));
+    }
+  }, [askedRun, preview, demo, fleet, run, setup, showRun, loadSetup]);
 
+  // While a test is open: a clock for the countdown, and polling for progress (shared with the Sandbox's practice card).
+  const now = useClock(open && !preview, preview?.now ?? Date.now());
   const lifecycle = run?.lifecycle;
-  const runId = run?.id;
-  useEffect(() => {
-    if (!open || preview || !fleet || !runId) return;
-    let live = true;
-    let timer: ReturnType<typeof setTimeout>;
-    // One read at a time: coming back to the tab polls now, unless a read is already on its way.
-    let pending = false;
-    // Set by a refusal that asking again won't fix: polling stops and the page says why.
-    let stopped = false;
-    const poll = async () => {
-      if (pending || stopped) return;
-      pending = true;
-      try {
-        const next = await getPracticeRun(fleet, runId);
-        if (!live) return;
-        if (isOpen(next.lifecycle)) { setRun(next); return; }
-        const res = await getPracticeResult(fleet, runId);
-        if (!live) return;
-        setResult(res);
-        setRun(next);
-        setCode(null);
-        history.replaceState(null, '', `${ROUTES.practiceTest}?run=${runId}`);
-        setSaid(`Practice test finished: ${res.report ? headline(res.report) : 'Didn’t finish'}.`);
-        track('practice_result', { verdict: res.verdict ?? 'ended', sample: next.sample, runs: next.runs });
-        requestAnimationFrame(() => heading.current?.focus());
-      } catch (e) {
-        if (!retryable(e)) { stopped = true; if (live) { if (unavailable(e)) setOff(true); else setRefusal(fail(e, ACTION_FAILED)); } }
-      } finally {
-        pending = false;
-        clearTimeout(timer);
-        if (live && !stopped) timer = setTimeout(poll, document.hidden ? POLL_MS.hidden : POLL_MS.visible);
-      }
-    };
-    timer = setTimeout(poll, POLL_MS.visible);
-    const onVisible = () => { if (!document.hidden && !pending) { clearTimeout(timer); void poll(); } };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => { live = false; clearTimeout(timer); document.removeEventListener('visibilitychange', onVisible); };
-  }, [open, preview, fleet, runId, track]);
+  usePracticePoll({
+    fleet, runId: run?.id, enabled: open && !preview,
+    onRead: async (next, live) => {
+      if (isOpen(next.lifecycle)) { setRun(next); return; }
+      const res = await getPracticeResult(fleet!, next.id);
+      if (!live()) return 'stop';
+      setResult(res);
+      setRun(next);
+      setCode(null);
+      history.replaceState(null, '', `${ROUTES.practiceTest}?run=${next.id}`);
+      setSaid(`Practice test finished: ${res.report ? headline(res.report) : 'Didn’t finish'}.`);
+      track('practice_result', { verdict: res.verdict ?? 'ended', sample: next.sample, runs: next.runs });
+      requestAnimationFrame(() => heading.current?.focus());
+      return 'stop';
+    },
+    onError: (e) => { if (unavailable(e)) setOff(true); else setRefusal(fail(e, ACTION_FAILED)); },
+  });
 
   // Spoken once per change: the test started.
   const was = useRef(lifecycle);
@@ -239,11 +279,14 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
     const r = result.report;
     const scope = a.kind === 'rerun' ? a.scope : null;
     const runs: 1 | 3 = a.kind === 'three' ? 3 : r.runs === 3 ? 3 : 1;
-    // A test on a Fleet key key: the run carries the key for reports from before the report did.
-    const used = { provider: r.tested.provider ?? run.provider, proxyKeyDisplayPrefix: r.tested.proxyKeyDisplayPrefix ?? run.proxyKeyDisplayPrefix };
-    const withControls = planOf(scope).includes('controls');
-    // What the rerun's agent would get, asked only when needed: its control checks (the engine's planner) and the Fleet key keys.
-    const src = used.proxyKeyDisplayPrefix || withControls ? await sourceModel(fleet, run.agentId) : null;
+    const placed = rerunPlacement(run, scope, runs);
+    const fromSandbox = placed.origin === 'sandbox';
+    const profile = placed.profile;
+    // A test on a Fleet key key: the run carries the key for reports from before the report did. From the Sandbox, the Sandbox's key.
+    const used = { provider: r.tested.provider ?? run.provider, proxyKeyDisplayPrefix: fromSandbox ? null : r.tested.proxyKeyDisplayPrefix ?? run.proxyKeyDisplayPrefix };
+    const withControls = planOf(scope, profile ?? null).includes('controls');
+    // What the rerun's agent would get, asked only when needed: its control checks (the engine's planner) and the Fleet key keys. Not from the Sandbox: its rules aren't production's.
+    const src = !fromSandbox && (used.proxyKeyDisplayPrefix || withControls) ? await sourceModel(fleet, run.agentId) : null;
     // The sample agent keeps its own model unless the test was started with one.
     const model = run.sample ? r.tested.modelRequested : r.tested.modelRequested ?? r.tested.modelsUsed[0] ?? null;
     // R7: a test on a Fleet key key reruns on that key, or the only usable one of its provider. With several, or none, setup asks.
@@ -258,37 +301,48 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
       ...(model && { model }),
       ...(scope && { scope }),
       ...(key && { proxyKeyDisplayPrefix: key.displayPrefix }),
+      ...placed,
     };
     const choice = key ? choiceOf(key) : runKeyChoice(run);
     const calls = !withControls ? 0 : src?.controls ? controlCalls(src.controls.checks, scope) : CATALOG.controlCallsMax;
-    setConfirm({ kind: 'rerun', start: st, key: choice, text: rerunConfirm(scope, runs, callEstimate({ runs, scope, controlCalls: calls, model: model ?? r.tested.modelsUsed[0] ?? null, provider: choice?.provider })) });
+    setConfirm({ kind: 'rerun', start: st, key: choice, text: rerunConfirm(scope, runs, callEstimate({ runs, scope, profile, controlCalls: calls, model: model ?? r.tested.modelsUsed[0] ?? null, provider: choice?.provider })) });
   });
 
   const download = () => {
     if (!run || !result?.report) return;
     const at = run.endedAt ?? new Date().toISOString();
-    const url = URL.createObjectURL(new Blob([practiceReportHtml(run.id, result.report, at)], { type: 'text/html' }));
-    const a = document.createElement('a'); a.href = url; a.download = practiceReportFileName(run.id, at); a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    saveBlob(new Blob([practiceReportHtml(run.id, result.report, at)], { type: 'text/html' }), practiceReportFileName(run.id, at));
     track('practice_report_downloaded');
   };
 
   return <>
-    <PageHeader title="Sandbox" />
+    <PageHeader title="Practice tasks" />
     <main className={s.content}>
       <p className={s.srOnly} role="status" aria-live="polite">{said}</p>
-      {refusal && view !== 'unavailable' && (
+      {view !== 'unavailable' && <PracticeIntro />}
+      {refusal && view !== 'unavailable' && view !== 'demo' && (
         <PracticeRefusal refusal={fleet ? refusal : { ...refusal, run: undefined }} busy={busy} onView={(id) => act(() => showRun(fleet!, id))}
           onCancel={(id) => act(async () => { if (!(await endRun(fleet!, id))) await showRun(fleet!, id); })} onEnd={(id) => setConfirm({ kind: 'end', id })} />
       )}
 
       {view === 'unavailable' && <PracticeUnavailable />}
-      {view === 'loading' && <p>Checking for a practice test…</p>}
-      {view === 'setup' && fleet && setup && <PracticeSetup fleet={fleet} data={setup} busy={busy} preview={previewSrc} refresh={refreshKeys} onStart={(st, key) => { void start(st, key); }} />}
-      {view === 'run' && run && (
-        <PracticeRunView run={run} code={code} keyChoice={runKeyChoice(run) ?? keyChoice} now={now} heading={heading} busy={busy} onNewCode={() => { void renewCode(); }} onEnd={() => setConfirm({ kind: 'end', id: run.id })} />
+      {view === 'loading' && <SkeletonCard label="Checking for a practice test…" style={{ maxWidth: 480 }} />}
+      {view === 'demo' && <PracticeResults run={DEMO_RUN} result={DEMO_RESULT} busy={false} demo onAction={() => {}} onDownload={() => {}} />}
+      {(view === 'setup' || view === 'run' || view === 'results') && (
+        <div className={s.layout}>
+          <StepsRail steps={PREFLIGHT_STEPS} current={preflightStep(view, run)} label="Pre-flight steps" />
+          <div className={s.body}>
+            {view === 'setup' && fleet && setup && <>
+              <PracticeSetup fleet={fleet} data={setup} busy={busy} preview={previewSrc} previewCapabilities={preview ? preview.capabilities ?? null : undefined} sandboxAgent={sandboxAgent ?? undefined} ownAgent={preview?.test === 'agent'} refresh={refreshKeys} onStart={(st, key) => { void start(st, key); }} />
+              <PastTests preview={preview ? [] : undefined} practice={rows ?? undefined} />
+            </>}
+            {view === 'run' && run && (
+              <PracticeRunView run={run} code={code} keyChoice={runKeyChoice(run) ?? keyChoice} now={now} heading={heading} busy={busy} onNewCode={() => { void renewCode(); }} onEnd={() => setConfirm({ kind: 'end', id: run.id })} />
+            )}
+            {view === 'results' && run && <PracticeResults run={run} result={result} busy={busy} heading={heading} onAction={(a) => { void askRerun(a); }} onDownload={download} />}
+          </div>
+        </div>
       )}
-      {view === 'results' && run && <PracticeResults run={run} result={result} busy={busy} heading={heading} onAction={(a) => { void askRerun(a); }} onDownload={download} />}
     </main>
 
     {confirm?.kind === 'end' && (
@@ -324,7 +378,7 @@ function PracticeRefusal({ refusal, busy, onView, onCancel, onEnd }: {
     <div className={s.error} role="alert" style={{ flexWrap: 'wrap', maxWidth: 720 }}>
       <span>
         {open?.otherFleet ? 'You already have a practice test open on another fleet. Finish or end it there, then start this one.' : refusal.message}
-        {refusal.reason && USE_CONNECTION_TEST.has(refusal.reason) && <> Use the connection test instead: <Link href={ROUTES.sandbox}>Test my agent →</Link></>}
+        {refusal.reason && USE_CONNECTION_TEST.has(refusal.reason) && <> Use the connection test instead: <Link href={ROUTES.connectionTest}>Test my agent →</Link></>}
         {refusal.reason && FIX_ON_FLEET_KEY.has(refusal.reason) && <> <Link href={ROUTES.fleetKey}>Open Fleet key →</Link></>}
         {refusal.reason === 'pick_key' && <> <Link href={ROUTES.practiceTest}>Set up a practice test →</Link></>}
       </span>
@@ -340,13 +394,25 @@ function PracticeRefusal({ refusal, busy, onView, onCancel, onEnd }: {
   );
 }
 
+export const PRACTICE_INTRO = 'Scripted tasks with known answers. Your agent’s checks live on Sandbox.';
+
+/** What this page is now (Sandbox v2 phase 7): secondary to Sandbox, with the way back. */
+export function PracticeIntro() {
+  return (
+    <div className={p.intro}>
+      <PageLead>{PRACTICE_INTRO}</PageLead>
+      <Link href={ROUTES.sandbox} className="wr-link">← Back to Sandbox</Link>
+    </div>
+  );
+}
+
 /** Practice tests aren't on for this WhiteRoom server: said plainly, with the way back. */
 export function PracticeUnavailable() {
   return (
     <section className={`${s.card} ${p.wrap}`} aria-labelledby="practice-unavailable-title">
       <h2 id="practice-unavailable-title">Practice tests aren’t available yet</h2>
       <p>Try again later.</p>
-      <Link className={`${s.btn} ${s.btnSecondary}`} href={ROUTES.sandbox}>← Back to Sandbox</Link>
+      <Link className={`${s.btn} ${s.btnSecondary}`} href={ROUTES.connectionTest}>← Back to Sandbox</Link>
     </section>
   );
 }

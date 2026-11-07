@@ -3,7 +3,7 @@
 // done. They must reject so the UI keeps the draft and shows the failure.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ControlDeniedError, controlFailure, isAuthError, pauseAgent, resumeAgent, updateAgentTaskType } from '@/lib/whiteroom/client';
+import { alertsSetTeams, alertsTest, ControlDeniedError, controlFailure, governanceUpdateRule, isAuthError, pauseAgent, resumeAgent, updateAgentTaskType } from '@/lib/whiteroom/client';
 
 const fetchMock = vi.fn();
 
@@ -78,5 +78,47 @@ describe('controlFailure', () => {
     const e = await pauseAgent('f', 'a', 'sk-key').catch((x) => x);
     expect(e).not.toBeInstanceOf(ControlDeniedError);
     expect(controlFailure(e)).toBe('sign-out');
+  });
+});
+
+describe('governance_update_rule', () => {
+  it('sends "Also send me an alert" as also_notify', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ rule: { id: 'r1' } }));
+    await governanceUpdateRule('f', 'r1', { response: 'block', alsoNotify: true }, 'sk-key');
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(body).toMatchObject({ action: 'governance_update_rule', fleet_id: 'f', rule_id: 'r1', response: 'block', also_notify: true });
+  });
+
+  it('keeps the engine\'s reason for a refused change, but not for a server error', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: 'That looks like a key or password.' }, 400));
+    await expect(governanceUpdateRule('f', 'r1', { mode: 'enforce' }, 'sk-key')).rejects.toMatchObject({ status: 400, reason: 'That looks like a key or password.' });
+    fetchMock.mockResolvedValue(jsonResponse({ error: 'stack trace…' }, 500));
+    await expect(governanceUpdateRule('f', 'r1', { mode: 'enforce' }, 'sk-key')).rejects.toMatchObject({ status: 500, reason: undefined });
+  });
+
+  it('sends the version the edit was made on as if_version, and a 409 keeps its status', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: 'Rule was changed elsewhere.' }, 409));
+    await expect(governanceUpdateRule('f', 'r1', { mode: 'enforce', ifVersion: 3 }, 'sk-key')).rejects.toMatchObject({ status: 409 });
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({ rule_id: 'r1', mode: 'enforce', if_version: 3 });
+  });
+});
+
+describe('alerts actions', () => {
+  const sent = () => JSON.parse(String(fetchMock.mock.calls.at(-1)![1]?.body));
+  it('alerts_set_teams sends teams_url, and null to remove it', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ slack: null, teams: { ending: '2345' } }));
+    expect(await alertsSetTeams('f', 'https://x.logic.azure.com/workflows/abc')).toEqual({ slack: null, teams: { ending: '2345' } });
+    expect(sent()).toEqual({ action: 'alerts_set_teams', fleet_id: 'f', teams_url: 'https://x.logic.azure.com/workflows/abc' });
+    fetchMock.mockResolvedValue(jsonResponse({ slack: null, teams: null }));
+    await alertsSetTeams('f', null);
+    expect(sent()).toEqual({ action: 'alerts_set_teams', fleet_id: 'f', teams_url: null });
+  });
+
+  it('alerts_test names the channel', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ success: true }));
+    await alertsTest('f', 'slack');
+    expect(sent()).toEqual({ action: 'alerts_test', fleet_id: 'f', channel: 'slack' });
+    await alertsTest('f', 'teams');
+    expect(sent()).toEqual({ action: 'alerts_test', fleet_id: 'f', channel: 'teams' });
   });
 });

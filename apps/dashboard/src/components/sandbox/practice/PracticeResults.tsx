@@ -4,55 +4,32 @@ import type { RefObject } from 'react';
 import Link from 'next/link';
 import { FONT_DISPLAY } from '@whiteroom/ui';
 import {
-  billedLine, CATALOG, DISCLAIMER, endedBecause, fixLine, headline, isPracticeProvider, openChecks, passCaveat, practiceAgent, rerunScope, shortId, STATUS_LABEL,
+  billedLine, CATALOG, DISCLAIMER, endedBecause, fixLine, groupRows, headline, isPracticeProvider, openChecks, passCaveat, practiceAgent, rerunScope, ROW_STATUS_LABEL, shortId, summaryTone,
 } from '@/lib/sandbox/practice/model';
 import { canDownload } from '@/lib/sandbox/practice/report';
-import type { PracticeCheck, PracticeReport, PracticeResult, PracticeRun } from '@/lib/sandbox/practice/types';
+import type { PracticeReport, PracticeResult, PracticeRun } from '@/lib/sandbox/practice/types';
+import { MemberCheck, RowGroups, type RowItem } from './PreflightRows';
 import { ROUTES } from '@/lib/routes';
 import s from '../guided.module.css';
 import p from './practice.module.css';
+import { counted, plural } from '@/lib/format';
+import { formatInZone } from '@/lib/zone-time';
 
-const OBSERVERS = CATALOG.observers as Record<PracticeCheck['observer'], string>;
-const day = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-const when = (iso: string) => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+const day = (iso: string) => formatInZone(iso, { month: 'short', day: 'numeric' });
+const when = (iso: string) => formatInZone(iso, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
-const ICON = {
-  pass: <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M2.5 6l2.5 2.5 4.5-4.5" /></svg>,
-  fail: <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M6 2.5v4M6 9.2v.1" /></svg>,
-  wait: <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h6" /></svg>,
-};
-
-function CheckRow({ c }: { c: PracticeCheck }) {
-  const tone = c.status === 'passed' ? s.checkPass : c.status === 'failed' ? s.checkFail : s.checkWait;
-  const control = c.id.startsWith('ctl');
-  return (
-    <div className={s.check}>
-      <div className={`${s.checkIcon} ${tone}`} aria-hidden="true">{c.status === 'passed' ? ICON.pass : c.status === 'failed' ? ICON.fail : ICON.wait}</div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div className={s.checkName}>{c.mode ? `${c.label} · ${c.mode}` : c.label}</div>
-        <div className={`${s.checkDetail} ${c.status === 'passed' ? s.checkDetailPass : ''}`}>
-          {c.status === 'unsupported' ? c.summary : `${STATUS_LABEL[c.status]}${c.summary ? ` · ${c.summary}` : ''}`}
-        </div>
-        {(c.status !== 'unsupported' || !control) && <div className={p.how}>How we know: {OBSERVERS[c.observer]}</div>}
-      </div>
-    </div>
-  );
-}
-
-/** Checks by scenario, in the catalog's order, then the controls. */
-function CheckGroups({ r }: { r: PracticeReport }) {
-  const groups = [...new Set(r.checks.map((c) => c.scenario))];
-  const controlsRan = r.checks.some((c) => c.id.startsWith('ctl'));
-  return <>
-    {groups.map((g) => (
-      <section key={g} className={p.group} aria-label={g}>
-        <h3 className={p.groupTitle}>{g}</h3>
-        {r.checks.filter((c) => c.scenario === g).map((c) => <CheckRow key={c.id} c={c} />)}
-        {g === CATALOG.controls.scenario && !r.checks.some((c) => c.id === 'ctl.pause_stop') && <p className={s.small}>Pause and Stop: not checked on this fleet.</p>}
-      </section>
-    ))}
-    {!controlsRan && !r.scope && <p className={s.small}>No controls are set on this fleet, so none were checked.</p>}
-  </>;
+/** A report's seven rows as the result and the live list show them. */
+export function resultItems(r: Pick<PracticeReport, 'checks' | 'scope'>): RowItem[] {
+  return groupRows(r).map((x) => ({
+    row: x.row,
+    tone: x.status === 'passed' ? 'pass' : x.status === 'failed' ? 'fail' : 'muted',
+    label: x.partial ? 'Partly checked' : ROW_STATUS_LABEL[x.status],
+    reason: x.reason,
+    detailsLabel: counted(x.members.length, x.noun),
+    // A guardrail's rules show without a click: which rules were tested is the point.
+    open: x.noun === 'rule',
+    details: x.members.length ? x.members.map((c) => <MemberCheck key={c.id} c={c} />) : undefined,
+  }));
 }
 
 export type ResultAction = { kind: 'rerun'; scope: string[] } | { kind: 'three' };
@@ -62,8 +39,10 @@ export type ResultAction = { kind: 'rerun'; scope: string[] } | { kind: 'three' 
  * every check with how we know, what was tested, and the next step. A test
  * that was ended has no result, only why it stopped.
  */
-export function PracticeResults({ run, result, busy, heading, onAction, onDownload }: {
+export function PracticeResults({ run, result, busy, heading, demo = false, onAction, onDownload }: {
   run: PracticeRun;
+  /** The sample report (§7 Demo): made-up results, no actions but setting up a real test. */
+  demo?: boolean;
   result: PracticeResult | null;
   busy: boolean;
   /** Focused when the result arrives. */
@@ -74,7 +53,8 @@ export function PracticeResults({ run, result, busy, heading, onAction, onDownlo
   const r = result?.report ?? null;
   const ended = run.lifecycle !== 'finished';
   const head = r ? headline(r) : 'Didn’t finish';
-  const tone = r?.verdict === 'passed' ? s.summaryPass : r?.verdict === 'not_passed' ? s.summaryFail : '';
+  const t = r ? summaryTone(r) : 'neutral';
+  const tone = t === 'pass' ? s.summaryPass : t === 'fail' ? s.summaryFail : '';
   const scope = r ? rerunScope(r) : null;
   const caveat = r ? passCaveat(r) : null;
   const open = r ? openChecks(r).filter((c) => c.status !== 'passed') : [];
@@ -85,9 +65,14 @@ export function PracticeResults({ run, result, busy, heading, onAction, onDownlo
 
   return (
     <div className={p.wrap}>
-      <div className={s.eyebrow}>WHITEROOM / SANDBOX / PRACTICE TEST</div>
+      {demo && (
+        <div className={s.notice} role="status">
+          A sample report with made-up results, to show what a test gives you. It didn’t test your agent.{' '}
+          <Link href={ROUTES.practiceTest}>Set up a test →</Link>
+        </div>
+      )}
       <div className={`${s.summary} ${tone}`}>
-        <h2 ref={heading} tabIndex={-1} className={s.summaryHead} style={{ fontFamily: FONT_DISPLAY, fontSize: 18 }}>{head}</h2>
+        <h2 ref={heading} tabIndex={-1} className={s.summaryHead} style={{ fontFamily: FONT_DISPLAY, fontSize: 'var(--fs-card)' }}>{head}</h2>
         <div>{[run.sourceFleetId, who, model, run.endedAt && when(run.endedAt)].filter(Boolean).join(' · ')}</div>
         {caveat && <div style={{ marginTop: 4 }}>{caveat}</div>}
         {!ended && run.endReason && <div style={{ marginTop: 4 }}>{endedBecause(run.endReason)}</div>}
@@ -114,17 +99,17 @@ export function PracticeResults({ run, result, busy, heading, onAction, onDownlo
           </section>
         )}
 
-        <div className={s.btnRow} style={{ marginBottom: 14 }}>
+        {!demo && <div className={s.btnRow} style={{ marginBottom: 14 }}>
           {scope && <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={() => onAction({ kind: 'rerun', scope })}>
             {r.verdict === 'not_passed' ? 'Rerun failed checks' : 'Rerun checks that didn’t run'}
           </button>}
-          {r.verdict === 'passed' && !r.sample && r.runs === 1 && <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={() => onAction({ kind: 'three' })}>Run it 3 times</button>}
+          {r.verdict === 'passed' && !r.sample && r.runs === 1 && r.profile !== 'quick' && <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy} onClick={() => onAction({ kind: 'three' })}>Run it 3 times</button>}
           {canDownload(r) ? <button type="button" className={`${s.btn} ${s.btnSecondary}`} disabled={busy} onClick={onDownload}>Download report</button>
-            : <span className={s.small} style={{ alignSelf: 'center' }}>{r.sample ? 'Reports come from a test of your own agent.' : 'Reports come from a full test.'}</span>}
-        </div>
+            : <span className={s.small} style={{ alignSelf: 'center' }}>{r.sample ? 'Download needs a test of your own agent.' : 'Download needs a full test, not a rerun.'}</span>}
+        </div>}
 
         <section className={s.card} aria-label="Checks">
-          <CheckGroups r={r} />
+          <RowGroups items={resultItems(r)} />
         </section>
 
         <details className={s.card}>
@@ -137,23 +122,23 @@ export function PracticeResults({ run, result, busy, heading, onAction, onDownlo
             <dt>Adapter (reported by the CLI)</dt><dd>{r.tested.adapter ?? '—'}</dd>
             <dt>Model asked for</dt><dd>{r.tested.modelRequested ?? '—'}</dd>
             <dt>Model used</dt><dd>{r.tested.modelsUsed.join(', ') || '—'}</dd>
-            <dt>Runs</dt><dd>{r.runs}{r.scope ? ` · rerun of ${r.scope.length} check${r.scope.length === 1 ? '' : 's'}` : ''}</dd>
+            <dt>Runs</dt><dd>{r.runs}{r.scope ? ` · rerun of ${r.scope.length} ${plural(r.scope.length, 'check')}` : ''}</dd>
             <dt>CLI version</dt><dd>{r.tested.cli ?? '—'}</dd>
             <dt>Test version</dt><dd>{r.testVersion}</dd>
-            {r.how.memoryLimitAdjusted && <><dt>Memory</dt><dd>Memory limit adjusted during the test</dd></>}
+            {r.how.memoryLimitAdjusted && <><dt>Room</dt><dd>Given more room during the test</dd></>}
           </dl>
         </details>
-        <p className={s.small}>{billedLine(r)}</p>
+        {!demo && <p className={s.small}>{billedLine(r)}</p>}
       </>}
 
       <p className={s.small}>{DISCLAIMER}</p>
-      <div className={s.footer}>
+      {!demo && <div className={s.footer}>
         {[
           result?.detailsKeptUntil && `Full details kept until ${day(result.detailsKeptUntil)}`,
           result?.summaryKeptUntil && `this result until ${day(result.summaryKeptUntil)}`,
           `Test ${shortId(run.id)}`,
         ].filter(Boolean).join(' · ')}
-      </div>
+      </div>}
     </div>
   );
 }

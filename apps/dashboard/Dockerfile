@@ -21,7 +21,9 @@ WORKDIR /repo/apps/dashboard
 # fixed per image. Staging passes its own; left empty, client.ts falls back to
 # https://proxy.whiteroom.tech.
 ARG NEXT_PUBLIC_PROXY_URL=
-ENV NEXT_PUBLIC_PROXY_URL=$NEXT_PUBLIC_PROXY_URL NEXT_TELEMETRY_DISABLED=1
+# "off" turns product analytics off (lib/analytics.ts); the EU build sets it.
+ARG NEXT_PUBLIC_ANALYTICS=
+ENV NEXT_PUBLIC_PROXY_URL=$NEXT_PUBLIC_PROXY_URL NEXT_PUBLIC_ANALYTICS=$NEXT_PUBLIC_ANALYTICS NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 FROM node:20-alpine AS runner

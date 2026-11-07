@@ -1,194 +1,111 @@
 'use client';
 
-import { useState } from 'react';
-import { DataTable, Hint, Panel, FONT_MONO } from '@whiteroom/ui';
-import type { AgentTotals, DaySavings } from '@/lib/analytics-metrics';
-import { fmtEnergy, fmtTokens } from '@/lib/format';
-import { tallyWords, type GovernanceTally } from '@/lib/governance';
-import { HELP } from '@/lib/metric-definitions';
-import { AgentScoreWheel } from './AgentScoreWheel';
-import type { AgentScore } from '@/lib/whiteroom/types';
+import { useId, useState } from 'react';
+import type { DaySavings } from '@/lib/analytics-metrics';
+import { fmtCost, fmtEnergy, fmtTokens } from '@/lib/format';
+import { formatDayKey } from '@/lib/zone-time';
+import { fewerTokens, inRange, tokenTotals } from '@/lib/performance-overview';
+import { Disclosure } from '@/app/(citadel)/performance/_components/primitives';
 
-const PLOT_H = 120;
-
-/**
- * The Savings card's caption, describing the same total as its value: tokens
- * shorter handovers didn't spend, plus prompt-cache reads billed at a discount.
- */
-export function savingsCaption(handoverTokens: number, cacheMicros: number): string {
-  const parts = [
-    handoverTokens > 0 ? `${fmtTokens(handoverTokens)} tokens not spent` : null,
-    cacheMicros > 0 ? 'cache reads' : null,
-  ].filter(Boolean);
-  return parts.length ? `${parts.join(' + ')}, estimated` : 'nothing saved in this range';
-}
-
-/** Round a max up to a tidy axis top, so the tallest bar fills most of the plot. */
-export function axisTop(max: number): number {
-  if (max <= 0) return 1;
-  const p = 10 ** Math.floor(Math.log10(max));
-  return [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].map((m) => m * p).find((v) => v >= max) ?? 10 * p;
-}
-
-/** Axis labels: "150K", not "150.0K". */
-export function axisLabel(n: number): string {
-  return fmtTokens(n).replace(/\.0+(?=[KM])/, '');
-}
+const PLOT_H = 100;
 
 function weekday(day: string): string {
-  return new Date(`${day}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short' });
+  return formatDayKey(day, { weekday: 'short' });
+}
+function weekdayLong(day: string): string {
+  return formatDayKey(day, { weekday: 'long' });
 }
 
 /**
- * Savings (README › Performance): tokens with WhiteRoom against the ceiling
- * without it, for each of the last 7 days. Always 7 days, whatever the page
- * range; the header says so.
+ * "See how it adds up", folded under the Cost cards: the input tokens with
+ * WhiteRoom and the estimate without, for the page's range when `range` is
+ * given (as Less input sent's card above it), else for the 7 days; then the
+ * same per day, with what each day saved, always the last 7 calendar days.
+ * `usdByDay` adds each day's dollars to its label. The closed row says the
+ * two totals, so the proof is readable without opening it.
  */
-export function SavingsChart({ days }: { days: DaySavings[] }) {
-  const [focus, setFocus] = useState<string | null>(null);
-  const top = axisTop(Math.max(...days.map((d) => d.used + d.saved), 0));
-  const h = (n: number) => Math.max(n > 0 ? 2 : 0, Math.round((n / top) * PLOT_H));
-  const empty = days.every((d) => d.used === 0 && d.saved === 0);
-  const shown = days.find((d) => d.day === focus);
-  const energy = fmtEnergy(days.reduce((n, d) => n + d.saved, 0));
-
-  return (
-    <Panel title={<>Savings<Hint text={HELP.savings} /></>} count={energy ? `last 7 days · ${energy} saved` : 'last 7 days'}>
-      {empty ? (
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--tx2)' }}>No model calls in the last 7 days.</p>
-      ) : (
-        <>
-          <div style={{ display: 'grid', gridTemplateColumns: '44px minmax(0, 1fr)', gap: 8 }}>
-            <div aria-hidden="true" style={{ position: 'relative', height: PLOT_H, fontFamily: FONT_MONO, fontSize: 10.5, color: 'var(--tx2)' }}>
-              {[top, top / 2, 0].map((v, i) => (
-                <span key={i} style={{ position: 'absolute', right: 0, top: `${(i / 2) * 100}%`, transform: 'translateY(-50%)' }}>{axisLabel(v)}</span>
-              ))}
-            </div>
-            <div style={{ position: 'relative' }}>
-              <div aria-hidden="true" style={{ position: 'absolute', inset: `0 0 auto 0`, height: PLOT_H }}>
-                {[0, 0.5, 1].map((f) => (
-                  <div key={f} style={{ position: 'absolute', left: 0, right: 0, top: `${f * 100}%`, borderTop: '1px dashed var(--line)' }} />
-                ))}
-              </div>
-              <div role="list" aria-label="Tokens per day, last 7 days" style={{ position: 'relative', display: 'grid', gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))`, gap: 6 }}>
-                {days.map((d) => {
-                  const without = d.used + d.saved;
-                  const label = `${weekday(d.day)}: ${fmtTokens(d.used)} tokens with WhiteRoom, est. ${fmtTokens(without)} without`;
-                  return (
-                    <div
-                      key={d.day}
-                      role="listitem"
-                      tabIndex={0}
-                      aria-label={label}
-                      title={label}
-                      onMouseEnter={() => setFocus(d.day)}
-                      onMouseLeave={() => setFocus(null)}
-                      onFocus={() => setFocus(d.day)}
-                      onBlur={() => setFocus(null)}
-                      className="wr-savings-day"
-                    >
-                      <div style={{ height: PLOT_H, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 3 }}>
-                        <div style={{ width: 12, height: h(d.used), background: 'var(--brand)', borderRadius: '2px 2px 0 0' }} />
-                        <div style={{ width: 12, height: h(without), background: 'var(--line2)', borderRadius: '2px 2px 0 0' }} />
-                      </div>
-                      <div style={{ marginTop: 6, textAlign: 'center', fontFamily: FONT_MONO, fontSize: 10.5, color: 'var(--tx2)' }}>{weekday(d.day)}</div>
-                      {/* Two lines, so neighbouring days' figures never run into each other. */}
-                      <div style={{ textAlign: 'center', fontFamily: FONT_MONO, fontSize: 10.5, color: 'var(--tx)', whiteSpace: 'nowrap' }}>
-                        {without ? fmtTokens(d.used) : '–'}
-                      </div>
-                      {without > 0 && (
-                        <div className="wr-savings-without" style={{ textAlign: 'center', fontFamily: FONT_MONO, fontSize: 10.5, color: 'var(--tx3)', whiteSpace: 'nowrap' }}>
-                          / {fmtTokens(without)}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 12, fontSize: 12, color: 'var(--tx2)', flexWrap: 'wrap' }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--brand)' }} />With WhiteRoom</span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--line2)' }} />Without, est.</span>
-            <span aria-live="polite" style={{ marginLeft: 'auto', fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx)' }}>
-              {shown ? `${weekday(shown.day)}: ${fmtTokens(shown.used)} tokens with WhiteRoom, est. ${fmtTokens(shown.used + shown.saved)} without` : ''}
-            </span>
-          </div>
-        </>
-      )}
-    </Panel>
-  );
-}
-
-/**
- * By agent (README › Performance), moved from Run History: tokens and savings
- * per agent for the page's range, most tokens first. Rule actions, flagged
- * runs and claim check join it with the governance engine (P2).
- */
-export function ByAgentTable({ rows, scope, ruleActions, scores }: {
-  rows: AgentTotals[];
-  scope: string;
-  /** Controls blocks (Enforce) and would-blocks (Watch only) per agent id, lower-cased. */
-  ruleActions?: Record<string, GovernanceTally>;
-  /** Task success / cost diligence / speed, per agent id (absent on older engines, or while still loading). */
-  scores?: Record<string, AgentScore>;
+export function TokensCompare({ days, usdByDay, range, defaultOpen = false }: {
+  /** Each day's input and saved tokens (the last 7 days); null when input per day is unknown: no By day. */
+  days: DaySavings[] | null;
+  usdByDay?: Record<string, number> | null;
+  /** The page range's totals and its label ("last 24 h"); the bars and words follow it. */
+  range?: { used: number; saved: number; label: string } | null;
+  defaultOpen?: boolean;
 }) {
-  const name = (r: AgentTotals) => r.agent
-    ? <span style={{ fontFamily: FONT_MONO, fontWeight: 500 }}>{r.agent}</span>
-    : <span style={{ color: 'var(--tx2)' }} title="Model calls recorded without an agent name">Unattributed</span>;
-  const saved = (r: AgentTotals) => (r.saved > 0 ? fmtTokens(r.saved) : '–');
-  const ruleWords = (r: AgentTotals) => (ruleActions?.[r.agent] ? tallyWords(ruleActions[r.agent]) : []);
-  const rules = (r: AgentTotals) => {
-    const words = ruleWords(r);
-    if (!words.length) return <span style={{ color: 'var(--tx2)' }}>–</span>;
-    return (
-      <span title="What Controls rules did for this agent (Enforce), and would have done (Watch only)">
-        {words.map((w, i) => <span key={w.text} style={{ color: `var(--${w.tone})` }}>{i > 0 && ' · '}{w.text}</span>)}
-      </span>
-    );
-  };
-  const score = (r: AgentTotals) => {
-    const s = scores?.[r.agent];
-    return s ? <AgentScoreWheel agent={s} /> : <span style={{ color: 'var(--tx3)' }}>–</span>;
-  };
+  const [open, setOpen] = useState(defaultOpen);
+  const bodyId = useId();
+  const dayRows = days ?? [];
+  const week = tokenTotals(dayRows);
+  const { used, saved } = range ?? week;
+  const without = used + saved;
+  const label = range?.label ?? 'last 7 days';
+  const energy = fmtEnergy(saved);
+  const empty = without === 0;
+  const max = Math.max(...dayRows.map((d) => d.used + d.saved), 0);
+  const h = (n: number) => (n > 0 ? Math.max(3, Math.round((n / max) * PLOT_H)) : 0);
+  const fewer = fewerTokens(saved, used);
+  const dayWords = dayRows.map((d) => d.used + d.saved > 0
+    ? `${weekdayLong(d.day)}: ${fmtTokens(d.used + d.saved)} without, ${fmtTokens(d.used)} with`
+    : `${weekdayLong(d.day)}: no calls`).join('. ');
+  const note = empty ? (max > 0 ? 'by day' : undefined) : `${fmtTokens(without)} without · ${fmtTokens(used)} with${max > 0 ? ' · by day' : ''}`;
 
   return (
-    <Panel title={<>By agent<Hint text={HELP.byAgent} /></>} count={`${rows.length} · ${scope}`} bodyPadding={0}>
-      {rows.length === 0 ? (
-        <p style={{ margin: 0, padding: '14px 18px', fontSize: 13, color: 'var(--tx2)' }}>No agent activity in this range.</p>
-      ) : (
-        <>
-          <div className="wr-byagent-table">
-            <DataTable<AgentTotals>
-              caption="Tokens and savings by agent"
-              rows={rows}
-              rowKey={(r) => r.agent}
-              rowHeight={scores && Object.keys(scores).length ? 64 : 44}
-              columns={[
-                { key: 'agent', header: 'Agent', width: 'minmax(160px, 1.4fr)', render: name },
-                { key: 'tokens', header: 'Tokens', width: '120px', numeric: true, render: (r) => fmtTokens(r.used) },
-                { key: 'saved', header: 'Saved, est.', width: '120px', numeric: true, render: saved },
-                { key: 'rules', header: 'Rule actions', width: 'minmax(180px, 280px)', numeric: true, render: rules },
-                { key: 'score', header: <>Performance<Hint text={HELP.agentPerformance} /></>, width: 'minmax(250px, 290px)', render: score },
-              ]}
-            />
+    <div className="wr-pcard wr-tokens" style={{ marginBottom: 16, overflow: 'hidden' }}>
+      <Disclosure first label="See how it adds up" note={note} open={open} onToggle={() => setOpen((v) => !v)} controls={bodyId}>
+        <p className="wr-cap" style={{ margin: 0, padding: '4px 20px 12px' }}>
+          The input your agents sent to the models {inRange(label)}, with WhiteRoom and an estimate without it. Includes cached input; output isn’t counted.
+        </p>
+        {empty ? (
+          <p className="wr-cap" style={{ margin: 0, padding: '0 20px 20px' }}>No model calls {inRange(label)}.</p>
+        ) : (
+          <>
+            <div className="wr-tokens__totals" role="img" aria-label={`${label.charAt(0).toUpperCase()}${label.slice(1)}: without WhiteRoom about ${fmtTokens(without)} tokens, with WhiteRoom ${fmtTokens(used)} tokens.${fewer ? ` ${fewer}.` : ''}`}>
+              <span className="wr-lbl">Without WhiteRoom, est.</span>
+              <div className="wr-tokens__track"><div className="wr-tokens__bar wr-tokens__bar--without" style={{ width: 'calc((100% - 72px) * 1)' }} /><strong>{fmtTokens(without)}</strong></div>
+              <span className="wr-lbl" style={{ color: 'var(--tx)' }}>With WhiteRoom</span>
+              <div className="wr-tokens__track"><div className="wr-tokens__bar wr-tokens__bar--with" style={{ width: `calc((100% - 72px) * ${(used / without).toFixed(3)})` }} /><strong>{fmtTokens(used)}</strong></div>
+            </div>
+            {energy && <p className="wr-cap" style={{ margin: 0, padding: '0 20px 16px' }}>About {energy.replace(/^≈/, '')} less energy, estimated from the tokens saved.</p>}
+          </>
+        )}
+        {/* By day is the 7 days: it shows whenever they have calls, even when the picked range has none. */}
+        {max > 0 && (
+          <div className="wr-tokens__byday">
+            <div className="wr-lbl" style={{ marginBottom: 8 }}>By day, last 7 days</div>
+            <div className="wr-tokens__days" role="img" aria-label={`Tokens per day. ${dayWords}.`}>
+              {dayRows.map((d) => {
+                const wo = d.used + d.saved;
+                return (
+                  <div key={d.day} className="wr-tokens__day" title={wo ? `${weekdayLong(d.day)}: ${fmtTokens(d.used)} with WhiteRoom, est. ${fmtTokens(wo)} without` : undefined}>
+                    {wo ? (
+                      <>
+                        <div className="wr-tokens__col"><span className="wr-tokens__val">{fmtTokens(wo)}</span><div className="wr-tokens__vbar wr-tokens__bar--without" style={{ height: h(wo) }} /></div>
+                        <div className="wr-tokens__col"><span className="wr-tokens__val wr-tokens__val--with">{fmtTokens(d.used)}</span><div className="wr-tokens__vbar wr-tokens__bar--with" style={{ height: h(d.used) }} /></div>
+                      </>
+                    ) : <span className="wr-cap" style={{ paddingBottom: 4, color: 'var(--tx3)' }}>—</span>}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="wr-tokens__labels" aria-hidden="true">
+              {dayRows.map((d) => {
+                const usd = usdByDay?.[d.day];
+                return (
+                  <div key={d.day}>
+                    <div className="wr-cap">{weekday(d.day)}</div>
+                    {d.saved > 0 && <div className="wr-cap wr-tokens__saved">{fmtTokens(d.saved)} saved</div>}
+                    {d.saved > 0 && usd != null && usd > 0 && <div className="wr-cap wr-tokens__usd">{fmtCost(usd)}</div>}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="wr-cap wr-tokens__legend">
+              <span><span className="wr-tokens__key wr-tokens__bar--without" />Without WhiteRoom, est.</span>
+              <span><span className="wr-tokens__key wr-tokens__bar--with" />With WhiteRoom</span>
+            </div>
           </div>
-          {/* Phones: one card per agent instead of a table that scrolls sideways. */}
-          <ul className="wr-byagent-cards" aria-label="Tokens and savings by agent">
-            {rows.map((r) => (
-              <li key={r.agent}>
-                <div className="wr-byagent-cards__name">{name(r)}</div>
-                <dl>
-                  <div><dt>Tokens</dt><dd>{fmtTokens(r.used)}</dd></div>
-                  <div><dt>Saved, est.</dt><dd>{saved(r)}</dd></div>
-                  {ruleWords(r).length > 0 && <div className="wr-byagent-cards__wide"><dt>Rule actions</dt><dd>{rules(r)}</dd></div>}
-                  {scores?.[r.agent] && <div className="wr-byagent-cards__wide"><dt>Performance<Hint text={HELP.agentPerformance} /></dt><dd>{score(r)}</dd></div>}
-                </dl>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-    </Panel>
+        )}
+      </Disclosure>
+    </div>
   );
 }

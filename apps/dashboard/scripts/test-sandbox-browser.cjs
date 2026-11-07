@@ -16,10 +16,9 @@ const assert = require('node:assert/strict');
     if(url.pathname.startsWith('/api/sandbox/')) {
       const path=url.pathname; let result;
       if(path.endsWith('/status')) result=state;
-      else if(path.endsWith('/runs')) { createBody=route.request().postDataJSON(); state={success:true,sandboxId:'fixture-run',isTrial:createBody.mode==='demo',controls:controls(),agents:[],auditLog:[],expiresInSeconds:1800}; result=state; }
+      else if(path.endsWith('/runs')) { createBody=route.request().postDataJSON(); state={success:true,sandboxId:'fixture-run',isTrial:false,controls:controls(),agents:[],auditLog:[],expiresInSeconds:1800}; result=state; }
       else if(path.endsWith('/report')) result={...state,totalTokens:15,totalTasks:1};
       else if(path.endsWith('/destroy')) {state={success:true}; result=state;}
-      else if(path.endsWith('/demo')) { state.controls[0].result.demoEvidence={status:'observed',diagnostic:'Synthetic connection'}; result={success:true,steps:[{action:'connection',detail:'Synthetic connection'},{action:'handover',detail:'Synthetic handover'}]}; }
       else result={success:true};
       return route.fulfill({json:result});
     }
@@ -57,16 +56,12 @@ const assert = require('node:assert/strict');
   await page.getByRole('button',{name:'End test and start another'}).click();
   await page.getByRole('button',{name:'End test',exact:true}).click();
   await page.getByRole('heading',{name:'Test with confidence.'}).waitFor();
-  await page.getByRole('button',{name:'Try the demo'}).click();
-  await page.getByRole('heading',{name:'See how WhiteRoom works.'}).waitFor(); assert.equal(createBody.mode,'demo'); assert.equal(createBody.apiKey,undefined);
-  await page.getByRole('button',{name:'Next',exact:true}).click();
-  await page.getByText('Synthetic handover',{exact:true}).waitFor();
   await page.setViewportSize({width:390,height:844});
   await page.screenshot({path:'/private/tmp/wr-flow-mobile.png',fullPage:true});
   await page.getByRole('button',{name:'Open navigation'}).click();
   await page.getByRole('link',{name:'Overview',exact:true}).waitFor();
   await page.getByRole('button',{name:'Close navigation'}).click();
   const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth); assert.equal(overflow,false);
-  console.log(JSON.stringify({connectedFlow:true,demoFlow:true,export:true,noFalseConnection:true,mobileOverflow:overflow,errors}));
+  console.log(JSON.stringify({connectedFlow:true,export:true,noFalseConnection:true,mobileOverflow:overflow,errors}));
   await browser.close();
 })().catch(e=>{console.error(e);process.exit(1)});

@@ -58,6 +58,17 @@ describe('practice BFF', () => {
     expect(engine).not.toHaveBeenCalled();
   });
 
+  it('forwards how thorough and a Sandbox start, nothing else; refuses other values; reads capabilities for the owner', async () => {
+    await post(['start'], { fleet: 'prod-eu', sample: false, runs: 1, agent: 'support-bot', profile: 'quick', longer: true, origin: 'sandbox' });
+    expect(JSON.parse(String(sent().init.body))).toEqual({ fleet: 'prod-eu', sample: false, runs: 1, agent: 'support-bot', profile: 'quick', origin: 'sandbox', startedBy: 'u1' });
+    for (const bad of [{ profile: 'fast' }, { origin: 'production' }]) {
+      expect((await post(['start'], { fleet: 'prod-eu', sample: false, runs: 1, agent: 'support-bot', ...bad })).status).toBe(400);
+    }
+    engine.mockResolvedValue(Response.json({ testVersion: 3, profiles: ['quick', 'deep'] }));
+    expect((await get(['capabilities'], 'fleet=prod-eu')).status).toBe(200);
+    expect(String(engine.mock.calls.at(-1)![0])).toMatch(/\/api\/readiness\/capabilities$/);
+  });
+
   it('refuses anyone who doesn’t own the fleet, before the engine is asked', async () => {
     access.mockResolvedValue({ status: 403, error: 'Only this fleet’s owner can change its controls and settings.' });
     const res = await get(undefined, 'fleet=prod-eu');
@@ -72,6 +83,14 @@ describe('practice BFF', () => {
     sameOrigin.mockResolvedValue(Response.json({ error: 'Origin mismatch.' }, { status: 403 }));
     expect((await post([RUN, 'end'], { fleet: 'prod-eu' })).status).toBe(403);
     expect(engine).not.toHaveBeenCalled();
+  });
+
+  it('passes the runs list through as the engine sends it, failed checks included (engine E1)', async () => {
+    const runs = { runs: [{ id: RUN, lifecycle: 'finished', verdict: 'not_passed', failed: ['c.timeout', 'ctl.spend_cap.gr_1'] }] };
+    engine.mockResolvedValueOnce(Response.json(runs, { status: 200 }));
+    const res = await get(undefined, 'fleet=prod-eu');
+    expect(sent().url).toMatch(/\/api\/readiness\/runs\?fleet=prod-eu$/);
+    expect(await res.json()).toEqual(runs);
   });
 
   it('routes reads and writes by run, and nothing else', async () => {
@@ -107,6 +126,12 @@ describe('practice BFF', () => {
     expect((await get(['source-model'], `fleet=prod-eu&agent=${'a'.repeat(129)}`)).status).toBe(400);
     await get(['source-model'], 'fleet=prod-eu&agent=support%20bot');
     expect(sent().url).toMatch(/\/api\/readiness\/source-model\?fleet=prod-eu&agent=support%20bot$/);
+    // origin=sandbox goes on (the agent's Sandbox calls); any other origin is dropped.
+    const last = () => String(engine.mock.calls[engine.mock.calls.length - 1][0]);
+    await get(['source-model'], 'fleet=prod-eu&agent=support-bot&origin=sandbox');
+    expect(last()).toMatch(/\/api\/readiness\/source-model\?fleet=prod-eu&agent=support-bot&origin=sandbox$/);
+    await get(['source-model'], 'fleet=prod-eu&agent=support-bot&origin=elsewhere%26x=1');
+    expect(last()).toMatch(/\/api\/readiness\/source-model\?fleet=prod-eu&agent=support-bot$/);
   });
 
   it('never passes an unreadable engine answer on as a success, and bounds names like the engine', async () => {

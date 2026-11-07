@@ -23,7 +23,7 @@ vi.mock('@/lib/fleet-session', () => ({
 import { randomBytes } from 'node:crypto';
 import { sealCred } from '@/lib/cred-seal';
 import { recordLegacyFleetIds } from '@/lib/control-auth';
-import { controlAccessError, controlActionOf, credentialGrant, DASHBOARD_ONLY_ACTIONS, fleetOwner } from '@/lib/control-auth';
+import { controlAccessError, controlActionOf, credentialGrant, DASHBOARD_ONLY_ACTIONS, fleetOwner, SECRET_READ_ACTIONS, secretReadFleet } from '@/lib/control-auth';
 import { WhiteRoomApiError } from '@/lib/whiteroom/client';
 import { POST } from '@/app/api/fleet/engine/route';
 
@@ -49,7 +49,7 @@ function fakeDb(held: Held[], holders: Holder[] = [{ userId: 'u1', provisioned: 
 describe('controlActionOf', () => {
   it('picks out exactly the dashboard-only actions', () => {
     expect([...DASHBOARD_ONLY_ACTIONS].sort()).toEqual(
-      ['agent_new_run', 'alerts_get', 'alerts_set_slack', 'alerts_test', 'compression_mode_set', 'compression_preview', 'delete_bedrock_role', 'fleet_data_settings_get', 'fleet_data_settings_set', 'goal_get', 'goal_set_owner', 'governance_create_rule', 'governance_delete_rule', 'governance_update_rule', 'pause_agent', 'rebind_fleet_key', 'resume_agent', 'rotate_proxy_keys', 'stop_agent', 'store_bedrock_role'],
+      ['agent_budget_set', 'agent_new_run', 'alerts_get', 'alerts_set_slack', 'alerts_set_teams', 'alerts_test', 'compression_mode_set', 'compression_preview', 'create_policy', 'delete_bedrock_role', 'deregister_agent', 'fleet_data_settings_get', 'fleet_data_settings_set', 'goal_get', 'goal_set_owner', 'governance_create_rule', 'governance_delete_rule', 'governance_update_rule', 'pause_agent', 'rebind_fleet_key', 'resume_agent', 'rotate_proxy_keys', 'set_policy_mode', 'stop_agent', 'store_bedrock_role'],
     );
     // A key on the engine's cloud identity is the owner's to mint; any other key isn't a control action.
     expect(controlActionOf(body({ action: 'store_key', fleet_id: 'f1', provider: 'bedrock-sigv4' }))).toEqual({ action: 'store_key', fleetId: 'f1' });
@@ -59,9 +59,27 @@ describe('controlActionOf', () => {
     expect(controlActionOf(body({ action: 'store_key', fleet_id: 'f1', provider: ' Bedrock-SigV4 ' }))).toEqual({ action: 'store_key', fleetId: 'f1' });
     expect(controlActionOf(body({ action: 'store_key', fleet_id: 'f1', provider: ['bedrock-sigv4'] }))).toBeNull();
     expect(controlActionOf(body({ action: 'pause_agent', fleet_id: 'f1' }))).toEqual({ action: 'pause_agent', fleetId: 'f1' });
+    // Removing an agent is an owner's call, like a hold.
+    expect(controlActionOf(body({ action: 'deregister_agent', fleet_id: 'f1', agent_id: 'a' }))).toEqual({ action: 'deregister_agent', fleetId: 'f1' });
+    // An agent's budget is its owner's to set.
+    expect(controlActionOf(body({ action: 'agent_budget_set', fleet_id: 'f1', agent_id: 'a', budget_usd: 5 }))).toEqual({ action: 'agent_budget_set', fleetId: 'f1' });
+    expect(controlActionOf(body({ action: 'agent_budgets_get', fleet_id: 'f1' }))).toBeNull();
     expect(controlActionOf(body({ action: 'fleet_report', fleet_id: 'f1' }))).toBeNull();
     expect(controlActionOf('not json')).toBeNull();
     expect(controlActionOf(body({ action: 'governance_create_rule' }))).toEqual({ action: 'governance_create_rule', fleetId: null });
+  });
+});
+
+describe('secretReadFleet', () => {
+  it('names the fleet for the reads that carry the secret: rule lists and the full audit export', () => {
+    expect([...SECRET_READ_ACTIONS].sort()).toEqual(['export_audit_full', 'governance_list']);
+    expect(secretReadFleet(body({ action: 'export_audit_full', fleet_id: 'f1' }))).toBe('f1');
+    expect(secretReadFleet(body({ action: 'governance_list', fleet_id: 'f1' }))).toBe('f1');
+    // Any holder of the fleet may read it, so it isn't an owner-only control action.
+    expect(controlActionOf(body({ action: 'export_audit_full', fleet_id: 'f1' }))).toBeNull();
+    expect(secretReadFleet(body({ action: 'export_audit', fleet_id: 'f1' }))).toBeNull();
+    expect(secretReadFleet(body({ action: 'export_audit_full' }))).toBeNull();
+    expect(secretReadFleet('not json')).toBeNull();
   });
 });
 

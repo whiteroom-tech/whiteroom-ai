@@ -13,6 +13,7 @@ import type {
   GovernanceRuleType,
   PerformanceIndexResult,
 } from './whiteroom/types';
+import { MODE_LABEL, NOTIFY } from './vocab';
 
 export const GOVERNANCE_BLOCK = 'governance_block';
 export const GOVERNANCE_WOULD_BLOCK = 'governance_would_block';
@@ -23,6 +24,7 @@ export const RULE_LABELS: Record<GovernanceRuleType, string> = {
   model_allowlist: 'Model allowlist',
   tool_list: 'Tool list',
   call_rate: 'Call rate',
+  keyword: 'Keywords',
 };
 
 export const REASON_LABELS: Record<string, string> = {
@@ -31,7 +33,22 @@ export const REASON_LABELS: Record<string, string> = {
   model_not_allowed: 'model not allowed',
   tool_not_allowed: 'tool not allowed',
   rate_exceeded: 'too many calls',
+  keyword_found: 'keyword found',
 };
+
+/**
+ * What stepped in, said after "blocked by": the rule and, when it adds
+ * something, why. `lower` for mid-sentence ("blocked by the spend cap
+ * (budget exceeded)"), else a label ("Spend cap (budget exceeded)"). The
+ * Keywords rule is named as a rule ("the Keywords rule"): its reason only
+ * repeated it.
+ */
+export function blockedByPhrase(ruleType: unknown, reason: unknown, lower: boolean): string {
+  if (ruleType === 'keyword') return 'the Keywords rule';
+  const label = ruleLabel(ruleType);
+  const why = REASON_LABELS[String(reason ?? '')];
+  return `${lower ? `the ${label.toLowerCase()}` : label}${why ? ` (${why})` : ''}`;
+}
 
 /** Blended rate the engine applies to dollar spend caps: $0.003 per 1K tokens. */
 export const BLENDED_USD_PER_TOKEN = 0.003 / 1000;
@@ -91,6 +108,7 @@ export function governanceFromSummary(g: { blocks: number; wouldBlocks: number; 
       model_allowlist: g.byRule.model_allowlist ?? emptyTally(),
       tool_list: g.byRule.tool_list ?? emptyTally(),
       call_rate: g.byRule.call_rate ?? emptyTally(),
+      keyword: g.byRule.keyword ?? emptyTally(),
     },
   };
 }
@@ -101,7 +119,7 @@ export function governanceCounts(entries: AuditEntry[], sinceMs = 0): Governance
     blocks: 0,
     wouldBlocks: 0,
     byAgent: {},
-    byRule: { spend_cap: emptyTally(), loop_breaker: emptyTally(), model_allowlist: emptyTally(), tool_list: emptyTally(), call_rate: emptyTally() },
+    byRule: { spend_cap: emptyTally(), loop_breaker: emptyTally(), model_allowlist: emptyTally(), tool_list: emptyTally(), call_rate: emptyTally(), keyword: emptyTally() },
   };
   for (const e of entries) {
     if (!isGovernanceDecision(e)) continue;
@@ -118,9 +136,9 @@ export function governanceCounts(entries: AuditEntry[], sinceMs = 0): Governance
 }
 
 /**
- * Per-agent tallies keyed the way the By agent table keys its rows: agent ids
- * lower-cased (so "Lead-Agent" and "lead-agent" merge, as their tokens do),
- * and '' kept for decisions recorded without an agent (the Unattributed row).
+ * Per-agent tallies keyed by lower-cased agent id, so "Lead-Agent" and
+ * "lead-agent" merge (as their tokens do; Home's agent list), with '' kept
+ * for decisions recorded without an agent.
  */
 export function ruleActionsByAgent(byAgent: Record<string, GovernanceTally>): Record<string, GovernanceTally> {
   const out: Record<string, GovernanceTally> = {};
@@ -133,22 +151,6 @@ export function ruleActionsByAgent(byAgent: Record<string, GovernanceTally>): Re
       if (prev[k] !== undefined || t[k] !== undefined) merged[k] = (prev[k] ?? 0) + (t[k] ?? 0);
     }
     out[key] = merged;
-  }
-  return out;
-}
-
-/** Recent enforced blocks shows as a badge on Overview. */
-export const RECENT_BLOCK_MS = 15 * 60_000;
-
-/** Newest governance_block per agent within `windowMs` of `now`. */
-export function recentBlocksByAgent(entries: AuditEntry[], now = Date.now(), windowMs = RECENT_BLOCK_MS): Record<string, AuditEntry> {
-  const out: Record<string, AuditEntry> = {};
-  for (const e of entries) {
-    if (e.type !== GOVERNANCE_BLOCK || !e.agentId) continue;
-    const t = new Date(e.timestamp).getTime();
-    if (!Number.isFinite(t) || now - t > windowMs) continue;
-    const prev = out[e.agentId];
-    if (!prev || new Date(prev.timestamp).getTime() < t) out[e.agentId] = e;
   }
   return out;
 }
@@ -183,27 +185,21 @@ export function computeSuggestions(index: PerformanceIndexResult, hourly: FleetH
 
 /** The "then" select, in the Rev 9 words. */
 export const RESPONSE_LABEL: Record<GovernanceResponse, string> = {
-  notify: 'Just tell me', block: 'Block the call', pause: 'Pause the agent', stop: 'Stop the agent',
+  notify: NOTIFY.option, block: 'Block the call', pause: 'Pause the agent', stop: 'Stop the agent',
 };
 
 /** What each response does, under the select (README › Screen 5). */
 export const RESPONSE_EFFECT: Record<GovernanceResponse, string> = {
-  notify: 'You get a Slack message (Settings › Alerts) with a link to the run, and it shows in Rule actions. The agent keeps going.',
+  notify: 'You get an alert in your alert channel (Settings › Alerts) with a link to the run, and it shows in Rule activity. The agent keeps going.',
   block: 'That one call fails with a plain reason. The agent keeps going.',
   pause: 'Its current run ends. It can’t make calls until someone resumes it, even after a restart.',
   stop: 'The agent refuses every call until someone resumes it, even after a restart. Stop overrides a pause.',
 };
 
-/** Pause and Stop only where the fleet has them (Gov v1), but always the rule's current one. */
-export function responseOptions(govV1: boolean, current: GovernanceResponse): { value: GovernanceResponse; label: string }[] {
-  return (['notify', 'block', 'pause', 'stop'] as const)
-    .filter((r) => govV1 || r === 'notify' || r === 'block' || r === current)
-    .map((r) => ({ value: r, label: RESPONSE_LABEL[r] }));
-}
-
 // ── Rule actions (P2.4) ─────────────────────────────────────────────
 
-const tally = (c: RuleActionCounts): GovernanceTally => ({ blocks: c.blocked, wouldBlocks: c.wouldAct, paused: c.paused, stopped: c.stopped, toldYou: c.toldYou });
+/** The engine's rule_actions counts as a tally (the words tallyWords and tallyTotal read). */
+export const tallyFromRuleActions = (c: RuleActionCounts): GovernanceTally => ({ blocks: c.blocked, wouldBlocks: c.wouldAct, paused: c.paused, stopped: c.stopped, toldYou: c.toldYou });
 
 /**
  * Counts from the engine's rule_actions, which last as long as the runs (the
@@ -221,18 +217,39 @@ export function countsFromRuleActions(res: RuleActionsResult, fallbackByRule: Go
         return [rt, c ? { blocks: c.blocked, wouldBlocks: c.wouldAct } : emptyTally()];
       })) as GovernanceCounts['byRule'])
     : fallbackByRule;
-  return { ...tally(res.totals), byRule, byAgent: Object.fromEntries(Object.entries(res.byAgent).map(([a, c]) => [a, tally(c)])) };
+  return { ...tallyFromRuleActions(res.totals), byRule, byAgent: Object.fromEntries(Object.entries(res.byAgent).map(([a, c]) => [a, tallyFromRuleActions(c)])) };
 }
 
-/** Every action in a tally, in words, worst first: "3 blocked", "1 paused", "2 would act (Watch only)". */
+/** Every action in a tally, in words, worst first: "3 blocked", "1 paused", "2 would have acted (Watch)". */
 export function tallyWords(t: GovernanceTally): { text: string; tone: 'bad' | 'warn' | 'tx2' }[] {
   const out: { text: string; tone: 'bad' | 'warn' | 'tx2' }[] = [];
   if (t.stopped) out.push({ text: `${t.stopped} stopped`, tone: 'bad' });
   if (t.paused) out.push({ text: `${t.paused} paused`, tone: 'bad' });
   if (t.blocks) out.push({ text: `${t.blocks} blocked`, tone: 'bad' });
-  if (t.toldYou) out.push({ text: `${t.toldYou} told you`, tone: 'tx2' });
-  if (t.wouldBlocks) out.push({ text: `${t.wouldBlocks} would act (Watch only)`, tone: 'warn' });
+  if (t.toldYou) out.push({ text: `${t.toldYou} ${NOTIFY.done}`, tone: 'tx2' });
+  if (t.wouldBlocks) out.push({ text: `${t.wouldBlocks} would have acted (${MODE_LABEL.watch})`, tone: 'warn' });
   return out;
+}
+
+/**
+ * The same tally as counts and words, short enough for a card line: 2
+ * "blocked", 47 "would have acted". Watch counts cover every response
+ * (block, pause, stop, alert) and the engine doesn't split them, so they
+ * can't honestly be called "would have blocked".
+ */
+export function tallyParts(t: GovernanceTally): { count: number; word: string }[] {
+  const out: { count: number; word: string }[] = [];
+  if (t.stopped) out.push({ count: t.stopped, word: 'stopped' });
+  if (t.paused) out.push({ count: t.paused, word: 'paused' });
+  if (t.blocks) out.push({ count: t.blocks, word: 'blocked' });
+  if (t.toldYou) out.push({ count: t.toldYou, word: NOTIFY.done });
+  if (t.wouldBlocks) out.push({ count: t.wouldBlocks, word: 'would have acted' });
+  return out;
+}
+
+/** The tally as one card line: "2 blocked · 47 would have acted". */
+export function tallyShort(t: GovernanceTally): string {
+  return tallyParts(t).map((p) => `${p.count} ${p.word}`).join(' · ');
 }
 
 export function tallyTotal(t: GovernanceTally): number {

@@ -1,10 +1,11 @@
 // Practice tests through the BFF (spec §4 Start, §7 owner routes):
 //
 //   GET  /api/sandbox/practice?fleet=                 Past tests rows for the fleet's owner
-//   GET  /api/sandbox/practice/source-model?fleet=&agent=
+//   GET  /api/sandbox/practice/source-model?fleet=&agent=&origin=sandbox?
+//   GET  /api/sandbox/practice/capabilities?fleet=    what the engine offers (quick and deep tests)
 //   GET  /api/sandbox/practice/<run>?fleet=           progress
 //   GET  /api/sandbox/practice/<run>/report?fleet=    result
-//   POST /api/sandbox/practice/start                  {fleet, sample, runs, agent?, model?, scope?, proxyKeyDisplayPrefix?}
+//   POST /api/sandbox/practice/start                  {fleet, sample, runs, agent?, model?, scope?, proxyKeyDisplayPrefix?, profile?, longer?, origin?}
 //   POST /api/sandbox/practice/<run>/code             {fleet}: Get a new run code
 //   POST /api/sandbox/practice/<run>/end              {fleet}: End test
 //
@@ -48,10 +49,13 @@ export async function GET(req: Request, { params }: Params) {
   if ('error' in owner) return owner.error;
   const fleet = encodeURIComponent(owner.fleet);
   if (path.length === 0) return practiceEngine('GET', `runs?fleet=${fleet}`, undefined, owner.userId);
+  if (path.length === 1 && path[0] === 'capabilities') return practiceEngine('GET', 'capabilities', undefined, owner.userId);
   if (path.length === 1 && path[0] === 'source-model') {
     const agent = q.get('agent');
     if (!agent || agent.length > 128) return invalid();
-    return practiceEngine('GET', `source-model?fleet=${fleet}&agent=${encodeURIComponent(agent)}`, undefined, owner.userId);
+    // origin=sandbox: the agent's model as it calls the Sandbox (an engine without it ignores it: no model). Anything else isn't passed on.
+    const origin = q.get('origin') === 'sandbox' ? '&origin=sandbox' : '';
+    return practiceEngine('GET', `source-model?fleet=${fleet}&agent=${encodeURIComponent(agent)}${origin}`, undefined, owner.userId);
   }
   const [run, sub] = path;
   if (!RUN_ID_RE.test(run) || path.length > 2 || (sub !== undefined && sub !== 'report')) return notFound();
@@ -75,15 +79,17 @@ export async function POST(req: Request, { params }: Params) {
   if ('error' in owner) return owner.error;
 
   if (path.length === 1 && path[0] === 'start') {
-    const { sample, runs, agent, model, scope, proxyKeyDisplayPrefix } = body;
+    const { sample, runs, agent, model, scope, proxyKeyDisplayPrefix, profile, origin } = body;
     if (typeof sample !== 'boolean' || (runs !== 1 && runs !== 3)) return invalid();
+    // How thorough, and whether it's started from the Sandbox: only the values the engine takes.
+    if ((profile !== undefined && profile !== 'quick' && profile !== 'deep') || (origin !== undefined && origin !== 'sandbox')) return invalid();
     // The same bounds as the engine's, so nothing bigger is forwarded.
     const name = (v: unknown) => v === undefined || (typeof v === 'string' && v.length >= 1 && v.length <= 128);
     if (!name(agent) || !name(model)) return invalid();
     if (scope !== undefined && (!Array.isArray(scope) || scope.length > 64 || !scope.every((s) => typeof s === 'string' && s.length <= 128))) return invalid();
     // R7: a Fleet key key, by the display prefix Fleet key lists (never the key itself).
     if (proxyKeyDisplayPrefix !== undefined && (typeof proxyKeyDisplayPrefix !== 'string' || !PROXY_KEY_PREFIX_RE.test(proxyKeyDisplayPrefix))) return invalid();
-    return practiceEngine('POST', 'start', { fleet: owner.fleet, sample, runs, agent, model, scope, proxyKeyDisplayPrefix, startedBy: owner.userId }, owner.userId);
+    return practiceEngine('POST', 'start', { fleet: owner.fleet, sample, runs, agent, model, scope, proxyKeyDisplayPrefix, profile, origin, startedBy: owner.userId }, owner.userId);
   }
   const [run, action] = path;
   if (path.length !== 2 || !RUN_ID_RE.test(run) || (action !== 'code' && action !== 'end')) return notFound();

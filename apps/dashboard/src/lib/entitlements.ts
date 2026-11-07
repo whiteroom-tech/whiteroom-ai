@@ -13,11 +13,14 @@
 import 'server-only';
 
 import { auth } from '@/auth';
-import { db } from '@/lib/db';
+import { SANDBOX_FLEET_PREFIX } from '@/lib/fleet-helpers';
+import { db, lockClient, type Queryable } from '@/lib/db';
 import { fetchFleetUsage } from '@/lib/fleet-usage';
 import { PROXY_URL } from '@/lib/whiteroom/client';
 import { fleetOwners } from '@/lib/control-auth';
 import { effectivePlan, limitsFor, PLANS, type PlanId, type PlanLimits } from '@/lib/plans';
+import { lapsedPaidPlan, markClosed, reconcileLapse } from '@/lib/account-closing';
+import { isClosingOpen, type Closing } from '@/lib/closing-shared';
 
 export interface SubscriptionRow {
   plan: string;
@@ -27,8 +30,8 @@ export interface SubscriptionRow {
   stripeSubscriptionId: string | null;
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;
-  /** Agents the Pro subscription is billed for, as Stripe last reported it. */
-  billedAgents: number | null;
+  /** When a paid subscription stopped being active (null: active, or lapsed before this was recorded). */
+  lapsedAt: string | null;
 }
 
 export interface Entitlement {
@@ -45,10 +48,10 @@ export interface Entitlement {
   usage: { fleets: number; agents: number | null };
 }
 
-export async function getSubscriptionRow(userId: string): Promise<SubscriptionRow | null> {
-  const { rows } = await db().query(
+export async function getSubscriptionRow(userId: string, q: Queryable = db()): Promise<SubscriptionRow | null> {
+  const { rows } = await q.query(
     `SELECT plan, status, plan_override, stripe_customer_id, stripe_subscription_id,
-            current_period_end::text, cancel_at_period_end, billed_agents
+            current_period_end::text, cancel_at_period_end, lapsed_at::text
      FROM subscriptions WHERE user_id = $1`,
     [userId],
   );
@@ -62,7 +65,7 @@ export async function getSubscriptionRow(userId: string): Promise<SubscriptionRo
     stripeSubscriptionId: r.stripe_subscription_id,
     currentPeriodEnd: r.current_period_end,
     cancelAtPeriodEnd: r.cancel_at_period_end,
-    billedAgents: r.billed_agents ?? null,
+    lapsedAt: r.lapsed_at ?? null,
   };
 }
 
@@ -70,20 +73,22 @@ export async function getSubscriptionRow(userId: string): Promise<SubscriptionRo
  * When this user's free Starter period ends. Null only if the user row is
  * gone, which effectivePlan treats as an expired trial.
  */
-export async function getTrialEndsAt(userId: string): Promise<string | null> {
-  const { rows } = await db().query(`SELECT trial_ends_at::text FROM users WHERE id = $1`, [userId]);
+export async function getTrialEndsAt(userId: string, q: Queryable = db()): Promise<string | null> {
+  const { rows } = await q.query(`SELECT trial_ends_at::text FROM users WHERE id = $1`, [userId]);
   return rows[0]?.trial_ends_at ?? null;
 }
 
-/** The plan this user is on right now, read fresh from the database. */
-export async function resolvePlan(userId: string): Promise<{ plan: PlanId; sub: SubscriptionRow | null; trialEndsAt: string | null }> {
-  const [sub, trialEndsAt] = await Promise.all([getSubscriptionRow(userId), getTrialEndsAt(userId)]);
+/** The plan this user is on right now, read fresh from the database (inside `q`'s transaction when given one). */
+export async function resolvePlan(userId: string, q: Queryable = db()): Promise<{ plan: PlanId; sub: SubscriptionRow | null; trialEndsAt: string | null }> {
+  // One after the other: a transaction's client runs one query at a time.
+  const sub = await getSubscriptionRow(userId, q);
+  const trialEndsAt = await getTrialEndsAt(userId, q);
   return { plan: effectivePlan(sub, trialEndsAt), sub, trialEndsAt };
 }
 
 /**
  * Total agents across every fleet this user controls, as the engine counts
- * them — the same number the engine admits against and Pro is billed on.
+ * them: the number Settings shows against the plan's included agents.
  * Null when the engine can't be reached, so callers never mistake an outage
  * for an account with no agents.
  */
@@ -144,9 +149,9 @@ export async function getEntitlement(): Promise<Entitlement> {
  */
 export function fleetCountSql(alias: string): string {
   return `(SELECT count(*)::int FROM (
-             SELECT fleet_id FROM user_fleets WHERE user_id = ${alias}.id AND fleet_id IS NOT NULL
+             SELECT fleet_id FROM user_fleets WHERE user_id = ${alias}.id AND fleet_id IS NOT NULL AND fleet_id NOT LIKE '${SANDBOX_FLEET_PREFIX}%'
              UNION
-             SELECT ${alias}.fleet_id WHERE ${alias}.fleet_id IS NOT NULL
+             SELECT ${alias}.fleet_id WHERE ${alias}.fleet_id IS NOT NULL AND ${alias}.fleet_id NOT LIKE '${SANDBOX_FLEET_PREFIX}%'
            ) AS distinct_fleets)`;
 }
 
@@ -173,9 +178,10 @@ async function countFleets(userId: string): Promise<number> {
  */
 async function fleetIdsFor(userId: string): Promise<string[]> {
   const { rows } = await db().query(
-    `SELECT fleet_id FROM users WHERE id = $1 AND fleet_id IS NOT NULL
+    // Sandbox fleets (sandbox-…) never take the plan: they don't count toward it and its limits aren't pushed to them.
+    `SELECT fleet_id FROM users WHERE id = $1 AND fleet_id IS NOT NULL AND fleet_id NOT LIKE '${SANDBOX_FLEET_PREFIX}%'
      UNION
-     SELECT fleet_id FROM user_fleets WHERE user_id = $1 AND fleet_id IS NOT NULL`,
+     SELECT fleet_id FROM user_fleets WHERE user_id = $1 AND fleet_id IS NOT NULL AND fleet_id NOT LIKE '${SANDBOX_FLEET_PREFIX}%'`,
     [userId],
   );
   const ids = rows.map((r) => r.fleet_id as string);
@@ -212,6 +218,124 @@ export async function enqueueEntitlementSync(
 }
 
 /**
+ * How long a push the engine didn't acknowledge can still land there: past the
+ * engine's Cloud Run request timeout (300s, cloudbuild-engine.yaml --timeout),
+ * with a margin. The engine applies a push as soon as it reads the body, so a
+ * request is applied within that time or never. Raise this with that timeout.
+ */
+const LATE_PUSH_MARGIN_MINUTES = 6;
+
+/**
+ * Marks this user's outbox rows up to `upToId` delivered, after the engine
+ * acknowledged a push that reflects them. Rows not yet due (a delayed re-push,
+ * below) are left: they exist to re-send after a push that may still land late.
+ */
+export async function markOutboxDelivered(userId: string, upToId: number | string, q: Queryable = db()): Promise<void> {
+  await q.query(
+    `UPDATE entitlement_outbox SET delivered_at = now()
+     WHERE user_id = $1 AND id <= $2 AND delivered_at IS NULL
+       AND (not_before IS NULL OR not_before <= now())`,
+    [userId, upToId],
+  );
+}
+
+/**
+ * Holds this user's entitlement lock while `fn` runs, and hands it `push`, the
+ * engine push that may only run under it. Two pushes for one user never
+ * overlap, and each reads the database when it runs and holds the lock until
+ * the engine acknowledges: so the engine receives a user's states in the order
+ * they were committed. Without it, an older push that read the old plan could
+ * land after a newer one.
+ *
+ * The lock is a Postgres advisory lock on a connection of its own, outside the
+ * pool: `fn` uses the pool for its queries, and waiters holding pool slots
+ * could otherwise starve the holder. Getting the lock (a connection slot,
+ * then the lock itself) has one deadline, LOCK_WAIT_MS; past it this rejects
+ * with LockUnavailableError. If the lock connection drops, Postgres releases it.
+ */
+export async function withUserEntitlementLock<T>(userId: string, fn: (push: () => Promise<boolean>) => Promise<T>): Promise<T> {
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  // At most LOCK_CONNECTIONS of these connections per instance: a burst of
+  // webhooks waits here, holding nothing, rather than opening one each. A slow
+  // engine or a busy user makes others fail fast (a retry), never hang.
+  const release = await lockSlot(LOCK_WAIT_MS);
+  try {
+    const lock = lockClient();
+    // A held connection that drops (a Cloud SQL restart, a proxy reset) emits
+    // 'error'; unheard, that's an uncaught exception that takes the instance down.
+    // Postgres releases the lock with the connection, so from then on this
+    // caller no longer holds it: the push checks `held` (below).
+    const held = { lost: false };
+    lock.on('error', () => { held.lost = true; console.error('[entitlements] lock connection failed'); });
+    return await holdLock(lock, userId, deadline, held, fn);
+  } finally {
+    release();
+  }
+}
+
+/** Getting the lock failed (no slot or lock in time, or no connection): nothing was read or pushed. */
+class LockUnavailableError extends Error {
+  constructor(reason: string) {
+    super(`entitlement lock unavailable: ${reason}`);
+    this.name = 'LockUnavailableError';
+  }
+}
+
+async function holdLock<T>(lock: ReturnType<typeof lockClient>, userId: string, deadline: number, held: { lost: boolean }, fn: (push: () => Promise<boolean>) => Promise<T>): Promise<T> {
+  try {
+    try {
+      await lock.connect();
+      // Whatever the slot wait left of the one deadline, so the two waits never add up.
+      const left = Math.max(1, deadline - Date.now());
+      await lock.query(`SELECT set_config('statement_timeout', $1, false)`, [String(left)]);
+      await lock.query(`SELECT pg_advisory_lock(hashtext($1))`, [`entitlements:${userId}`]);
+    } catch (err) {
+      throw new LockUnavailableError(err instanceof Error ? err.message : 'unknown error');
+    }
+    try {
+      return await fn(() => pushEntitlements(userId, held));
+    } finally {
+      await lock.query(`SELECT pg_advisory_unlock(hashtext($1))`, [`entitlements:${userId}`]).catch(() => {});
+    }
+  } finally {
+    await lock.end().catch(() => {});
+  }
+}
+
+/** Lock connections open at once, per instance (Cloud SQL's limit is shared with the pool). */
+const LOCK_CONNECTIONS = 3;
+/** How long getting the lock may take in all (a slot, then the lock): db.ts's statement_timeout. */
+const LOCK_WAIT_MS = 15_000;
+let lockSlotsInUse = 0;
+const lockSlotQueue: Array<() => void> = [];
+
+/**
+ * Waits for one of LOCK_CONNECTIONS, first come first served, and resolves
+ * with its release; rejects after `waitMs`, as a lock wait does.
+ */
+function lockSlot(waitMs: number): Promise<() => void> {
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    const next = lockSlotQueue.shift();
+    if (next) next(); else lockSlotsInUse--;
+  };
+  if (lockSlotsInUse < LOCK_CONNECTIONS) { lockSlotsInUse++; return Promise.resolve(release); }
+  return new Promise((resolve, reject) => {
+    // Rejects as LockUnavailableError, like a lock wait that runs out.
+    // The slot is handed over (lockSlotsInUse unchanged) by the one released.
+    const take = () => { clearTimeout(timer); resolve(release); };
+    const timer = setTimeout(() => {
+      const i = lockSlotQueue.indexOf(take);
+      if (i >= 0) lockSlotQueue.splice(i, 1);
+      reject(new LockUnavailableError('timed out waiting for a lock connection'));
+    }, waitMs);
+    lockSlotQueue.push(take);
+  });
+}
+
+/**
  * Pushes this user's current limits to the engine.
  *
  * Called after anything that can change what they're entitled to: a webhook,
@@ -225,31 +349,96 @@ export async function enqueueEntitlementSync(
  * succeeded. Instead it returns whether the engine acknowledged the push, and
  * callers that need delivery (the outbox sweep) must check it — the engine
  * only knows what it was last sent, so nothing else re-sends a missed push.
+ *
+ * Takes the user's entitlement lock (withUserEntitlementLock). A caller that
+ * already holds it uses the `push` it was handed instead: this would wait on
+ * itself.
  */
 export async function syncEntitlementsToEngine(userId: string): Promise<boolean> {
+  try {
+    return await withUserEntitlementLock(userId, (push) => push());
+  } catch (err) {
+    // Not delivered either way; a queued row stays pending. Said apart, so a
+    // log points at the right place: the lock (contention, the database) or
+    // the push's own reads.
+    const why = err instanceof Error ? err.message : 'unknown error';
+    if (err instanceof LockUnavailableError) console.error(`[entitlements] could not take the entitlement lock: ${why}`);
+    else console.error(`[entitlements] push failed: ${why}`);
+    return false;
+  }
+}
+
+/**
+ * The push itself. Only under the user's entitlement lock (withUserEntitlementLock),
+ * and only while it is still held: `held.lost` means the lock connection dropped,
+ * so Postgres released the lock and another push may be running.
+ */
+async function pushEntitlements(userId: string, held: { lost: boolean }): Promise<boolean> {
   const secret = process.env.WR_ENTITLEMENT_SYNC_SECRET;
   if (!secret) {
     console.warn('[entitlements] WR_ENTITLEMENT_SYNC_SECRET unset — skipping engine sync');
     return false;
   }
 
-  const [{ plan }, fleetIds] = await Promise.all([resolvePlan(userId), fleetIdsFor(userId)]);
+  const [{ plan, sub }, fleetIds] = await Promise.all([resolvePlan(userId), fleetIdsFor(userId)]);
+
+  // A lapsed paid plan starts the 14-day closing window, and one that came back
+  // cancels it (lib/account-closing.ts). Before the fleet check: an account
+  // with no fleet still gets the email and the banner.
+  let closing: Closing | null;
+  try {
+    closing = await reconcileLapse(userId, plan, sub);
+  } catch (err) {
+    console.error('[entitlements] closing check failed:', err instanceof Error ? err.message : 'unknown error');
+    return false;
+  }
   if (fleetIds.length === 0) return true;
 
-  const limits = limitsFor(plan);
+  // During the window the fleets keep working: a lapsed paid plan runs on
+  // the plan it had until the window ends. An ended free period stays off,
+  // window or not (a trial account that deletes isn't switched back on).
+  const windowOpen = !!closing && isClosingOpen(closing);
+  const applied: PlanId = (windowOpen && lapsedPaidPlan(plan, sub)) || plan;
+  const limits = limitsFor(applied);
 
   const payload = {
     fleets: fleetIds.map((fleetId) => ({
       fleetId,
-      plan,
+      plan: applied,
       // The engine only ever gates on "is this allowed to run"; the nuance of
       // why (trial over vs. a cancelled subscription) stays on this side. An
       // inactive fleet refuses every agent, including ones already in it.
-      status: plan === 'expired' ? 'inactive' : 'active',
+      status: applied === 'expired' ? 'inactive' : 'active',
       maxAgents: limits.maxAgentsPerFleet,
       retentionDays: limits.retentionDays,
+      // When the fleet closes, or null: sent every time, so a cancel lands.
+      closesAt: closing?.closesAt ?? null,
+      closeReason: closing?.reason ?? null,
     })),
   };
+
+  // Sent but not acknowledged (a timeout, a dropped connection, a 5xx) doesn't
+  // mean not applied: the engine may still apply it after a newer push has
+  // landed. So queue a re-push of the current state for after that can happen.
+  // A 4xx is the engine refusing it outright (nothing applied, nothing late):
+  // no re-push, which would only repeat the refusal every few minutes.
+  const sentUnacknowledged = async (): Promise<false> => {
+    // One waiting re-push per user is enough: it sends whatever is current when it runs.
+    await db().query(
+      `INSERT INTO entitlement_outbox (user_id, reason, not_before)
+       SELECT $1, 'unacknowledged_push', now() + make_interval(mins => $2)
+       WHERE NOT EXISTS (
+         SELECT 1 FROM entitlement_outbox
+         WHERE user_id = $1 AND delivered_at IS NULL AND not_before > now()
+       )`,
+      [userId, LATE_PUSH_MARGIN_MINUTES],
+    ).catch(() => console.error('[entitlements] could not queue the delayed re-push'));
+    return false;
+  };
+
+  // Lost before sending: don't send. Not delivered, so the caller's pending
+  // outbox row brings it back under a fresh lock.
+  if (held.lost) { console.error('[entitlements] lock lost before the push; not sent'); return false; }
 
   try {
     const res = await fetch(`${PROXY_URL}/internal/entitlements`, {
@@ -259,14 +448,34 @@ export async function syncEntitlementsToEngine(userId: string): Promise<boolean>
       headers: { 'Content-Type': 'application/json', 'x-wr-sync-secret': secret },
       body: JSON.stringify(payload),
     });
+    // Lost while it was in flight: another push may have overlapped it, so its
+    // order isn't known. Count it as unacknowledged: the delayed re-push sends
+    // the current state after anything still in flight has landed.
+    if (held.lost) { console.error('[entitlements] lock lost during the push'); return sentUnacknowledged(); }
     if (!res.ok) {
       console.error(`[entitlements] engine sync failed: HTTP ${res.status}`);
+      return res.status >= 500 ? sentUnacknowledged() : false;
+    }
+    const body = (await res.json().catch(() => null)) as { closed?: unknown } | null;
+    const closed = Array.isArray(body?.closed) ? body.closed : null;
+    // An engine that answers without `closed` doesn't know about closing and
+    // dropped the time: not delivered, so the outbox keeps it until one does.
+    // Otherwise a deleted account could be removed with its fleets still open.
+    if (closing && !closed) {
+      // It answered, so nothing can land late; the pending row brings it back.
+      console.error('[entitlements] engine did not take the closing time; leaving pending');
       return false;
+    }
+    // The engine has the final say on closing: a fleet it reports closed
+    // while this side thinks it open (a cancel that came too late) is
+    // recorded closed, so checkout refuses and the banner tells the truth.
+    if (closed?.some((id) => fleetIds.includes(id as string)) && (!closing || isClosingOpen(closing))) {
+      if (await markClosed(userId)) console.warn(`[entitlements] user ${userId}: the engine reports the fleet closed; recorded`);
     }
     return true;
   } catch (err) {
     console.error('[entitlements] engine sync failed');
-    return false;
+    return sentUnacknowledged();
   }
 }
 
@@ -295,6 +504,8 @@ export async function revokeFleetEntitlement(fleetId: string): Promise<void> {
           status: 'active',
           maxAgents: starter.maxAgentsPerFleet,
           retentionDays: starter.retentionDays,
+          // Closing follows the owner: a fleet nobody owns isn't closing.
+          closesAt: null,
         }],
       }),
     });

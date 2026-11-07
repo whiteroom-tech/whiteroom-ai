@@ -26,7 +26,7 @@ describe('agent health card', () => {
   it('a quiet week: fine, both rows one line, nothing folded open', () => {
     const v = agentHealthView(quietFlags, fleet([report('lead-agent', [])]), line)!;
     expect(v.verdict).toEqual({ tone: 'ok', title: 'Your agents look fine' });
-    expect(v.unusual).toEqual({ tone: 'ok', text: 'Nothing unusual this week' });
+    expect(v.unusual).toEqual({ tone: 'ok', text: 'Nothing unusual in the last 7 days' });
     expect(v.unusualHasDetail).toBe(false);
     expect(v.health).toEqual({ tone: 'ok', text: '1 check passed' });
     expect(v.healthOpen).toBe(false);
@@ -41,7 +41,7 @@ describe('agent health card', () => {
 
   it('flagged runs: Unusual behaviour folds out, open, with a capped count marked', () => {
     const v = agentHealthView({ ...quietFlags, count: 1000, truncated: true }, null, null)!;
-    expect(v.unusual).toEqual({ tone: 'warn', text: '1,000+ runs flagged this week' });
+    expect(v.unusual).toEqual({ tone: 'warn', text: '1,000+ runs flagged in the last 7 days' });
     expect(v.unusualHasDetail).toBe(true);
     expect(v.health).toBeNull();
     expect(v.verdict!.title).toBe('1,000+ runs looked unusual');

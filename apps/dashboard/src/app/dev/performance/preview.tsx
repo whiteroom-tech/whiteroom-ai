@@ -5,15 +5,24 @@ import { SegmentedControl, StatCard } from '@whiteroom/ui';
 import { HELP } from '@/lib/metric-definitions';
 
 import { AppShell } from '@/components/AppShell';
-import { PageHeader } from '@/components/citadel/PageChrome';
-import { ByAgentTable, SavingsChart } from '@/components/performance/SavingsPanels';
-import { agentTotals, dailySavings } from '@/lib/analytics-metrics';
+import { LiveStatus, PageHeader, SectionHeader } from '@/components/citadel/PageChrome';
+import { TokensCompare } from '@/components/performance/SavingsPanels';
+import { fmtCost } from '@/lib/format';
+import type { GovernanceCounts } from '@/lib/governance';
+import type { DaySavings } from '@/lib/analytics-metrics';
+import { countTrend, latencyTrend, pctChange, priorLabel, pricesFrom, rangeContextCard, savedCaption, trendText } from '@/lib/performance-overview';
+import { RangeDates, RangeMenu } from '@/components/citadel/RangePicker';
+import { addDays, clampSpan, localDay, runsDays, runsWindow, spanLabel, viewInstants, type RunsView } from '@/lib/runs';
+import { PERF_MAX_DAYS, perfOldest } from '@/lib/performance-range';
+import { fmtLatency, SpendByModel } from '@/app/(citadel)/performance/_components/perf-utils';
 import { useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
 import { AgentHealth } from '@/components/performance/AgentHealth';
 import { statusLine } from '@/lib/diagnosis/model';
-import type { DiagnosisFinding, FleetDiagnosis, PerformanceCostForecastResult, RecommendationDetail, RunSummary } from '@/lib/whiteroom/types';
+import type { AgentBudgetForecast, DiagnosisFinding, FleetDiagnosis, GovernanceRule, PerformanceModelSummary, RecommendationDetail, RunSummary } from '@/lib/whiteroom/types';
 import { RecommendationsCard } from '@/app/(citadel)/performance/_components/Recommendations';
-import { CostTrackingSection } from '@/app/(citadel)/performance/_components/CostTracking';
+import { CostPredictionSection, type CostPredictionApi } from '@/app/(citadel)/performance/_components/CostPrediction';
+import { RulesSummary } from '@/app/(citadel)/performance/_components/RulesSummary';
+import { capRuleFor } from '@/lib/agent-budgets';
 
 const flagged = (agentId: string, daysAgo: number, flags: RunSummary['flags']): RunSummary => ({
   runId: `${agentId}~${daysAgo}`, agentId, shift: 10 - daysAgo, startedAt: new Date(Date.now() - daysAgo * 86_400_000).toISOString(), endedAt: new Date().toISOString(),
@@ -41,8 +50,8 @@ const HANDOVER_FINDING = {
   measures: {}, estWastedTokens: null, estWastedCostMicros: null, evidenceCallIds: [], coverage: 'complete', limitations: null, suggestedAction: null,
 } as unknown as DiagnosisFinding;
 const diagnosis = (findings: DiagnosisFinding[]): FleetDiagnosis => ({
-  checkedAt: new Date(Date.now() - 2 * 3_600_000).toISOString(), source: 'background', reports: [report('lead-agent', findings)],
-  waiting: [], skipped: [], truncated: false, readyAgents: 1, busiest: { agentId: 'lead-agent', calls7d: 180 }, minCalls: 50,
+  checkedAt: new Date(Date.now() - 22 * 60_000).toISOString(), source: 'background', reports: ['code-reviewer', 'contract-summarizer', 'invoice-reconciler', 'lead-agent', 'market-researcher', 'ops-scheduler', 'support-triage'].map((a) => report(a, a === 'lead-agent' ? findings : [])),
+  waiting: [], skipped: [], truncated: false, readyAgents: 7, busiest: { agentId: 'lead-agent', calls7d: 180 }, minCalls: 50,
 });
 const QUIET = diagnosis([]);
 const PROBLEM = diagnosis([HANDOVER_FINDING]);
@@ -86,70 +95,148 @@ function Recs({ recs }: { recs: RecommendationDetail[] }) {
   );
 }
 
-// Cost tracking: a daily dollar budget set, no token budget.
-const FORECAST: PerformanceCostForecastResult = {
-  fleetId: 'acme-claims-prod', budgetUsd: 5, spendToDateUsd: 0.91, spentTodayUsd: 0.13, burnRateUsdPerHour: 0.0054, remainingTasks: 42,
-  costUnavailable: false, tokensPerHour: 2_400, tokenBudget: null, budgetPeriod: 'day', budgetTimeZone: 'America/New_York',
-  burnLookbackHours: 24, burnActiveHours: 6, dollarRemainingTasks: 42, dollarRemainingTasksReason: 'available', tokenRemainingTasks: null, tokenRemainingTasksReason: 'budget_missing',
-};
+// Tokens with vs without, one sample week shaped like the mockup's: busy midweek, a big Saturday, quiet days.
+const week = (rows: Array<[number, number]>): DaySavings[] => rows.map(([used, saved], i) => ({ day: addDays(localDay(), i - (rows.length - 1)), used, saved }));
+// Built when rendered, not at import, so the days are in the saved zone (Providers sets it first).
+const sampleWeek = () => week([[0, 0], [50_100, 1_569_900], [19_600, 656_400], [0, 0], [1_670_000, 960_000], [0, 0], [0, 0]]);
+const usdByDay = (days: DaySavings[]) => Object.fromEntries(days.filter((d) => d.saved).map((d) => [d.day, Math.round(d.saved * 0.8)]));
 
-// The problem week has also spent past its $5 daily budget.
-const FORECAST_OVER: PerformanceCostForecastResult = { ...FORECAST, spentTodayUsd: 5.42, dollarRemainingTasks: 0, remainingTasks: 0 };
+const MODELS: PerformanceModelSummary[] = [
+  { provider: 'anthropic', model: 'claude-haiku-4-5', calls: 419, inputTokens: 1_590_000, outputTokens: 104_800, costMicros: 2_770_000 },
+  { provider: 'anthropic', model: 'claude-sonnet-4-5', calls: 60, inputTokens: 44_300, outputTokens: 9_100, costMicros: 400_000 },
+];
 
-// Sample week shaped like the redesign's screen 4: tasks most days, a
-// handover now and then, one quiet day.
-const day = (ago: number, hour: number) => {
-  const d = new Date();
-  d.setDate(d.getDate() - ago);
-  d.setHours(hour, 0, 0, 0);
-  return d.toISOString();
+// Control: eight rules, one in Enforce; what they caught this week, per rule id.
+const rule = (id: string, ruleType: GovernanceRule['ruleType'], mode: GovernanceRule['mode'], params: object): GovernanceRule =>
+  ({ id, fleetId: 'acme-claims-prod', ruleType, mode, response: 'block', params, appliesTo: 'all', version: 1, changedBy: 'preview', changedAt: '2026-10-20T12:00:00Z' }) as GovernanceRule;
+const RULES: GovernanceRule[] = [
+  rule('gr_lb100', 'loop_breaker', 'enforce', { threshold: 100, scope: 'run' }),
+  rule('gr_sc190', 'spend_cap', 'watch', { dailyCap: 190, scope: 'day', unit: 'dollars' }),
+  rule('gr_sc200', 'spend_cap', 'watch', { dailyCap: 200, scope: 'day', unit: 'dollars' }),
+  rule('gr_sc50k', 'spend_cap', 'watch', { dailyCap: 50_000, scope: 'run', unit: 'tokens' }),
+  rule('gr_allow', 'model_allowlist', 'watch', { allowedModels: ['claude-haiku-4-5'] }),
+  rule('gr_lb5', 'loop_breaker', 'watch', { threshold: 5, scope: 'run' }),
+  rule('gr_lb5b', 'loop_breaker', 'watch', { threshold: 5, scope: 'run' }),
+  rule('gr_kw', 'keyword', 'watch', { keywords: ['password'], where: 'incoming' }),
+];
+const acts = (blocked: number, wouldAct: number) => ({ blocked, paused: 0, stopped: 0, toldYou: 0, wouldAct });
+const BY_RULE_ID = { gr_allow: acts(0, 60), gr_sc190: acts(0, 59), gr_gone: acts(0, 1) };
+const tally = (blocks: number, wouldBlocks: number) => ({ blocks, wouldBlocks });
+const COUNTS: GovernanceCounts = {
+  blocks: 0, wouldBlocks: 120,
+  byRule: { spend_cap: tally(0, 59), loop_breaker: tally(0, 0), model_allowlist: tally(0, 60), tool_list: tally(0, 0), call_rate: tally(0, 0), keyword: tally(0, 1) },
+  byAgent: { 'code-reviewer': tally(0, 60), 'lead-agent': tally(0, 59), 'keyword-test': tally(0, 1) },
 };
-const ENTRIES = [0, 1, 2, 4, 5, 6].flatMap((ago) => [
-  { type: 'task_complete', timestamp: day(ago, 9), agentId: 'lead-agent', tokensUsed: 18_000 + ago * 3_000 },
-  { type: 'task_complete', timestamp: day(ago, 11), agentId: 'writer-agent', tokensUsed: 9_000 + ago * 1_000 },
-  { type: 'self_handover', timestamp: day(ago, 12), agentId: 'lead-agent', contextTokens: 40_000 + ago * 2_000, handoverDocTokens: 2_400 },
-  { type: 'task_complete', timestamp: day(ago, 14), agentId: 'scout-agent', tokensUsed: 4_000 },
-]);
 
 type Sample = 'quiet' | 'problem' | 'empty';
+
+const CARDS = { spendMicros: 3_170_000, calls: 479, savedMicros: 2_340_000, savedTokens: 3_180_000, usedTokens: 1_740_000, perHourMicros: 354_000, failed: 0, latencyMs: 2100, prevLatencyMs: 3280, prevCalls: 165, prevSpendMicros: 2_480_000 };
 
 export function PerformancePreview() {
   // One sample at a time, so each card shows once, as on the real page.
   const [sample, setSample] = useState<Sample>('quiet');
+  const empty = sample === 'empty';
+  const failed = sample === 'problem' ? 6 : 0;
+  // The range menu, as on the page: it changes the labels; the sample figures stay.
+  const [range, setRange] = useState<RunsView>({ range: '7d', day: null });
+  const span = runsWindow(range);
+  const label = spanLabel(range);
+  const w = viewInstants(range);
+  const prior = priorLabel(label, { start: w.from.toISOString(), end: (w.to ?? new Date()).toISOString() });
+  const moveEnd = (end: 'from' | 'to', day: string) => {
+    const c = clampSpan(end === 'from' ? day : span.fromDay, end === 'to' ? day : span.toDay, { today: localDay(), oldest: perfOldest(30), moved: end, maxDays: PERF_MAX_DAYS });
+    setRange({ range: 'custom', day: null, from: c.from, to: c.to });
+  };
   return (
     <AppShell>
-      <PageHeader title="Performance" fleetId="acme-claims-prod" badge={<span style={{ fontSize: 12, color: 'var(--tx2)' }}>Preview with sample data</span>}>
+      <PageHeader title="Performance" fleetId="acme-claims-prod" badge={<LiveStatus at={Date.now()} />}>
         <SegmentedControl<Sample> label="Sample week" value={sample} onChange={setSample} options={[{ value: 'quiet', label: 'Quiet week' }, { value: 'problem', label: 'Has a problem', dot: 'warn' }, { value: 'empty', label: 'No data' }]} />
+        <RangeMenu value={range.range} onChange={(r) => { const d = runsDays('30d'); setRange(r === 'custom' ? { range: r, day: null, from: d.fromDay, to: d.toDay } : { range: r, day: null }); }} />
       </PageHeader>
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, display: 'grid', gap: 24, alignContent: 'start', gridAutoRows: 'max-content' }}>
-        {sample !== 'empty' && (
-          // The four numbers at the top of Performance, with sample values (the real ones follow the page range).
-          <div className="wr-perf-strip" style={{ marginBottom: 0 }}>
-            <StatCard variant="card" label="Spend" hint={HELP.spend} value="$0.909" sub="$0.0054 / h" />
-            <StatCard variant="card" label="Saved by WhiteRoom" hint={HELP.savings} value={<><span style={{ fontFamily: 'var(--font-sans)', fontSize: 13, fontWeight: 500, color: 'var(--tx2)' }}>est. </span>$1.36</>} sub="2.13M tokens not spent, estimated" />
-            <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value="0%" sub="0 of 99" />
-            <StatCard variant="card" label="Rule actions" hint={HELP.ruleActions} value="59" sub="59 would act (Watch only)" />
-          </div>
+      {range.range === 'custom' && (
+        <div className="wr-runs-filters" style={{ padding: '16px 24px 0' }}>
+          <RangeDates idPrefix="perf" fromDay={span.fromDay} toDay={span.toDay} oldest={perfOldest(30)} today={localDay()} maxDays={PERF_MAX_DAYS} onFrom={(d) => moveEnd('from', d)} onTo={(d) => moveEnd('to', d)} />
+        </div>
+      )}
+      <div className="wr-page-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24 }}>
+        {/* The same order as the page: Needs you, Cost, Rules, Reliability, Recommendations, closing line. */}
+        <p className="wr-perf-lead">
+          <span className="wr-lbl">Needs you</span>{' '}
+          {empty
+            ? <span className="wr-cap">Nothing needs you right now.</span>
+            : <button type="button" className="wr-btn wr-btn--secondary wr-btn--h28">{sample === 'problem' ? 2 : 1} {sample === 'problem' ? 'recommendations' : 'recommendation'} ↓</button>}
+          {sample === 'problem' && <> <button type="button" className="wr-btn wr-btn--secondary wr-btn--h28">{FLAGGED.length} {FLAGGED.length === 1 ? 'run' : 'runs'} flagged ↓</button></>}
+        </p>
+        <section aria-labelledby="pv-cost">
+          <SectionHeader id="pv-cost" title="Cost" sub="What your agents spent, and what WhiteRoom saved." meta={label} />
+          {!empty && (
+            <div className="wr-perf-strip wr-perf-strip--3" style={{ marginBottom: 16 }}>
+              <StatCard variant="card" label="Spend" hint={HELP.spend} value={fmtCost(CARDS.spendMicros)} sub={trendText(pctChange(CARDS.spendMicros, CARDS.prevSpendMicros), prior)} />
+              <StatCard variant="card" label="Saved by WhiteRoom" hint={HELP.savings} value={<span style={{ color: 'var(--ok)' }}>{fmtCost(CARDS.savedMicros)}</span>} sub={savedCaption(CARDS.savedTokens, 0)} />
+              <StatCard variant="card" label="Less input sent" hint={HELP.lessInputSent} value={<span style={{ color: 'var(--ok)' }}>{rangeContextCard(CARDS.savedTokens, CARDS.usedTokens).value}</span>} sub={rangeContextCard(CARDS.savedTokens, CARDS.usedTokens).sub} />
+            </div>
+          )}
+          <TokensCompare key={`tokens-${sample}`} days={empty ? week([[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]) : sampleWeek()} usdByDay={usdByDay(sampleWeek())} defaultOpen={sample === 'problem'} />
+          {!empty && <SpendByModel models={MODELS} pricesNote={pricesFrom('2026-10-19')} trend={`spend per call ↓21% vs ${prior}`} stale={sample === 'problem' ? 'They are 9 days old.' : null} />}
+          {!empty && <CostPredictionSection key={`pred-${sample}`} fleetId="acme-claims-prod" agentIds={null} fleetHourly={{ usdPerHour: CARDS.perHourMicros / 1_000_000, lookbackHours: 336 }} api={previewPredictionApi(sample === 'problem')} />}
+          {sample === 'problem' && <p className="wr-cap" style={{ margin: '0 0 8px', color: 'var(--warn-tx)' }}>12 calls {label} came from agents without a name: in these totals, but no agent’s.</p>}
+        </section>
+        {!empty && (
+          <>
+            <hr className="wr-perf-rule" />
+            <section aria-labelledby="pv-control">
+              <SectionHeader id="pv-control" title="Rules" sub="What your rules caught." meta={<>{label} · <a href="#" className="wr-link">Manage in Controls →</a></>} />
+              <RulesSummary counts={COUNTS} byRuleId={sample === 'quiet' ? BY_RULE_ID : undefined} rules={RULES} unavailable={false} />
+            </section>
+            <hr className="wr-perf-rule" />
+            <section aria-labelledby="pv-performance">
+              <SectionHeader id="pv-performance" title="Reliability" sub="How well your agents worked." meta={label} />
+              <div className="wr-perf-strip wr-perf-strip--3" style={{ marginBottom: 16 }}>
+                <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value={String(failed)} sub={`of ${CARDS.calls} calls · ${failed ? ((failed / CARDS.calls) * 100).toFixed(1) : 0}%`} />
+                <StatCard variant="card" label="Typical response" hint={HELP.typicalResponse} value={fmtLatency(CARDS.latencyMs)} sub={(() => { const t = latencyTrend(CARDS.latencyMs, CARDS.prevLatencyMs, prior)!; return <span style={{ color: 'var(--ok)' }}>{t.text}</span>; })()} />
+                <StatCard variant="card" label="Model calls" hint={HELP.modelCalls} value={String(CARDS.calls)} sub={countTrend(CARDS.calls, CARDS.prevCalls, prior)} />
+              </div>
+              {sample === 'quiet' ? <Insights key="quiet" runs={[]} health={QUIET} /> : <Insights key="problem" runs={FLAGGED} health={PROBLEM} />}
+            </section>
+            <hr className="wr-perf-rule" />
+            <section aria-label="Recommendations">
+              {sample === 'quiet' ? <Recs key="quiet-recs" recs={RECS_QUIET} /> : <Recs key="problem-recs" recs={RECS_PROBLEM} />}
+            </section>
+          </>
         )}
-        {/* The card carries its own 24px bottom margin; the grid gap already spaces it here. */}
-        {sample !== 'empty' && <div style={{ marginBottom: -24 }}><CostTrackingSection key={sample} fleetId="acme-claims-prod" preview={sample === 'problem' ? FORECAST_OVER : FORECAST} /></div>}
-        {sample === 'empty' ? <SavingsChart days={dailySavings([], 7, Date.now())} /> : <>
-        <SavingsChart days={dailySavings(ENTRIES, 7, Date.now())} />
-        <ByAgentTable
-          rows={agentTotals([...ENTRIES, { type: 'model_call', timestamp: day(0, 15), tokensUsed: 1_200 }], Date.now() - 24 * 3_600_000)}
-          scope="last 24 h"
-          ruleActions={{ 'lead-agent': { blocks: 2, wouldBlocks: 1, paused: 1 }, 'scout-agent': { blocks: 0, wouldBlocks: 3, toldYou: 2 } }}
-          scores={{
-            'lead-agent': { agentId: 'lead-agent', calls: 180, completeRate: 100, costDiligence: null, speedScore: 100, score: 10 },
-            'writer-agent': { agentId: 'writer-agent', calls: 90, completeRate: 92, costDiligence: 55, speedScore: 81, score: 8 },
-            'scout-agent': { agentId: 'scout-agent', calls: 40, completeRate: 25, costDiligence: 60, speedScore: 40, score: 4 },
-          }}
-        />
-        {sample === 'quiet'
-          ? <div className="wr-perf-row" style={{ marginBottom: 0 }}><Insights key="quiet" runs={[]} health={QUIET} /><Recs key="quiet-recs" recs={RECS_QUIET} /></div>
-          : <div className="wr-perf-row" style={{ marginBottom: 0 }}><Insights key="problem" runs={FLAGGED} health={PROBLEM} /><Recs key="problem-recs" recs={RECS_PROBLEM} /></div>}
-        </>}
+        <p className="wr-cap" style={{ margin: '24px 0 0' }}>Per-agent numbers and scores are on <a href="#" className="wr-link">Home → Agents</a>.</p>
       </div>
     </AppShell>
   );
+}
+
+/**
+ * Sample Cost prediction for the preview: kept in the page, never sent
+ * anywhere. Seven agents, as the engine lists them with all_agents; the
+ * problem week has one over its budget with a token limit too.
+ */
+function previewPredictionApi(problem: boolean): CostPredictionApi {
+  const base = (agentId: string, o: Partial<AgentBudgetForecast> = {}): AgentBudgetForecast => ({
+    agentId, budgetUsd: null, budgetTokens: null, spentTodayUsd: 0, tokensToday: 0, callsLeft: null, callsLeftReason: 'no_budget',
+    taskType: null, costPerTaskUsd: 0.0021, tokensPerTask: 2_400, tasksLeft: null, limitedBy: null, tasksLeftReason: 'no_task_type', ...o,
+  });
+  let agents: AgentBudgetForecast[] = [
+    base('code-reviewer', { costPerTaskUsd: 0.0081, tokensPerTask: 1_221 }),
+    base('contract-summarizer'),
+    base('invoice-reconciler', problem
+      ? { budgetUsd: 2, budgetTokens: 400_000, spentTodayUsd: 2.31, tokensToday: 420_000, callsLeft: 0, callsLeftReason: 'available', costPerTaskUsd: 0.0081, tokensPerTask: 1_221, tasksLeft: 0, limitedBy: 'tokens', tasksLeftReason: null, burnRateUsdPerHour: 0.354 }
+      : { budgetUsd: 20, budgetTokens: 10_000_000, spentTodayUsd: 0.42, tokensToday: 51_000, callsLeft: 2_417, callsLeftReason: 'available', costPerTaskUsd: 0.0081, tokensPerTask: 1_221, tasksLeft: 2_417, limitedBy: 'usd', tasksLeftReason: null, burnRateUsdPerHour: 0.354 }),
+    base('lead-agent', { costPerTaskUsd: null, tokensPerTask: null }),
+    base('market-researcher'),
+    base('ops-scheduler'),
+    base('support-triage'),
+  ];
+  return {
+    list: async (fleetId) => ({ fleetId, budgetPeriod: 'day', budgetTimeZone: 'UTC', unit: 'call', rateLookbackHours: 336, agents }),
+    setBudget: async (_f, agentId, usd, _k, tokens) => {
+      agents = agents.map((a) => (a.agentId === agentId ? { ...a, budgetUsd: usd, budgetTokens: usd === null ? null : tokens === undefined ? a.budgetTokens : tokens } : a));
+    },
+    rules: async () => [],
+    addCap: async (_f, agentId, usd) => ({ id: 'gr_preview', fleetId: 'acme-claims-prod', version: 1, changedBy: 'preview', changedAt: new Date().toISOString(), ...capRuleFor(agentId, usd) }),
+  };
 }

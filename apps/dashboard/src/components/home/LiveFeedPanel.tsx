@@ -26,14 +26,16 @@ const FILTERS: LiveFilter[] = ['all', 'web', 'tools', 'replies'];
  * Never fetched until revealed, because it holds customer content; hidden
  * again on every visit. The kind filter is remembered per browser.
  */
-export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
+export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview, previewOpen = true }: {
   fleetId: string;
   authKey?: string;
   refreshSignal: number;
-  /** Sample rows for /dev/home: starts open and never fetches. */
+  /** Sample rows for /dev/home: never fetches. */
   preview?: AuditEntry[];
+  /** Whether a preview starts open (default) or closed, as a real page does. */
+  previewOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(!!preview);
+  const [open, setOpen] = useState(!!preview && previewOpen);
   const [loading, setLoading] = useState(false);
   const [entries, setEntries] = useState<AuditEntry[]>(preview ?? []);
   const [total, setTotal] = useState(preview?.length ?? 0);
@@ -82,7 +84,7 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
     if (next.load) load();
   }, [refreshSignal, open, load]);
 
-  const rows = useMemo(() => entries.map(liveRow), [entries]);
+  const rows = useMemo(() => entries.map((e) => liveRow(e)), [entries]);
   const agents = useMemo(() => [...new Set(rows.map((r) => r.agent).filter(Boolean))].sort(), [rows]);
   // A picked agent that's gone from the loaded rows (after a reload or Hide)
   // falls back to All instead of filtering everything out.
@@ -92,23 +94,22 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
   const pageRows = win.rows;
 
   function reveal() { setOpen(true); load(); }
-  function hide() { request.current += 1; setOpen(false); setEntries([]); setTotal(0); setError(false); setPage(0); setLoading(false); setExpanded(new Set()); }
+  function hide() { request.current += 1; setOpen(false); setEntries(preview ?? []); setTotal(preview?.length ?? 0); setError(false); setPage(0); setLoading(false); setExpanded(new Set()); }
   function toggle(key: string) { setExpanded((prev) => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; }); }
   function pickFilter(f: LiveFilter) { setFilter(f); setPage(0); safeSet('wr_live_feed_filter', f); }
 
   const title = <>Live feed<Hint text={liveFeedHelp(ttlHours)} /></>;
 
   if (!open) {
+    // Collapsed: one card with a line on what it holds (mockup). Nothing is fetched until Show.
     return (
-      <Panel
-        title={title}
-        bodyPadding="14px 18px"
-        actions={<Button size={28} className="wr-btn--reveal" onClick={reveal} title="Opens the private detail, with credentials removed. Nothing is loaded until you click.">Show live feed</Button>}
-      >
-        <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: 'var(--tx2)' }}>
-          What agents actually said and did: their replies, the tools they called and the pages they visited, with credentials removed. Kept {ttlHours} hours, then deleted; never part of the audit record.
-        </p>
-      </Panel>
+      <section className="wr-home-livefeed" aria-labelledby="home-live-feed">
+        <div style={{ minWidth: 0 }}>
+          <h2 id="home-live-feed" className="wr-home-livefeed__title">Live feed<Hint text={liveFeedHelp(ttlHours)} /></h2>
+          <p className="wr-home-livefeed__sub">What agents said and did. Kept {ttlHours} hours, not part of the audit record.</p>
+        </div>
+        <Button className="wr-btn--reveal" onClick={reveal} title="Opens the private detail, with credentials removed. Nothing is loaded until you click.">Show live feed</Button>
+      </section>
     );
   }
 
@@ -124,10 +125,10 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
         </>
       }
     >
-      {error && <div role="alert" style={{ padding: '10px 18px', fontSize: 12.5, color: 'var(--bad)', borderBottom: '1px solid var(--line)' }}>Live feed unavailable. Try Refresh.</div>}
+      {error && <div role="alert" style={{ padding: '10px 18px', fontSize: 'var(--fs-sm)', color: 'var(--bad)', borderBottom: '1px solid var(--line)' }}>Live feed unavailable. Try Refresh.</div>}
       {loading && rows.length === 0 && <LoadingLine />}
       {!loading && !error && shown.length === 0 && (
-        <p style={{ margin: 0, padding: '14px 18px', fontSize: 13, color: 'var(--tx2)' }}>{captureOff ? 'The live feed is off for this fleet. An owner can turn it on in Settings › Data and privacy, unless personal details are removed.' : <>Nothing in the last {ttlHours} hours{filter !== 'all' || activeAgent !== 'all' ? ' for this filter' : ''}.</>}</p>
+        <p style={{ margin: 0, padding: '14px 18px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{captureOff ? 'The live feed is off for this fleet. An owner can turn it on in Settings › Data and privacy, unless personal details are removed.' : <>Nothing in the last {ttlHours} hours{filter !== 'all' || activeAgent !== 'all' ? ' for this filter' : ''}.</>}</p>
       )}
       {pageRows.map((r) => {
         const canOpen = liveExpandable(r);
@@ -135,9 +136,9 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
         const id = `live-${r.key}`;
         return (
           <div key={r.key} className="wr-live-row">
-            <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: 'var(--tx2)', paddingTop: 2 }}>{r.time}</span>
-            <span style={{ fontFamily: FONT_MONO, fontSize: 12.5, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.agent}</span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--tx2)', whiteSpace: 'nowrap' }}><Icon name={KIND[r.kind].icon} size={12} />{KIND[r.kind].word}</span>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', paddingTop: 2, whiteSpace: 'nowrap' }}>{r.time}</span>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.agent}</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', whiteSpace: 'nowrap' }}><Icon name={KIND[r.kind].icon} size={12} />{KIND[r.kind].word}</span>
             <div style={{ minWidth: 0 }}>
               {canOpen ? (
                 <button type="button" className="wr-live-toggle" aria-expanded={isOpen} aria-controls={id} onClick={() => toggle(r.key)}>
@@ -154,7 +155,7 @@ export function LiveFeedPanel({ fleetId, authKey, refreshSignal, preview }: {
       })}
       {shown.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px' }}>
-          <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx2)', whiteSpace: 'nowrap' }}>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', whiteSpace: 'nowrap' }}>
             {win.from}&ndash;{win.to} of {shown.length} in the last {ttlHours} h{total > rows.length ? ` · newest ${rows.length} of ${total} loaded` : ''}
           </span>
           <span style={{ marginLeft: 'auto' }} />

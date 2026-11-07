@@ -35,4 +35,5 @@ invite-only beta: invited owners install a packed CLI build.
 - [x] Only after `npm view` shows `2.0.0`: in `model.ts`, set `CLI_ON_NPM = true` (its own PR). The dashboard then shows `npx @whiteroom-ai/cli@2.0.0 practice …` and drops the install step and sha256 note (PR #239).
 - [x] Promote that dashboard to prod after checking it on staging (b72944c, prod Oct 14 2026).
 - Ongoing: bump `CLI_VERSION` together with every later CLI release.
+- 2.0.1 (Oct 29 2026): `sandbox listen` for the Sandbox Run agent button, the pasted-twice key check, and the split-paste fix. `CLI_VERSION` bumped with it (PR #349). Publish as above, then promote the dashboard only once `npm view` shows `2.0.1`.
 - [x] `WR_READINESS` on in production (owner sign-off, Oct 13 2026).

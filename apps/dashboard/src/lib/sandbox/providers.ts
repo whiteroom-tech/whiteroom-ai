@@ -325,3 +325,16 @@ export function noCodeSetup(provider: SandboxProvider, opts: { proxyUrl: string;
       };
   }
 }
+
+export type KeyKind = 'anthropic' | 'openai' | 'fleet' | 'account' | 'unknown' | 'empty';
+
+/** What a pasted value is, from its prefix: an Anthropic or OpenAI key, a WhiteRoom key (fleet wr_ or account sk-wr-), or neither. */
+export function detectKey(value: string): KeyKind {
+  const v = value.trim();
+  if (!v) return 'empty';
+  if (v.startsWith('wr_')) return 'fleet';
+  if (v.startsWith('sk-wr-')) return 'account';
+  if (v.startsWith('sk-ant-')) return 'anthropic';
+  if (v.startsWith('sk-')) return 'openai';
+  return 'unknown';
+}

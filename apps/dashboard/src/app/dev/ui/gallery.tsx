@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { MODE_LABEL } from '@/lib/vocab';
 import {
   Banner, Button, DataTable, Hint, Panel, SegmentedControl, SelectChip, StatusPill, Tag, Toggle, type AgentState,
 } from '@whiteroom/ui';
@@ -16,7 +17,7 @@ const STATES: AgentState[] = ['working', 'resting', 'idle', 'paused', 'stopped',
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '150px minmax(0,1fr)', gap: 16, alignItems: 'center' }}>
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--tx2)', textTransform: 'uppercase', letterSpacing: '.06em' }}>{label}</span>
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-sm)', color: 'var(--tx2)', textTransform: 'uppercase', letterSpacing: '.06em' }}>{label}</span>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>{children}</div>
     </div>
   );
@@ -53,8 +54,8 @@ function Board() {
       <Panel title="Controls">
         <div style={{ display: 'grid', gap: 12 }}>
           <Row label="range"><SegmentedControl label="Time range" value={range} onChange={setRange} options={[{ value: '24h', label: '24h' }, { value: '3d', label: '3d' }, { value: '7d', label: '7d' }]} /></Row>
-          <Row label="mode"><SegmentedControl label="Rule mode" value={mode} onChange={setMode} options={[{ value: 'off', label: 'Off' }, { value: 'watch', label: 'Watch only' }, { value: 'enforce', label: 'Enforce', dot: mode === 'enforce' ? 'warn' : undefined }]} /></Row>
-          <Row label="disabled seg"><SegmentedControl label="Rule mode, member" value="watch" onChange={() => {}} options={[{ value: 'off', label: 'Off' }, { value: 'watch', label: 'Watch only' }, { value: 'enforce', label: 'Enforce', disabled: true, title: 'Only owners and admins can turn on Enforce.' }]} /></Row>
+          <Row label="mode"><SegmentedControl label="Rule mode" value={mode} onChange={setMode} options={[{ value: 'off', label: 'Off' }, { value: 'watch', label: MODE_LABEL.watch }, { value: 'enforce', label: MODE_LABEL.enforce, dot: mode === 'enforce' ? 'warn' : undefined }]} /></Row>
+          <Row label="disabled seg"><SegmentedControl label="Rule mode, member" value="watch" onChange={() => {}} options={[{ value: 'off', label: 'Off' }, { value: 'watch', label: MODE_LABEL.watch }, { value: 'enforce', label: MODE_LABEL.enforce, disabled: true, title: 'Only owners and admins can turn on Enforce.' }]} /></Row>
           <Row label="select"><SelectChip label="Agent" value={agent} onChange={setAgent} options={[{ value: 'all', label: 'All agents' }, { value: 'lead-agent', label: 'lead-agent' }]} /></Row>
           <Row label="toggle"><Toggle label="Email alerts" checked={on} onChange={setOn} /><Toggle label="Email alerts, off" checked={false} onChange={() => {}} /><Toggle label="Not verified yet" checked={false} onChange={() => {}} disabled /></Row>
         </div>

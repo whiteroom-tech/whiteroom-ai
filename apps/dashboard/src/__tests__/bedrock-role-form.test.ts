@@ -11,7 +11,7 @@ import {
   generateExternalId,
   roleFormReducer,
 } from '@/lib/bedrock-role-form';
-import { BEDROCK_ROLE_LINES, BEDROCK_ROLE_SERVER_ID, BEDROCK_ROLE_SUPPORT, PROXY_ORIGIN, bedrockRoleTrustPolicy } from '@/lib/setup';
+import { BEDROCK_ROLE_LINES, BEDROCK_ROLE_SERVER_ID, BEDROCK_ROLE_SUPPORT, bedrockRoleTrustPolicy } from '@/lib/setup';
 import { deleteBedrockRole, getBedrockRoleStatus, storeBedrockRole } from '@/lib/whiteroom/client';
 
 const ROLE_ARN = 'arn:aws:iam::123456789012:role/WhiteRoomBedrock';
@@ -145,11 +145,13 @@ describe('bedrockRoleTrustPolicy and the SDK recipe', () => {
     expect(policy.Statement[0].Condition.StringEquals['sts:ExternalId']).toBe(EXTERNAL_ID);
   });
 
-  it('points boto3 at the proxy with a server_id matching the proxy host', () => {
-    expect(BEDROCK_ROLE_SERVER_ID).toBe(new URL(PROXY_ORIGIN).hostname);
+  // The role routes run only on the prod engine, whose IAM user the trust
+  // policy names, so the recipe stays there whatever URL the build uses.
+  it('points boto3 at the prod engine with a server_id matching its host', () => {
+    expect(BEDROCK_ROLE_SERVER_ID).toBe('proxy.whiteroom.tech');
     const snippet = BEDROCK_ROLE_LINES.python('us-east-1');
     expect(snippet).toContain('whiteroom_bedrock.install(');
-    expect(snippet).toContain(`endpoint_url="${PROXY_ORIGIN}"`);
+    expect(snippet).toContain('endpoint_url="https://proxy.whiteroom.tech"');
     expect(snippet).toContain(`server_id="${BEDROCK_ROLE_SERVER_ID}"`);
     expect(snippet).toContain('region_name="us-east-1"');
   });

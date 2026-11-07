@@ -4,7 +4,6 @@ const mocks = vi.hoisted(() => ({
   session: { current: { user: { id: 'u1', email: 'u1@example.com' } } as unknown },
   getSubscriptionRow: vi.fn(),
   getTrialEndsAt: vi.fn(),
-  countAgents: vi.fn(),
   createSession: vi.fn(),
 }));
 
@@ -14,7 +13,6 @@ vi.mock('@/lib/app-origin', () => ({ appOrigin: () => 'https://app.whiteroom.tec
 vi.mock('@/lib/entitlements', () => ({
   getSubscriptionRow: mocks.getSubscriptionRow,
   getTrialEndsAt: mocks.getTrialEndsAt,
-  countAgents: mocks.countAgents,
 }));
 vi.mock('@/lib/stripe', () => ({
   stripe: () => ({ checkout: { sessions: { create: mocks.createSession } } }),
@@ -26,8 +24,11 @@ const DAY = 86_400_000;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  process.env.STRIPE_PRICE_STARTER = 'price_starter';
-  process.env.STRIPE_PRICE_PRO = 'price_pro';
+  process.env.STRIPE_PRICE_STARTER_SHARE = 'price_starter_share';
+  process.env.STRIPE_PRICE_PRO_SHARE = 'price_pro_share';
+  process.env.STRIPE_PRICE_STARTER_FEE = 'price_starter_fee';
+  process.env.STRIPE_PRICE_PRO_FEE = 'price_pro_fee';
+  mocks.getTrialEndsAt.mockResolvedValue(null);
   // An existing Stripe customer, so ensureCustomer doesn't create one.
   mocks.getSubscriptionRow.mockResolvedValue({ stripeCustomerId: 'cus_1', stripeSubscriptionId: null, status: 'active' });
   mocks.createSession.mockResolvedValue({ url: 'https://checkout.stripe.com/c/pay/cs_test' });
@@ -44,44 +45,40 @@ describe('startCheckout', () => {
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
-  it('starts Pro at the live agent count', async () => {
-    mocks.countAgents.mockResolvedValue(7);
+  // Metered: no quantity, and no fee item (the billing sync adds that at day 61).
+  it('sells only the plan\'s savings-share price, on both plans', async () => {
     expect(await startCheckout('pro')).toEqual({ ok: true, url: 'https://checkout.stripe.com/c/pay/cs_test' });
-    expect(sent().line_items).toEqual([{ price: 'price_pro', quantity: 7 }]);
-    expect(sent().subscription_data.trial_end).toBeUndefined();
-  });
-
-  it('falls back to a quantity of 1 when the engine cannot be reached', async () => {
-    mocks.countAgents.mockResolvedValue(null);
-    await startCheckout('pro');
-    expect(sent().line_items[0].quantity).toBe(1);
-  });
-
-  it('never sends Pro a zero quantity', async () => {
-    mocks.countAgents.mockResolvedValue(0);
-    await startCheckout('pro');
-    expect(sent().line_items[0].quantity).toBe(1);
-  });
-
-  it('carries the rest of the free period over when Starter is bought mid-trial', async () => {
-    const end = new Date(Date.now() + 30 * DAY);
-    mocks.getTrialEndsAt.mockResolvedValue(end.toISOString());
+    expect(sent().line_items).toEqual([{ price: 'price_pro_share' }]);
+    mocks.createSession.mockClear();
     await startCheckout('starter');
-    expect(sent().line_items).toEqual([{ price: 'price_starter', quantity: 1 }]);
+    expect(sent().line_items).toEqual([{ price: 'price_starter_share' }]);
+  });
+
+  it('refuses a plan with no share price, even with a retired one set', async () => {
+    delete process.env.STRIPE_PRICE_PRO_SHARE;
+    process.env.STRIPE_PRICE_PRO = 'price_pro_old';
+    expect((await startCheckout('pro')).ok).toBe(false);
+    expect(mocks.createSession).not.toHaveBeenCalled();
+  });
+
+  it.each(['starter', 'pro'])('carries the rest of the free period over on %s', async (plan) => {
+    const end = new Date(Date.now() + 20 * DAY);
+    mocks.getTrialEndsAt.mockResolvedValue(end.toISOString());
+    await startCheckout(plan);
     expect(sent().subscription_data.trial_end).toBe(Math.floor(end.getTime() / 1000));
   });
 
   // Stripe rejects a trial_end less than 48 hours out, which would fail the
   // whole Checkout session.
-  it('drops a carried-over trial that is under 48 hours from ending', async () => {
+  it.each(['starter', 'pro'])('drops a carried-over trial under 48 hours from ending on %s', async (plan) => {
     mocks.getTrialEndsAt.mockResolvedValue(new Date(Date.now() + 47 * 3600 * 1000).toISOString());
-    await startCheckout('starter');
+    await startCheckout(plan);
     expect(sent().subscription_data.trial_end).toBeUndefined();
   });
 
-  it('charges Starter straight away once the trial is over', async () => {
+  it.each(['starter', 'pro'])('bills %s from the start once the free period is over', async (plan) => {
     mocks.getTrialEndsAt.mockResolvedValue(new Date(Date.now() - DAY).toISOString());
-    await startCheckout('starter');
+    await startCheckout(plan);
     expect(sent().subscription_data.trial_end).toBeUndefined();
   });
 

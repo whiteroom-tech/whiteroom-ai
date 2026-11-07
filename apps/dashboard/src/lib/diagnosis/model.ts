@@ -4,7 +4,8 @@
  */
 import type { FleetDiagnosis } from '@/lib/whiteroom/types';
 import { isDiagnosisDetector, notMeasuredShort, STATUS_LABEL, TITLES } from './copy';
-import { timeAgo } from '@/lib/format';
+import { fmtCount, plural, timeAgo } from '@/lib/format';
+import { formatInZone } from '@/lib/zone-time';
 
 /** Refetch on window focus at most this often (§6.7). */
 export const FOCUS_REFETCH_MS = 5 * 60_000;
@@ -61,9 +62,6 @@ export function createRequestGate() {
   };
 }
 
-/** The shared relative-time wording (lib/format timeAgo). */
-export const relativeTime = timeAgo;
-
 export type RunState = 'idle' | 'checking' | 'error';
 
 export interface StatusLine {
@@ -77,7 +75,7 @@ export interface StatusLine {
 export function statusLine(d: FleetDiagnosis | null, run: RunState, now: number, justRan: boolean): StatusLine | null {
   if (run === 'checking') {
     const n = d?.readyAgents ?? 0;
-    return { text: `Checking ${n} ${n === 1 ? 'agent' : 'agents'}…`, action: null, busy: true, error: false };
+    return { text: `Checking ${n} ${plural(n, 'agent')}…`, action: null, busy: true, error: false };
   }
   if (run === 'error') {
     return { text: 'Couldn’t finish the check. Your agents aren’t affected.', action: { label: 'Try again' }, busy: false, error: true };
@@ -96,13 +94,13 @@ export function statusLine(d: FleetDiagnosis | null, run: RunState, now: number,
     const checked = d.reports.length;
     return { text: `Checked ${checked} of ${checked + d.skipped.length} agents.`, action: { label: 'Check the rest' }, busy: false, error: false };
   }
-  const agents = `${d.readyAgents} ${d.readyAgents === 1 ? 'agent' : 'agents'}`;
+  const agents = `${d.readyAgents} ${plural(d.readyAgents, 'agent')}`;
   if (!d.checkedAt) {
     return { text: `First check runs within the hour · ${agents} ready`, action: { label: 'Check now' }, busy: false, error: false };
   }
   const open = openFindingCount(d);
-  const found = justRan ? ` · ${open} ${open === 1 ? 'finding' : 'findings'}` : '';
-  return { text: `Checked ${relativeTime(d.checkedAt, now)} · ${agents}${found}`, action: { label: 'Check now' }, busy: false, error: false };
+  const found = justRan ? ` · ${open} ${plural(open, 'finding')}` : '';
+  return { text: `Checked ${timeAgo(d.checkedAt, now)} · ${agents}${found}`, action: { label: 'Check now' }, busy: false, error: false };
 }
 
 export function openFindingCount(d: FleetDiagnosis): number {
@@ -139,10 +137,10 @@ export function diagnosisSummary(d: FleetDiagnosis | null): DiagnosisSummary | n
   const fine = d.reports.reduce((n, r) => n + r.clear.length, 0);
   const needsData = d.reports.reduce((n, r) => n + r.notMeasured.length, 0);
   const openFindings = openFindingCount(d);
-  const checks = (n: number) => `${n} ${n === 1 ? 'check' : 'checks'}`;
+  const checks = (n: number) => `${n} ${plural(n, 'check')}`;
   if (openFindings > 0) {
     const parts = [
-      `${openFindings} ${openFindings === 1 ? 'problem' : 'problems'}`,
+      `${openFindings} ${plural(openFindings, 'problem')}`,
       fine > 0 ? `${fine} passed` : '',
       needsData > 0 ? `${needsData} waiting for more data` : '',
     ].filter(Boolean);
@@ -220,7 +218,7 @@ export function evidenceHeader(detector: string, calls: EvidenceCall[], measures
   const tool = String(measures.toolName ?? '');
   const time = (c: EvidenceCall) => {
     const d = new Date(when(c));
-    return Number.isFinite(d.getTime()) ? d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '—';
+    return Number.isFinite(d.getTime()) ? formatInZone(d, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '—';
   };
   const byTime = [...calls].sort((a, b) => when(b).localeCompare(when(a)));
   switch (detector) {
@@ -228,7 +226,7 @@ export function evidenceHeader(detector: string, calls: EvidenceCall[], measures
       const counts = new Map<number, number>();
       for (const c of calls) if (typeof c.watchNumber === 'number') counts.set(c.watchNumber, (counts.get(c.watchNumber) ?? 0) + 1);
       const watches = [...counts.entries()].sort((a, b) => a[0] - b[0]).map(([watch, n]) => ({ watch, calls: n }));
-      return { kind: 'watches', caption: 'Calls in each shift before it handed over', watches };
+      return { kind: 'watches', caption: 'Calls in each run', watches };
     }
     case 'review_tool_loops': {
       const groups = new Map<string, { name: string; hash: string; watch: string; calls: number }>();
@@ -244,17 +242,17 @@ export function evidenceHeader(detector: string, calls: EvidenceCall[], measures
         }
       }
       const rows = [...groups.values()].sort((a, b) => b.calls - a.calls).slice(0, 5).map((g) => [g.name, `same · ${g.hash}`, String(g.calls), g.watch]);
-      return { kind: 'table', caption: 'Calls grouped by repeated call', columns: ['Tool', 'Arguments', 'Calls', 'Shift'], rows,
+      return { kind: 'table', caption: 'Calls grouped by repeated call', columns: ['Tool', 'Arguments', 'Calls', 'Run'], rows,
         note: '"Same" means identical arguments. WhiteRoom stores a fingerprint, never the arguments themselves.' };
     }
     case 'review_tool_silence':
       return {
-        kind: 'table', caption: `Offered ${tool} vs called, most recent calls`, columns: ['Time', 'Shift', `Offered ${tool}`, 'Called'],
+        kind: 'table', caption: `Offered ${tool} vs called, most recent calls`, columns: ['Time', 'Run', `Offered ${tool}`, 'Called'],
         rows: byTime.map((c) => [time(c), String(c.watchNumber ?? '—'), list(c.toolNames).includes(tool) ? 'yes' : 'no', list(c.requestedToolNames).join(', ') || '(none)']),
       };
     case 'review_tool_errors':
       return {
-        kind: 'table', caption: 'Tool results and errors, newest first', columns: ['Time', 'Shift', 'Tool results', 'Reported errors'],
+        kind: 'table', caption: 'Tool results and errors, newest first', columns: ['Time', 'Run', 'Tool results', 'Reported errors'],
         rows: byTime.map((c) => [time(c), String(c.watchNumber ?? '—'), String(c.toolResults ?? '—'), list(c.toolErrorNames).join(', ') || '—']),
         note: 'WhiteRoom records which tool reported an error, not the error text. The cause is in your agent’s logs.',
       };
@@ -265,7 +263,7 @@ export function evidenceHeader(detector: string, calls: EvidenceCall[], measures
       };
       return {
         kind: 'table', caption: 'Highest-token calls on the flagged days', columns: ['Time', 'Model', 'Tokens'],
-        rows: [...calls].sort((a, b) => tokens(b) - tokens(a)).map((c) => [time(c), String(c.reportedModel ?? c.requestedModel ?? '—'), tokens(c).toLocaleString('en-US')]),
+        rows: [...calls].sort((a, b) => tokens(b) - tokens(a)).map((c) => [time(c), String(c.reportedModel ?? c.requestedModel ?? '—'), fmtCount(tokens(c))]),
       };
     }
     case 'review_provider_failures':

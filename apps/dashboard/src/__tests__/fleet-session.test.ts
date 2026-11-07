@@ -53,6 +53,7 @@ vi.mock('@/lib/user-fleets', () => ({
 
 import { WhiteRoomApiError } from '@/lib/whiteroom/client';
 import { DELETE, GET, POST } from '@/app/api/fleet/session/route';
+import { POST as RECHECK } from '@/app/api/fleet/session/recheck/route';
 
 const HOST = 'app.whiteroom.ai';
 
@@ -90,6 +91,14 @@ describe('POST /api/fleet/session', () => {
     fakeHeaders(null);
     const res = await POST(postReq({ token: 'ft-123' }));
     expect(res.status).toBe(403);
+    expect(setCalls).toHaveLength(0);
+  });
+
+  it('refuses a Sandbox fleet token: Sandbox data never opens in the production pages', async () => {
+    mockTokenLogin.mockResolvedValue({ success: true, fleetId: 'sandbox-0b1c' });
+    const res = await POST(postReq({ token: 'ft-sandbox' }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'That’s a Sandbox key. Open it from Sandbox, not here.' });
     expect(setCalls).toHaveLength(0);
   });
 
@@ -168,6 +177,69 @@ describe('GET /api/fleet/session', () => {
     expect(mockTokenLogin).not.toHaveBeenCalled();
   });
 
+  it('never adopts a Sandbox fleet, even when it is the only linked one', async () => {
+    mockGetUserFleets.mockResolvedValue([
+      { id: '1', fleet_token: 'ft-sandbox', fleet_id: 'sandbox-abc', label: 's', created_at: '' },
+    ]);
+    const res = await GET();
+    expect(res.status).toBe(401);
+    expect(setCalls).toHaveLength(0);
+  });
+
+  it('with a Sandbox row and a row of unknown fleet, picks the unknown one, never the Sandbox fleet', async () => {
+    mockGetUserFleets.mockResolvedValue([
+      { id: '1', fleet_token: 'ft-sandbox', fleet_id: 'sandbox-abc', label: 's', created_at: '' },
+      { id: '2', fleet_token: 'ft-unknown', fleet_id: null, label: 'u', created_at: '' },
+    ]);
+    mockTokenLogin.mockResolvedValue({ success: true, fleetId: 'prod-9' });
+    const res = await GET();
+    expect(res.status).toBe(200);
+    expect(setCalls[0]).toMatchObject({ name: 'wr_fleet_auth', value: 'ft-unknown' });
+  });
+
+  it('skips an unknown row that is a Sandbox fleet\'s and adopts the next usable one', async () => {
+    mockGetUserFleets.mockResolvedValue([
+      { id: '1', fleet_token: 'ft-unknown-sbx', fleet_id: null, label: 'u', created_at: '' },
+      { id: '2', fleet_token: 'ft-unknown-prod', fleet_id: null, label: 'v', created_at: '' },
+    ]);
+    mockTokenLogin.mockImplementation(async (t: string) => ({ success: true, fleetId: t === 'ft-unknown-sbx' ? 'sandbox-1' : 'prod-2' }));
+    const res = await GET();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ fleetId: 'prod-2' });
+    expect(jar.get('wr_fleet_auth')).toBe('ft-unknown-prod');
+  });
+
+  it('an unknown linked row whose token turns out to be a Sandbox fleet\'s is never adopted', async () => {
+    mockGetUserFleets.mockResolvedValue([
+      { id: '2', fleet_token: 'ft-unknown', fleet_id: null, label: 'u', created_at: '' },
+    ]);
+    mockTokenLogin.mockResolvedValue({ success: true, fleetId: 'sandbox-9' });
+    const res = await GET();
+    expect(res.status).toBe(401);
+    expect(setCalls.filter((c) => c.name === 'wr_fleet_auth' && c.value)).toHaveLength(0);
+  });
+
+  it('never adopts the account\'s own row when it names a Sandbox fleet; a linked production fleet wins', async () => {
+    session.current = { user: { id: 'u-sbx' } };
+    mockDbQuery.mockResolvedValue({ rows: [{ fleet_id: 'sandbox-own', fleet_token: 'ft-own-sandbox' }] });
+    mockGetUserFleets.mockResolvedValue([
+      { id: '2', fleet_token: 'ft-prod', fleet_id: 'prod-1', label: 'p', created_at: '' },
+    ]);
+    const res = await GET();
+    expect(await res.json()).toEqual({ fleetId: 'prod-1' });
+    expect(jar.get('wr_fleet_auth')).toBe('ft-prod');
+  });
+
+  it('the account\'s own row of unknown fleet that resolves to a Sandbox fleet is not adopted', async () => {
+    session.current = { user: { id: 'u-sbx2' } };
+    mockDbQuery.mockResolvedValue({ rows: [{ fleet_id: null, fleet_token: 'ft-own-unknown' }] });
+    mockGetUserFleets.mockResolvedValue([]);
+    mockTokenLogin.mockResolvedValue({ success: true, fleetId: 'sandbox-x' });
+    const res = await GET();
+    expect(res.status).toBe(401);
+    expect(jar.get('wr_fleet_auth')).toBeUndefined();
+  });
+
   // A fresh browser deep-linking into a fleet page: the provisioned fleet
   // lives on users, not user_fleets, and must still be found (audit F10).
   it('adopts the account\'s own provisioned fleet ahead of linked ones', async () => {
@@ -198,6 +270,17 @@ describe('GET /api/fleet/session', () => {
     expect(jar.get('wr_fleet_auth')).not.toBe('sk-ant-api-key');
   });
 
+  it('drops a cookie holding a Sandbox fleet\'s token and falls back to the account\'s own fleet', async () => {
+    jar.set('wr_fleet_auth', 'ft-sandbox-cookie');
+    jar.set('wr_fleet_auth_owner', 'u-primary');
+    session.current = { user: { id: 'u-primary' } };
+    mockTokenLogin.mockResolvedValueOnce({ success: true, fleetId: 'sandbox-7' });
+    mockDbQuery.mockResolvedValue({ rows: [{ fleet_id: 'primary-1', fleet_token: 'ft-primary' }] });
+    const res = await GET();
+    expect(await res.json()).toEqual({ fleetId: 'primary-1' });
+    expect(jar.get('wr_fleet_auth')).toBe('ft-primary');
+  });
+
   it('propagates 502 (session kept) when the cookie cannot be verified', async () => {
     jar.set('wr_fleet_auth', 'ft-cookie');
     mockTokenLogin.mockRejectedValue(new WhiteRoomApiError('timeout'));
@@ -224,6 +307,114 @@ describe('DELETE /api/fleet/session', () => {
     expect(res.status).toBe(200);
     expect(jar.has('wr_fleet_auth')).toBe(false);
     expect(jar.has('wr_fleet_auth_owner')).toBe(false);
+  });
+});
+
+// The recheck after a page's auth error: clears only on proof that the
+// session is gone; never on a guess (another tab may have switched). Takes no
+// input, and never writes a cookie.
+describe('POST /api/fleet/session/recheck', () => {
+  it('cookie for that fleet and the engine rejects it: clears', async () => {
+    jar.set('wr_fleet_auth', 'ft-a');
+    mockTokenLogin.mockRejectedValue(new WhiteRoomApiError('Unauthorized', 401));
+    const res = await RECHECK();
+    expect(await res.json()).toEqual({ cleared: true });
+    expect(jar.has('wr_fleet_auth')).toBe(false);
+  });
+
+  it('cookie for that fleet and the engine accepts it: keeps it, says so', async () => {
+    jar.set('wr_fleet_auth', 'ft-a');
+    mockTokenLogin.mockResolvedValue({ success: true, fleetId: 'fleet-a' });
+    const res = await RECHECK();
+    expect(await res.json()).toEqual({ cleared: false, fleetId: 'fleet-a' });
+    expect(jar.get('wr_fleet_auth')).toBe('ft-a');
+  });
+
+  it('cookie is now another fleet\'s (another tab signed in): keeps it, names that fleet', async () => {
+    jar.set('wr_fleet_auth', 'ft-b');
+    mockTokenLogin.mockResolvedValue({ success: true, fleetId: 'fleet-b' });
+    const res = await RECHECK();
+    expect(await res.json()).toEqual({ cleared: false, fleetId: 'fleet-b' });
+    expect(jar.get('wr_fleet_auth')).toBe('ft-b');
+  });
+
+  it('cookie minted for another account: answers with this account\'s fleet, and writes no cookie', async () => {
+    jar.set('wr_fleet_auth', 'ft-a');
+    jar.set('wr_fleet_auth_owner', 'u-alice');
+    session.current = { user: { id: 'u-bob' } };
+    mockGetUserFleets.mockResolvedValue([{ id: '1', fleet_token: 'ft-b', fleet_id: 'fleet-b', label: 'b', created_at: '' }]);
+    const res = await RECHECK();
+    expect(await res.json()).toEqual({ cleared: false, fleetId: 'fleet-b' });
+    expect(setCalls).toHaveLength(0);
+  });
+
+  it('no cookie, a linked fleet: reports it without adopting it into a cookie', async () => {
+    session.current = { user: { id: 'u-bob' } };
+    mockGetUserFleets.mockResolvedValue([{ id: '1', fleet_token: 'ft-b', fleet_id: 'fleet-b', label: 'b', created_at: '' }]);
+    expect(await (await RECHECK()).json()).toEqual({ cleared: false, fleetId: 'fleet-b' });
+    expect(setCalls).toHaveLength(0);
+    expect(jar.has('wr_fleet_auth')).toBe(false);
+  });
+
+  it('no cookie, and the engine is unreachable while resolving a linked row: 502, nothing cleared', async () => {
+    session.current = { user: { id: 'u-bob' } };
+    // A row from before fleet ids were stored has to be resolved from the engine.
+    mockGetUserFleets.mockResolvedValue([{ id: '1', fleet_token: 'ft-old', fleet_id: null, label: 'o', created_at: '' }]);
+    mockTokenLogin.mockRejectedValue(new WhiteRoomApiError('timeout'));
+    const res = await RECHECK();
+    expect(res.status).toBe(502);
+    expect(await res.json()).toMatchObject({ error: 'engine_unreachable', retryable: true });
+    expect(setCalls).toHaveLength(0);
+  });
+
+  it('no cookie, and the engine refuses a linked row\'s token: cleared, with signedIn from the account itself', async () => {
+    // A row from before fleet ids were stored, whose token the engine now rejects:
+    // the lookup answers 401 without signedIn, so the route asks the account.
+    mockGetUserFleets.mockResolvedValue([{ id: '1', fleet_token: 'ft-old', fleet_id: null, label: 'o', created_at: '' }]);
+    mockTokenLogin.mockRejectedValue(new WhiteRoomApiError('Unauthorized', 401));
+    session.current = { user: { id: 'u-bob' } };
+    expect(await (await RECHECK()).json()).toEqual({ cleared: true, signedIn: true });
+    session.current = null;
+    expect(await (await RECHECK()).json()).toEqual({ cleared: true, signedIn: false });
+    expect(setCalls).toHaveLength(0);
+  });
+
+  it('a plain DELETE still just clears (sign-out is unchanged)', async () => {
+    jar.set('wr_fleet_auth', 'ft-a');
+    mockTokenLogin.mockResolvedValue({ success: true, fleetId: 'fleet-a' });
+    expect((await DELETE()).status).toBe(200);
+    expect(jar.has('wr_fleet_auth')).toBe(false);
+    expect(mockTokenLogin).not.toHaveBeenCalled();
+  });
+
+  it('engine unreachable: 502, nothing cleared', async () => {
+    jar.set('wr_fleet_auth', 'ft-a');
+    mockTokenLogin.mockRejectedValue(new WhiteRoomApiError('timeout'));
+    const res = await RECHECK();
+    expect(res.status).toBe(502);
+    expect(jar.get('wr_fleet_auth')).toBe('ft-a');
+  });
+
+  it('no cookie and no linked fleet: cleared, with whether an account is signed in', async () => {
+    session.current = null;
+    expect(await (await RECHECK()).json()).toEqual({ cleared: true, signedIn: false });
+    session.current = { user: { id: 'u-no-fleet' } };
+    expect(await (await RECHECK()).json()).toEqual({ cleared: true, signedIn: true });
+  });
+
+  it('a Sandbox fleet\'s cookie counts as no session for these pages: cleared', async () => {
+    jar.set('wr_fleet_auth', 'ft-sbx');
+    mockTokenLogin.mockResolvedValue({ success: true, fleetId: 'sandbox-abc' });
+    const res = await RECHECK();
+    expect(await res.json()).toEqual({ cleared: true });
+  });
+
+  it('is origin-checked', async () => {
+    fakeHeaders('https://evil.com');
+    jar.set('wr_fleet_auth', 'ft-a');
+    const res = await RECHECK();
+    expect(res.status).toBe(403);
+    expect(jar.has('wr_fleet_auth')).toBe(true);
   });
 });
 

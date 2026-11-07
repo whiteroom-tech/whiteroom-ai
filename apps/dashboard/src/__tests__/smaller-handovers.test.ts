@@ -31,6 +31,6 @@ describe('smaller handovers', () => {
   it('On names what applies, and works like Preview until something does', () => {
     expect(modeText(p({ compression_mode: 'on' }))).toMatch(/works like Preview/);
     expect(modeText(p({ compression_mode: 'on', cleared: ['C1'] }))).toBe('Applies the changes that have passed testing: cache more of each request. The rest are counted, as in Preview.');
-    expect(modeText(p({ compression_mode: 'on', cleared: ['C1', 'C2'] }))).toBe('Applies the changes that have passed testing: cache more of each request, send notes the same way every time.');
+    expect(modeText(p({ compression_mode: 'on', cleared: ['C1', 'C2'] }))).toBe('Applies the changes that have passed testing: cache more of each request, send repeated text the same way every time.');
   });
 });

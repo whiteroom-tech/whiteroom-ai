@@ -12,9 +12,10 @@
 // TONE_BG below use this app's own theme tokens from app/globals.css instead.
 
 import type { AuditEntry, ToolDetail } from '@/lib/whiteroom/types';
-import { REASON_LABELS, occurrences, ruleLabel } from '@/lib/governance';
-import { timeAgo } from '@/lib/format';
+import { blockedByPhrase, occurrences, ruleLabel } from '@/lib/governance';
+import { fmtCount, HOUR_MS, plural, timeAgo } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
+import { addDays, dayKey, formatInZone } from '@/lib/zone-time';
 
 export type { AuditEntry, ToolDetail };
 
@@ -66,20 +67,20 @@ function agentName(id: unknown): string {
 
 const EVENT_COPY: Record<string, EventCopy> = {
   task_complete: { icon: '✅', tone: 'task', code: 'TSK', say: (e) => `finished "${e.taskName || 'a task'}"` },
-  watch_start: { icon: '▶', tone: 'start', code: 'ON', say: () => 'started a shift' },
-  watch_end: { icon: '⏹', tone: 'start', code: 'OFF', say: () => 'ended the shift' },
-  handover_out: { icon: '🔄', tone: 'handover', code: 'H/O', say: (e) => `handed work over${e.toAgent ? ` to ${agentName(e.toAgent)}` : ''}` },
-  handover_in: { icon: '🔄', tone: 'handover', code: 'H/I', say: (e) => `took over${e.fromAgent ? ` from ${agentName(e.fromAgent)}` : ''}` },
-  handover: { icon: '🔄', tone: 'handover', code: 'H/O', say: (e) => `handed work over${e.toAgent ? ` to ${agentName(e.toAgent)}` : ''}` },
-  self_handover: { icon: '🔄', tone: 'handover', code: 'H/O', say: () => 'handed context to itself (compressed)' },
-  rest_start: { icon: '💤', tone: 'rest', code: 'RST', say: () => 'went on break' },
-  rest_end: { icon: '☀', tone: 'rest', code: 'UP', say: () => 'came back from break' },
-  alarm: { icon: '⏰', tone: 'rest', code: 'BEL', say: () => 'finished its break' },
+  watch_start: { icon: '▶', tone: 'start', code: 'ON', say: () => 'started a run' },
+  watch_end: { icon: '⏹', tone: 'start', code: 'OFF', say: () => 'ended the run' },
+  handover_out: { icon: '🔄', tone: 'handover', code: 'H/O', say: () => 'saved its progress' },
+  handover_in: { icon: '🔄', tone: 'handover', code: 'H/I', say: () => 'continued its work' },
+  handover: { icon: '🔄', tone: 'handover', code: 'H/O', say: () => 'saved its progress' },
+  self_handover: { icon: '🔄', tone: 'handover', code: 'H/O', say: () => 'made its context smaller' },
+  rest_start: { icon: '💤', tone: 'rest', code: 'RST', say: () => 'paused for a moment' },
+  rest_end: { icon: '☀', tone: 'rest', code: 'UP', say: () => 'started again' },
+  alarm: { icon: '⏰', tone: 'rest', code: 'BEL', say: () => 'started again' },
   register: { icon: '➕', tone: 'idle', code: 'REG', say: () => 'joined the fleet' },
   agent_paused: { icon: '⏸', tone: 'rest', code: 'PAU', say: () => 'was paused' },
   agent_resumed: { icon: '▶', tone: 'start', code: 'RES', say: () => 'was resumed' },
-  governance_block: { icon: '⛔', tone: 'block', code: 'BLK', say: (e) => `was blocked by the ${governancePhrase(e)}` },
-  governance_would_block: { icon: '⚠', tone: 'wouldBlock', code: 'W/B', say: (e) => `would have been blocked by the ${governancePhrase(e)} (Watch only)` },
+  governance_block: { icon: '⛔', tone: 'block', code: 'BLK', say: (e) => `was blocked by ${governancePhrase(e)}` },
+  governance_would_block: { icon: '⚠', tone: 'wouldBlock', code: 'W/B', say: (e) => `would have been blocked by ${governancePhrase(e)}` },
   governance_rule_changed: { icon: '⚙', tone: 'idle', code: 'GOV', who: 'Controls', say: (e) => String(e.message ?? `${ruleLabel(e.ruleType)} changed`) },
   // Calls WhiteRoom couldn't tie to an agent while the fleet has Pause/Stop or
   // an Enforce rule on. Fleet-level: there's no agent to name.
@@ -94,49 +95,49 @@ const EVENT_COPY: Record<string, EventCopy> = {
     icon: '🔁', tone: 'wouldBlock', code: 'H/L',
     say: (e) => {
       const limit = positiveCount(e.newLimit);
-      const to = limit !== null ? ` to ${limit.toLocaleString('en-US')} tokens` : '';
+      const to = limit !== null ? ` (up to ${fmtCount(limit)} tokens)` : '';
       return String(e.reason ?? '') === 'repeated_work'
-        ? `kept redoing work it had already done after each handover, so WhiteRoom raised its context limit${to} to give it room to finish`
-        : `kept handing over after a call or two, so WhiteRoom raised its context limit${to} to keep it working`;
+        ? `kept redoing work it had already done, so WhiteRoom gave it more room${to} to finish`
+        : `ran out of room after a call or two, so WhiteRoom gave it more room${to} to keep working`;
     },
   },
   handover_deferred: {
     icon: '⏸', tone: 'handover', code: 'H/D',
     // Each event is one wait of one call, so the count never changes the text.
     say: (e) => String(e.reason ?? '') === 'reply_cut_off'
-      ? 'had a reply cut off at its output limit, so its handover waited one call to let it finish that step'
-      : 'had its handover wait one call to let it finish a step',
+      ? 'had a reply cut off at its output limit, so WhiteRoom gave it one more call to finish that step'
+      : 'got one more call to finish a step',
   },
   handover_limit_lowered: {
     icon: '↘', tone: 'idle', code: 'H/R',
     say: (e) => {
       const limit = positiveCount(e.newLimit);
-      return `stopped redoing earlier work, so WhiteRoom lowered its context limit${limit !== null ? ` to ${limit.toLocaleString('en-US')} tokens` : ''}`;
+      return `stopped redoing earlier work, so WhiteRoom gave it less room${limit !== null ? ` (${fmtCount(limit)} tokens)` : ''}`;
     },
   },
   handover_summary_failed: {
     icon: '⚠', tone: 'wouldBlock', code: 'SUM',
-    say: () => "couldn't be summarised at handover, so it picked up again from a short note",
+    say: () => "couldn't save all of its progress",
   },
   handover_results_truncated: {
     icon: '✂', tone: 'wouldBlock', code: 'CUT',
     say: (e) => {
       const n = positiveCount(e.results);
-      return `had ${n === null ? 'tool results' : `${n} tool result${n === 1 ? '' : 's'}`} too large to carry through its handover, so some were cut`;
+      return `had ${n === null ? 'tool results' : `${n} tool ${plural(n, 'result')}`} too large to keep, so some were cut`;
     },
   },
   // Handover delivery and goals (compression spec §6.3, §6.5, §14.4).
   handover_delivery_abandoned: {
     icon: '⚠', tone: 'wouldBlock', code: 'NTS',
-    say: () => 'had handover notes too large to deliver, so WhiteRoom sent a short version',
+    say: () => 'had too much saved progress to send in full, so some was left out',
   },
   handover_notes_resealed: {
     icon: '•', tone: 'idle', code: 'NTS',
-    say: () => 'had its saved handover notes cleaned and re-secured by WhiteRoom',
+    say: () => 'had its saved progress cleaned and re-secured by WhiteRoom',
   },
   handover_chain_abandoned: {
     icon: '⚠', tone: 'wouldBlock', code: 'NTS',
-    say: () => "couldn't receive its handover notes, so it carried on without them",
+    say: () => "couldn't get its saved progress back",
   },
   goal_set: {
     icon: '◎', tone: 'idle', code: 'GOL',
@@ -161,7 +162,7 @@ const EVENT_COPY: Record<string, EventCopy> = {
     say: (e) => `caught up after a database interruption (${windowText(e, 'range')})`,
   },
   lost_completion: { icon: '⚠', tone: 'wouldBlock', code: 'LST', say: () => "had a call finish during an update that couldn't be counted" },
-  handover_unrecorded: { icon: '🔄', tone: 'handover', code: 'H/U', say: () => "handed over while records couldn't be saved; it was recorded later" },
+  handover_unrecorded: { icon: '🔄', tone: 'handover', code: 'H/U', say: () => "saved its progress while records couldn't be written; it was recorded later" },
   observations_batch: {
     icon: '✅', tone: 'task', code: 'TSK',
     say: (e) => { const n = positiveCount(e.count); return `finished ${n === null ? 'several' : n} calls (grouped during a slowdown)`; },
@@ -175,7 +176,7 @@ const EVENT_COPY: Record<string, EventCopy> = {
 function windowText(e: AuditEntry, style: 'between' | 'range' = 'between'): string {
   const t = (v: unknown) => {
     const d = new Date(String(v ?? ''));
-    return Number.isFinite(d.getTime()) ? d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase() : null;
+    return Number.isFinite(d.getTime()) ? formatInZone(d, { hour: 'numeric', minute: '2-digit' }).toLowerCase() : null;
   };
   const from = t(e.from), to = t(e.to);
   if (!from || !to) return style === 'between' ? 'around then' : 'times unknown';
@@ -184,9 +185,9 @@ function windowText(e: AuditEntry, style: 'between' | 'range' = 'between'): stri
 
 /** "spend cap (budget exceeded) ×3" — rule, why, and how many calls it stands for. */
 function governancePhrase(e: AuditEntry): string {
-  const reason = REASON_LABELS[String(e.reason ?? '')];
   const n = occurrences(e);
-  return `${ruleLabel(e.ruleType).toLowerCase()}${reason ? ` (${reason})` : ''}${n > 1 ? ` ×${n}` : ''}`;
+  const times = n > 1 ? ` ×${n}` : '';
+  return `${blockedByPhrase(e.ruleType, e.reason, true)}${times}`;
 }
 
 /** Unknown or absent types degrade to readable prose rather than throwing. */
@@ -203,24 +204,24 @@ export function relTime(timestamp: unknown, now: number = Date.now()): string {
   const ms = new Date(String(timestamp ?? '')).getTime();
   if (!Number.isFinite(ms)) return '';
   // Within a day, the shared wording; older events show their date instead.
-  if (now - ms < 23.5 * 3_600_000) return timeAgo(ms, now);
-  return new Date(ms).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  if (now - ms < 23.5 * HOUR_MS) return timeAgo(ms, now);
+  return formatInZone(ms, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
 function clockTime(timestamp: unknown): string {
   const d = new Date(String(timestamp ?? ''));
   if (!Number.isFinite(d.getTime())) return '--:--';
-  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return formatInZone(d, { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 export function feedDayLabel(timestamp: unknown, now: number = Date.now()): string {
   const d = new Date(String(timestamp ?? ''));
   if (!Number.isFinite(d.getTime())) return '';
-  const today = new Date(now);
-  const yesterday = new Date(now - 86_400_000);
-  if (d.toDateString() === today.toDateString()) return 'TODAY';
-  if (d.toDateString() === yesterday.toDateString()) return 'YESTERDAY';
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
+  const day = dayKey(d.getTime());
+  const today = dayKey(now);
+  if (day === today) return 'TODAY';
+  if (day === addDays(today, -1)) return 'YESTERDAY';
+  return formatInZone(d, { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
 }
 
 // ── Tool calls → plain English ───────────────────────────
@@ -348,7 +349,7 @@ export function eventModel(e: AuditEntry, now: number = Date.now()): EventModel 
 export function eventSubtitle(m: EventModel): string {
   const bits: string[] = [];
   if (m.rel) bits.push(m.rel);
-  if (m.canExpand) bits.push(`${m.details.length} ${m.details.length === 1 ? 'action' : 'actions'}`);
+  if (m.canExpand) bits.push(`${m.details.length} ${plural(m.details.length, 'action')}`);
   return bits.join(' · ');
 }
 
@@ -358,7 +359,7 @@ export function technicalLine(m: EventModel): string {
   const bits: string[] = [];
   if (m.type) bits.push(m.type);
   if (e.agentId) bits.push(String(e.agentId));
-  if (e.watchNumber != null) bits.push(`shift #${e.watchNumber}`);
+  if (e.watchNumber != null) bits.push(`run #${e.watchNumber}`);
   if (Number.isFinite(Number(e.tokensUsed))) bits.push(`${Number(e.tokensUsed).toLocaleString()} tokens`);
   if (Number.isFinite(Number(e.minutesSpent))) bits.push(`${Number(e.minutesSpent)} min spent`);
   if (Number.isFinite(Number(e.remaining))) bits.push(`${Number(e.remaining)} min remaining`);

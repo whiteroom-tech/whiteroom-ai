@@ -28,8 +28,8 @@ describe('tierColor', () => {
 describe('scoreWedges', () => {
   it('names the three categories in a fixed order, each colored by its own value', () => {
     const wedges = scoreWedges({ completeRate: 50, costDiligence: null, speedScore: 100 });
-    expect(wedges.map((w) => w.label)).toEqual(['Task success', 'Cost diligence', 'Speed']);
-    expect(wedges.map((w) => w.short)).toEqual(['Tasks', 'Cost', 'Speed']);
+    expect(wedges.map((w) => w.label)).toEqual(['Clean calls', 'Cost', 'Speed']);
+    expect(wedges.map((w) => w.short)).toEqual(['Clean', 'Cost', 'Speed']);
     expect(wedges[0]).toMatchObject({ value: 50, color: 'var(--warn)' });
     expect(wedges[1]).toMatchObject({ value: null, color: 'var(--tx3)' });
     expect(wedges[2]).toMatchObject({ value: 100, color: 'var(--ok)' });
@@ -71,9 +71,9 @@ describe('wedgeStroke', () => {
 describe('wedgeSummary', () => {
   it('names each wedge and its value, or says when one has no data', () => {
     const summary = wedgeSummary([
-      { label: 'Task success', value: 75 },
-      { label: 'Cost diligence', value: null },
+      { label: 'Clean calls', value: 75 },
+      { label: 'Cost', value: null },
     ]);
-    expect(summary).toBe('Task success: 75/100 · Cost diligence: no data');
+    expect(summary).toBe('Clean calls: 75/100 · Cost: no data');
   });
 });

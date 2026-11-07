@@ -1,11 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  activityRow, afterFanOut, agentState, fanOutDue, FANOUT_START, onRefreshSignal, clock, hasUnknownAgents, mergeFanOut, hoursSinceUtcMidnight, kindOf, lastEventByAgent, latestActivity, decodeEntities, liveExpandable, liveRow, readableArgs, removedHeld, matchesFilter,
-  overlayStatuses, pageWindow, parseUsd, savedByWhiteRoom, savedByWhiteRoomHint, progressLine, sortAgents, stateSummary, todayTotals, usd,
+  activityRow, feedClock, afterFanOut, agentState, fanOutDue, FANOUT_START, onRefreshSignal, clock, hasUnknownAgents, mergeFanOut, hoursSinceLocalMidnight, kindOf, latestActivity, decodeEntities, liveExpandable, liveRow, readableArgs, removedHeld, matchesFilter,
+  overlayStatuses, pageWindow, parseUsd, savedByWhiteRoom, savedByWhiteRoomHint, runLine, runRest, sortAgents, stateSummary, todayTotals, usd,
 } from '@/lib/home';
 import type { AgentInfo, AuditEntry, FleetHourlyDataPoint } from '@/lib/whiteroom/types';
 
 const agent = (id: string, status: string, x: Partial<AgentInfo> = {}): AgentInfo => ({ agentId: id, status, ...x });
+/** The run line as the card says it, from runLine's parts. */
+const progressLine = (a: AgentInfo) => { const r = runLine(a); return r.run === null ? `${r.label} · ${runRest(r)}` : `${r.label} #${r.run} · ${runRest(r)}`; };
 
 describe('agents', () => {
   it('maps engine statuses onto the pill states', () => {
@@ -17,17 +19,24 @@ describe('agents', () => {
     expect(agentState(agent('a', 'something-new'))).toBe('idle');
   });
 
-  it('writes the progress line in shifts, never "watch"', () => {
-    expect(progressLine(agent('a', 'working', { watchNumber: 8, tasksCompleted: 62, minutesWorked: 9.44, minutesRemaining: 3 }))).toBe('Shift 8 · 62 tasks · 9.4 min worked');
-    expect(progressLine(agent('a', 'resting', { watchNumber: 5, tasksCompleted: 1 }))).toBe('Rest after shift 5 · 1 task');
-    expect(progressLine(agent('a', 'idle', { tasksCompleted: 0 }))).toBe('No shift running · waiting for work');
+  it('writes the run line in runs, never "watch", "rest" or "break"', () => {
+    expect(progressLine(agent('a', 'working', { watchNumber: 8, tasksCompleted: 62, minutesWorked: 9.44, minutesRemaining: 3 }))).toBe('Run #8 · 62 tasks · 9.4 min so far');
+    expect(progressLine(agent('a', 'resting', { watchNumber: 5, tasksCompleted: 1 }))).toBe('Last run #5 · 1 task · waiting for work');
+    expect(progressLine(agent('a', 'idle', { tasksCompleted: 0 }))).toBe('No run yet · waiting for work');
+    expect(progressLine(agent('a', 'idle', { hold: { state: 'paused', by: 'x', reason: null, at: '' }, currentShift: null, lastShift: { watchNumber: 2, tasksCompleted: 3, tokensUsed: 0, minutesWorked: 0 } }))).toBe('Last run #2 · 3 tasks · waiting to be resumed');
+  });
+
+  it('gives the run line in parts, with no run number (so no link) for run 0', () => {
+    expect(runLine(agent('a', 'idle', { currentShift: null, lastShift: { watchNumber: 4, tasksCompleted: 6, tokensUsed: 0, minutesWorked: 0 } }))).toEqual({ label: 'Last run', run: 4, tasks: '6 tasks', status: 'waiting for work' });
+    expect(runLine(agent('a', 'idle', { currentShift: null, lastShift: { watchNumber: 0, tasksCompleted: 1, tokensUsed: 0, minutesWorked: 0 } }))).toEqual({ label: 'Last run', run: null, tasks: '1 task', status: 'waiting for work' });
+    expect(runRest({ label: 'No run yet', run: null, tasks: null, status: 'waiting for work' })).toBe('waiting for work');
   });
 
   it('shows the last shift, not lifetime, once a shift has ended (M14)', () => {
     const last = { watchNumber: 41, tokensUsed: 900, tasksCompleted: 5, minutesWorked: 0.4 };
-    expect(progressLine(agent('a', 'idle', { tasksCompleted: 332, currentShift: null, lastShift: last }))).toBe('Last shift 41 · 5 tasks · waiting for work');
-    expect(progressLine(agent('a', 'resting', { tasksCompleted: 332, currentShift: null, lastShift: last }))).toBe('Rest after shift 41 · 5 tasks');
-    expect(progressLine(agent('a', 'working', { currentShift: { ...last, watchNumber: 42, tasksCompleted: 2, minutesWorked: 1.25 } }))).toBe('Shift 42 · 2 tasks · 1.3 min worked');
+    expect(progressLine(agent('a', 'idle', { tasksCompleted: 332, currentShift: null, lastShift: last }))).toBe('Last run #41 · 5 tasks · waiting for work');
+    expect(progressLine(agent('a', 'resting', { tasksCompleted: 332, currentShift: null, lastShift: last }))).toBe('Last run #41 · 5 tasks · waiting for work');
+    expect(progressLine(agent('a', 'working', { minutesRemaining: 3, currentShift: { ...last, watchNumber: 42, tasksCompleted: 2, minutesWorked: 1.25 } }))).toBe('Run #42 · 2 tasks · 1.3 min so far');
   });
 
   it('sorts problems first, then working, resting, idle, then by id', () => {
@@ -42,7 +51,8 @@ describe('agents', () => {
   });
 
   it('summarises the non-working states for the strip', () => {
-    expect(stateSummary([agent('a', 'resting'), agent('b', 'idle'), agent('c', 'resting'), agent('d', 'working', { minutesRemaining: 1 })])).toBe('2 resting · 1 idle');
+    expect(stateSummary([agent('a', 'resting'), agent('b', 'idle'), agent('c', 'resting'), agent('d', 'working', { minutesRemaining: 1 })])).toBe('3 waiting for work');
+    expect(stateSummary([agent('a', 'idle', { hold: { state: 'stopped', by: 'x', reason: null, at: '' } }), agent('b', 'idle')])).toBe('1 on hold · 1 waiting for work');
     expect(stateSummary([agent('d', 'working', { minutesRemaining: 1 })])).toBe('');
   });
 });
@@ -52,11 +62,17 @@ describe('activity', () => {
   const e = (type: string, ts: string, x: Partial<AuditEntry> = {}): AuditEntry => ({ id: `${type}-${ts}`, type, timestamp: ts, agentId: 'lead-agent', ...x });
 
   it('keeps agent ids exactly as stored', () => {
-    expect(activityRow(e('watch_start', '2026-09-30T14:00:00Z'), now).text).toBe('lead-agent started a shift');
+    expect(activityRow(e('watch_start', '2026-09-30T14:00:00Z'), now).text).toBe('lead-agent started a run');
+    // On a page already about the agent (its page, its run) its own rows skip its name; Controls rows keep theirs.
+    expect(activityRow(e('watch_start', '2026-09-30T14:00:00Z'), now, { agentShown: true }).text).toBe('Started a run');
+    expect(activityRow(e('governance_rule_changed', '2026-09-30T14:00:00Z'), now, { agentShown: true }).text).toMatch(/^Controls:/);
   });
 
   it('tags handovers, pauses and blocks', () => {
-    expect(activityRow(e('self_handover', '2026-09-30T14:00:00Z'), now).tag).toEqual({ label: 'Handover', tone: 'ho' });
+    expect(activityRow(e('self_handover', '2026-09-30T14:00:00Z'), now).tag).toEqual({ label: 'Smaller context', tone: 'ho' });
+    expect(activityRow(e('handover_out', '2026-09-30T14:00:00Z', { toAgent: 'writer' }), now).tag).toEqual({ label: 'Saved progress', tone: 'ho' });
+    expect(activityRow(e('handover_out', '2026-09-30T14:00:00Z'), now).tag).toEqual({ label: 'Saved progress', tone: 'ho' });
+    expect(activityRow(e('handover_in', '2026-09-30T14:00:00Z', { fromAgent: 'lead' }), now).tag).toEqual({ label: 'Continued', tone: 'ho' });
     expect(activityRow(e('agent_paused', '2026-09-30T14:00:00Z'), now).tag).toEqual({ label: 'Paused', tone: 'warn' });
     expect(activityRow(e('governance_block', '2026-09-30T14:00:00Z', { ruleType: 'spend_cap' }), now).tag?.label).toBe('Blocked');
     expect(activityRow(e('task_complete', '2026-09-30T14:00:00Z', { taskName: 'x' }), now).tag).toBeUndefined();
@@ -77,17 +93,10 @@ describe('activity', () => {
     const [newest, older] = latestActivity([e('watch_start', '2026-10-03T09:15:00'), e('agent_paused', '2026-10-02T23:31:00')], 4, today);
     expect(newest.time).toBe('9:15 am');
     expect(older.time).toBe('Oct 2');
-    expect(lastEventByAgent([e('agent_paused', '2026-10-02T23:31:00')], today)['lead-agent'].time).toBe('Oct 2');
     // Epoch-ms timestamps too, as clock() accepts them: sorted, formatted, and kept as an agent's last event.
     const epoch = { ...e('watch_start', ''), timestamp: Date.parse('2026-10-03T09:15:00') } as unknown as AuditEntry;
     const mixed = latestActivity([e('agent_paused', '2026-10-03T08:00:00'), epoch, e('rest_start', '2026-10-03T07:00:00')], 4, today);
     expect(mixed.map((r) => r.time)).toEqual(['9:15 am', '8:00 am', '7:00 am']);
-    expect(lastEventByAgent([e('agent_paused', '2026-10-03T08:00:00'), epoch], today)['lead-agent']).toEqual({ time: '9:15 am', text: 'started a shift' });
-  });
-
-  it('keeps the latest event per agent', () => {
-    const last = lastEventByAgent([e('watch_start', '2026-09-30T14:01:00Z'), e('rest_start', '2026-09-30T14:09:00Z'), e('watch_end', '2026-09-30T14:05:00Z')]);
-    expect(last['lead-agent'].text).toBe('went on break');
   });
 });
 
@@ -166,23 +175,34 @@ describe('live feed rows', () => {
   });
 });
 
-describe('today (UTC)', () => {
-  const now = Date.parse('2026-09-30T14:20:00Z');
+describe('today (the viewer’s midnight)', () => {
+  const now = Date.parse('2026-09-30T14:20:00Z'); // 10:20 am in New York
+  afterEach(() => vi.unstubAllEnvs());
 
-  it('asks for enough hours to reach 00:00 UTC', () => {
-    expect(hoursSinceUtcMidnight(now)).toBe(15);
-    expect(hoursSinceUtcMidnight(Date.parse('2026-09-30T00:05:00Z'))).toBe(1);
+  it('asks for enough hours to reach the viewer’s midnight', () => {
+    vi.stubEnv('TZ', 'America/New_York');
+    expect(hoursSinceLocalMidnight(now)).toBe(11);
+    expect(hoursSinceLocalMidnight(Date.parse('2026-09-30T04:05:00Z'))).toBe(1);
   });
 
-  it('adds up only today\'s hours', () => {
+  it('adds up only today’s hours, in the viewer’s day', () => {
+    vi.stubEnv('TZ', 'America/New_York');
     const h = (hour: string, calls: number, costMicros: number) => ({ hour, calls, costMicros } as FleetHourlyDataPoint);
-    expect(todayTotals([h('2026-09-29T23:00:00.000Z', 50, 9_000_000), h('2026-09-30T00:00:00.000Z', 10, 1_500_000), h('2026-09-30T13:00:00.000Z', 5, 870_000)], now))
+    // 03:00 UTC is 11 pm yesterday in New York; 04:00 UTC is midnight.
+    expect(todayTotals([h('2026-09-30T03:00:00.000Z', 50, 9_000_000), h('2026-09-30T04:00:00.000Z', 10, 1_500_000), h('2026-09-30T13:00:00.000Z', 5, 870_000)], now))
       .toEqual({ calls: 15, costUsd: 2.37, partial: false });
     // Some calls with no price on file: the total is a lower bound.
     expect(todayTotals([{ ...h('2026-09-30T13:00:00.000Z', 5, 870_000), unpricedAttempts: 2 }], now).partial).toBe(true);
     // Dropped calls aren't in the spend at all.
     expect(todayTotals([{ ...h('2026-09-30T13:00:00.000Z', 5, 870_000), droppedAttempts: 1 }], now).partial).toBe(true);
-    expect(todayTotals([{ ...h('2026-09-29T23:00:00.000Z', 5, 870_000), droppedAttempts: 1 }], now).partial).toBe(false);
+    expect(todayTotals([{ ...h('2026-09-30T03:00:00.000Z', 5, 870_000), droppedAttempts: 1 }], now).partial).toBe(false);
+  });
+
+  it('starts a half-hour zone’s day at the top of the hour holding its midnight', () => {
+    vi.stubEnv('TZ', 'Asia/Kolkata');
+    const h = (hour: string, calls: number) => ({ hour, calls, costMicros: 0 } as FleetHourlyDataPoint);
+    // Midnight in India is 18:30 UTC the day before: the 18:00 UTC hour counts, 17:00 doesn't.
+    expect(todayTotals([h('2026-09-29T17:00:00.000Z', 7), h('2026-09-29T18:00:00.000Z', 3), h('2026-09-30T02:00:00.000Z', 1)], now).calls).toBe(4);
   });
 });
 
@@ -216,15 +236,15 @@ describe('formatting', () => {
   it('the ⓘ parts add up to the shown total, whatever the rounding', () => {
     // Live Oct 12: $8.984 + $2.094 = $11.078 read "$11.08 = $8.98 + $2.09".
     expect(savedByWhiteRoomHint({ usd: 11.078, handover: 8.984, cache: 2.094, partial: false, agentCache: null }))
-      .toContain('est. $11.08 = $8.98 from smaller handovers + $2.10 from caching WhiteRoom added');
+      .toContain('est. $11.08 = $8.98 from smaller context + $2.10 from caching WhiteRoom added');
   });
   it('explains saved by WhiteRoom in the Spend card ⓘ, keeping the agents\' own caching out', () => {
     expect(savedByWhiteRoomHint({ usd: 6.14, handover: 4.22, cache: 1.92, partial: false, agentCache: null }))
-      .toBe('Saved by WhiteRoom: est. $6.14 = $4.22 from smaller handovers + $1.92 from caching WhiteRoom added, across everything stored. Performance shows the same sum for the last 24h, 3d or 7d.');
+      .toBe('Saved by WhiteRoom: est. $6.14 = $4.22 from smaller context + $1.92 from caching WhiteRoom added, across everything stored. Performance shows the same sum for the last 24h, 3d or 7d.');
     expect(savedByWhiteRoomHint({ usd: 4.22, handover: 4.22, cache: 0, partial: false, agentCache: 2.5 }))
-      .toBe('Saved by WhiteRoom: est. $4.22 = $4.22 from smaller handovers, across everything stored. Your agents\' own caching saved a further $2.50, which isn\'t counted. Performance shows the same sum for the last 24h, 3d or 7d.');
+      .toBe('Saved by WhiteRoom: est. $4.22 = $4.22 from smaller context, across everything stored. Your agents\' own caching saved a further $2.50, which isn\'t counted. Performance shows the same sum for the last 24h, 3d or 7d.');
     expect(savedByWhiteRoomHint({ usd: 4.22, handover: 4.22, cache: null, partial: true, agentCache: null }))
-      .toBe('Saved by WhiteRoom: est. $4.22+ = $4.22 from smaller handovers, across everything stored. Performance shows the same sum for the last 24h, 3d or 7d. "+" means some tokens had no price on file.');
+      .toBe('Saved by WhiteRoom: est. $4.22+ = $4.22 from smaller context, across everything stored. Performance shows the same sum for the last 24h, 3d or 7d. "+" means some tokens had no price on file.');
   });
 });
 
@@ -283,7 +303,6 @@ describe('handover subjects', () => {
   it('names the agent from fromAgent / toAgent when agentId is missing', () => {
     const e = { id: 'h', type: 'handover_out', timestamp: '2026-09-30T14:00:00Z', fromAgent: 'lead-agent', toAgent: 'writer-agent' } as AuditEntry;
     expect(activityRow(e).text.startsWith('lead-agent ')).toBe(true);
-    expect(lastEventByAgent([e])['lead-agent']).toBeDefined();
   });
 });
 
@@ -376,5 +395,15 @@ describe('removed agents still held', () => {
 
   it('is empty without holds', () => {
     expect(removedHeld(undefined, [])).toEqual([]);
+  });
+});
+
+describe('live feed times', () => {
+  it('says the day for an entry from an earlier day, never just a time that reads as today', () => {
+    const now = new Date(2026, 9, 29, 9, 0).getTime();
+    expect(feedClock(new Date(2026, 9, 29, 8, 15).toISOString(), now)).toBe('8:15 am');
+    expect(feedClock(new Date(2026, 9, 27, 13, 37).toISOString(), now)).toBe('Oct 27, 1:37 pm');
+    expect(feedClock('nonsense', now)).toBe('');
+    expect(liveRow({ id: 1, type: 'task_complete', timestamp: new Date(2026, 9, 27, 13, 37).toISOString(), agentId: 'a' } as never, now).time).toBe('Oct 27, 1:37 pm');
   });
 });

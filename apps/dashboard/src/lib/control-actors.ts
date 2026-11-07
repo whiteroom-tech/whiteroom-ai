@@ -51,29 +51,30 @@ export function holdWho(hold: AgentHold, agentId: string, actions: ControlActor[
   return row ? `by ${row.by}` : 'from the dashboard';
 }
 
-/**
- * "by R Haque" for whoever set an agent's goal, "from the dashboard" for an
- * older record nobody's matched to, "" otherwise. Never the engine's raw "by".
- */
-export function goalWho(setBy: string | null, at: string, agentId: string, actions: ControlActor[]): string {
-  if (!setBy) return '';
-  // Only a recorded name: goals set before names were recorded say nothing,
-  // rather than "a teammate" under a "Set by you" tag.
-  if (setBy.startsWith(USER)) {
-    const row = actions.find((a) => a.userId === setBy.slice(USER.length));
-    return row ? `by ${row.by}` : '';
-  }
-  if (setBy !== 'dashboard') return '';
-  const row = closest(actions.filter((a) => a.agentId === agentId && a.action === 'goal_set_owner'), at);
-  return row ? `by ${row.by}` : 'from the dashboard';
-}
-
 /** The person behind a rule-history entry, else the engine's own "by". */
 export function historyWho(entry: { ruleId: string; time: string; by: string }, actions: ControlActor[]): string {
   const named = userName(entry.by, actions);
   if (named) return named;
   if (entry.by !== 'dashboard') return entry.by;
   return closest(actions.filter((a) => a.ruleId === entry.ruleId), entry.time)?.by ?? 'from the dashboard';
+}
+
+/**
+ * The person behind an agent change (pause, stop, removal): a "user:<id>" by
+ * name, else, for a "dashboard" record or none, the dashboard row for that
+ * agent and action closest in time and not already matched to another change.
+ * Null when nobody can be named.
+ */
+export function agentChangeWho(change: { agentId: string; action: string; time: string; by?: string }, actions: ControlActor[], used?: Set<ControlActor>): string | null {
+  const named = change.by ? userName(change.by, actions) : null;
+  if (named) return named;
+  // Only a dashboard change (or one with no "by", like a removal) is matched by time:
+  // an API change is never credited to someone who acted nearby.
+  if (change.by && change.by !== 'dashboard') return null;
+  // Each dashboard row names one change at most (`used` collects the rows taken).
+  const row = closest(actions.filter((a) => a.agentId === change.agentId && a.action === change.action && !used?.has(a)), change.time);
+  if (row) used?.add(row);
+  return row?.by ?? null;
 }
 
 /** The oldest time in a list, as ISO; undefined when empty. */

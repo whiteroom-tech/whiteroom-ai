@@ -35,17 +35,16 @@ describe('spend gap', () => {
 
 describe('spend summary for the Spend cards', () => {
   const h = (unpriced: number) => ({ unpricedAttempts: unpriced, missingSpendBoundMicros: 0, unboundedAttempts: 0 });
-  it('measures the gap over the selected half only', () => {
-    const r = spendSummary([h(3), h(3), h(0), h(0)], 0);
-    expect(r.shown).toHaveLength(2);
+  it('measures the gap over every hour of the range it was given', () => {
+    const r = spendSummary([h(0), h(0), h(0), h(0)], 0);
+    expect(r.shown).toHaveLength(4);
     expect(r).toMatchObject({ gapLine: '', partial: false });
+    // The first hour counts too: the hours are the range's own, no prior half.
+    expect(spendSummary([h(3), h(0), h(0), h(0)], 0)).toMatchObject({ partial: true, gapLine: UNPRICED_TEXT });
   });
-  it('marks the figure partial from the selected half', () => {
-    expect(spendSummary([h(0), h(0), h(0), h(2)], 0)).toMatchObject({ partial: true, gapLine: UNPRICED_TEXT });
-  });
-  it('marks the figure partial when the selected half dropped calls', () => {
+  it('marks the figure partial when an hour dropped calls', () => {
     expect(spendSummary([h(0), { ...h(0), droppedAttempts: 2 }], 0)).toMatchObject({ partial: true, gapLine: DROPPED_TEXT });
-    expect(spendSummary([{ ...h(0), droppedAttempts: 2 }, h(0)], 0)).toMatchObject({ partial: false, gapLine: '' });
+    expect(spendSummary([{ ...h(0), droppedAttempts: 2 }, h(0)], 0)).toMatchObject({ partial: true, gapLine: DROPPED_TEXT });
   });
   it('falls back to the summary count when there are no hourly rows', () => {
     expect(spendSummary([], 4)).toMatchObject({ shown: [], gapLine: UNPRICED_TEXT, partial: true });

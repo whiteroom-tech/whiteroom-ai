@@ -6,6 +6,7 @@
 //   - no key -> unauthenticated (e.g. token_login)
 
 import type {
+  AuditExportPage,
   AuditIntegrity,
   VerifyAuditResult,
   AuditSummaryResult,
@@ -14,17 +15,17 @@ import type {
   GovernanceResponse,
   RuleActionsResult,
   RunDaysResult,
+  RunHourCount,
   RunEventsResult,
   FleetDiagnosis,
+  AgentHold,
   AgentInfo,
-  AgentPerformanceResult,
   AuditLogResponse,
   BedrockRoleStatus,
   ClaimFleetResult,
   DeleteBedrockRoleResult,
   DeleteKeyResult,
   FleetReport,
-  GetHandoverResult,
   GovernanceListResult,
   GovernanceMode,
   GovernanceParams,
@@ -36,6 +37,7 @@ import type {
   PerformanceEvidenceResult,
   PerformanceFeedbackResult,
   PerformanceIndexResult,
+  AgentPerformanceResult,
   PerformanceLiveFeedResult,
   PaginatedRecommendationsResult,
   RecommendationGetResult,
@@ -44,8 +46,7 @@ import type {
   FleetHourlyResult,
   AgentScoresResult,
   PerformanceCostForecastResult,
-  SetBudgetResult,
-  SetTokenBudgetResult,
+  AgentBudgetsResult,
   RegisterResult,
   StoreBedrockRoleResult,
   StoreKeyResult,
@@ -66,11 +67,14 @@ export const PROXY_URL = process.env.NEXT_PUBLIC_PROXY_URL || 'https://proxy.whi
  */
 export class WhiteRoomApiError extends Error {
   readonly status?: number;
+  /** The engine's own reason for refusing a request it understood (400, 409, 422), to show people as is. */
+  readonly reason?: string;
 
-  constructor(message: string, status?: number) {
+  constructor(message: string, status?: number, reason?: string) {
     super(message);
     this.name = 'WhiteRoomApiError';
     this.status = status;
+    this.reason = reason;
   }
 }
 
@@ -200,6 +204,15 @@ async function apiCall<T>(
     if (res.status === 403) {
       const denied = await res.json().catch(() => null);
       if (denied?.code === CONTROL_DENIED && typeof denied.error === 'string') throw new ControlDeniedError(denied.error);
+      // The engine's own reason for a refusal, so a caller can tell its cases apart.
+      const reason = typeof denied?.error === 'string' && denied.error.length <= 300 ? denied.error : undefined;
+      throw new WhiteRoomApiError(`HTTP ${res.status}`, res.status, reason);
+    }
+    // A request the engine understood and refused says why ("That looks like a key or password…").
+    if (res.status === 400 || res.status === 409 || res.status === 422) {
+      const refused = await res.json().catch(() => null);
+      const reason = typeof refused?.error === 'string' && refused.error.length <= 300 ? refused.error : undefined;
+      throw new WhiteRoomApiError(`HTTP ${res.status}`, res.status, reason);
     }
     throw new WhiteRoomApiError(`HTTP ${res.status}`, res.status);
   }
@@ -329,10 +342,6 @@ export async function checkWatch(agentId: string, fleetId: string, key?: string)
   return 'hold' in agent ? { ...agent, hold: activeHold(agent.hold) } : agent;
 }
 
-export function getHandover(agentId: string, fleetId: string, key?: string): Promise<GetHandoverResult> {
-  return apiCall<GetHandoverResult>({ action: 'get_handover', agent_id: agentId, fleet_id: fleetId }, key);
-}
-
 export function auditLog(
   opts: { fleetId: string; agentId?: string; type?: string; search?: string; limit?: number },
   key?: string,
@@ -382,6 +391,8 @@ export function storeProviderKey(
   providerKey: string,
   endpoint?: string,
   provider?: string,
+  /** A key for one agent only: the engine treats every call on it as that agent's. */
+  boundAgent?: string,
 ): Promise<StoreKeyResult> {
   return keyCall<StoreKeyResult>(auth, {
     action: 'store_key',
@@ -390,6 +401,7 @@ export function storeProviderKey(
     // Azure keys are opaque, so the engine can't infer the provider from the
     // key's prefix the way it does for sk-ant- / sk- keys — it has to be named.
     ...(provider && { provider }),
+    ...(boundAgent && { bound_agent: boundAgent }),
   });
 }
 
@@ -432,13 +444,19 @@ export function deleteBedrockRole(auth: FleetAuth): Promise<DeleteBedrockRoleRes
 
 // -- Agent control --
 
-export async function pauseAgent(fleetId: string, agentId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
-  return requireSuccess(await apiCall<{ success?: boolean; error?: string }>({ action: 'pause_agent', fleet_id: fleetId, agent_id: agentId }, key));
+/** Pause. Gov v1 engines return the hold they set, which Home's Undo uses to resume only that pause. */
+export async function pauseAgent(fleetId: string, agentId: string, key?: string): Promise<{ success?: boolean; error?: string; hold?: AgentHold | null }> {
+  return requireSuccess(await apiCall<{ success?: boolean; error?: string; hold?: AgentHold | null }>({ action: 'pause_agent', fleet_id: fleetId, agent_id: agentId }, key));
 }
 
 /** Stop (Gov v1 fleets): the agent refuses every call until resumed, even after a restart. */
 export async function stopAgent(fleetId: string, agentId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
   return requireSuccess(await apiCall<{ success?: boolean; error?: string }>({ action: 'stop_agent', fleet_id: fleetId, agent_id: agentId }, key));
+}
+
+/** Removes the agent from the fleet. Its audit trail, rule history and rule actions stay; a new call brings it back. */
+export async function removeAgent(fleetId: string, agentId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
+  return requireSuccess(await apiCall<{ success?: boolean; error?: string }>({ action: 'deregister_agent', fleet_id: fleetId, agent_id: agentId }, key));
 }
 
 export async function resumeAgent(fleetId: string, agentId: string, key?: string): Promise<{ success?: boolean; error?: string }> {
@@ -447,8 +465,18 @@ export async function resumeAgent(fleetId: string, agentId: string, key?: string
 
 // -- Performance --
 
-export function performanceIndex(fleetId: string, hoursBack?: number, key?: string): Promise<PerformanceIndexResult> {
-  return apiCall<PerformanceIndexResult>({ action: 'performance_index', fleet_id: fleetId, hours_back: hoursBack ?? 24 }, key);
+/** A window of the viewer's days as instants; `to` null ends now. */
+export interface ReadWindow { from: Date; to: Date | null }
+
+/** `window` instead of hours_back: from (and to, when it ends before now). Older engines take only a from in the last 14 days. */
+export function performanceIndex(fleetId: string, hoursBack?: number, key?: string, window?: ReadWindow): Promise<PerformanceIndexResult> {
+  return apiCall<PerformanceIndexResult>({ action: 'performance_index', fleet_id: fleetId, ...windowBody(window, hoursBack ?? 24) }, key);
+}
+
+/** from/to for a window, else hours_back. */
+function windowBody(window: ReadWindow | undefined, hoursBack: number | undefined): Record<string, unknown> {
+  if (!window) return { hours_back: hoursBack };
+  return { from: window.from.toISOString(), ...(window.to ? { to: window.to.toISOString() } : {}) };
 }
 
 export function performanceAgent(fleetId: string, agentId: string, hoursBack?: number, key?: string): Promise<AgentPerformanceResult> {
@@ -476,15 +504,21 @@ export function performanceFeedback(
   }, key);
 }
 
+/**
+ * With `window`, its hours; `hoursBack` then goes too, for engines that only
+ * read hours_back (they ignore from/to).
+ */
 export function performanceFleetHourly(
   fleetId: string,
   hoursBack?: number,
   key?: string,
+  window?: ReadWindow,
 ): Promise<FleetHourlyResult> {
   return apiCall<FleetHourlyResult>({
     action: 'performance_fleet_hourly',
     fleet_id: fleetId,
-    hours_back: hoursBack,
+    ...windowBody(window, hoursBack),
+    ...(window && hoursBack ? { hours_back: hoursBack } : {}),
   }, key);
 }
 
@@ -571,12 +605,24 @@ export function performanceCostForecast(fleetId: string, taskType?: string, key?
   return apiCall<PerformanceCostForecastResult>({ action: 'performance_cost_forecast', fleet_id: fleetId, task_type: taskType, tz: viewerTimeZone() }, key);
 }
 
-export function setBudgetUsd(fleetId: string, budgetUsd: number | null, key?: string): Promise<SetBudgetResult> {
-  return apiCall<SetBudgetResult>({ action: 'set_budget_usd', fleet_id: fleetId, budget_usd: budgetUsd }, key);
+/**
+ * Each agent with a daily budget, against its spend since the viewer's
+ * midnight, with its cost prediction. `allAgents` lists every agent in the
+ * fleet, budget or not (engines without it ignore the flag).
+ */
+export function agentBudgetsGet(fleetId: string, key?: string, opts: { allAgents?: boolean } = {}): Promise<AgentBudgetsResult> {
+  return apiCall<AgentBudgetsResult>({ action: 'agent_budgets_get', fleet_id: fleetId, tz: viewerTimeZone(), ...(opts.allAgents && { all_agents: true }) }, key);
 }
 
-export function setTokenBudget(fleetId: string, tokenBudget: number | null, key?: string): Promise<SetTokenBudgetResult> {
-  return apiCall<SetTokenBudgetResult>({ action: 'set_token_budget', fleet_id: fleetId, token_budget: tokenBudget }, key);
+/**
+ * Sets an agent's daily budget; null clears it (the token budget with it).
+ * `budgetTokens` left out keeps the stored token budget; null clears it.
+ * The owner's call (dashboard-only on the engine).
+ */
+export async function agentBudgetSet(fleetId: string, agentId: string, budgetUsd: number | null, key?: string, budgetTokens?: number | null): Promise<void> {
+  requireSuccess(await apiCall<{ success?: boolean; error?: string }>({
+    action: 'agent_budget_set', fleet_id: fleetId, agent_id: agentId, budget_usd: budgetUsd, ...(budgetTokens !== undefined && { budget_tokens: budgetTokens }),
+  }, key));
 }
 
 // -- Fleet governance rules (Controls page) --
@@ -588,7 +634,7 @@ export function governanceList(fleetId: string, key?: string): Promise<Governanc
 export function governanceCreateRule(
   fleetId: string,
   rule: {
-    ruleType: GovernanceRuleType; mode?: GovernanceMode; response?: GovernanceResponse; params?: GovernanceParams; appliesTo?: GovernanceScope; description?: string;
+    ruleType: GovernanceRuleType; mode?: GovernanceMode; response?: GovernanceResponse; alsoNotify?: boolean; params?: GovernanceParams; appliesTo?: GovernanceScope; description?: string;
     /** The Diagnosis recommendation it comes from; the engine makes at most one rule per suggestion. */
     sourceRecommendationId?: string;
   },
@@ -600,6 +646,7 @@ export function governanceCreateRule(
     rule_type: rule.ruleType,
     mode: rule.mode,
     response: rule.response,
+    also_notify: rule.alsoNotify,
     params: rule.params,
     applies_to: rule.appliesTo,
     description: rule.description,
@@ -622,15 +669,18 @@ export function diagnoseFleet(fleetId: string, opts: { force?: boolean } = {}, k
 export function governanceUpdateRule(
   fleetId: string,
   ruleId: string,
-  updates: { mode?: GovernanceMode; response?: GovernanceResponse; params?: GovernanceParams; appliesTo?: GovernanceScope; description?: string },
+  updates: { mode?: GovernanceMode; response?: GovernanceResponse; alsoNotify?: boolean; params?: GovernanceParams; appliesTo?: GovernanceScope; description?: string; ifVersion?: number },
   key?: string,
 ): Promise<{ rule: GovernanceRule }> {
   return apiCall<{ rule: GovernanceRule }>({
     action: 'governance_update_rule',
     fleet_id: fleetId,
     rule_id: ruleId,
+    // The engine refuses (409) if the rule changed since this version was read.
+    if_version: updates.ifVersion,
     mode: updates.mode,
     response: updates.response,
+    also_notify: updates.alsoNotify,
     params: updates.params,
     applies_to: updates.appliesTo,
     description: updates.description,
@@ -668,17 +718,19 @@ async function runsAction<T>(action: string, fleetId: string, q: RunsQuery, extr
 /** Runs that started in a range of the viewer's days, newest first; `unsupported` sends Runs to the event feed. */
 export function listRuns(
   fleetId: string,
-  opts: RunsQuery & { cursor?: string | null; pageSize?: number; flagged?: boolean },
+  opts: RunsQuery & { cursor?: string | null; pageSize?: number; flagged?: boolean; ruleActivity?: boolean; hour?: number | null },
   key?: string,
 ): Promise<ListRunsResult | { unsupported: true }> {
   return runsAction<ListRunsResult>('list_runs', fleetId, opts, {
     ...(opts.cursor ? { cursor: opts.cursor } : {}),
     ...(opts.pageSize ? { page_size: opts.pageSize } : {}),
     ...(opts.flagged ? { flagged: true } : {}),
+    ...(opts.ruleActivity ? { rule_activity: true } : {}),
+    ...(opts.hour != null ? { hour: opts.hour } : {}),
   }, key);
 }
 
-/** Settings › Audit integrity: how much of the chain is verified, and recorded gaps. */
+/** Settings › Audit trail: how much of the chain is verified, and recorded gaps. */
 export function auditIntegrity(fleetId: string, key?: string): Promise<AuditIntegrity> {
   return apiCall({ action: 'audit_integrity', fleet_id: fleetId }, key);
 }
@@ -693,13 +745,33 @@ export function exportAuditSigned(fleetId: string, key?: string): Promise<Record
   return apiCall({ action: 'export_audit_signed', fleet_id: fleetId }, key);
 }
 
+/**
+ * One page of the full signed export (engine export_audit_full). The first
+ * call pins the newest event (toSeq); pass it back with fromSeq for the rest.
+ */
+export function exportAuditFullPage(
+  fleetId: string,
+  cursor?: { fromSeq: number; toSeq: number },
+  key?: string,
+): Promise<AuditExportPage> {
+  return apiCall({
+    action: 'export_audit_full', fleet_id: fleetId,
+    ...(cursor ? { from_seq: cursor.fromSeq, to_seq: cursor.toSeq } : {}),
+  }, key);
+}
+
 /** Totals over the stored audit trail since `from` (engine audit_summary): savings inputs per agent-day, governance decisions. */
 /**
- * Audit totals since `from`. With `hoursBack`, the engine uses the same hour
- * window as performance_index instead (older engines ignore it and use `from`).
+ * Audit totals since `from`, up to `to` when given (older engines ignore it
+ * and read to now). With `hoursBack`, the engine uses the same hour window as
+ * performance_index instead (older engines ignore it and use `from`).
+ * `tz` sets the days savingsByDay is split into (default: the viewer's zone).
  */
-export function auditSummary(fleetId: string, from: Date, key?: string, hoursBack?: number): Promise<AuditSummaryResult> {
-  return apiCall<AuditSummaryResult>({ action: 'audit_summary', fleet_id: fleetId, from: from.toISOString(), tz: viewerTimeZone(), ...(hoursBack ? { hours_back: hoursBack } : {}) }, key);
+export function auditSummary(fleetId: string, from: Date, key?: string, hoursBack?: number, tz: string = viewerTimeZone(), to?: Date | null): Promise<AuditSummaryResult> {
+  return apiCall<AuditSummaryResult>({
+    action: 'audit_summary', fleet_id: fleetId, from: from.toISOString(), tz,
+    ...(hoursBack ? { hours_back: hoursBack } : {}), ...(to && !hoursBack ? { to: to.toISOString() } : {}),
+  }, key);
 }
 
 /** Would-act counts per agent for one rule version (engine rule_would_act). */
@@ -718,6 +790,11 @@ export function runDays(fleetId: string, opts: RunsQuery, key?: string): Promise
   return runsAction<RunDaysResult>('run_days', fleetId, opts, {}, key);
 }
 
+/** Runs per hour (0–23) of one of the viewer's days (engine E1a); `unsupported` on older engines. */
+export function runHours(fleetId: string, opts: { day: string; agentId?: string }, key?: string): Promise<{ hours: RunHourCount[] } | { unsupported: true }> {
+  return runsAction('run_hours', fleetId, { fromDay: opts.day, toDay: opts.day, agentId: opts.agentId }, { day: opts.day }, key);
+}
+
 export function getRunEvents(
   fleetId: string,
   runId: string,
@@ -734,7 +811,9 @@ export function getRunEvents(
 
 // -- Alerts (P2.7) --
 
-export interface AlertsStatus { slack: { ending: string } | null }
+/** Where rule alerts go. `teams` is absent from engines without Teams alerts (engine E5). */
+export interface AlertsStatus { slack: { ending: string } | null; teams?: { ending: string } | null }
+export type AlertChannel = 'slack' | 'teams';
 
 /**
  * Alerts actions. The engine answers a refused change with 400 and a plain
@@ -756,7 +835,8 @@ async function alertsAction<T>(body: Record<string, unknown>): Promise<T | null>
 // Dashboard-only like the other two (engine #93): agent keys can't read it.
 export const alertsGet = (fleetId: string) => alertsAction<AlertsStatus>({ action: 'alerts_get', fleet_id: fleetId });
 export const alertsSetSlack = (fleetId: string, url: string | null) => alertsAction<AlertsStatus>({ action: 'alerts_set_slack', fleet_id: fleetId, slack_url: url });
-export const alertsTest = (fleetId: string) => alertsAction<{ success: boolean }>({ action: 'alerts_test', fleet_id: fleetId });
+export const alertsSetTeams = (fleetId: string, url: string | null) => alertsAction<AlertsStatus>({ action: 'alerts_set_teams', fleet_id: fleetId, teams_url: url });
+export const alertsTest = (fleetId: string, channel: AlertChannel) => alertsAction<{ success: boolean }>({ action: 'alerts_test', fleet_id: fleetId, channel });
 
 /** What WhiteRoom keeps for a fleet (Settings › Data and privacy). */
 export interface DataSettings {
@@ -768,28 +848,6 @@ export interface DataSettings {
   /** What carries from one job to the next (P0 #3a): explicit_run means only within a labeled run. */
   handover_carry_forward_effective?: 'same_run' | 'explicit_run' | 'off';
 }
-/** The owner's goal for an agent (Agent detail › Goal). */
-export interface OwnerGoal { goal: string | null; revision: number; set_by: string | null; updated_at: string; /** Saved, but its key isn't configured on this engine. */ unreadable?: boolean }
-export const goalGet = (fleetId: string, agentId: string) =>
-  alertsAction<{ owner: OwnerGoal | null }>({ action: 'goal_get', fleet_id: fleetId, agent_id: agentId });
-/**
- * `baseRevision` is the revision on screen when the edit began (0 for no goal): if the goal
- * changed since, the engine refuses the save as changed elsewhere. Older engines ignore it.
- */
-export const goalSetOwner = (fleetId: string, agentId: string, goal: string | null, baseRevision: number) =>
-  alertsAction<{ owner: OwnerGoal }>({ action: 'goal_set_owner', fleet_id: fleetId, agent_id: agentId, goal, base_revision: baseRevision });
-export const agentNewRun = (fleetId: string, agentId: string) =>
-  alertsAction<{ success: boolean }>({ action: 'agent_new_run', fleet_id: fleetId, agent_id: agentId });
-
-/** Handover quality over a window (Agent detail › Handover quality). Shares are null until there's data. */
-export interface HandoverQuality {
-  handovers: number; scored: number; valuesChecked: number; valuesKept: number;
-  valuesKeptShare: number | null; shareChecked: number | null; coverageMin: number;
-  keptWithLabel: number | null; goalCarriedOver: number | null;
-}
-export const handoverQuality = (fleetId: string, agentId: string, days = 7) =>
-  alertsAction<HandoverQuality>({ action: 'handover_quality', fleet_id: fleetId, agent_id: agentId, days });
-
 // Same refusal handling as alerts; an engine without the action hides the section.
 export const dataSettingsGet = (fleetId: string) => alertsAction<DataSettings>({ action: 'fleet_data_settings_get', fleet_id: fleetId });
 export const dataSettingsSet = (fleetId: string, patch: Partial<DataSettings>) =>

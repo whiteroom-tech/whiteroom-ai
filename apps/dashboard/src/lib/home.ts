@@ -1,12 +1,14 @@
-// Pure helpers for Home (redesign screen 1a/1b): agent status and progress
+// Pure helpers for Home: agent status and progress
 // lines, plain-language activity rows, live-feed rows and today's window.
 // No React, so the wording rules can be unit-tested directly.
 
 import type { AgentState, TagTone } from '@whiteroom/ui';
 import type { AgentHold, AgentInfo, AuditEntry, FleetHourlyDataPoint, FleetReport, ShiftMeasures } from '@/lib/whiteroom/types';
 import { deriveDisplayStatus } from '@/lib/fleet-helpers';
-import { fmtTime, fmtWhen } from '@/lib/format';
+import { fmtDay, fmtTime, fmtWhen, plural, HOUR_MS } from '@/lib/format';
+import { dayKey, startOfDay } from '@/lib/zone-time';
 import { classifyAction, eventModel, prettyToolName, shortArg } from '@/lib/activity';
+import { MODE_LABEL } from '@/lib/vocab';
 
 // ── Agents ───────────────────────────────────────────────────────────────
 
@@ -18,6 +20,13 @@ const STATE_OF: Record<string, AgentState> = {
   stale: 'stale',
   disconnected: 'disconnected',
 };
+
+/** Home's note when some agents were named from their prompt: agents sharing a prompt count as one. Null when none were. */
+export function inferredNameNote(agents: Pick<AgentInfo, 'nameInferred'>[]): string | null {
+  const n = agents.filter((a) => a.nameInferred).length;
+  if (n === 0) return null;
+  return `${n === 1 ? '1 agent has' : `${n} agents have`} no name set, so WhiteRoom named ${plural(n, 'it', 'them')} from ${plural(n, 'its', 'their')} instructions. Agents with the same instructions count as one. Give each agent its own name with the x-whiteroom-agent header.`;
+}
 
 export function agentState(a: Pick<AgentInfo, 'status' | 'minutesRemaining' | 'hold'> & { stale?: boolean; disconnected?: boolean }): AgentState {
   if (a.hold) return a.hold.state;
@@ -38,22 +47,30 @@ export function currentShift(a: AgentInfo): ShiftMeasures | null {
 }
 
 /** "1 task", "5 tasks". */
-export const taskWord = (n: number) => `${n} task${n === 1 ? '' : 's'}`;
+export const taskWord = (n: number) => `${n} ${plural(n, 'task')}`;
 
-/** "Shift 8 · 62 tasks · 9.4 min worked"; "Rest after shift 5 · 31 tasks" while resting; no shift figures without a shift. */
-export function progressLine(a: AgentInfo, state: AgentState = agentState(a)): string {
+/**
+ * The card's run line in parts, so the run number can link to the run and the
+ * table can show just the tasks: "Run #8 · 62 tasks · 9.4 min so far" while
+ * working, "Last run #41 · 5 tasks · waiting for work" otherwise. `tasks` is
+ * null when there's no run yet; `run` too, or when the run has no number.
+ */
+export function runLine(a: AgentInfo, state: AgentState = agentState(a)): { label: string; run: number | null; tasks: string | null; status: string } {
   const shift = currentShift(a);
-  if (!shift) {
-    const last = a.lastShift;
-    if (state === 'resting') return last ? `Rest after shift ${last.watchNumber} · ${taskWord(last.tasksCompleted)}` : 'On a break';
-    const waiting = state === 'paused' || state === 'stopped' ? 'waiting to be resumed' : 'waiting for work';
-    return last ? `Last shift ${last.watchNumber} · ${taskWord(last.tasksCompleted)} · ${waiting}` : `No shift running · ${waiting}`;
-  }
-  const head = `Shift ${shift.watchNumber || 1} · ${taskWord(shift.tasksCompleted)}`;
-  if (state === 'resting') return `Rest after shift ${shift.watchNumber || 1} · ${taskWord(shift.tasksCompleted)}`;
-  if (state === 'idle') return `${head} · waiting for work`;
-  if (state === 'paused' || state === 'stopped') return `${head} · waiting to be resumed`;
-  return `${head} · ${oneDecimal(shift.minutesWorked)} min worked`;
+  const held = state === 'paused' || state === 'stopped';
+  const waiting = held ? 'waiting to be resumed' : 'waiting for work';
+  const busy = state === 'working' || state === 'handover';
+  // A run number of 0 (or none) has no run page to link to: the line is said without it.
+  const num = (n: number | undefined) => (n && n > 0 ? n : null);
+  if (shift && busy) return { label: 'Run', run: num(shift.watchNumber), tasks: taskWord(shift.tasksCompleted), status: `${oneDecimal(shift.minutesWorked)} min so far` };
+  const last = shift ?? a.lastShift;
+  if (!last) return { label: 'No run yet', run: null, tasks: null, status: waiting };
+  return { label: 'Last run', run: num(last.watchNumber), tasks: taskWord(last.tasksCompleted), status: waiting };
+}
+
+/** What follows the run number: "5 tasks · waiting for work". */
+export function runRest(r: ReturnType<typeof runLine>): string {
+  return r.tasks ? `${r.tasks} · ${r.status}` : r.status;
 }
 
 // Needs-you items come first once P2 ships; until then working agents lead.
@@ -67,12 +84,14 @@ export function sortAgents<T extends AgentInfo>(agents: T[]): T[] {
   return [...agents].sort((x, y) => RANK[agentState(x)] - RANK[agentState(y)] || x.agentId.localeCompare(y.agentId));
 }
 
-/** Counts for the strip's "1 resting · 1 idle" sub-caption, most important first. */
+/** Counts for the strip's "1 on hold · 7 waiting for work" sub-caption, most important first. */
 export function stateSummary(agents: AgentInfo[]): string {
-  const order: [AgentState, string][] = [['stale', 'not reporting'], ['disconnected', 'disconnected'], ['handover', 'handing over'], ['resting', 'resting'], ['idle', 'idle']];
-  const counts = new Map<AgentState, number>();
-  agents.forEach((a) => { const s = agentState(a); counts.set(s, (counts.get(s) ?? 0) + 1); });
-  return order.filter(([s]) => counts.get(s)).map(([s, word]) => `${counts.get(s)} ${word}`).join(' · ');
+  const group: Partial<Record<AgentState, string>> = {
+    paused: 'on hold', stopped: 'on hold', stale: 'not reporting', disconnected: 'disconnected', resting: 'waiting for work', idle: 'waiting for work',
+  };
+  const counts = new Map<string, number>();
+  agents.forEach((a) => { const g = group[agentState(a)]; if (g) counts.set(g, (counts.get(g) ?? 0) + 1); });
+  return ['on hold', 'not reporting', 'disconnected', 'waiting for work'].filter((g) => counts.get(g)).map((g) => `${counts.get(g)} ${g}`).join(' · ');
 }
 
 // ── Agent details between fan-outs ───────────────────────────────────────
@@ -166,17 +185,18 @@ export interface ActivityRow {
 }
 
 const TAGS: Record<string, { label: string; tone: TagTone }> = {
-  handover_out: { label: 'Handover', tone: 'ho' },
-  handover_in: { label: 'Handover', tone: 'ho' },
-  handover: { label: 'Handover', tone: 'ho' },
-  self_handover: { label: 'Handover', tone: 'ho' },
+  handover_out: { label: 'Saved progress', tone: 'ho' },
+  handover: { label: 'Saved progress', tone: 'ho' },
+  handover_in: { label: 'Continued', tone: 'ho' },
+  self_handover: { label: 'Smaller context', tone: 'ho' },
   agent_paused: { label: 'Paused', tone: 'warn' },
-  governance_block: { label: 'Blocked', tone: 'muted' },
-  governance_would_block: { label: 'Watch only', tone: 'muted' },
+  governance_block: { label: 'Blocked', tone: 'block' },
+  governance_would_block: { label: MODE_LABEL.watch, tone: 'muted' },
   unnamed_call_refused: { label: 'Refused', tone: 'warn' },
   unclean_stop: { label: 'Gap', tone: 'warn' },
   possible_gap: { label: 'Gap', tone: 'warn' },
 };
+
 
 /** Who an event is about. Handovers can carry only fromAgent / toAgent. */
 export function eventAgent(e: AuditEntry): string {
@@ -188,6 +208,14 @@ export function clock(ts: unknown): string {
   return fmtTime(typeof ts === 'number' ? ts : String(ts ?? ''));
 }
 
+/** "2:15 pm" today, else "Oct 27, 2:15 pm": a feed reaching back days never reads as today. */
+export function feedClock(ts: unknown, now: number = Date.now()): string {
+  const t = typeof ts === 'number' ? ts : String(ts ?? '');
+  const time = fmtTime(t);
+  if (!time || dayKey(new Date(t).getTime()) === dayKey(now)) return time;
+  return `${fmtDay(t, now)}, ${time}`;
+}
+
 /** Epoch ms of an ISO string or epoch-ms timestamp; NaN when unreadable. */
 function epochMs(ts: unknown): number {
   return typeof ts === 'number' ? ts : Date.parse(String(ts ?? ''));
@@ -197,11 +225,14 @@ function epochMs(ts: unknown): number {
  * One fleet event in plain words. Agent ids stay exactly as stored (the
  * shared feed capitalises them; the redesign's copy rules don't).
  */
-export function activityRow(e: AuditEntry, now: number = Date.now()): ActivityRow {
+export function activityRow(e: AuditEntry, now: number = Date.now(), opts: { agentShown?: boolean } = {}): ActivityRow {
   const m = eventModel(e, now);
   // Fleet-level events (WhiteRoom itself) name no agent.
   const subject = m.type === 'governance_rule_changed' ? 'Controls:' : m.who === 'WhiteRoom' ? 'WhiteRoom' : eventAgent(e) || 'An agent';
-  return { key: m.key, time: clock(e.timestamp), text: `${subject} ${m.said}`, tag: TAGS[m.type] };
+  // On a page already about one agent (its page, one of its runs), its own events skip its name: "Finished "fetch_page"".
+  const own = opts.agentShown && subject !== 'Controls:' && subject !== 'WhiteRoom';
+  const text = own ? m.said.charAt(0).toUpperCase() + m.said.slice(1) : `${subject} ${m.said}`;
+  return { key: m.key, time: clock(e.timestamp), text, tag: TAGS[m.type] };
 }
 
 /** Epoch ms of an event; 0 for an unreadable timestamp, so it sorts last instead of breaking the sort. */
@@ -211,23 +242,11 @@ function eventTime(e: AuditEntry): number {
 }
 
 /** The newest `n` events, newest first. An event from before today shows its date, not a time that reads as today's. */
-export function latestActivity(entries: AuditEntry[], n = 4, now: number = Date.now()): ActivityRow[] {
+export function latestActivity(entries: AuditEntry[], n = 4, now: number = Date.now(), opts: { agentShown?: boolean } = {}): ActivityRow[] {
   return [...entries]
     .sort((a, b) => eventTime(b) - eventTime(a))
     .slice(0, n)
-    .map((e) => ({ ...activityRow(e, now), time: fmtWhen(eventTime(e) || '', now) }));
-}
-
-/** The last thing each agent did, for the Agents table's "Last event" column. */
-export function lastEventByAgent(entries: AuditEntry[], now: number = Date.now()): Record<string, { time: string; text: string }> {
-  const out: Record<string, { time: string; text: string; at: number }> = {};
-  for (const e of entries) {
-    const id = eventAgent(e);
-    const at = epochMs(e.timestamp);
-    if (!id || Number.isNaN(at) || (out[id] && out[id].at >= at)) continue;
-    out[id] = { time: fmtWhen(at, now), text: eventModel(e).said, at };
-  }
-  return Object.fromEntries(Object.entries(out).map(([k, v]) => [k, { time: v.time, text: v.text }]));
+    .map((e) => ({ ...activityRow(e, now, opts), time: fmtWhen(eventTime(e) || '', now) }));
 }
 
 // ── Live feed ────────────────────────────────────────────────────────────
@@ -333,13 +352,13 @@ function step(d: { name?: unknown; args?: unknown }): LiveStep {
  * "reply: <text>" and tool work as details [{ name, args }]; earlier results
  * come first, then this step's calls; the first call decides the row's kind.
  */
-export function liveRow(e: AuditEntry): LiveRow {
+export function liveRow(e: AuditEntry, now: number = Date.now()): LiveRow {
   const name = String(e.taskName ?? '');
   const details = Array.isArray(e.details) ? e.details : [];
   // null and '' would read as 0 through Number(); treat them as unknown.
   const rawTokens: unknown = e.tokensUsed;
   const tokens = rawTokens == null || rawTokens === '' || !Number.isFinite(Number(rawTokens)) ? null : Number(rawTokens);
-  const base = { key: String(e.id ?? `${e.timestamp}-${name}`), time: clock(e.timestamp), agent: eventAgent(e), tokens, reply: '' };
+  const base = { key: String(e.id ?? `${e.timestamp}-${name}`), time: feedClock(e.timestamp, now), agent: eventAgent(e), tokens, reply: '' };
   if (/^reply:/i.test(name) && details.length === 0) {
     const reply = decodeEntities(name.replace(/^reply:\s*/i, ''));
     return { ...base, kind: 'reply', summary: `“${reply}”`, calls: [], results: [], reply };
@@ -385,21 +404,39 @@ export function matchesFilter(row: LiveRow, f: LiveFilter): boolean {
 
 // ── Today (UTC) ──────────────────────────────────────────────────────────
 
-function utcMidnight(now: number): number {
-  const d = new Date(now);
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+/**
+ * The hour that holds the viewer's local midnight. Hourly points are whole UTC
+ * hours, so in a half-hour zone (India) "today" starts at the top of that hour,
+ * up to 30 minutes early; whole-hour zones start exactly at midnight.
+ */
+function localTodayStart(now: number): number {
+  return Math.floor(startOfDay(dayKey(now)) / HOUR_MS) * HOUR_MS;
 }
 
-/** Hours to ask for so the window reaches back to 00:00 UTC today. */
-export function hoursSinceUtcMidnight(now: number = Date.now()): number {
-  return Math.max(1, Math.ceil((now - utcMidnight(now)) / 3_600_000));
+/**
+ * Minutes before the viewer's midnight that today's figures can include: 0 in
+ * whole-hour zones, 30 in India, 15 in Nepal. The hour that holds midnight is
+ * counted whole, so a call in it is never dropped and the day is never called
+ * quiet while that hour has calls; Home says so when this is above 0.
+ */
+export function todayLeadMinutes(now: number = Date.now()): number {
+  return Math.round((startOfDay(dayKey(now)) - localTodayStart(now)) / 60_000);
 }
 
-/** Calls and spend since 00:00 UTC, from hourly points; `partial` when some calls have no price on file or were dropped. */
+/** Hours to ask for so the window reaches back to the start of the viewer's today. */
+export function hoursSinceLocalMidnight(now: number = Date.now()): number {
+  return Math.max(1, Math.ceil((now - localTodayStart(now)) / HOUR_MS));
+}
+
+/** Calls and spend since the viewer's midnight, from hourly points; `partial` when some calls have no price on file or were dropped. */
 export function todayTotals(hourly: FleetHourlyDataPoint[], now: number = Date.now()): { calls: number; costUsd: number; partial: boolean } {
-  const midnight = utcMidnight(now);
+  return hourTotals(hourly, localTodayStart(now));
+}
+
+/** Calls and spend in hourly points from `since` on. */
+export function hourTotals(hourly: FleetHourlyDataPoint[], since = 0): { calls: number; costUsd: number; partial: boolean } {
   return hourly
-    .filter((h) => Date.parse(h.hour) >= midnight)
+    .filter((h) => Date.parse(h.hour) >= since)
     .reduce<{ calls: number; costUsd: number; partial: boolean }>((t, h) => ({ calls: t.calls + (h.calls || 0), costUsd: t.costUsd + (h.costMicros || 0) / 1e6, partial: t.partial || (h.unpricedAttempts ?? 0) > 0 || (h.droppedAttempts ?? 0) > 0 }), { calls: 0, costUsd: 0, partial: false });
 }
 
@@ -441,8 +478,8 @@ export function savedByWhiteRoomHint(s: SavedByWhiteRoom): string {
   const cents = (n: number) => Math.round(n * 100);
   const cacheCents = s.cache == null ? 0 : Math.max(0, cents(s.usd) - cents(s.handover));
   const parts = cacheCents === 0
-    ? `${usd(s.handover)} from smaller handovers`
-    : `${usd(s.handover)} from smaller handovers + ${usd(cacheCents / 100)} from caching WhiteRoom added`;
+    ? `${usd(s.handover)} from smaller context`
+    : `${usd(s.handover)} from smaller context + ${usd(cacheCents / 100)} from caching WhiteRoom added`;
   const own = s.agentCache != null && s.agentCache > 0 ? ` Your agents' own caching saved a further ${usd(s.agentCache)}, which isn't counted.` : '';
   return `Saved by WhiteRoom: est. ${usd(s.usd)}${plus} = ${parts}, across everything stored.${own} Performance shows the same sum for the last 24h, 3d or 7d.${s.partial ? ' "+" means some tokens had no price on file.' : ''}`;
 }

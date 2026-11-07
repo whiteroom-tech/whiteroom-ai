@@ -7,6 +7,7 @@ import { Banner, Button, Panel, SegmentedControl, SelectChip, FONT_MONO } from '
 import { auditLog, isAuthError } from '@/lib/whiteroom/client';
 import { getCutoff, localDayFromTs, partialCoverageSince } from '@/lib/analytics-metrics';
 import { fmtTime } from '@/lib/format';
+import { formatDayKey } from '@/lib/zone-time';
 import { ROUTES } from '@/lib/routes';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { usePoll } from '@/hooks/usePoll';
@@ -30,7 +31,7 @@ const RANGE_LABEL: Record<AnalyticsRange, string> = { today: 'Today', '7d': '7D'
 function rangeDescription(range: AnalyticsRange, nowMs: number): string {
   if (range === 'recent') return 'all loaded history';
   if (range === 'today') return 'today, since midnight';
-  const since = new Date(getCutoff(range, nowMs) + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  const since = formatDayKey(getCutoff(range, nowMs), { weekday: 'short', month: 'short', day: 'numeric' });
   return `${range === '7d' ? 7 : 30} calendar days, since ${since}`;
 }
 
@@ -150,7 +151,7 @@ export function EventFeedRuns() {
         {partialSince && (
           <Banner variant="warn">Partial range: history is only kept from {partialSince}, so this range and its export start there.</Banner>
         )}
-        <p style={{ margin: 0, fontSize: 12.5, color: 'var(--tx2)' }}>
+        <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
           Totals, the daily savings chart and the per-agent table are on <Link href={ROUTES.performance} className="wr-link">Performance &rarr;</Link>
         </p>
 
@@ -161,7 +162,7 @@ export function EventFeedRuns() {
           bodyPadding={0}
           actions={
             <>
-              {lastUpdated !== null && <span style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: 'var(--tx2)', whiteSpace: 'nowrap' }}>Updated {fmtTime(lastUpdated)}</span>}
+              {lastUpdated !== null && <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', whiteSpace: 'nowrap' }}>Updated {fmtTime(lastUpdated)}</span>}
               <SelectChip<FeedVariant> label="Feed view" value={feedVariant} onChange={setFeedVariant} options={FEED_VARIANTS} />
               <Button size={28} aria-pressed={feedTechnical} onClick={() => setFeedTechnical((t) => !t)} title="Show raw event types and tool arguments">Technical</Button>
             </>

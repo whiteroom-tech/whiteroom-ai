@@ -10,4 +10,8 @@ export interface ProviderInfo { label: string; keyVar: string; header: "x-api-ke
 export const CATALOG = JSON.parse(readFileSync(new URL("../../contract/catalog.json", import.meta.url), "utf8")) as {
   taskNames: Record<string, string>; disclaimer: string; providers: Record<string, ProviderInfo>; keyRefusals: Record<string, string>; runCallCap: number;
   statusLabels: Record<"passed" | "failed" | "not_tested" | "unsupported" | "error", string>; verdictLabels: Record<"passed" | "not_passed" | "incomplete", string>;
+  /** The seven pre-flight rows: members are check-id prefixes ("a." takes every agent check under it; "ctl.spend_cap" its rules). */
+  rows: Array<{ id: string; name: string; group: string; members: string[] }>;
+  rowStatusLabels: Record<"passed" | "failed" | "not_set_up" | "not_checked", string>;
+  controls: { modes: Record<"enforce" | "watch" | "off", string> };
 };

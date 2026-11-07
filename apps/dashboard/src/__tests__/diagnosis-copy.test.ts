@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
+import { timeAgo } from '@/lib/format';
 import {
   findingSentence, sentenceText, costLine, notMeasuredShort, howtoParagraphs, limitationText, TITLES, DIAGNOSIS_DETECTORS,
 } from '@/lib/diagnosis/copy';
-import { statusLine, agentsWithOpenFindings, checkRows, checkTitle, humanizeDetector, setAsideLabel, checksOpenByDefault, shouldRefetchOnFocus, relativeTime, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader, diagnosisSummary } from '@/lib/diagnosis/model';
+import { statusLine, agentsWithOpenFindings, checkRows, checkTitle, humanizeDetector, setAsideLabel, checksOpenByDefault, shouldRefetchOnFocus, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader, diagnosisSummary } from '@/lib/diagnosis/model';
 import type { DiagnosisDetectorId, DiagnosisMeasures, FleetDiagnosis, DiagnosisFinding } from '@/lib/whiteroom/types';
 
 const MEASURES: Record<DiagnosisDetectorId, DiagnosisMeasures> = {
@@ -32,7 +33,7 @@ describe('finding sentences', () => {
 
   it('churn hedges the cause and mentions the raised limit only when raised', () => {
     const t = sentenceText(findingSentence('review_handover_churn', MEASURES.review_handover_churn));
-    expect(t).toContain('This often means');
+    expect(t).toContain('likely');
     expect(t).toContain('4×');
     expect(sentenceText(findingSentence('review_handover_churn', { ...MEASURES.review_handover_churn, limitMultiplier: 1 }))).not.toContain('raised');
   });
@@ -40,23 +41,23 @@ describe('finding sentences', () => {
   it('churn from repeated work says so, printing only measured values', () => {
     const m = { ...MEASURES.review_handover_churn, shortWatches: 0, longestStreak: 0, medianCallsPerWatch: 7, repeatWatches: 3, longestRepeatStreak: 2, repeatedSharePct: 81, limitMultiplier: 1.5 };
     const t = sentenceText(findingSentence('review_handover_churn', m));
-    expect(t).toContain('Redid 81% of its earlier tool calls, 2 shifts in a row.');
+    expect(t).toContain('Redid 81% of the work it had already done, 2 runs in a row.');
     expect(t).toContain('1.5×');
     for (const n of numbersIn(t)) expect(measureValues(m)).toContain(n);
     // A short-shift streak still leads when both fired.
-    expect(sentenceText(findingSentence('review_handover_churn', { ...m, longestStreak: 3 }))).toContain('Handed over after');
+    expect(sentenceText(findingSentence('review_handover_churn', { ...m, longestStreak: 3 }))).toContain('Its last 3 runs lasted only');
   });
 
   it('churn thresholds: repeat leads from 2 in a row, short shifts from 3', () => {
     const lead = (x: Record<string, number>) => sentenceText(findingSentence('review_handover_churn', { ...MEASURES.review_handover_churn, ...x }));
-    expect(lead({ longestRepeatStreak: 1, repeatedSharePct: 60, longestStreak: 0 })).toContain('Handed over after');
+    expect(lead({ longestRepeatStreak: 1, repeatedSharePct: 60, longestStreak: 0 })).toContain('Its runs lasted only');
     expect(lead({ longestRepeatStreak: 2, repeatedSharePct: 60, longestStreak: 2 })).toContain('Redid 60%');
-    expect(lead({ longestRepeatStreak: 2, repeatedSharePct: 60, longestStreak: 3 })).toContain('Handed over after');
+    expect(lead({ longestRepeatStreak: 2, repeatedSharePct: 60, longestStreak: 3 })).toContain('Its last 3 runs lasted only');
   });
 
   it('older churn findings without repeat measures read as before', () => {
     expect(MEASURES.review_handover_churn).not.toHaveProperty('longestRepeatStreak');
-    expect(sentenceText(findingSentence('review_handover_churn', MEASURES.review_handover_churn))).toMatch(/^Handed over after 1\.5 calls on average, 20 shifts in a row\./);
+    expect(sentenceText(findingSentence('review_handover_churn', MEASURES.review_handover_churn))).toMatch(/^Its last 20 runs lasted only 1\.5 calls each on average\./);
   });
 
   it('tool silence mentions several quiet tools only when there are several', () => {
@@ -84,7 +85,7 @@ describe('cost, limitations, reasons, how-to', () => {
   it('not-measured reasons read as short clauses, using the engine\'s numbers', () => {
     // The engine's exact wording (diagnosis/detectors.ts and run.ts).
     const cases: Array<[string, string, string]> = [
-      ['few_watches', 'Needs 5 watches with watch numbers; has 3', 'needs 2 more shifts'],
+      ['few_watches', 'Needs 5 watches with watch numbers; has 3', 'needs 2 more runs'],
       ['short_history', 'Needs 14 days of history; has 6', 'starts in about 8 days'],
       ['low_coverage', 'Tool arguments captured for 40% of calls (streaming or older data)', 'can only see 40% of its tool calls'],
       ['few_results', 'Needs 20 tool results; has 7', 'needs 13 more tool results'],
@@ -104,7 +105,7 @@ describe('cost, limitations, reasons, how-to', () => {
   it("if the engine's wording changes, its own text is shown, never a made-up 0", () => {
     expect(notMeasuredShort('few_watches', 'Needs more watches.')).toBe('needs more watches');
     // Singular, and the usual target when the engine doesn't say "Needs N".
-    expect(notMeasuredShort('few_watches', 'Needs 5 watches; has 4')).toBe('needs 1 more shift');
+    expect(notMeasuredShort('few_watches', 'Needs 5 watches; has 4')).toBe('needs 1 more run');
     expect(notMeasuredShort('short_history', 'Short history; has 13')).toBe('starts in about 1 day');
     expect(notMeasuredShort('few_requests', 'The busiest had 60')).toBe('needs 40 more calls to one model in a day');
     // Nothing left to count: the engine's own words, not a made-up "1 more".
@@ -116,19 +117,38 @@ describe('cost, limitations, reasons, how-to', () => {
   it('counts of one read in the singular', () => {
     const text = (d: DiagnosisDetectorId, m: DiagnosisMeasures) => sentenceText(findingSentence(d, m));
     expect(text('review_tool_loops', { toolName: 'search', maxRepeats: 1, worstWatch: 2, watchesAffected: 1 }))
-      .toBe('search repeated 1 time in shift 2, and in 1 shift this week.');
-    expect(text('review_spend_outliers', { ...MEASURES.review_spend_outliers, flaggedDays: 1 })).toContain('1 day this week was over 1.5×.');
+      .toBe('search ran with the same request 1 time in run 2, and this happened in 1 run this week. The agent may be stuck in a loop.');
+    expect(text('review_spend_outliers', { ...MEASURES.review_spend_outliers, flaggedDays: 1 })).toContain('1 day this week was over 1.5× normal.');
     expect(text('review_tool_errors', { ...MEASURES.review_tool_errors, toolErrors: 1 })).toContain('failed 1 time this week');
-    expect(text('review_handover_churn', { ...MEASURES.review_handover_churn, medianCallsPerWatch: 1, longestStreak: 1 })).toContain('after 1 call on average, 1 shift in a row');
+    expect(text('review_handover_churn', { ...MEASURES.review_handover_churn, medianCallsPerWatch: 1, longestStreak: 1 })).toContain('Its runs lasted only 1 call each on average.');
     expect(text('review_tool_silence', { ...MEASURES.review_tool_silence, recentCalls: 1 })).toContain('(1 call)');
     expect(text('review_provider_failures', { ...MEASURES.review_provider_failures, otherCohorts: 1 })).toContain('1 other model is also failing.');
     expect(text('review_provider_failures', { ...MEASURES.review_provider_failures, otherCohorts: 2 })).toContain('2 other models are also failing.');
   });
 
+  it('the churn how-to only says work was done twice when it was', () => {
+    const repeat = { longestRepeatStreak: 3, repeatedSharePct: 70, longestStreak: 1 };
+    const short = { medianCallsPerWatch: 2, longestStreak: 4 };
+    expect(howtoParagraphs('handover_churn', repeat).at(-1)).toBe('Open the calls to see what was done twice.');
+    expect(howtoParagraphs('handover_churn', short).at(-1)).toBe('Open the calls to see what each run did.');
+  });
+
+  it('plain-language copy for provider, silence and how-to text', () => {
+    const prov = sentenceText(findingSentence('review_provider_failures', MEASURES.review_provider_failures));
+    expect(prov).toContain('This usually comes from the AI provider, not your agent.');
+    expect(sentenceText(findingSentence('review_provider_failures', {}))).toBe('Calls to the AI provider are failing. This usually comes from the provider, not your agent.');
+    expect(sentenceText(findingSentence('review_tool_silence', MEASURES.review_tool_silence))).toContain('so it may be stuck and not finishing its work.');
+    expect(sentenceText(findingSentence('review_tool_errors', MEASURES.review_tool_errors))).toContain('of all the agent’s tool calls returned an error');
+    const churn = howtoParagraphs('handover_churn', {});
+    expect(churn).toHaveLength(3);
+    expect(churn.join(' ')).not.toMatch(/raw HTML|page long lists/);
+    expect(howtoParagraphs('provider_failures', {})[0]).not.toMatch(/backoff|status codes/);
+  });
+
   it('how-to text only claims what the evidence shows', () => {
     const all = ['handover_churn', 'tool_errors', 'tool_silence', 'provider_failures'].flatMap((h) => howtoParagraphs(h, { toolName: 'fetch_page' })).join(' ');
     expect(all).not.toMatch(/most text|which pages fail and how|reopens|checks whether the fix holds/i);
-    expect(howtoParagraphs('tool_errors', { toolName: 'fetch_page' })[0]).toBe('See which calls reported a fetch_page error. Check your agent’s logs for the cause.');
+    expect(howtoParagraphs('tool_errors', { toolName: 'fetch_page' })[0]).toBe('Open the calls to see when fetch_page failed. Your agent’s logs will show why.');
   });
 });
 
@@ -215,7 +235,7 @@ describe('health check rows', () => {
       { tone: 'problem', title: 'A tool keeps failing' },
       { tone: 'fine', title: 'Repeating the same call' },
       { tone: 'waiting', title: 'Unusually expensive days', note: 'starts in about 8 days' },
-      { tone: 'set-aside', title: 'Handing over too often', note: 'snoozed' },
+      { tone: 'set-aside', title: 'Starting over too often', note: 'snoozed' },
     ] }]);
     // Each set-aside status by its own name.
     expect(['snoozed', 'dismissed', 'reported_implemented', 'resolved', 'evaluating'].map(setAsideLabel)).toEqual(['snoozed', 'dismissed', 'marked fixed', 'stopped happening', 'evaluating']);
@@ -272,8 +292,8 @@ describe('refetch on focus', () => {
     expect(g.startRead()).not.toBeNull(); // reset also ended the check
   });
   it('relative time', () => {
-    expect(relativeTime(new Date(NOW - 20_000).toISOString(), NOW)).toBe('just now');
-    expect(relativeTime(new Date(NOW - 3 * 3600_000).toISOString(), NOW)).toBe('3 hours ago');
+    expect(timeAgo(new Date(NOW - 20_000).toISOString(), NOW)).toBe('just now');
+    expect(timeAgo(new Date(NOW - 3 * 3600_000).toISOString(), NOW)).toBe('3 hours ago');
   });
 });
 

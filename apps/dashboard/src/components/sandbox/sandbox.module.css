@@ -2,7 +2,7 @@
   background: var(--bg);
   color: var(--tx);
   font-family: 'Inter', system-ui, sans-serif;
-  font-size: 14.5px;
+  font-size: var(--fs-md);
   display: grid;
   grid-template-columns: 212px 1fr;
   grid-template-rows: minmax(0, 1fr);

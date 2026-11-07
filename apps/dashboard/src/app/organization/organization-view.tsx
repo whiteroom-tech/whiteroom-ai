@@ -57,7 +57,7 @@ export function OrganizationView({
         <div style={{ maxWidth: 1120, margin: '0 auto', padding: '24px 24px 80px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 22 }}>
             <div style={{ minWidth: 0 }}>
-              <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 24, fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 'var(--fs-xl)', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
                 {org?.name ?? 'Your organization'}
                 {membership && <Pill tone={membership.role === 'owner' ? 'ho' : 'muted'}>{ROLE_LABELS[membership.role]}</Pill>}
               </h2>
@@ -71,7 +71,7 @@ export function OrganizationView({
 
             {!org && invitations.length === 0 && (
               <Panel title="You're not part of an organization">
-                <p style={{ fontSize: 13.5, color: 'var(--tx2)', margin: 0, maxWidth: '64ch' }}>
+                <p style={{ fontSize: 'var(--fs-md)', color: 'var(--tx2)', margin: 0, maxWidth: '64ch' }}>
                   Organizations let an enterprise team see every member&apos;s agent fleets in one place. They&apos;re set up
                   by WhiteRoom for enterprise customers — if your company has one, ask its owner to invite you. To start
                   one, contact <a href="mailto:sales@whiteroom.tech" style={{ color: 'var(--brand)' }}>sales@whiteroom.tech</a>.
@@ -126,10 +126,10 @@ function InvitationCard({ invitation, alreadyMember }: { invitation: PendingInvi
       }}
     >
       <div style={{ minWidth: 0, maxWidth: '70ch' }}>
-        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 15.5, fontWeight: 700 }}>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 'var(--fs-md)', fontWeight: 700 }}>
           You&apos;re invited to join {invitation.orgName} as {ROLE_LABELS[invitation.role].toLowerCase()}
         </div>
-        <p style={{ fontSize: 13, color: 'var(--tx2)', margin: '5px 0 0' }}>
+        <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '5px 0 0' }}>
           {invitation.invitedBy ? `${invitation.invitedBy} invited you. ` : ''}
           Joining lets the organization&apos;s owners and admins see your agent fleets and their usage.
           {alreadyMember && ' You’ll need to leave your current organization first.'}

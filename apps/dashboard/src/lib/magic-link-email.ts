@@ -1,3 +1,6 @@
+import { blockedMessage, type CloseReason } from '@/lib/closing-shared';
+import { AUDIT_KEPT } from '@/lib/plans';
+
 // Table-based and fully inline-styled on purpose: the major email clients drop
 // <style> blocks and have no flexbox, so the layout has to survive on
 // attributes and inline CSS alone.
@@ -84,4 +87,53 @@ export function emailChangeEmail(url: string, currentEmail: string): { html: str
     url,
     footer: "If you didn't request this, you can ignore this email — nothing will change.",
   });
+}
+
+/**
+ * The email that starts a 14-day closing window (account deleted, or plan
+ * lapsed). Says what happens and when, never how WhiteRoom does it.
+ */
+export function accountClosingEmail(
+  reason: CloseReason,
+  date: string,
+  settingsUrl: string,
+  /** A deletion whose account goes later than its fleet closes: that later date. */
+  removedOn?: string,
+  /** The fleet had already closed when the deletion started. */
+  fleetClosed = false,
+): { subject: string; html: string; text: string } {
+  const email = reason === 'deleted'
+    ? transactionalEmail({
+        heading: 'Your account will be deleted',
+        body: fleetClosed && removedOn
+          ? `Your fleet is already closed and your WhiteRoom fleet key no longer works. Your account is deleted on ${removedOn}. Until then you can download your data in Settings. The audit trail is kept for ${AUDIT_KEPT}.`
+          : removedOn
+          ? `Your fleet keeps working until ${date}. Then it closes and your WhiteRoom fleet key stops working. Your account is deleted on ${removedOn}. Until then you can download your data or cancel in Settings. The audit trail is kept for ${AUDIT_KEPT}.`
+          : `Your fleet keeps working until ${date}. Then it closes: your WhiteRoom fleet key stops working and your account is deleted. Until then you can download your data or cancel in Settings. The audit trail is kept for ${AUDIT_KEPT}.`,
+        cta: 'Open Settings',
+        url: settingsUrl,
+        footer: "If you didn't ask for this, cancel the deletion in Settings and sign out everywhere.",
+      })
+    : transactionalEmail({
+        heading: 'Your WhiteRoom plan has ended',
+        body: `Your fleet keeps working until ${date}. Then it closes and your WhiteRoom fleet key stops working. Choose a plan before then to keep it, or download your data in Settings. The audit trail is kept for ${AUDIT_KEPT}.`,
+        cta: 'Choose a plan',
+        url: settingsUrl,
+        footer: 'Choosing a plan before that date keeps everything as it is.',
+      });
+  return { subject: reason === 'deleted' ? 'Your WhiteRoom account will be deleted' : 'Your WhiteRoom plan has ended', ...email };
+}
+
+/** Sent once when an account's deletion window ends but something stops the deletion. */
+export function deletionBlockedEmail(why: string, settingsUrl: string): { subject: string; html: string; text: string } {
+  return {
+    subject: "Your WhiteRoom account wasn't deleted yet",
+    ...transactionalEmail({
+      heading: "Your account wasn't deleted yet",
+      body: blockedMessage(why),
+      cta: 'Open Settings',
+      url: settingsUrl,
+      footer: 'Fix it or keep your account from Settings.',
+    }),
+  };
 }

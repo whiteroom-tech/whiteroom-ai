@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { sessionCookieName } from '@/lib/auth-cookies';
 import { PATH_HEADER, isAdminPath } from '@/lib/callback-url';
 import { NONCE_HEADER, scriptPolicy } from '@/lib/csp';
 import { LEGACY_REDIRECTS, ROUTES, isUnder } from '@/lib/routes';
@@ -148,11 +149,12 @@ export function proxy(request: NextRequest) {
 
   if (!SESSION_PUBLIC_UNDER_SETTINGS.has(pathname) &&
       SESSION_PROTECTED.some((p) => isUnder(pathname, p))) {
-    const cookie = request.cookies.get('__Secure-authjs.session-token') ??
-                   request.cookies.get('authjs.session-token');
+    const cookie = request.cookies.get(sessionCookieName(true)) ??
+                   request.cookies.get(sessionCookieName(false));
     if (!cookie?.value) {
       const signIn = new URL('/sign-in', request.url);
-      signIn.searchParams.set('callbackUrl', pathname);
+      // With the query, so a link to a rule, filter or event opens on it after sign-in.
+      signIn.searchParams.set('callbackUrl', pathname + request.nextUrl.search);
       return NextResponse.redirect(signIn);
     }
   }

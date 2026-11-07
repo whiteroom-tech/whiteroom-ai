@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
-import { getAccountOverview } from '@/lib/account';
+import { getAccountClosing, getAccountOverview } from '@/lib/account';
 import { getEntitlement } from '@/lib/entitlements';
 import { purchasablePlans } from '@/lib/plans';
 import { SettingsView } from './settings-view';
@@ -20,10 +20,11 @@ export default async function SettingsPage({
   const session = await auth();
   if (!session?.user?.id) redirect('/sign-in');
 
-  const [account, entitlement, params] = await Promise.all([
+  const [account, entitlement, params, closing] = await Promise.all([
     getAccountOverview(),
     getEntitlement(),
     searchParams,
+    getAccountClosing(),
   ]);
 
   return (
@@ -32,6 +33,7 @@ export default async function SettingsPage({
       entitlement={entitlement}
       purchasablePlans={purchasablePlans()}
       billingResult={params.billing ?? null}
+      closing={closing}
     />
   );
 }

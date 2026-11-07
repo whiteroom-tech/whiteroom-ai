@@ -120,6 +120,13 @@ describe('storeProviderKey payload', () => {
       llm_endpoint: 'https://bedrock-mantle.eu-west-1.api.aws/anthropic',
       provider: 'bedrock-mantle',
     });
+    expect(body).not.toHaveProperty('bound_agent');
+  });
+
+  it('sends bound_agent only when the key is for one agent', async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ success: true, proxyUrl: `${PROXY_ORIGIN}/sk-wr-x`, agentId: 'billing agent' }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    await storeProviderKey({ fleetId: 'f', apiKey: 'sk-wr-test', fleetToken: 'wr_test' }, 'sk-ant-key-1234', undefined, undefined, 'billing agent');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject({ action: 'store_key', bound_agent: 'billing agent' });
   });
 });
 

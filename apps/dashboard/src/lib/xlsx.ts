@@ -1,5 +1,6 @@
 // A minimal .xlsx writer: stored (uncompressed) ZIP plus SpreadsheetML, enough
 // for plain tables of text and numbers. No dependency, runs in the browser.
+import { saveBlob } from '@/lib/download';
 
 let crcTable: number[] | null = null;
 function crc32(bytes: Uint8Array): number {
@@ -66,6 +67,5 @@ export function buildWorkbook(sheets: Sheet[]): Uint8Array {
 export function downloadWorkbook(bytes: Uint8Array, filename: string): void {
   const ab = new ArrayBuffer(bytes.byteLength); new Uint8Array(ab).set(bytes);
   const blob = new Blob([ab], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href);
+  saveBlob(blob, filename);
 }
