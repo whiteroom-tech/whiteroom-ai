@@ -70,6 +70,8 @@ export interface CheckPart {
   id: 'rate_limit_wait' | 'test_block';
   status: CheckStatus;
   detail: string;
+  /** Not checked because the agent went quiet after a block, the 529 or the stop: it may have crashed. Absent from older engines. */
+  notProven?: true;
 }
 
 export interface CheckResult {
@@ -77,6 +79,7 @@ export interface CheckResult {
   label: string;
   status: CheckStatus;
   detail: string;
+  notProven?: true;
 }
 
 export interface CheckRule {
@@ -133,8 +136,11 @@ function probesOf(v: unknown): RuleProbe[] | undefined {
 
 function partsOf(v: unknown): CheckPart[] | undefined {
   if (!Array.isArray(v)) return undefined;
-  return v.flatMap((p): CheckPart[] => (isObj(p) && oneOf(PART_IDS, p.id) && oneOf(CHECK_STATUSES, p.status) ? [{ id: p.id, status: p.status, detail: text(p.detail) }] : []));
+  return v.flatMap((p): CheckPart[] => (isObj(p) && oneOf(PART_IDS, p.id) && oneOf(CHECK_STATUSES, p.status) ? [{ id: p.id, status: p.status, detail: text(p.detail), ...notProvenOf(p) }] : []));
 }
+
+/** The engine's notProven flag, kept only on a not-checked result. */
+const notProvenOf = (c: Record<string, unknown> | undefined) => (c?.notProven === true && c.status === 'not_checked' ? { notProven: true as const } : {});
 
 function streamingOf(v: unknown): CheckState['streaming'] {
   if (!isObj(v)) return undefined;
@@ -159,6 +165,7 @@ export function checkStateOf(data: unknown): CheckState | null {
       label: c && str(c.label, 80) ? c.label : CHECK_NAMES[id],
       status: c && oneOf(CHECK_STATUSES, c.status) ? c.status : 'pending',
       detail: text(c?.detail),
+      ...notProvenOf(c),
     };
   });
   const rules = (Array.isArray(data.rules) ? data.rules : []).slice(0, 50).flatMap((r): CheckRule[] => {

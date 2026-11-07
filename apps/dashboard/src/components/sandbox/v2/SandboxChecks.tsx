@@ -590,9 +590,9 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
   </>;
 }
 
-/** Each row's mark, bold (mockup Rev 3): ✓ passed or partly, ✕ didn't pass, – the rest. */
+/** Each row's mark, bold (mockup Rev 3): ✓ passed or partly, ✕ didn't pass, ? not proven, – the rest. */
 const ROW_MARK: Record<SandboxRow['state'], { text: string; cls: string }> = {
-  passed: { text: '✓', cls: 'dOk' }, partly: { text: '✓', cls: 'dOk' }, failed: { text: '✕', cls: 'dBad' },
+  passed: { text: '✓', cls: 'dOk' }, partly: { text: '✓', cls: 'dOk' }, failed: { text: '✕', cls: 'dBad' }, not_proven: { text: '?', cls: 'dWarn' },
   not_checked: { text: '–', cls: 'dSkip' }, not_run_yet: { text: '–', cls: 'dSkip' }, not_set_up: { text: '–', cls: 'dSkip' },
 };
 

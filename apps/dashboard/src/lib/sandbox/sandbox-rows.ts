@@ -21,7 +21,8 @@ export interface BoundPractice {
   checks: Pick<PracticeCheck, 'id' | 'status' | 'summary' | 'fix' | 'label'>[];
 }
 
-export type RowState = 'failed' | 'not_checked' | 'not_run_yet' | 'passed' | 'partly' | 'not_set_up';
+/** not_proven: the agent went quiet after a block, the 529 or the stop, so whether it coped is unknown. */
+export type RowState = 'failed' | 'not_proven' | 'not_checked' | 'not_run_yet' | 'passed' | 'partly' | 'not_set_up';
 
 export interface RowPart {
   /** "Here", "Practice", "Your rule", "Your agent". */
@@ -95,9 +96,10 @@ const RULE_ROWS = [
 /** Our fix for an early retry after a 429. */
 const WAIT_FIX = 'Wait as long as the rate limit’s Retry-After says before retrying.';
 
-/** A live result as a part: passed, failed, or (pending, not triggered, not reached) not checked. */
-const partState = (c: CheckResult | CheckPart | undefined): 'passed' | 'failed' | 'not_checked' =>
-  c?.status === 'passed' ? 'passed' : c?.status === 'failed' ? 'failed' : 'not_checked';
+type LiveState = 'passed' | 'failed' | 'not_proven' | 'not_checked';
+/** A live result as a part: passed, failed, not proven, or (pending, not triggered, not reached) not checked. */
+const partState = (c: CheckResult | CheckPart | undefined): LiveState =>
+  c?.status === 'passed' ? 'passed' : c?.status === 'failed' ? 'failed' : c?.notProven ? 'not_proven' : 'not_checked';
 
 /** A live result's text: a failure without the engine's own fix, else its detail, else not reached. */
 const liveText = (c: CheckResult | CheckPart | undefined) => (c?.status === 'failed' ? failText(c.detail) : c?.detail || NOT_REACHED);
@@ -181,7 +183,7 @@ function ruleLine(set: RuleProbe[], limits: RowLimits): string {
 export type RowLimits = Partial<Record<string, string>>;
 
 /** `testBlock`: the check's own test block decided it (not a rule row, and not "not reached"). */
-type Coped = { status: 'passed' | 'failed' | 'not_checked'; text: string; row: string | null; testBlock?: true };
+type Coped = { status: LiveState; text: string; row: string | null; testBlock?: true };
 
 /**
  * How the agent coped with a refusal, tested once for every rule row: the
@@ -194,7 +196,7 @@ function copes(state: CheckState): Coped {
   // Which row's block was tested: its failure, or a pass the engine words as a block. Text matching is the cheap way to tell (engine sandbox-check.ts starts it with BLOCKED_A_CALL).
   const tested = RULE_ROWS.find((r) => {
     const c = state.checks.find((x) => x.id === r.check);
-    return c && (c.status === 'failed' || (c.status === 'passed' && c.detail.startsWith(BLOCKED_A_CALL)));
+    return c && (c.status === 'failed' || c.notProven || (c.status === 'passed' && c.detail.startsWith(BLOCKED_A_CALL)));
   });
   if (tested) {
     const c = state.checks.find((x) => x.id === tested.check)!;
@@ -203,10 +205,11 @@ function copes(state: CheckState): Coped {
   return { status: 'not_checked', text: NOT_REACHED, row: null };
 }
 
-/** A row's state from its own parts: Didn't pass > Not checked > Not run yet > Passed (§7). */
+/** A row's state from its own parts: Didn't pass > Not proven > Not checked > Not run yet > Passed (§7). */
 function precedence(all: RowPart[]): RowState {
   const parts = all.filter((p) => !p.seeRow);
   if (parts.some((p) => p.state === 'failed')) return 'failed';
+  if (parts.some((p) => p.state === 'not_proven')) return 'not_proven';
   if (parts.some((p) => p.state === 'not_checked')) return 'not_checked';
   if (parts.some((p) => p.state === 'not_run_yet')) return 'not_run_yet';
   return 'passed';
@@ -318,7 +321,8 @@ export function sandboxRows(state: CheckState, practice?: BoundPractice, limits:
   // The same words once: an error and a wait cut short by one cause (a restart) say it once, not twice.
   const here = [...new Set([peShort, waitShort].filter(Boolean))].join(' · ');
   const line3 = peState === 'failed' ? 'Retried a provider error too fast.' : waitState === 'failed' ? 'Called again too soon after a rate limit.' : '';
-  const hereState: RowPart['state'] = peState === 'failed' || waitState === 'failed' ? 'failed' : peState === 'not_checked' || waitState === 'not_checked' ? 'not_checked' : 'passed';
+  const hereState: RowPart['state'] = peState === 'failed' || waitState === 'failed' ? 'failed' : peState === 'not_proven' ? 'not_proven'
+    : peState === 'not_checked' || waitState === 'not_checked' ? 'not_checked' : 'passed';
   const prac3 = practicePart(practice, ['c.timeout', 'c.keeps_failing']);
   const p3: RowPart[] = [{ label: 'Here', text: here, state: hereState }, prac3.part];
   // Its live part checked and passed, its practice part not run yet: partly checked, as row 02 in a quick test.
@@ -340,7 +344,7 @@ export function sandboxRows(state: CheckState, practice?: BoundPractice, limits:
 /** The headline's counts: checked means Passed, Partly checked or Didn't pass (§7). */
 export function rowCounts(rows: SandboxRow[]) {
   const count = (...s: RowState[]) => rows.filter((r) => s.includes(r.state)).length;
-  return { fix: count('failed'), checked: count('passed', 'partly', 'failed'), practice: count('not_run_yet'), notSetUp: count('not_set_up'), total: rows.length };
+  return { fix: count('failed'), checked: count('passed', 'partly', 'failed'), notProven: count('not_proven'), practice: count('not_run_yet'), notSetUp: count('not_set_up'), total: rows.length };
 }
 
 /** "1 thing to fix before going live" / "Nothing to fix", and "6 of 8 checked · 2 need practice tasks · 1 not set up". */
@@ -349,15 +353,15 @@ export function rowsHeadline(rows: SandboxRow[]): { headline: string; sub: strin
   // Nothing to fix carries its count in the headline (spec T19, mockup Rev 3: "Nothing to fix · 8 of 8 checked"); a fix leaves it to the line under.
   const count = `${c.checked} of ${c.total} checked`;
   const headline = c.fix ? `${plural(c.fix, 'thing', 'things')} to fix before going live` : c.checked ? `Nothing to fix · ${count}` : 'Nothing was checked this time';
-  const sub = [!c.fix && c.checked ? null : count, c.practice && `${c.practice} need practice tasks`, c.notSetUp && `${c.notSetUp} not set up`].filter(Boolean).join(' · ');
+  const sub = [!c.fix && c.checked ? null : count, c.notProven && `${c.notProven} not proven`, c.practice && `${c.practice} need practice tasks`, c.notSetUp && `${c.notSetUp} not set up`].filter(Boolean).join(' · ');
   // Green only when nothing failed and nothing that was tried went unchecked: rows for practice tasks or with no rule don't hold it back.
-  const clean = !c.fix && c.checked > 0 && !rows.some((r) => r.state === 'not_checked');
+  const clean = !c.fix && c.checked > 0 && !rows.some((r) => r.state === 'not_checked' || r.state === 'not_proven');
   return { headline, sub, tone: c.fix ? 'warn' : clean ? 'pass' : 'neutral' };
 }
 
 /** What each state is called, on the page (for screen readers) and in Copy summary. */
 export const STATE_WORDS: Record<RowState, string> = {
-  failed: 'Didn’t pass', not_checked: 'Not checked', not_run_yet: 'Not run yet', passed: 'Passed', partly: 'Partly checked', not_set_up: 'Not set up',
+  failed: 'Didn’t pass', not_proven: 'Not proven', not_checked: 'Not checked', not_run_yet: 'Not run yet', passed: 'Passed', partly: 'Partly checked', not_set_up: 'Not set up',
 };
 
 /**
