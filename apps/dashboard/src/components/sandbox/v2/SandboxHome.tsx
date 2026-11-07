@@ -18,6 +18,7 @@ import { SandboxPractice, type SandboxPracticePreview } from './SandboxPractice'
 import type { PracticeProfile } from '@/lib/sandbox/practice/types';
 import { SANDBOX_STEPS, sandboxStepOf, type SandboxStep } from '@/lib/sandbox/steps';
 import { checkStateOf, type CheckState } from '@/lib/sandbox/checks';
+import { runCommand } from '@/lib/sandbox/helper';
 import { SandboxRules, type SandboxRulesPreview } from './SandboxRules';
 import { SANDBOX_RULES_ID, type SandboxRulesState } from '@/lib/sandbox/rules';
 import { PROXY_ORIGIN } from '@/lib/setup';
@@ -496,6 +497,20 @@ export function RunSetup({ issued, onCopied }: { issued: IssuedSandboxKey; onCop
       <Button size={32} variant="primary" onClick={() => void copy()} aria-label="Copy the setting">{copied ? 'Copied' : 'Copy'}</Button>
     </div>
     <p className={v.copiedLine} aria-live="polite">{done ? <><Icon name="check" size={13} /> Copied. Now run your agent.</> : null}</p>
+    <RunOneCommand provider={issued.provider} />
+  </>;
+}
+
+/** The other way to run it: one command that asks for the Sandbox URL, so nothing is edited first. */
+function RunOneCommand({ provider }: { provider: string }) {
+  const command = runCommand(provider);
+  const { copied, copy } = useCopy(command);
+  return <>
+    <p className={v.text}>Or run it with one command. Replace &lt;your agent command&gt;, then paste the Sandbox URL when it asks.</p>
+    <div className={v.codeRow}>
+      <code className={v.codeLine}>{command}</code>
+      <Button size={32} variant="secondary" onClick={() => void copy()} aria-label="Copy the command">{copied ? 'Copied' : 'Copy'}</Button>
+    </div>
   </>;
 }
 

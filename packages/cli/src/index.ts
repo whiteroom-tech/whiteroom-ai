@@ -18,6 +18,7 @@ Usage:
   whiteroom login <fleet_token>
   whiteroom practice run [--adapter "<command>"] [--key-env <VAR>] [--code-stdin]
   whiteroom practice adapter --lang js|python
+  whiteroom sandbox run --provider <provider> -- <your agent command>
   whiteroom sandbox listen --adapter "<command>" [--code-stdin]
 
 Options:

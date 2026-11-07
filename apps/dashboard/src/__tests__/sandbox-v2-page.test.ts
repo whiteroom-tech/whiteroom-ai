@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement as h } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { CLI_VERSION } from '@/lib/sandbox/practice/model';
 
 const capture = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/analytics', () => ({ analytics: { capture } }));
@@ -93,6 +94,12 @@ describe('Sandbox v2 page', () => {
     expect(text()).toContain(`ANTHROPIC_BASE_URL=${ISSUED.proxyUrl}`);
     expect(document.querySelector('[aria-label="Copy the setting"]')).not.toBeNull();
     expect(document.getElementById('sandbox-start-command')).toBeNull();
+    // Or one command: the CLI asks for the Sandbox URL, so the command never carries the key.
+    expect(text()).toContain('Or run it with one command. Replace <your agent command>, then paste the Sandbox URL when it asks.');
+    const command = [...document.querySelectorAll('code')].map((c) => c.textContent).find((t) => t?.includes('sandbox run'));
+    expect(command).toBe(`npx @whiteroom-ai/cli@${CLI_VERSION} sandbox run --provider anthropic -- <your agent command>`);
+    expect(command).not.toContain('sk-wr-');
+    expect(document.querySelector('[aria-label="Copy the command"]')).not.toBeNull();
     // The URL carries the Sandbox key, so the line is all an agent needs (no separate URL and key, as in the mockup).
     expect(text()).toContain(ISSUED.proxyKey);
     // The status card, and the provider key nowhere on the page or in storage.
