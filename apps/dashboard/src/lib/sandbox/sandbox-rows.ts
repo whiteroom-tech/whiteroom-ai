@@ -478,7 +478,8 @@ export function nextSteps(rows: SandboxRow[], o: { few: boolean; sample: boolean
   if (o.sample) return out;
   const practice = practiceRows(rows);
   if (practice) out.push({ kind: 'practice', rows: practice });
-  if (!out.length && !rows.some((r) => r.state === 'not_checked')) {
+  // Ready for live only when every row tried was proven: a not-proven one may have crashed.
+  if (!out.length && !rows.some((r) => r.state === 'not_checked' || r.state === 'not_proven')) {
     out.push({ kind: 'live' });
     if (rows.find((r) => r.num === '02')?.state === 'partly') out.push({ kind: 'deep' });
   }

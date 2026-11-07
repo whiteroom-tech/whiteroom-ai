@@ -2,7 +2,7 @@
 // results, its rule probes and its parts, with the headline counted over them.
 import { describe, expect, it } from 'vitest';
 import { CHECK_IDS, checkStateOf, type CheckState, type CheckStatus, type RuleProbe } from '@/lib/sandbox/checks';
-import { practiceBinding, practiceRows, ROWS, rowsHeadline, rowsSummary, sandboxRows, type BoundPractice } from '@/lib/sandbox/sandbox-rows';
+import { nextSteps, practiceBinding, practiceRows, ROWS, rowsHeadline, rowsSummary, sandboxRows, type BoundPractice } from '@/lib/sandbox/sandbox-rows';
 
 const ALL_PASSED: Record<string, [CheckStatus, string]> = {
   spend_cap: ['passed', 'We blocked a call → it didn’t retry that call.'],
@@ -71,6 +71,11 @@ describe('the eight rows', () => {
     expect(r['04'].parts[1]).toMatchObject({ label: 'Your agent', state: 'not_proven', text: np('we blocked a call') });
     expect(r['07']).toMatchObject({ state: 'not_proven', line: np('we stopped your agent and let it go') });
     expect(rowsHeadline(sandboxRows(parsed))).toEqual({ headline: 'Nothing to fix · 3 of 8 checked', sub: '3 not proven · 2 need practice tasks', tone: 'neutral' });
+    // Never "Ready for live traffic" while a row is not proven, even with every practice part passed.
+    const allPractice: BoundPractice = { runId: 'r1', endedAt: '2026-11-02T10:05:00Z', checks: ['a.result', 'c.timeout', 'c.keeps_failing', 'd.injection', 'b.long'].map((id) => ({ id, label: id, status: 'passed' as const, summary: 'Passed.', fix: null })) };
+    const proven = nextSteps(sandboxRows(checkStateOf(raw(state()))!, allPractice), { few: false, sample: false });
+    expect(proven.map((x) => x.kind)).toContain('live');
+    expect(nextSteps(sandboxRows(parsed, allPractice), { few: false, sample: false }).map((x) => x.kind)).not.toContain('live');
     // The flag only counts on a not-checked result; an older engine without it reads Not checked.
     const old = raw(state({ checks: { pause_stop: ['not_checked', np('we stopped your agent and let it go')] } }));
     expect(by(checkStateOf(old)!)['07'].state).toBe('not_checked');

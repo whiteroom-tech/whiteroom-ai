@@ -331,7 +331,7 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
     // What the page shows: the rows' counts and tone, and whether too few calls held the live checks back.
     const rows = sandboxRows(state, practice.bound ?? undefined, limits);
     const c = rowCounts(rows);
-    analytics.capture('sandbox_report_rows', { tone: rowsHeadline(rows).tone, fewCalls: tooFewCalls(state), fix: c.fix, checked: c.checked, practice: c.practice, notSetUp: c.notSetUp, calls: w.calls, sample: isSample });
+    analytics.capture('sandbox_report_rows', { tone: rowsHeadline(rows).tone, fewCalls: tooFewCalls(state), fix: c.fix, checked: c.checked, notProven: c.notProven, practice: c.practice, notSetUp: c.notSetUp, calls: w.calls, sample: isSample });
   }, [preview, focusReport, state, w, isSample, practice.bound, settledKey, reportKey]);
 
   const phase: CheckPhase = !w ? 'waiting' : ended ? 'results' : 'checking';

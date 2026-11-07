@@ -418,7 +418,7 @@ describe('Check your agent', () => {
     await click('Finish now');
     await flush();
     const sent = capture.mock.calls.filter(([name]) => name === 'sandbox_report_rows');
-    expect(sent).toEqual([['sandbox_report_rows', { tone: 'warn', fewCalls: false, fix: 1, checked: expect.any(Number), practice: expect.any(Number), notSetUp: expect.any(Number), calls: expect.any(Number), sample: false }]]);
+    expect(sent).toEqual([['sandbox_report_rows', { tone: 'warn', fewCalls: false, fix: 1, checked: expect.any(Number), notProven: 0, practice: expect.any(Number), notSetUp: expect.any(Number), calls: expect.any(Number), sample: false }]]);
     // Only the tone and row counts the page shows: no ids, keys or names.
     expect(JSON.stringify(sent)).not.toMatch(/sandbox-|chk_|prod-eu|sk-/);
   });
@@ -436,7 +436,7 @@ describe('Check your agent', () => {
     checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z', calls }, statuses);
     await click('Finish now');
     await flush();
-    expect(capture.mock.calls.filter(([name]) => name === 'sandbox_report_rows')).toEqual([['sandbox_report_rows', { tone, ...counts, practice: 2, notSetUp: expect.any(Number), calls, sample: false }]]);
+    expect(capture.mock.calls.filter(([name]) => name === 'sandbox_report_rows')).toEqual([['sandbox_report_rows', { tone, ...counts, notProven: 0, practice: 2, notSetUp: expect.any(Number), calls, sample: false }]]);
   });
 
   it('a check that opens and ends between two reads still counts as new: focus and one report event', async () => {
