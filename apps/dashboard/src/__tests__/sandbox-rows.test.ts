@@ -2,7 +2,7 @@
 // results, its rule probes and its parts, with the headline counted over them.
 import { describe, expect, it } from 'vitest';
 import { CHECK_IDS, checkStateOf, type CheckState, type CheckStatus, type RuleProbe } from '@/lib/sandbox/checks';
-import { practiceBinding, practiceRows, ROWS, rowsHeadline, rowsSummary, sandboxRows, type BoundPractice } from '@/lib/sandbox/sandbox-rows';
+import { nextSteps, practiceBinding, practiceRows, ROWS, rowsHeadline, rowsSummary, sandboxRows, type BoundPractice } from '@/lib/sandbox/sandbox-rows';
 
 const ALL_PASSED: Record<string, [CheckStatus, string]> = {
   spend_cap: ['passed', 'We blocked a call → it didn’t retry that call.'],
@@ -51,6 +51,42 @@ describe('the eight rows', () => {
     // With the Sandbox's spend cap: its amount (mockup Rev 3).
     expect(by(state(), undefined, { spend_cap: '$0.02 a run' })['04'].parts[0].text).toBe('Would act at $0.02 a run (Watch)');
     expect(r['06'].note).toBe('Not set up: tool list.');
+  });
+
+  it('not proven (the agent went quiet after a block, the 529 or the stop) shows as its own state, never Passed', () => {
+    const np = (what: string) => `Not proven: ${what}, then your agent made no more calls, so we can’t tell if it carried on or crashed. Run a longer task to check this.`;
+    const raw = (c: CheckState) => JSON.parse(JSON.stringify(c)) as Record<string, any>;
+    const s = raw(state({ checks: {
+      spend_cap: ['not_checked', np('we blocked a call')],
+      pause_stop: ['not_checked', np('we stopped your agent and let it go')],
+      provider_errors: ['not_checked', np('we returned a provider error (529)')],
+    } }));
+    for (const c of s.checks) if (c.detail.startsWith('Not proven')) c.notProven = true;
+    const parsed = checkStateOf(s)!;
+    expect(parsed.checks.filter((c) => c.notProven).map((c) => c.id)).toEqual(['spend_cap', 'pause_stop', 'provider_errors']);
+    const r = by(parsed);
+    expect(r['03']).toMatchObject({ state: 'not_proven', fix: null });
+    expect(r['03'].parts[0]).toMatchObject({ label: 'Here', state: 'not_proven' });
+    expect(r['04']).toMatchObject({ state: 'not_proven' });
+    expect(r['04'].parts[1]).toMatchObject({ label: 'Your agent', state: 'not_proven', text: np('we blocked a call') });
+    expect(r['07']).toMatchObject({ state: 'not_proven', line: np('we stopped your agent and let it go') });
+    expect(rowsHeadline(sandboxRows(parsed))).toEqual({ headline: 'Nothing to fix · 3 of 8 checked', sub: '3 not proven · 2 need practice tasks', tone: 'neutral' });
+    // A not-proven wait after a rate limit holds row 03 back too, even with the provider error passed.
+    const wait = raw(state({ parts: [{ id: 'rate_limit_wait', status: 'not_checked', detail: 'Not proven: …' }] }));
+    wait.parts[0].notProven = true;
+    expect(by(checkStateOf(wait)!)['03']).toMatchObject({ state: 'not_proven', parts: [{ label: 'Here', state: 'not_proven' }, { label: 'Practice' }] });
+    expect(rowsSummary(sandboxRows(parsed), { when: 'now', calls: 17 })).toContain('Not proven');
+    // Never "Ready for live traffic" while a row is not proven, even with every practice part passed.
+    const allPractice: BoundPractice = { runId: 'r1', endedAt: '2026-11-02T10:05:00Z', checks: ['a.result', 'c.timeout', 'c.keeps_failing', 'd.injection', 'b.long'].map((id) => ({ id, label: id, status: 'passed' as const, summary: 'Passed.', fix: null })) };
+    const proven = nextSteps(sandboxRows(checkStateOf(raw(state()))!, allPractice), { few: false, sample: false });
+    expect(proven.map((x) => x.kind)).toContain('live');
+    expect(nextSteps(sandboxRows(parsed, allPractice), { few: false, sample: false }).map((x) => x.kind)).not.toContain('live');
+    // The flag only counts on a not-checked result; an older engine without it reads Not checked.
+    const old = raw(state({ checks: { pause_stop: ['not_checked', np('we stopped your agent and let it go')] } }));
+    expect(by(checkStateOf(old)!)['07'].state).toBe('not_checked');
+    const odd = raw(state());
+    odd.checks.find((c: Record<string, any>) => c.id === 'pause_stop').notProven = true;
+    expect(by(checkStateOf(odd)!)['07'].state).toBe('passed');
   });
 
   it('a failure opens in place with what happened and how to fix it; the headline counts it', () => {

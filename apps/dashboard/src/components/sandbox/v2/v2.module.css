@@ -192,6 +192,7 @@
 .dOk { color:var(--ok); font-weight:700; }
 .dBad { color:var(--bad); font-weight:700; }
 .dSkip { color:var(--tx3); font-weight:700; }
+.dWarn { color:var(--warn); font-weight:700; }
 .muted { margin:0; font-size:var(--fs-sm); color:var(--tx3); }
 .tipsBlock { border-top:1px solid var(--line); padding-top:12px; display:grid; gap:8px; }
 .tipsBlock > b { font-size:var(--fs-md); color:var(--tx); }

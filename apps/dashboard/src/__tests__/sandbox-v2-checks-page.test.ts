@@ -244,6 +244,18 @@ describe('Check your agent', () => {
     expect(text()).toContain('Also called during this check: billing-agent (not checked).');
   });
 
+  it('a not-proven row in the report: an amber ? and the engine\u2019s Not proven line', async () => {
+    const answer = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z', agentId: 'support-bot' }, { long_task: 'passed', pause_stop: 'not_checked' });
+    const ps = answer.checks.find((c) => c.id === 'pause_stop')!;
+    Object.assign(ps, { notProven: true, detail: 'Not proven: we stopped your agent and let it go, then your agent made no new calls, so we can’t tell if it carried on or crashed. Run a longer task to check this.' });
+    checks = answer;
+    await render(checksEl());
+    const r07 = document.querySelector('li[data-row="07"]');
+    expect(r07?.getAttribute('data-state')).toBe('not_proven');
+    expect(r07?.querySelector('[aria-hidden="true"]')?.textContent).toBe('?');
+    expect(r07?.textContent).toContain('we stopped your agent and let it go, then your agent made no new calls');
+  });
+
   it('a decided test block shows its result and detail', async () => {
     checks = { ...checkAnswer({ stage: 'pause' }, { long_task: 'passed' }), parts: [{ id: 'test_block', status: 'passed', detail: 'We blocked a call → it didn’t retry that call.' }] };
     await render(checksEl());
@@ -418,7 +430,7 @@ describe('Check your agent', () => {
     await click('Finish now');
     await flush();
     const sent = capture.mock.calls.filter(([name]) => name === 'sandbox_report_rows');
-    expect(sent).toEqual([['sandbox_report_rows', { tone: 'warn', fewCalls: false, fix: 1, checked: expect.any(Number), practice: expect.any(Number), notSetUp: expect.any(Number), calls: expect.any(Number), sample: false }]]);
+    expect(sent).toEqual([['sandbox_report_rows', { tone: 'warn', fewCalls: false, fix: 1, checked: expect.any(Number), notProven: 0, practice: expect.any(Number), notSetUp: expect.any(Number), calls: expect.any(Number), sample: false }]]);
     // Only the tone and row counts the page shows: no ids, keys or names.
     expect(JSON.stringify(sent)).not.toMatch(/sandbox-|chk_|prod-eu|sk-/);
   });
@@ -436,7 +448,7 @@ describe('Check your agent', () => {
     checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z', calls }, statuses);
     await click('Finish now');
     await flush();
-    expect(capture.mock.calls.filter(([name]) => name === 'sandbox_report_rows')).toEqual([['sandbox_report_rows', { tone, ...counts, practice: 2, notSetUp: expect.any(Number), calls, sample: false }]]);
+    expect(capture.mock.calls.filter(([name]) => name === 'sandbox_report_rows')).toEqual([['sandbox_report_rows', { tone, ...counts, notProven: 0, practice: 2, notSetUp: expect.any(Number), calls, sample: false }]]);
   });
 
   it('a check that opens and ends between two reads still counts as new: focus and one report event', async () => {
