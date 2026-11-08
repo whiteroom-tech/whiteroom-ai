@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button, Hint, SegmentedControl, SelectChip, SkeletonCard, StatCard, StatusPill } from '@whiteroom/ui';
-import { auditLog, checkWatch, fleetReport, isAuthError, listRuns, performanceFleetHourly, ruleActions, runDays } from '@/lib/whiteroom/client';
+import { checkWatch, fleetReport, isAuthError, listRuns, performanceFleetHourly, ruleActions, runDays } from '@/lib/whiteroom/client';
 import type { AgentHold, AgentInfo, FleetHourlyResult, FleetReport } from '@/lib/whiteroom/types';
 import { usePoll } from '@/hooks/usePoll';
 import { safeGet, safeSet } from '@/lib/safe-storage';
@@ -12,6 +12,7 @@ import { HELP } from '@/lib/metric-definitions';
 import { tallyFromRuleActions, tallyTotal, type GovernanceTally } from '@/lib/governance';
 import { AGENT_SORTS, FIND_FROM, homeWeek, keepLastGood, loadWeekReads, weekFailures, shownAgents, TABLE_FROM, WEEK_POLL_MS, type AgentSort, type AgentWeek, type HomeWeek } from '@/lib/home-agents';
 import { CHANGE_TYPES, dayLabel, lastActiveDay, latestChanges, ruleOutcomes, type ChangeRow } from '@/lib/home-changes';
+import { auditLogByType } from '@/lib/batched-reads';
 import { fetchControlActors, oldestTime, type ControlActor } from '@/lib/control-actors';
 import { addDays, ignoresFlagged, localDay, runHref, runsDays, zoneName } from '@/lib/runs';
 import { ROUTES } from '@/lib/routes';
@@ -179,7 +180,7 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   // Latest changes: rule and agent changes only, read by type so a busy
   // fleet's call events can't push them out, with who made each one.
   const { refresh: refreshChanges } = usePoll(async (stale) => {
-    const reads = await Promise.all(CHANGE_TYPES.map((type) => auditLog({ fleetId, type, limit: 5 }, authKey).catch(() => null)));
+    const reads = await auditLogByType(fleetId, CHANGE_TYPES, 5, authKey);
     if (stale()) return;
     // One type missing would quietly drop its changes: a partial read is a
     // failed refresh, so the last good list stays and the card says so.

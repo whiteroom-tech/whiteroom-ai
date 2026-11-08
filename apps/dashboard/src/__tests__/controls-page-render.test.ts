@@ -60,6 +60,11 @@ const api = vi.hoisted(() => ({
   empty: false,
   /** rule_would_act's byAgent per rule id (default: none). */
   would: {} as Record<string, Record<string, number>>,
+  /** An engine from before engine PR 345: no rule_would_act batch. */
+  oldEngine: false,
+  /** Rules per rule_would_act batch read, and single reads made. */
+  wouldBatches: [] as number[],
+  wouldSingle: 0,
   /** Each agent's calls, as performance_agent returns them. */
   agentCalls: {} as Record<string, number>,
   /** What Settings › Alerts has; null: an engine without alerts. */
@@ -73,7 +78,13 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
   governanceList: async () => { api.lists++; if (api.listFail) throw new Error('down'); if (api.listGate) await api.listGate; return { fleetId: 'f1', rules: api.empty ? [] : [...RULES.map((r) => api.saved[r.id] ?? r), ...api.created], history: api.history, agents: ['lead-agent', 'market-researcher'], govV1: api.govV1 }; },
   performanceRecommendationGet: () => new Promise(() => {}),
   alertsGet: async () => api.alerts,
-  ruleWouldAct: async (_f: string, ruleId: string) => ({ fleetId: 'f1', ruleId, byAgent: api.would[ruleId] ?? {}, unversioned: false, since: '2026-10-21T00:00:00Z' }),
+  ruleWouldAct: async (_f: string, ruleId: string) => { api.wouldSingle++; return { fleetId: 'f1', ruleId, byAgent: api.would[ruleId] ?? {}, unversioned: false, since: '2026-10-21T00:00:00Z' }; },
+  // engine PR 345: the Watch rules in one read; an older engine refuses a body without rule_id.
+  ruleWouldActBatch: async (_f: string, rules: Array<{ ruleId: string; ruleVersion: number }>) => {
+    api.wouldBatches.push(rules.length);
+    if (api.oldEngine) throw new WhiteRoomApiError('HTTP 400', 400, 'rule_id is required.');
+    return { fleetId: 'f1', results: rules.map(({ ruleId, ruleVersion }) => ({ ruleId, ruleVersion, byAgent: api.would[ruleId] ?? {}, unversioned: false, since: '2026-10-21T00:00:00Z' })) };
+  },
   performanceAgent: async (_f: string, agentId: string) => ({ fleetId: 'f1', agentId, hourly: [], totals: { calls: api.agentCalls[agentId] ?? 0, costMicros: 0 } }),
   auditIntegrity: async () => ({ fleetId: 'f1', mode: 'sequenced', headSeq: 2045, verifiedThroughSeq: 2045, verifiedAt: new Date().toISOString(), prunedBeforeTracking: true, legacyEvents: 0, gaps: { count: 0, recent: [] }, anchoring: { enabled: false } }),
   verifyAudit: async () => ({ valid: true, eventsVerified: 2045, message: '' }),
@@ -86,6 +97,7 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
 }));
 
 const { default: ControlsPage } = await import('@/app/(citadel)/controls/page');
+const { resetBatchSupport } = await import('@/lib/batched-reads');
 const { WhiteRoomApiError } = await import('@/lib/whiteroom/client');
 
 const flush = () => act(async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); });
@@ -125,6 +137,7 @@ beforeEach(() => {
   sessionStorage.clear();
   nav.params = new URLSearchParams(); nav.replace.mockClear(); nav.push.mockClear();
   api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.hourly = []; api.listGate = null; api.listFail = false; api.empty = false; api.would = {}; api.agentCalls = {}; api.history = []; api.totals = null;
+  api.oldEngine = false; api.wouldBatches = []; api.wouldSingle = 0; resetBatchSupport();
   document.body.innerHTML = '';
 });
 const type = async (input: HTMLInputElement, value: string) => {
@@ -1885,5 +1898,53 @@ describe('Controls › an unsaved edit comes back', () => {
     expect(saved()).toBeNull();
     expect(m.text()).not.toContain('is back');
     m.root.unmount();
+  });
+});
+
+describe('Controls: Watch counts in one read (engine PR 345)', () => {
+  const dlg = (m: Awaited<ReturnType<typeof mount>>) => [...m.el.querySelectorAll('dialog[open]')].at(-1)!;
+  /** The page, and what the allowlist confirm says (from rule_would_act). */
+  async function caught() {
+    api.models = ['claude-sonnet-4-5'];
+    api.saved.r2 = { ...RULES[1], appliesTo: 'all' };
+    api.would = { r2: { 'lead-agent': 44 } };
+    const m = await mount();
+    // The fallback takes a few more turns to land.
+    await flush();
+    const page = m.text();
+    await m.click(m.button('Add to allowlist…'));
+    return { m, page, shown: dlg(m).textContent };
+  }
+
+  it('reads every Watch rule in one request on a new engine', async () => {
+    const { m, shown } = await caught();
+    expect(shown).toContain('the allowlist caught 44 calls from lead-agent');
+    // r2, r3 and r4 are the Watch rules.
+    expect(api.wouldBatches).toEqual([3]);
+    expect(api.wouldSingle).toBe(0);
+    m.root.unmount();
+  });
+
+  it('falls back to one read per rule on an older engine, shows the same, and doesn’t ask it the batch again', async () => {
+    const fresh = await caught();
+    fresh.m.root.unmount();
+    document.body.innerHTML = '';
+    resetBatchSupport();
+    api.wouldBatches = []; api.wouldSingle = 0; api.oldEngine = true;
+    const old = await caught();
+    expect(old.page).toBe(fresh.page);
+    expect(old.shown).toBe(fresh.shown);
+    expect(api.wouldBatches).toEqual([3]);
+    expect(api.wouldSingle).toBe(3);
+    // A reload (here after a failed save) goes straight to the single reads.
+    await old.m.click([...dlg(old.m).querySelectorAll('button')].find((b) => b.textContent === 'Cancel'));
+    api.update.mockRejectedValue(new Error('network down'));
+    await old.m.open('$190');
+    await type(old.m.el.querySelector('input[aria-label="Spend limit"]') as HTMLInputElement, '150');
+    await old.m.click(old.m.button('Save'));
+    await flush();
+    expect(api.wouldBatches).toEqual([3]);
+    expect(api.wouldSingle).toBe(6);
+    old.m.root.unmount();
   });
 });
