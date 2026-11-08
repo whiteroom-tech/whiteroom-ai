@@ -4,16 +4,14 @@
 // deployment build with their own engine's address.
 export const PROXY_ORIGIN = process.env.NEXT_PUBLIC_PROXY_URL || 'https://proxy.whiteroom.tech';
 
-/** Stands in for the customer's proxy key wherever the real one isn't known. */
-export const PROXY_KEY_PLACEHOLDER = '<your-proxy-key>';
-
 /**
  * The connect lines: the proxy URL with a proxy key in its path, the form the
  * Fleet key page issues, so calls reach the account's own fleet. Never the
  * bare origin. The full key is shown only when it's issued (Fleet key's
- * Provider keys, a rotation, Sandbox), so these carry the placeholder.
+ * Provider keys, a rotation, Sandbox), so these carry a placeholder. Each
+ * provider key gets its own proxy key.
  */
-export const PROXY_KEY_URL = `${PROXY_ORIGIN}/${PROXY_KEY_PLACEHOLDER}`;
+export const PROXY_KEY_URL = `${PROXY_ORIGIN}/<your-proxy-key>`;
 export const SETUP_LINES = {
   anthropic: `export ANTHROPIC_BASE_URL=${PROXY_KEY_URL}`,
   openai: `export OPENAI_BASE_URL=${PROXY_KEY_URL}/v1`,

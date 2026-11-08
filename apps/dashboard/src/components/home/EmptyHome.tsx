@@ -31,7 +31,7 @@ export function EmptyHome() {
                 <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
                   {Object.values(SETUP_LINES).map((l) => <CopyChip key={l} text={l} />)}
                   <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-                    Get your proxy key on <Link prefetch={false} href={ROUTES.fleetKey} className="wr-link">Fleet key</Link> by connecting your Anthropic or OpenAI key. Your agent keeps sending its own key.
+                    Get a proxy key on <Link prefetch={false} href={ROUTES.fleetKey} className="wr-link">Fleet key</Link> by connecting your Anthropic or OpenAI key. Each provider key gets its own. Your agent keeps sending its own key.
                   </p>
                 </div>
               </li>

@@ -7,7 +7,7 @@ function fakeQuery(batches: Array<{ last_id: string | null; queued: number }>) {
   const calls: Array<{ text: string; values?: unknown[] }> = [];
   const query = vi.fn(async (text: string, values?: unknown[]) => {
     calls.push({ text, values });
-    if (text.includes('count(*) FILTER')) return { rows: [{ users: 1200, pending: 200 }] };
+    if (text.includes('LEFT JOIN')) return { rows: [{ users: 1200, pending: 200 }] };
     return { rows: [batches.shift() ?? { last_id: null, queued: 0 }] };
   });
   return { query, calls };

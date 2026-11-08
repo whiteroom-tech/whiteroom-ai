@@ -32,16 +32,10 @@ governance when your first API call flows through the proxy.
 
     python my_agent.py    # or node agent.js, etc.
 
-### 3. Link your fleet
-Sign in at https://app.whiteroom.tech and enter your API key to connect
-your agent's fleet to the dashboard. Your key is used once to find your
-fleet and is never stored.
+### 3. Watch it in the dashboard
+Your agent appears on Home at https://app.whiteroom.tech on its first call,
+with token savings and the full audit trail.
 
-Once linked, the Live Dashboard unlocks — monitor your agents in real time
-at https://app.whiteroom.tech/fleet with tasks completed, token savings,
-watch progress, and the full audit trail.
+To give an agent a stable name, send a header:
 
-For multi-fleet scenarios, pin the fleet with a header:
-
-    x-whiteroom-fleet: <fleet_id>     — assign this agent's traffic to a fleet
-    x-whiteroom-agent: <agent_id>     — pin a stable agent identity
+    x-whiteroom-agent: <agent_id>

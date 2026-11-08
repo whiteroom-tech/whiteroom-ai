@@ -16,9 +16,10 @@ function files(dir: string, exts: RegExp): string[] {
   });
 }
 
-// A base-URL setting whose value is an origin (literal or the build's) with
-// nothing after it but an optional /v1.
-const BARE = /(?:ANTHROPIC|OPENAI)_BASE_URL"?\s*=\s*["']?(?:https:\/\/(?:eu\.)?proxy\.whiteroom\.tech|\$\{(?:PROXY_ORIGIN|PROXY_URL)\})(?:\/v1)?(?:["'`\s<]|$)/m;
+// A base-URL setting (env line, os.environ[...] = or an LLM client's
+// base_url / baseURL; not the WhiteRoom SDK's baseUrl) whose value is an origin, literal or the build's, with nothing
+// after it but an optional /v1.
+const BARE = /(?:(?:ANTHROPIC|OPENAI)_BASE_URL["'\]]*|\b(?:base_url|baseURL))\s*[=:]\s*["'`]?(?:https:\/\/(?:eu\.)?proxy\.whiteroom\.tech|\$\{(?:PROXY_ORIGIN|PROXY_URL)\})(?:\/v1)?(?:["'`\s<,)]|$)/m;
 
 describe('connect lines', () => {
   const sources = [
@@ -37,6 +38,12 @@ describe('connect lines', () => {
     expect(BARE.test('export OPENAI_BASE_URL=${PROXY_ORIGIN}/v1`')).toBe(true);
     expect(BARE.test('export ANTHROPIC_BASE_URL=https://proxy.whiteroom.tech/<your-proxy-key>')).toBe(false);
     expect(BARE.test('export OPENAI_BASE_URL=${PROXY_KEY_URL}/v1`')).toBe(false);
+    expect(BARE.test('os.environ["OPENAI_BASE_URL"] = "https://proxy.whiteroom.tech/v1"')).toBe(true);
+    expect(BARE.test('    base_url="https://proxy.whiteroom.tech"\n')).toBe(true);
+    expect(BARE.test('  baseURL: "https://eu.proxy.whiteroom.tech/v1",')).toBe(true);
+    expect(BARE.test('os.environ["OPENAI_BASE_URL"] = "https://proxy.whiteroom.tech/<your-proxy-key>/v1"')).toBe(false);
+    expect(BARE.test('    base_url="https://proxy.whiteroom.tech/<your-proxy-key>"')).toBe(false);
+    expect(BARE.test('  baseUrl: "https://proxy.whiteroom.tech",')).toBe(false);
   });
 
   it('none is left in the dashboard, the READMEs or the docs', () => {
