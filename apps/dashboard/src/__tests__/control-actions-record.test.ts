@@ -79,42 +79,52 @@ describe('engine route records accepted control changes', () => {
     expect(inserts()).toHaveLength(0);
   });
 
-  it('sends the service secret with governance_list only when the session\'s key is the account\'s own for that fleet', async () => {
+  it('sends the service secret with the secret reads only when the owner check passes, and refuses a non-owner the full export', async () => {
     vi.stubEnv('WR_DASHBOARD_SERVICE_SECRET', 'svc-secret');
-    // u1 holds f1 with the session's key (wr_tok), and f3 with another key.
-    const rows = [
-      { table: 'user_fleets', rowId: 'l1', plain: 'wr_tok', sealed: null, fleetId: 'f1' },
-      { table: 'user_fleets', rowId: 'l3', plain: 'wr_other', sealed: null, fleetId: 'f3' },
-    ];
-    mocks.query.mockImplementation(async (sql: string, args: unknown[]) => ({ rows: /FROM user_fleets WHERE user_id/.test(sql) && args[0] === 'u1' ? rows : [] }));
-    const sentSecret = async (b: Record<string, unknown>) => {
-      const f = vi.fn().mockResolvedValue(new Response('{"rules":[]}', { status: 200, headers: { 'content-type': 'application/json' } }));
+    let f = vi.fn();
+    const send = async (b: Record<string, unknown>) => {
+      f = vi.fn().mockResolvedValue(new Response('{"rules":[]}', { status: 200, headers: { 'content-type': 'application/json' } }));
       vi.stubGlobal('fetch', f);
-      await call(b);
-      return (f.mock.calls[0][1] as RequestInit & { headers: Record<string, string> }).headers['x-wr-dashboard-secret'];
+      return call(b);
     };
-    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
-    expect(await sentSecret({ action: 'governance_list', fleet_id: 'f1' })).toBe('svc-secret');
+    const sentSecret = () => (f.mock.calls[0][1] as RequestInit & { headers: Record<string, string> }).headers['x-wr-dashboard-secret'];
+    const session = { user: { id: 'u1' } };
+    mocks.auth.mockResolvedValue(session);
+
+    // The owner: both reads carry it, checked with the session the route already read.
+    await send({ action: 'governance_list', fleet_id: 'f1' });
+    expect(sentSecret()).toBe('svc-secret');
+    expect(mocks.access).toHaveBeenCalledWith('f1', 'wr_tok', session);
+    await send({ action: 'export_audit_full', fleet_id: 'f1' });
+    expect(sentSecret()).toBe('svc-secret');
+    // Read once per request, however many checks use it.
+    expect(mocks.auth).toHaveBeenCalledTimes(2);
+
+    // Anyone else: Keyword counts (no secret), and no full export at all.
+    mocks.access.mockResolvedValue({ status: 403, error: 'Only this fleet’s owner can change its controls and settings.' });
+    expect((await send({ action: 'governance_list', fleet_id: 'f1' })).status).toBe(200);
+    expect(sentSecret()).toBeUndefined();
+    const refused = await send({ action: 'export_audit_full', fleet_id: 'f1' });
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toEqual({ code: 'control_denied', error: 'Only this fleet’s owner can export its full audit trail.' });
+    expect(f).not.toHaveBeenCalled();
+
+    // Other reads never carry it, nor ask.
+    mocks.access.mockClear().mockResolvedValue(null);
+    await send({ action: 'fleet_report', fleet_id: 'f1' });
+    expect(sentSecret()).toBeUndefined();
+    await send({ action: 'governance_list' });
+    expect(sentSecret()).toBeUndefined();
     expect(mocks.access).not.toHaveBeenCalled();
-    // The full audit export too: the engine gives it only to the dashboard.
-    expect(await sentSecret({ action: 'export_audit_full', fleet_id: 'f1' })).toBe('svc-secret');
-    expect(await sentSecret({ action: 'export_audit_full', fleet_id: 'f2' })).toBeUndefined();
-    // A fleet the account doesn't hold (a fleet key pasted into another account's session): counts only.
-    expect(await sentSecret({ action: 'governance_list', fleet_id: 'f2' })).toBeUndefined();
-    // A fleet the account holds, but the session carries a different key: no secret.
-    expect(await sentSecret({ action: 'governance_list', fleet_id: 'f3' })).toBeUndefined();
-    expect(await sentSecret({ action: 'governance_list' })).toBeUndefined();
-    // A fleet cookie alone.
-    mocks.auth.mockResolvedValue(null);
-    expect(await sentSecret({ action: 'governance_list', fleet_id: 'f1' })).toBeUndefined();
-    // Other reads never carry it.
-    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
-    expect(await sentSecret({ action: 'fleet_report', fleet_id: 'f1' })).toBeUndefined();
-    // The lookup fails: the read still goes, without the secret (the lists come back hidden), and it's logged.
+
+    // The lookup fails: the list still goes, without the secret, and it's logged; the export is refused.
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-    mocks.query.mockRejectedValue(new Error('db down'));
-    expect(await sentSecret({ action: 'governance_list', fleet_id: 'f1' })).toBeUndefined();
+    mocks.access.mockResolvedValue({ status: 503, error: 'Couldn’t check your access to this fleet. Try again.' });
+    await send({ action: 'governance_list', fleet_id: 'f1' });
+    expect(sentSecret()).toBeUndefined();
     expect(err).toHaveBeenCalledWith(expect.stringContaining('fleet access lookup failed'));
+    expect((await send({ action: 'export_audit_full', fleet_id: 'f1' })).status).toBe(503);
+    expect(f).not.toHaveBeenCalled();
     err.mockRestore();
     vi.unstubAllEnvs();
   });

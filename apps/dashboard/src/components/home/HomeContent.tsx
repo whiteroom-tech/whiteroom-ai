@@ -312,7 +312,7 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
               Quiet so far today.
               {lastActive && <> <strong>Last activity {dayLabel(lastActive.day)}:</strong> {fmtCount(lastActive.runs)} {plural(lastActive.runs, 'run')}.</>}
               {week && weekSentence(week) && <> This week: {weekSentence(week)}.</>}
-              {' '}<Link href={ROUTES.runs} className="wr-link">View runs &rarr;</Link>
+              {' '}<Link prefetch={false} href={ROUTES.runs} className="wr-link">View runs &rarr;</Link>
             </p>
           )}
           <div className="wr-home-strip">
@@ -367,7 +367,7 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
                     <div className="wr-agent-card__head">
                       {/* Name and status wrap together; a long name moves the status below it, never the score. */}
                       <span className="wr-agent-card__who">
-                        <Link href={agentHref(a.agentId)} className="wr-agent-card__name">{a.agentId}</Link>
+                        <Link prefetch={false} href={agentHref(a.agentId)} className="wr-agent-card__name">{a.agentId}</Link>
                         <StatusPill state={agentState(a)} />
                       </span>
                       <span className="wr-agent-card__end">
@@ -376,7 +376,7 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
                       </span>
                     </div>
                     <div className="wr-agent-card__line">
-                      {line.label}{line.run !== null && <> <Link href={runHref(`${a.agentId}~${line.run}`)} className="wr-link">#{line.run}</Link></>} · {runRest(line)}
+                      {line.label}{line.run !== null && <> <Link prefetch={false} href={runHref(`${a.agentId}~${line.run}`)} className="wr-link">#{line.run}</Link></>} · {runRest(line)}
                     </div>
                     {w && <WeekLine w={w} />}
                   </div>
@@ -403,9 +403,9 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
                     return (
                       // The name is the row's link; a click anywhere else on the row (not on a link or button) opens it too.
                       <tr key={a.agentId} onClick={(e) => { if (!(e.target as HTMLElement).closest('a,button,[role=menu],[role=status],[role=alert],dialog')) router.push(agentHref(a.agentId)); }}>
-                        <td><Link href={agentHref(a.agentId)} className="wr-home-table__name">{a.agentId}</Link></td>
+                        <td><Link prefetch={false} href={agentHref(a.agentId)} className="wr-home-table__name">{a.agentId}</Link></td>
                         <td><StatusPill state={agentState(a)} /></td>
-                        <td>{line.tasks ? <>{line.run !== null && <><Link href={runHref(`${a.agentId}~${line.run}`)} className="wr-link">#{line.run}</Link> </>}<span className="wr-home-table__cap">{line.run !== null ? '· ' : ''}{line.tasks}</span></> : <span className="wr-home-muted">—</span>}</td>
+                        <td>{line.tasks ? <>{line.run !== null && <><Link prefetch={false} href={runHref(`${a.agentId}~${line.run}`)} className="wr-link">#{line.run}</Link> </>}<span className="wr-home-table__cap">{line.run !== null ? '· ' : ''}{line.tasks}</span></> : <span className="wr-home-muted">—</span>}</td>
                         <td className="is-num">{w?.input !== undefined ? fmtTokens(w.input) : '—'}</td>
                         <td className="is-num" style={{ color: w?.saved ? 'var(--ok)' : undefined }} title={w ? savedTitle(w) : undefined}>{w?.saved ? fmtTokens(w.saved) : '—'}</td>
                         <td className="wr-home-table__cap" style={{ color: outcomes ? 'var(--tx)' : undefined }}>{outcomes || '—'}</td>
@@ -432,7 +432,7 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
               : changes.length === 0
                 ? <p className="wr-home-empty">No rule or agent changes yet.</p>
                 : changes.map((c) => (
-                  <Link key={c.key} href={c.href} className="wr-home-change">
+                  <Link prefetch={false} key={c.key} href={c.href} className="wr-home-change">
                     <span className="wr-home-change__time">{c.time}</span>
                     <span className="wr-home-change__text">{c.text}</span>
                     <span aria-hidden="true" className="wr-home-muted">&rarr;</span>
@@ -445,7 +445,7 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
 
         {fleet && <AuditCheckDialog open={auditOpen} fleetId={fleet.fleetId} authKey={fleet.authKey} onClose={() => setAuditOpen(false)} onAuthError={onAuthError} preview={fleet.preview ? PREVIEW_AUDIT : undefined} />}
         <p className="wr-home-close">
-          Calls through WhiteRoom are recorded · <Link href={ROUTES.runs} className="wr-link">View runs &rarr;</Link> · <Button size={28} onClick={() => setAuditOpen(true)}>Check audit trail</Button>
+          Calls through WhiteRoom are recorded · <Link prefetch={false} href={ROUTES.runs} className="wr-link">View runs &rarr;</Link> · <Button size={28} onClick={() => setAuditOpen(true)}>Check audit trail</Button>
         </p>
       </div>
     </div>

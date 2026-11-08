@@ -26,7 +26,7 @@ export function pgConfig(): PoolConfig {
 // `next build`'s page-data collection pass doesn't need real DB env vars.
 export function db(): Pool {
   if (!pool) {
-    pool = new Pool({ ...pgConfig(), max: 5, idleTimeoutMillis: 30_000 });
+    pool = new Pool({ ...pgConfig(), max: 10, idleTimeoutMillis: 5 * 60_000 });
     // Idle sockets can fail outside a query's catch block. Handle the event
     // without logging connection details or allowing an uncaught exception.
     pool.on('error', () => console.error('[db] idle connection failed'));

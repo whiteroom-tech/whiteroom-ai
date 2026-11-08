@@ -21,12 +21,13 @@ import {
   tokenFromUserFleets,
 } from '@/lib/fleet-session';
 import { CONTROL_DENIED, engineAuthHeaders, PROXY_URL } from '@/lib/whiteroom/client';
-import { CONTROL_SECRET_HEADER, CONTROL_USER_HEADER, controlAccessError, controlActionOf, holdsFleetToken, secretReadFleet } from '@/lib/control-auth';
+import { CONTROL_SECRET_HEADER, CONTROL_USER_HEADER, controlAccessError, controlActionOf, secretReadOf } from '@/lib/control-auth';
 import { rateLimitHeaders } from '@/lib/rate-limit-headers';
 import { recordControlAction } from '@/lib/control-actions';
 import { auth } from '@/auth';
 
 const MAX_BODY_BYTES = 64 * 1024;
+const NOT_OWNER_EXPORT = 'Only this fleet’s owner can export its full audit trail.';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -35,7 +36,14 @@ export async function POST(req: Request) {
   const originError = await checkSameOrigin();
   if (originError) return originError;
 
-  let token = await getFleetAuthCookie();
+  // Read once and passed to every check below: each auth() decodes the cookie
+  // and may revalidate it, and this route runs 20–40 times a page. A failed
+  // read counts as signed out, which every check below refuses or treats as
+  // a fleet cookie alone.
+  const session = await auth().catch(() => null);
+  const userId = session?.user?.id ?? null;
+
+  let token = await getFleetAuthCookie(session);
   if (!token) {
     // next-auth session user whose cookie hasn't been minted yet (e.g. first
     // request after sign-in): adopt the preferred linked fleet's token and
@@ -43,7 +51,7 @@ export async function POST(req: Request) {
     const linked = await tokenFromUserFleets();
     if (linked) {
       token = linked.token;
-      await setFleetAuthCookie(token);
+      await setFleetAuthCookie(token, session);
     }
   }
   if (!token) {
@@ -64,7 +72,7 @@ export async function POST(req: Request) {
   let allowed: { action: string; fleetId: string } | null = null;
   let actorId: string | null = null;
   if (control) {
-    const denied = await controlAccessError(control.fleetId, token);
+    const denied = await controlAccessError(control.fleetId, token, session);
     if (denied) {
       const code = denied.status === 403 ? { code: CONTROL_DENIED } : {};
       return Response.json({ error: denied.error, ...code }, { status: denied.status });
@@ -74,8 +82,8 @@ export async function POST(req: Request) {
     // before R1 accept and engines with R1 refuse (fail closed).
     const secret = process.env.WR_DASHBOARD_SERVICE_SECRET;
     // The access check passed, so there is a signed-in user: the engine records
-    // them as who acted. A failed lookup only loses the name ("dashboard").
-    actorId = await auth().then((s) => s?.user?.id ?? null, () => null);
+    // them as who acted.
+    actorId = userId;
     if (secret) {
       headers[CONTROL_SECRET_HEADER] = secret;
       if (actorId) headers[CONTROL_USER_HEADER] = actorId;
@@ -83,16 +91,22 @@ export async function POST(req: Request) {
   } else {
     // Counted against the signed-in user, not the dashboard's shared IP (engine rate limit). A session with
     // only a fleet cookie isn't named: the cookie is unchecked here, so naming it would let anyone mint buckets.
-    const userId = await auth().then((s) => s?.user?.id ?? null, () => null);
     Object.assign(headers, rateLimitHeaders(userId));
-    // A signed-in account that holds the fleet reads Keywords lists in full;
-    // anyone else (a fleet cookie alone, another account) gets their counts.
-    const secret = process.env.WR_DASHBOARD_SERVICE_SECRET;
-    const readFleet = secretReadFleet(body);
-    const holds = userId && secret && readFleet
-      ? await holdsFleetToken(userId, readFleet, token).catch((e: unknown) => { console.error(`[bff] fleet access lookup failed; keyword lists sent hidden: ${(e as Error).message}`); return false; })
-      : false;
-    if (holds && secret) headers[CONTROL_SECRET_HEADER] = secret;
+    // The fleet's owner reads Keywords lists in full and can export the whole
+    // audit trail. Anyone else holding the token (a teammate's account, an
+    // agent's, a fleet cookie alone) gets Keyword counts, and no full export.
+    const read = secretReadOf(body);
+    if (read) {
+      const denied = await controlAccessError(read.fleetId, token, session);
+      if (denied?.status === 503) console.error('[bff] fleet access lookup failed; keyword lists sent hidden, full export refused');
+      if (!denied) {
+        const secret = process.env.WR_DASHBOARD_SERVICE_SECRET;
+        if (secret) headers[CONTROL_SECRET_HEADER] = secret;
+      } else if (read.action === 'export_audit_full') {
+        const refusal = denied.status === 403 ? { error: NOT_OWNER_EXPORT, code: CONTROL_DENIED } : { error: denied.error };
+        return Response.json(refusal, { status: denied.status });
+      }
+    }
   }
 
   let upstream: Response;

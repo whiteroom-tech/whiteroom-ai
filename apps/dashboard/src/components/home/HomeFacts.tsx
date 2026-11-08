@@ -60,7 +60,7 @@ export function HomeFacts({ agents, holds, holdsKnown, flaggedToday, todayRules,
         {held.map((a, i) => (
           <Fragment key={a.agentId}>
             {i > 0 && ', '}
-            <Link href={`/agents/${encodeURIComponent(a.agentId)}`} className="wr-link"><span style={{ fontFamily: FONT_MONO, fontSize: '.92em' }}>{a.agentId}</span> ({a.hold!.state})</Link>
+            <Link prefetch={false} href={`/agents/${encodeURIComponent(a.agentId)}`} className="wr-link"><span style={{ fontFamily: FONT_MONO, fontSize: '.92em' }}>{a.agentId}</span> ({a.hold!.state})</Link>
           </Fragment>
         ))}
         {gone.map(([agentId, hold], i) => (
@@ -80,7 +80,7 @@ export function HomeFacts({ agents, holds, holdsKnown, flaggedToday, todayRules,
   if (flaggedToday !== null) {
     const text = `${fmtCount(flaggedToday)} flagged ${plural(flaggedToday, 'run')} today`;
     parts.push(flaggedToday > 0
-      ? <Link key="flagged" href={`${ROUTES.runs}?show=flagged&range=today`} className="wr-link">{text}</Link>
+      ? <Link prefetch={false} key="flagged" href={`${ROUTES.runs}?show=flagged&range=today`} className="wr-link">{text}</Link>
       : <span key="flagged">{text}</span>);
   }
   if (todayRules) {
@@ -91,7 +91,7 @@ export function HomeFacts({ agents, holds, holdsKnown, flaggedToday, todayRules,
     const other = tallyTotal(todayRules) - calls;
     parts.push(<span key="rules">rules caught {fmtCount(calls)} {plural(calls, 'time')} today{calls > 0 && <>, {fmtCount(todayRules.blocks)} blocked</>}{other > 0 && <>, and acted {fmtCount(other)} other {plural(other, 'time')}</>}</span>);
   }
-  parts.push(<Link key="week" href={ROUTES.performance} className="wr-link">Last 7 days &rarr;</Link>);
+  parts.push(<Link prefetch={false} key="week" href={ROUTES.performance} className="wr-link">Last 7 days &rarr;</Link>);
 
   return (
     <div className="wr-home-facts">

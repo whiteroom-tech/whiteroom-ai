@@ -1,5 +1,6 @@
 import 'server-only';
 
+import type { Session } from 'next-auth';
 import { auth } from '@/auth';
 import { type CredColumn, readCred } from '@/lib/cred-seal';
 import { db } from '@/lib/db';
@@ -41,18 +42,19 @@ export const CLOUD_IDENTITY_PROVIDERS: ReadonlySet<string> = new Set(['foundry-e
 
 /**
  * Reads the engine answers in full only with the dashboard's service secret,
- * sent for a signed-in account that holds the fleet (not only its owner):
+ * sent only for the fleet's owner (the same check as control actions):
  * governance_list hides Keywords lists from a bare fleet key, which every
- * agent holds, and export_audit_full (the whole audit history) is the
- * dashboard's to fetch, not an agent's.
+ * agent holds and any account can link, so anyone else gets their counts;
+ * export_audit_full (the whole audit history) is the owner's to fetch, and
+ * the BFF refuses it to anyone else.
  */
 export const SECRET_READ_ACTIONS: ReadonlySet<string> = new Set(['governance_list', 'export_audit_full']);
 
-/** The fleet a BFF body reads, when it's one of SECRET_READ_ACTIONS; else null. */
-export function secretReadFleet(body: string): string | null {
+/** The action and fleet a BFF body reads, when it's one of SECRET_READ_ACTIONS; else null. */
+export function secretReadOf(body: string): { action: string; fleetId: string } | null {
   try {
     const { action, fleet_id } = (JSON.parse(body) ?? {}) as { action?: unknown; fleet_id?: unknown };
-    return typeof action === 'string' && SECRET_READ_ACTIONS.has(action) && typeof fleet_id === 'string' && fleet_id ? fleet_id : null;
+    return typeof action === 'string' && SECRET_READ_ACTIONS.has(action) && typeof fleet_id === 'string' && fleet_id ? { action, fleetId: fleet_id } : null;
   } catch {
     return null;
   }
@@ -240,16 +242,9 @@ async function heldCredentials(userId: string, token: string): Promise<HeldRow[]
     .filter((h) => h.token === token);
 }
 
-/**
- * Whether the account holds this token as its credential for this fleet:
- * the request's key and the fleet it names belong together, and to them.
- */
-export async function holdsFleetToken(userId: string, fleetId: string, token: string): Promise<boolean> {
-  return credentialGrant(await heldCredentials(userId, token), fleetId, token) === 'linked';
-}
-
-export async function controlAccessError(fleetId: string | null, token: string): Promise<ControlDenial | null> {
-  const session = await auth();
+/** `session`: the caller's already-read session (the BFF reads it once per request); left out, it's read here. */
+export async function controlAccessError(fleetId: string | null, token: string, session?: Session | null): Promise<ControlDenial | null> {
+  if (session === undefined) session = await auth();
   const userId = session?.user?.id;
   if (!userId) return { status: 403, error: 'Sign in with your WhiteRoom account to change this fleet’s controls or settings.' };
   if (!fleetId) return { status: 400, error: 'fleet_id is required.' };

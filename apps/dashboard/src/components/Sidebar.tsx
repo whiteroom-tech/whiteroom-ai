@@ -62,6 +62,9 @@ export function Sidebar() {
                 <Link
                   key={item.key}
                   href={item.href}
+                  // Off: every visible nav link prefetched its page's server render on load
+                  // (~26 per Home view, each its own sign-in check). A click still loads it.
+                  prefetch={false}
                   title={item.tip}
                   aria-current={active ? 'page' : undefined}
                   className={`wr-sidebar__item${active ? ' is-active' : ''}`}

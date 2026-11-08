@@ -4,6 +4,7 @@ import { createHmac, randomBytes } from 'node:crypto';
 import { appOrigin } from '@/lib/app-origin';
 import { auth, signOut } from '@/auth';
 import { db } from '@/lib/db';
+import { forgetSessionCheck } from '@/lib/session-check';
 import { sendEmail } from '@/lib/email';
 import { emailChangeEmail } from '@/lib/magic-link-email';
 import {
@@ -193,6 +194,7 @@ export async function signOutEverywhere(): Promise<void> {
     `UPDATE users SET sessions_valid_after = now(), updated_at = now() WHERE id = $1`,
     [userId],
   );
+  forgetSessionCheck(userId);
   await signOut({ redirectTo: '/sign-in?signedOut=all' });
 }
 
@@ -339,6 +341,7 @@ export async function confirmEmailChange(token: string): Promise<
     );
     await client.query(`DELETE FROM email_change_requests WHERE id = $1`, [req.id]);
     await client.query('COMMIT');
+    forgetSessionCheck(req.user_id);
 
     return { ok: true, newEmail: req.new_email };
   } catch (err) {

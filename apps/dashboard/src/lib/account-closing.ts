@@ -6,6 +6,7 @@ import 'server-only';
 import { appOrigin } from '@/lib/app-origin';
 import { db, type Queryable } from '@/lib/db';
 import { sendEmail } from '@/lib/email';
+import { forgetSessionCheck } from '@/lib/session-check';
 import { accountClosingEmail, deletionBlockedEmail } from '@/lib/magic-link-email';
 import { isActiveStatus, isPaidPlanId, type PaidPlanId, type PlanId } from '@/lib/plans';
 import { stripe } from '@/lib/stripe';
@@ -380,6 +381,8 @@ export async function finishDeletedAccounts(): Promise<{ deleted: number; skippe
       }
       await deleteAccountRows(client, id);
       await client.query('COMMIT');
+      // After COMMIT, so a check in between can't cache the row again: its sessions end at their next check on this instance.
+      forgetSessionCheck(id);
       deleted++;
     } catch (err) {
       await client.query('ROLLBACK').catch(() => {});
