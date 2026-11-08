@@ -9,6 +9,7 @@ import { governanceList } from '@/lib/whiteroom/client';
 import { sourceModel } from '@/lib/sandbox/practice/api';
 import { defaultAgent, keepsConnectionTest, SAMPLE_AGENT } from '@/lib/sandbox/practice/model';
 import { ROUTES } from '@/lib/routes';
+import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { TestRunFlow } from './TestRunFlow';
 import { SandboxHome } from './v2/SandboxHome';
 import s from './guided.module.css';
@@ -39,37 +40,30 @@ export function SandboxEntry() {
   const router = useRouter();
   // From the address, so a link that only changes the query decides again.
   const connection = useSearchParams()?.get('connection') === '1';
-  const [shown, setShown] = useState<Shown>({ kind: 'deciding' });
-  // Bumped by Try again to check the session once more.
-  const [attempt, setAttempt] = useState(0);
+  // The page's one session check (FleetAuthProvider in the (citadel) layout); ?connection=1 needs none.
+  const auth = useFleetAuth({ idle: connection });
+  // Set by the fallback below: where the page went once the Sandbox v2 wasn't there.
+  const [fellBack, setFellBack] = useState<{ fleet: string; to: 'deciding' | 'connection' } | null>(null);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
-  useEffect(() => {
-    let live = true;
-    if (connection) return;
-    setShown({ kind: 'deciding' });
-    fetch('/api/fleet/session', { credentials: 'same-origin', cache: 'no-store' })
-      // 401 is the one answer meaning "no fleet session"; anything else is a failed check.
-      .then((r) => { if (r.ok) return r.json(); if (r.status === 401) return null; throw new Error(`session check ${r.status}`); })
-      .then(
-        (session: { fleetId?: unknown } | null) => {
-          if (!live) return;
-          const fleet = typeof session?.fleetId === 'string' && session.fleetId ? session.fleetId : null;
-          setShown(fleet ? { kind: 'v2', fleet } : { kind: 'connection' });
-        },
-        () => { if (live) setShown({ kind: 'failed' }); },
-      );
-    return () => { live = false; };
-  }, [connection, attempt]);
+  // 401 is the one answer meaning "no fleet session"; a check that failed (502, network) offers Try again.
+  const session: Shown = auth.status === 'checking'
+    ? { kind: 'deciding' }
+    : auth.status === 'authenticated'
+      ? (auth.fleetId ? { kind: 'v2', fleet: auth.fleetId } : { kind: 'connection' })
+      : auth.retryableError ? { kind: 'failed' } : { kind: 'connection' };
+  const shown: Shown = session.kind === 'v2' && fellBack?.fleet === session.fleet
+    ? { kind: fellBack.to }
+    : session;
 
   const fleet = shown.kind === 'v2' ? shown.fleet : null;
   const fallBack = useCallback(() => {
     if (!fleet) return;
-    setShown({ kind: 'deciding' });
+    setFellBack({ fleet, to: 'deciding' });
     sandboxDestination(fleet).then(
-      (to) => { if (!mounted.current) return; if (to === 'practice') router.replace(ROUTES.practiceTest); else setShown({ kind: 'connection' }); },
-      () => { if (mounted.current) setShown({ kind: 'connection' }); },
+      (to) => { if (!mounted.current) return; if (to === 'practice') router.replace(ROUTES.practiceTest); else setFellBack({ fleet, to: 'connection' }); },
+      () => { if (mounted.current) setFellBack({ fleet, to: 'connection' }); },
     );
   }, [fleet, router]);
 
@@ -79,7 +73,7 @@ export function SandboxEntry() {
     <PageHeader title="Sandbox" />
     <main className={s.content}>
       {shown.kind === 'failed'
-        ? <div style={{ maxWidth: 480 }}><LoadFailed what="the Sandbox" onRetry={() => setAttempt((n) => n + 1)} /></div>
+        ? <div style={{ maxWidth: 480 }}><LoadFailed what="the Sandbox" onRetry={auth.retry} /></div>
         : <SkeletonCard label="Opening the Sandbox…" style={{ maxWidth: 480 }} />}
     </main>
   </>;

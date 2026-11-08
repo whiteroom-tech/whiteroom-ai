@@ -13,7 +13,7 @@ vi.mock('@/auth', () => ({ auth: async () => null, signIn: vi.fn(), signOut: vi.
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null }) }));
 vi.mock('@/lib/billing', () => ({ openBillingPortal: vi.fn(), startCheckout: vi.fn() }));
 vi.mock('@/lib/plan-savings', () => ({ getMonthSavings: vi.fn(async () => null) }));
-vi.mock('@/hooks/useFleetAuth', () => ({ useFleetAuth: () => ({ status: 'authenticated', fleetId: null }) }));
+vi.mock('@/hooks/useFleetAuth', () => ({ FleetAuthProvider: ({ children }: { children: React.ReactNode }) => children, useFleetAuth: () => ({ status: 'authenticated', fleetId: null }) }));
 // The viewer's zone as after hydration; null is the server render.
 let zone: string | null = 'UTC';
 vi.mock('@/hooks/useViewerZone', () => ({ useViewerZone: () => zone, useSavedViewerZone: () => null }));

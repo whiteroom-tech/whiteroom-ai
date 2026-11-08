@@ -61,15 +61,18 @@ export function PageHeader({
 
 /**
  * The header's freshness: "● Live · updated 11:08", "Retrying · last updated
- * 11:08" while reads fail, or "Waiting for the first call" for a new fleet.
+ * 11:08" while reads fail, "Waiting for the first call" for a new fleet, or
+ * "Updated 11:08" for a page that has stopped polling (`ended`).
  */
-export function LiveStatus({ at, failing = false, empty = false }: { at: number | null; failing?: boolean; empty?: boolean }) {
+export function LiveStatus({ at, failing = false, empty = false, ended = false }: { at: number | null; failing?: boolean; empty?: boolean; /** Not polled any more (a run that has ended): no "Live". */ ended?: boolean }) {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx2)', whiteSpace: 'nowrap' }}>
       {failing
         ? <><span style={{ color: 'var(--warn)', display: 'flex' }}><Icon name="alertCircle" size={12} /></span>Retrying{at ? ` · last updated ${fmtTime(at)}` : ''}</>
         : empty
           ? <><span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: '50%', border: '1.5px solid var(--tx2)' }} />Waiting for the first call</>
+        : ended
+          ? <>Updated{at ? ` ${fmtTime(at)}` : ''}</>
           : <><span className="wr-dot wr-dot--ok" style={{ width: 7, height: 7 }} />Live{at ? ` · updated ${fmtTime(at)}` : ''}</>}
     </span>
   );

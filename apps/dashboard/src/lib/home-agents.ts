@@ -9,7 +9,7 @@ import { HOUR_MS } from '@/lib/format';
 import { addDays, dayStart, localDay } from '@/lib/runs';
 import { inputTokensOf } from '@/lib/performance-overview';
 import { auditSummary, performanceAgent, performanceAgentScores, performanceFleetHourly, ruleActions } from '@/lib/whiteroom/client';
-import type { AgentInfo, AgentPerformanceResult, AgentScore } from '@/lib/whiteroom/types';
+import type { AgentInfo, AgentPerformanceResult, AgentScore, FleetHourlyResult } from '@/lib/whiteroom/types';
 
 export interface AgentWeek {
   /** Input tokens WhiteRoom saved it (smaller context), est.; absent when the audit read failed (shown as —, never 0). */
@@ -78,15 +78,24 @@ export const WEEK_POLL_MS = 5 * 60_000;
  * agent and adds its calls' input; `hourly` adds the fleet's calls and spend, and
  * `agentIds` each listed agent's input (Home only).
  */
-export async function loadWeekReads(fleetId: string, authKey: string | undefined, opts: { agentId?: string; hourly?: boolean; agentIds?: string[] } = {}) {
+export async function loadWeekReads(fleetId: string, authKey: string | undefined, opts: {
+  agentId?: string;
+  hourly?: boolean;
+  /** Or a promise of them (Home's first read, sent before the first report names the agents). */
+  agentIds?: string[] | Promise<string[]>;
+  /** Handed the hourly read as it starts, so Home's today figures can share it. */
+  onHourly?: (read: Promise<FleetHourlyResult | null>) => void;
+} = {}) {
   const { start, hours } = weekWindow();
+  const hourlyRead = opts.hourly ? performanceFleetHourly(fleetId, hours, authKey).catch(() => null) : null;
+  if (hourlyRead) opts.onHourly?.(hourlyRead);
   const [audit, scores, rules, hourly, agentCalls, inputs] = await Promise.all([
     auditSummary(fleetId, start, authKey).catch(() => null),
     performanceAgentScores(fleetId, hours, authKey).catch(() => null),
     ruleActions(fleetId, { fromDay: localDay(start.getTime()), toDay: localDay(), agentId: opts.agentId }, authKey).catch(() => null),
-    opts.hourly ? performanceFleetHourly(fleetId, hours, authKey).catch(() => null) : null,
+    hourlyRead,
     opts.agentId ? performanceAgent(fleetId, opts.agentId, hours, authKey).catch(() => null) : null,
-    opts.agentIds ? agentInputs(fleetId, opts.agentIds, hours, authKey) : null,
+    opts.agentIds ? Promise.resolve(opts.agentIds).then((ids) => agentInputs(fleetId, ids, hours, authKey)) : null,
   ]);
   return { start, audit, scores, rules, hourly, agentCalls, inputs };
 }

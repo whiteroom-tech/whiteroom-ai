@@ -27,14 +27,14 @@ export function Sidebar() {
     return () => { window.removeEventListener('storage', read); window.removeEventListener('focus', read); };
   }, []);
 
-  // Re-read on navigation so accepting or leaving an organization updates the
-  // account menu without a reload.
+  // Read once per mount: Organization and Settings have their own shell, so
+  // leaving them after accepting or leaving an organization reads it again.
   const [org, setOrg] = useState<Awaited<ReturnType<typeof myOrganizationSummary>>>(null);
   useEffect(() => {
     let live = true;
     myOrganizationSummary().then((s) => { if (live) setOrg(s); }).catch(() => {});
     return () => { live = false; };
-  }, [pathname]);
+  }, []);
 
   // Fleet-key sessions have no user account, so the row names the fleet.
   const person = session?.user?.name || session?.user?.email || 'Fleet key session';

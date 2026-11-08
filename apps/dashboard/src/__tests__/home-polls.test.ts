@@ -13,13 +13,13 @@ vi.mock('@/components/home/LiveFeedPanel', () => ({ LiveFeedPanel: () => null })
 
 const calls = (inputTokens: number) => ({ fleetId: 'f1', agentId: 'lead-agent', period: { start: '', end: '' }, hourly: [], totals: { calls: 1, costMicros: 0, inputTokens, cacheReadTokens: 0, cacheWriteTokens: 0 } });
 const counts = (blocked: number) => ({ blocked, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 });
-const api = vi.hoisted(() => ({ audit: vi.fn(), scores: vi.fn(), rules: vi.fn(), hourly: vi.fn(), log: vi.fn(), runs: vi.fn(), days: vi.fn(), agent: vi.fn(), ids: ['lead-agent'] as string[] }));
+const api = vi.hoisted(() => ({ audit: vi.fn(), scores: vi.fn(), rules: vi.fn(), hourly: vi.fn(), log: vi.fn(), runs: vi.fn(), days: vi.fn(), agent: vi.fn(), ids: ['lead-agent'] as string[], gate: null as Promise<void> | null }));
 vi.mock('@/lib/control-actors', async (orig) => ({ ...(await orig<typeof import('@/lib/control-actors')>()), fetchControlActors: async () => [] }));
 // The ⋯ stand-in reports an act straight away, as a successful Pause would.
 vi.mock('@/components/home/AgentActions', () => ({ AgentActions: ({ onChanged }: { onChanged: () => void }) => h('button', { type: 'button', onClick: onChanged }, 'acted') }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
-  fleetReport: async () => ({
+  fleetReport: async () => (await api.gate, {
     fleetId: 'f1', agentCount: api.ids.length, agentDetails: api.ids.map((agentId) => ({ agentId, status: 'idle', watchNumber: 1, tasksCompleted: 0, minutesWorked: 0 })),
     status: { working: [], resting: [], idle: ['lead-agent'], handover_out: [] },
     totals: { workMinutes: 0, tokens: 0, tasks: 0, handovers: 0 },
@@ -43,7 +43,7 @@ const isToday = (q: { fromDay: string; toDay: string }) => q.fromDay === q.toDay
 const dayReads = () => api.rules.mock.calls.filter(([, q]) => isToday(q)).length;
 const weekRuleReads = () => api.rules.mock.calls.filter(([, q]) => !isToday(q)).length;
 
-afterEach(() => { vi.useRealTimers(); for (const f of Object.values(api)) if (typeof f === 'function') f.mockReset(); api.ids = ['lead-agent']; });
+afterEach(() => { vi.useRealTimers(); for (const f of Object.values(api)) if (typeof f === 'function') f.mockReset(); api.ids = ['lead-agent']; api.gate = null; });
 
 async function mount() {
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
@@ -151,6 +151,52 @@ describe('Home polls', () => {
     api.agent.mockRejectedValue(new Error('down'));
     await m.advance(5 * 60_000);
     expect(m.text()).toContain('3K input sent · 5 blocked');
+    m.root.unmount();
+  });
+});
+
+describe('Home request count', () => {
+  it('reads the week with the first report, today’s numbers from the week’s hourly read, and the report every 30 s', async () => {
+    // The clock moves with the timers, so the shared read ages.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'], now: new Date('2026-10-27T12:00:00') });
+    api.hourly.mockResolvedValue({ hourly: [] });
+    const m = await mountWith();
+    // One hourly read on load (the week's, 168-ish hours), not a second one for today.
+    expect(api.hourly).toHaveBeenCalledTimes(1);
+    expect(api.hourly.mock.calls[0][1]).toBeGreaterThan(24 * 6);
+    expect(m.text()).toContain('Model calls0');
+    // 10 s on: no main poll yet.
+    await m.advance(10_000);
+    expect(api.hourly).toHaveBeenCalledTimes(1);
+    // 30 s: today's own read, its window since midnight.
+    await m.advance(20_000);
+    expect(api.hourly).toHaveBeenCalledTimes(2);
+    expect(api.hourly.mock.calls[1][1]).toBeLessThanOrEqual(25);
+    m.root.unmount();
+  });
+
+  it('sends the week’s reads before the report answers; each agent’s input waits for its agent list', async () => {
+    let open!: () => void;
+    api.gate = new Promise<void>((r) => { open = r; });
+    const m = await mount();
+    expect([api.audit, api.scores, api.hourly].map((f) => f.mock.calls.length)).toEqual([1, 1, 1]);
+    expect(weekRuleReads()).toBe(1);
+    expect(api.agent).not.toHaveBeenCalled();
+    await act(async () => { open(); });
+    await flush();
+    expect(api.agent.mock.calls.map((c) => c[1])).toEqual(['lead-agent']);
+    // The week isn't read again once the agents are known.
+    expect(api.audit).toHaveBeenCalledTimes(1);
+    expect(m.text()).toContain('1K input sent · 5 blocked');
+    m.root.unmount();
+  });
+
+  it('a failed week hourly read still reads today’s numbers on their own', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    api.hourly.mockImplementation(async (_f: string, hours: number) => (hours > 25 ? { error: 'down' } : { hourly: [{ hour: new Date().toISOString().slice(0, 13) + ':00:00Z', calls: 7, costMicros: 0 }] }));
+    const m = await mountWith();
+    expect(api.hourly).toHaveBeenCalledTimes(2);
+    expect(m.text()).toContain('Model calls7');
     m.root.unmount();
   });
 });

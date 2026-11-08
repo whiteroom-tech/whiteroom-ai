@@ -12,6 +12,7 @@ vi.mock('@/components/sandbox/TestRunFlow', () => ({ TestRunFlow: () => h('div',
 vi.mock('@/components/sandbox/v2/SandboxHome', () => ({ SandboxHome: ({ fleet }: { fleet: string }) => h('div', null, `CURRENT SANDBOX ${fleet}`) }));
 vi.mock('@/components/citadel/PageChrome', () => ({ PageHeader: () => null }));
 const { SandboxEntry } = await import('@/components/sandbox/SandboxEntry');
+const { FleetAuthProvider } = await import('@/hooks/useFleetAuth');
 
 let root: Root;
 let el: HTMLDivElement;
@@ -59,4 +60,13 @@ it('?connection=1 opens the connection test without checking the session', async
   await mount();
   expect(el.textContent).toBe('LEGACY CONNECTION TEST');
   expect(request).not.toHaveBeenCalled();
+});
+
+it('under the layout’s FleetAuthProvider, uses its session check instead of making another', async () => {
+  const request = vi.fn().mockResolvedValue(json({ fleetId: 'fleet-a' }, 200));
+  vi.stubGlobal('fetch', request);
+  el = document.createElement('div'); document.body.appendChild(el); root = createRoot(el);
+  await act(async () => root.render(h(FleetAuthProvider, null, h(SandboxEntry)))); await flush();
+  expect(el.textContent).toBe('CURRENT SANDBOX fleet-a');
+  expect(request).toHaveBeenCalledTimes(1);
 });

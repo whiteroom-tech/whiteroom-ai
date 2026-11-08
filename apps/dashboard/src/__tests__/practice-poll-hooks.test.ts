@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // The practice pages' shared poll and clock (usePracticePoll, useClock): 5 s
-// while visible and 30 s while hidden, one read at a time, a read at once on
+// while visible and none while hidden, one read at a time, a read at once on
 // coming back, 'stop' ends it, a refusal that asking again won't fix goes to
 // onError once and stops, a network blip keeps polling, a read answered after
 // the page is left goes nowhere, and the clock starts at now.
@@ -35,7 +35,7 @@ const Poll = (p: { onRead: (r: { lifecycle: string }) => 'stop' | void; onError:
 const tick = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 
 describe('usePracticePoll', () => {
-  it('reads every 5 s while visible, every 30 s while hidden, and at once on coming back', async () => {
+  it('reads every 5 s while visible, not at all while hidden, and once at once on coming back', async () => {
     await act(async () => { root.render(h(Poll, { onRead: () => {}, onError: () => {} })); });
     await tick(PRACTICE_POLL_MS.visible);
     expect(reads()).toBe(1);
@@ -43,11 +43,13 @@ describe('usePracticePoll', () => {
     expect(reads()).toBe(2);
     hidden = true;
     await tick(PRACTICE_POLL_MS.visible);
-    expect(reads()).toBe(3);
-    await tick(PRACTICE_POLL_MS.visible * 2);
-    expect(reads()).toBe(3);
+    expect(reads()).toBe(2);
+    await tick(60_000);
+    expect(reads()).toBe(2);
     hidden = false;
     await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    expect(reads()).toBe(3);
+    await tick(PRACTICE_POLL_MS.visible);
     expect(reads()).toBe(4);
   });
 

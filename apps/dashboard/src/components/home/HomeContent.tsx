@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button, Hint, SegmentedControl, SelectChip, SkeletonCard, StatCard, StatusPill } from '@whiteroom/ui';
 import { auditLog, checkWatch, fleetReport, isAuthError, listRuns, performanceFleetHourly, ruleActions, runDays } from '@/lib/whiteroom/client';
-import type { AgentHold, AgentInfo, FleetReport } from '@/lib/whiteroom/types';
+import type { AgentHold, AgentInfo, FleetHourlyResult, FleetReport } from '@/lib/whiteroom/types';
 import { usePoll } from '@/hooks/usePoll';
 import { safeGet, safeSet } from '@/lib/safe-storage';
 import { HELP } from '@/lib/metric-definitions';
@@ -30,6 +30,18 @@ import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { EmptyHome } from './EmptyHome';
 
 export type AgentsView = 'cards' | 'table';
+
+/** Home's main read (the report and today's numbers), every 30 s. */
+export const HOME_POLL_MS = 30_000;
+/** Today's numbers reuse the week's hourly read sent this recently (half a main poll). */
+const SHARED_HOURLY_MS = HOME_POLL_MS / 2;
+
+/** A promise with its resolve, for a value that arrives later. */
+function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((r) => { resolve = r; });
+  return { promise, resolve };
+}
 
 /** The most recent day with runs, for the quiet-day box. */
 export interface LastActive { day: string; runs: number }
@@ -63,6 +75,11 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   const [view, setView] = useState<AgentsView | null>(() => { const v = safeGet('wr_home_agents_view'); return v === 'table' || v === 'cards' ? v : null; });
   const [week, setWeek] = useState<HomeWeek | null>(null);
   const [todayRules, setTodayRules] = useState<{ day: string; tally: GovernanceTally } | null>(null);
+  // The first report's agents, for the first week read: it's sent with the report, not after it.
+  const [firstAgents] = useState(() => deferred<string[]>());
+  const reportIn = useRef(false);
+  // The week's hourly read as it started: today's figures come from it when it's recent.
+  const weekHourly = useRef<{ at: number; read: Promise<FleetHourlyResult | null> } | null>(null);
   const fanOutClock = useRef(FANOUT_START);
   const fanOutDetails = useRef<AgentInfo[]>([]);
   // No agents yet (README › Screens › 8): check every 5 s for the first call.
@@ -98,22 +115,32 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
     emptyRef.current = data.agentCount === 0;
     setReport(data);
     setAgents(details);
+    reportIn.current = true;
+    firstAgents.resolve(details.map((d) => d.agentId));
   }, [fleetId, authKey]);
 
   const fetchToday = useCallback(async (stale: () => boolean) => {
     // The day and its window are fixed when the read starts: a read that answers after midnight is still that day's.
-    const at = Date.now();
-    const res = await performanceFleetHourly(fleetId, hoursSinceLocalMidnight(at), authKey);
+    // The week's hourly read holds today's hours too: one sent moments ago (on load, every 5 minutes) serves both.
+    const shared = weekHourly.current;
+    const now = Date.now();
+    const reuse = shared && now - shared.at < SHARED_HOURLY_MS && localDay(shared.at) === localDay(now) ? shared : null;
+    const sharedRes = reuse ? await reuse.read : null;
     if (stale()) return;
-    if (res.error || !Array.isArray(res.hourly)) throw new Error('hourly unavailable');
+    const ok = (r: FleetHourlyResult | null): r is FleetHourlyResult & { hourly: NonNullable<FleetHourlyResult['hourly']> } => !!r && !r.error && Array.isArray(r.hourly);
+    // A shared read that failed doesn't fail today's figures: they're read on their own.
+    const at = reuse && ok(sharedRes) ? reuse.at : Date.now();
+    const res = reuse && ok(sharedRes) ? sharedRes : await performanceFleetHourly(fleetId, hoursSinceLocalMidnight(at), authKey);
+    if (stale()) return;
+    if (!ok(res)) throw new Error('hourly unavailable');
     setToday({ day: localDay(at), ...todayTotals(res.hourly, at) });
   }, [fleetId, authKey]);
 
   // The last 7 days (each agent's input sent and saved, rule activity and score) and today's rule
   // activity are extra: a failure hides them rather than failing the page. The week changes
   // slowly, so it's reread every 5 minutes; today's rule activity once a minute.
-  // Each agent's input needs the agent list, so the week waits for the first report and
-  // rereads when the agents change.
+  // The week's reads go with the first report; only each agent's input waits for the
+  // report's agent list, and the week rereads when the agents change.
   const agentIds = agents.map((a) => a.agentId);
   const agentIdsRef = useRef(agentIds);
   agentIdsRef.current = agentIds;
@@ -121,13 +148,17 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   // The agents the last week read asked about; null before the first.
   const weekAgents = useRef<string | null>(null);
   const { refresh: refreshWeek } = usePoll(async (stale) => {
-    weekAgents.current = idsKey(agentIdsRef.current);
-    const { start, audit, scores, rules, hourly, inputs } = await loadWeekReads(fleetId, authKey, { hourly: true, agentIds: agentIdsRef.current });
+    // Before the first report, its agents when it lands; after it, the ones shown.
+    const ids = reportIn.current ? Promise.resolve(agentIdsRef.current) : firstAgents.promise;
+    const agentIds = ids.then((list) => { if (!stale()) weekAgents.current = idsKey(list); return list; });
+    const { start, audit, scores, rules, hourly, inputs } = await loadWeekReads(fleetId, authKey, {
+      hourly: true, agentIds, onHourly: (read) => { weekHourly.current = { at: Date.now(), read }; },
+    });
     if (stale()) return;
     // A read that failed keeps its last good figures; the others refresh.
     const next = homeWeek(audit, scores, rules, hourly, start.getTime(), inputs);
     setWeek((prev) => keepLastGood(prev, next, weekFailures({ audit, scores, rules, hourly, inputs })));
-  }, { intervalMs: WEEK_POLL_MS, enabled: !!fleetId && !empty && report !== null });
+  }, { intervalMs: WEEK_POLL_MS, enabled: !!fleetId && !empty });
   useEffect(() => {
     if (weekAgents.current !== null && weekAgents.current !== agentsKey) refreshWeek();
   }, [agentsKey, refreshWeek]);
@@ -200,7 +231,7 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
       setFailing(true);
       onUpdated?.(null, true, emptyRef.current);
     }
-  }, { intervalMs: empty ? 5_000 : 10_000, enabled: !!fleetId });
+  }, { intervalMs: empty ? 5_000 : HOME_POLL_MS, enabled: !!fleetId });
 
   // The last active day is read only on a quiet day, on Refresh as on the timer.
   const quietRef = useRef(false);
@@ -209,7 +240,8 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   // since usePoll already fetched on mount.
   const firstSignal = useRef(refreshSignal);
   useEffect(() => {
-    if (refreshSignal !== firstSignal.current) { refresh(); refreshWeek(); refreshTodayRules(); refreshChanges(); refreshFlagged(); if (quietRef.current) refreshLastActive(); }
+    // The week first, so today's figures share its hourly read.
+    if (refreshSignal !== firstSignal.current) { refreshWeek(); refresh(); refreshTodayRules(); refreshChanges(); refreshFlagged(); if (quietRef.current) refreshLastActive(); }
   }, [refreshSignal, refresh, refreshWeek, refreshTodayRules, refreshChanges, refreshFlagged, refreshLastActive]);
 
   function changeView(v: AgentsView) {

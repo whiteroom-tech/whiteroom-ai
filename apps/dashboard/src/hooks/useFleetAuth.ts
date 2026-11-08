@@ -123,10 +123,13 @@ export function FleetAuthProvider({ children }: { children: React.ReactNode }) {
   return createElement(FleetAuthContext.Provider, { value: useOwnFleetAuth(true) }, children);
 }
 
-/** The shared session inside FleetAuthProvider; elsewhere this component's own. */
-export function useFleetAuth(): FleetAuthState {
+/**
+ * The shared session inside FleetAuthProvider; elsewhere this component's own.
+ * `idle`: outside a provider, don't check at all (a preview that asks nothing).
+ */
+export function useFleetAuth({ idle = false }: { idle?: boolean } = {}): FleetAuthState {
   const shared = useContext(FleetAuthContext);
-  const own = useOwnFleetAuth(shared === null);
+  const own = useOwnFleetAuth(shared === null && !idle);
   return shared ?? own;
 }
 
