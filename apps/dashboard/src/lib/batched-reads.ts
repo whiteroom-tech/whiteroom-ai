@@ -42,7 +42,12 @@ export async function auditLogByType(
     if (Array.isArray(res.types)) {
       auditBatch = true;
       const all = res.entries;
-      return types.map((type) => ({ ...res, entries: all.filter((e) => e.type === type) }));
+      // Per type: its entries, and the count and limit of what this read returned for it (the batch's own
+      // total and limit cover all the types together, so they'd mislead a caller reading one type).
+      return types.map((type) => {
+        const entries = all.filter((e) => e.type === type);
+        return { ...res, entries, total: entries.length, limit };
+      });
     }
     auditBatch = false;
   }
@@ -52,6 +57,8 @@ export async function auditLogByType(
 }
 
 const wouldKey = (r: { id: string; version: number }) => `${r.id}@${r.version}`;
+/** How an engine from before the batch answers a body with rules[] and no rule_id. */
+const OLD_ENGINE_REFUSAL = /rule_id is required/i;
 
 /** One rule_would_act per rule, as before engine PR 345; a failed read leaves that rule out. */
 async function wouldActsOneByOne(fleetId: string, rules: ReadonlyArray<{ id: string; version: number }>, key?: string) {
@@ -76,8 +83,12 @@ export async function wouldActsFor(
     try {
       res = await ruleWouldActBatch(fleetId, chunk.map((r) => ({ ruleId: r.id, ruleVersion: r.version })), key);
     } catch (e) {
-      // An older engine refuses a body without rule_id; anything else is a failed read.
-      if (e instanceof WhiteRoomApiError && e.status === 400) { wouldBatch = false; return wouldActsOneByOne(fleetId, chunk, key); }
+      // An older engine refuses a body without rule_id: remember it and read one by one. Any other 400 (a new
+      // engine refusing this chunk) reads this chunk one by one but keeps trying the batch next time.
+      if (e instanceof WhiteRoomApiError && e.status === 400) {
+        if (OLD_ENGINE_REFUSAL.test(e.reason ?? e.message)) wouldBatch = false;
+        return wouldActsOneByOne(fleetId, chunk, key);
+      }
       wouldBatch = null;
       return [];
     }

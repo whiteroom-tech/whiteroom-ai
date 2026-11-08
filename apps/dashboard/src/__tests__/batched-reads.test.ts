@@ -33,6 +33,8 @@ describe('auditLogByType', () => {
     api.log.mockImplementation(single);
     const singles = await Promise.all(TYPES.map((type) => single({ type })));
     expect(reads.map((r) => r!.entries)).toEqual(singles.map((r) => r.entries));
+    // Each type's count and limit are its own, not the batch's across all types.
+    expect(reads.map((r) => [r!.total, r!.limit])).toEqual([[2, 5], [2, 5], [0, 5]]);
   });
 
   it('falls back on an engine with no top-level types (filters.types doesn’t count), and remembers', async () => {
@@ -97,6 +99,17 @@ describe('wouldActsFor', () => {
     await wouldActsFor('f1', rules(3), 'k');
     expect(api.wouldBatch).toHaveBeenCalledTimes(2);
     expect(api.would).toHaveBeenCalledTimes(6);
+  });
+
+  it('a new engine refusing one chunk reads it one by one but keeps batching next time', async () => {
+    api.wouldBatch.mockRejectedValueOnce(new WhiteRoomApiError('HTTP 400', 400, 'rules must be a list of 1-50 { rule_id, rule_version } (an integer).'));
+    api.wouldBatch.mockImplementation(batchOk);
+    api.would.mockImplementation(singleOk);
+    expect(Object.keys(await wouldActsFor('f1', rules(2)))).toEqual(['r0@1', 'r1@2']);
+    expect(api.would).toHaveBeenCalledTimes(2);
+    await wouldActsFor('f1', rules(2));
+    expect(api.wouldBatch).toHaveBeenCalledTimes(2);
+    expect(api.would).toHaveBeenCalledTimes(2);
   });
 
   it('falls back when the answer isn’t a batch answer', async () => {
