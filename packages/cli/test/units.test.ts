@@ -118,6 +118,11 @@ describe("preflight", () => {
     p = hiddenPrompt("Q: ", t, err);
     t.write(`${esc}[200~`);
     assert.equal(said, "Q: ");
+    // A marker cut short across reads isn't something typed.
+    t.write(`${esc}[20`);
+    assert.equal(said, "Q: ");
+    t.write(`1~${esc}[200~`);
+    assert.equal(said, "Q: ");
     t.write(`wrrt_secret${esc}[201~`);
     t.write("more");
     assert.equal(said, `Q: ${HIDDEN_RECEIVED}`);

@@ -186,7 +186,9 @@ export function hiddenPrompt(question: string, stdin: Terminal = process.stdin, 
       const end = raw.search(/[\r\n\u0003]/);
       if (end < 0) {
         // Something visible arrived (paste markers aside): say so, once, without showing it.
-        if (!noted && /[^\x00-\x1f\x7f]/.test(raw.replace(/\x1b\[20[01]~?|\x1b\[?2?0?[01]?/g, ""))) {
+        // Whole markers anywhere, and one cut short at the end of what has arrived so far.
+        const visible = raw.replace(/\x1b\[20[01]~/g, "").replace(/\x1b(?:\[(?:2(?:0[01]?)?)?)?$/, "");
+        if (!noted && /[^\x00-\x1f\x7f]/.test(visible)) {
           noted = true;
           stderr.write(HIDDEN_RECEIVED);
         }
