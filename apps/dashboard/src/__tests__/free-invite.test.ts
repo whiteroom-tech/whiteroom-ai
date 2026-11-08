@@ -18,8 +18,10 @@ describe('invite code', () => {
     expect(inviteCodeMatches(null)).toBe(false);
   });
 
-  it('matches nothing when no code is set', () => {
+  it('matches nothing when no code is set (fails closed)', () => {
+    const value = signInviteCookie();
     vi.stubEnv('FREE_INVITE_CODE', '');
+    expect(verifyInviteCookie(value)).toBe(false);
     expect(inviteCodeMatches('')).toBe(false);
     expect(signInviteCookie()).toBeNull();
   });
