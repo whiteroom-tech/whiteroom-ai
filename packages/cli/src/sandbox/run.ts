@@ -69,11 +69,12 @@ export function whiteRoomBaseUrls(env: NodeJS.ProcessEnv, except: readonly strin
  * WhiteRoom address. The Sandbox page's .env line works too
  * (ANTHROPIC_BASE_URL=…, with or without export or quotes).
  */
-export function sandboxUrlOf(raw: string): { url: string } | { problem: string } {
+export function sandboxUrlOf(raw: string, env: NodeJS.ProcessEnv = {}): { url: string } | { problem: string } {
   const value = raw.trim().replace(/^export\s+/, "").replace(/^[A-Z][A-Z0-9_]*=/, "").replace(/^(["'])(.*)\1$/, "$2");
   const m = value.trim().match(SANDBOX_URL);
   if (!m) return { problem: runCopy.badUrl };
-  if (targetOrigin(m[1], {}) === null) return { problem: runCopy.notWhiteRoom };
+  // WHITEROOM_PRACTICE_DEV=1 allows another host, as for listen and practice (testing WhiteRoom itself, e.g. its staging engine).
+  if (targetOrigin(m[1], env) === null) return { problem: runCopy.notWhiteRoom };
   return { url: `${new URL(m[1]).origin}/${m[2]}` };
 }
 
@@ -101,7 +102,7 @@ export async function run(a: RunArgs, env: NodeJS.ProcessEnv = process.env, aske
       throw err;
     }
   }
-  const checked = sandboxUrlOf(raw);
+  const checked = sandboxUrlOf(raw, env);
   if ("problem" in checked) return fail(checked.problem);
   const setting = sandboxSetting(a.provider, checked.url);
   const settings = sandboxSettings(a.provider, checked.url);

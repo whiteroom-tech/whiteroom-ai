@@ -151,6 +151,8 @@ describe("sandbox run", () => {
     assert.deepEqual(sandboxUrlOf(`export OPENAI_BASE_URL="${SANDBOX_URL}/v1"`), { url: SANDBOX_URL });
     assert.ok("problem" in sandboxUrlOf("https://proxy.whiteroom.tech/sk-wr-short"));
     assert.ok("problem" in sandboxUrlOf(`https://evil.example/${SANDBOX_KEY}`));
+    // Only when testing WhiteRoom itself (its staging engine isn't on whiteroom.tech).
+    assert.deepEqual(sandboxUrlOf(`https://engine-staging.example.run.app/${SANDBOX_KEY}`, { WHITEROOM_PRACTICE_DEV: "1" }), { url: `https://engine-staging.example.run.app/${SANDBOX_KEY}` });
     assert.deepEqual(sandboxUrlOf(`http://localhost:8787/${SANDBOX_KEY}`), { url: `http://localhost:8787/${SANDBOX_KEY}` });
     assert.deepEqual(sandboxSetting("foundry", SANDBOX_URL), { name: "ANTHROPIC_BASE_URL", value: SANDBOX_URL });
     assert.deepEqual(sandboxSetting("bedrock-mantle", `${SANDBOX_URL}/`), { name: "ANTHROPIC_BASE_URL", value: SANDBOX_URL });
