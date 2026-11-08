@@ -20,9 +20,9 @@ import {
 } from '@/lib/plan-banner-shared';
 
 /**
- * Fired once going live succeeds (Go live here, Take it live on Sandbox), so
- * every plan banner and caveat on the page re-reads at once instead of after
- * PLAN_READ_TTL_MS, whether or not the page then moves on.
+ * Fired once going live succeeds, so every plan banner and caveat on the
+ * page re-reads at once instead of after PLAN_READ_TTL_MS. useGoLive fires it
+ * here; any other caller of takeItLive (the Sandbox verdict) must fire it too.
  */
 export const PLAN_CHANGED = 'wr:plan-changed';
 
@@ -81,7 +81,6 @@ export function usePlanState(): PlanState | null {
   if (preview) return preview.state;
   return read && read.fleetId === fleetId ? read.state : null;
 }
-
 
 /** The connect-line caveat for this account, wherever a connect line shows. */
 export function useConnectCaveat(): PlanState['caveat'] {

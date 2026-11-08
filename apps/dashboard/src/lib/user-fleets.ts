@@ -147,7 +147,11 @@ export async function addUserFleet(
   return { ok: true };
 }
 
-/** Where going live was asked for: the Sandbox verdict (Take it live), the Free banner or Settings (Go live). */
+/**
+ * Where going live was asked for: the Sandbox verdict (Take it live, which
+ * fires PLAN_CHANGED on success as useGoLive does), the Free banner or
+ * Settings (Go live).
+ */
 export type GoLiveFrom = 'verdict' | 'banner' | 'settings';
 
 /**
