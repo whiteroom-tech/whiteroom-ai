@@ -30,5 +30,7 @@ CREATE TABLE IF NOT EXISTS free_signups (
   email_key  text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+-- ip_hash was NOT NULL in an early draft of this file; make sure it isn't.
+ALTER TABLE free_signups ALTER COLUMN ip_hash DROP NOT NULL;
 CREATE INDEX IF NOT EXISTS free_signups_created_at_idx ON free_signups (created_at);
 CREATE INDEX IF NOT EXISTS free_signups_email_key_idx ON free_signups (email_key);

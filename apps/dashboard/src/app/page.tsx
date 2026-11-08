@@ -2,8 +2,9 @@ import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { db } from '@/lib/db';
-import { resolvePlan } from '@/lib/entitlements';
+import { getSubscriptionRow, getTrial } from '@/lib/entitlements';
 import { getFleetAuthCookie } from '@/lib/fleet-session';
+import { effectivePlan } from '@/lib/plans';
 import { ROUTES } from '@/lib/routes';
 
 /**
@@ -20,9 +21,9 @@ import { ROUTES } from '@/lib/routes';
  */
 async function freeLanding(userId: string): Promise<string | null> {
   try {
-    const { rows: [u] } = await db().query(`SELECT trial_state FROM users WHERE id = $1`, [userId]);
-    if (u?.trial_state !== 'not_started') return null;
-    if ((await resolvePlan(userId)).plan !== 'free') return null;
+    const trial = await getTrial(userId);
+    if (trial.state !== 'not_started') return null;
+    if (effectivePlan(await getSubscriptionRow(userId), trial) !== 'free') return null;
     const { rows } = await db().query(
       `SELECT 1 FROM organization_members WHERE user_id = $1 AND status = 'invited' LIMIT 1`,
       [userId],

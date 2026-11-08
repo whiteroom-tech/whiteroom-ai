@@ -122,7 +122,7 @@ export async function createFreeUser(user: Omit<AdapterUser, 'id'>, now: Date = 
     await client.query(`SELECT pg_advisory_xact_lock(hashtext('wr_free_signups'))`);
     const { rows: [c] } = await client.query(
       `SELECT count(*)::int AS today,
-              count(*) FILTER (WHERE $2::text IS NOT NULL AND ip_hash = $2)::int AS from_ip,
+              count(*) FILTER (WHERE ip_hash = $2)::int AS from_ip,
               (SELECT count(*)::int FROM free_signups WHERE email_key = $3) AS same_identity
          FROM free_signups WHERE created_at >= $1`,
       [utcDayStart(now), ip, key],

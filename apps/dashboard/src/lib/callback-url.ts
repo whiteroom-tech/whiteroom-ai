@@ -73,3 +73,38 @@ export function defaultDestinationForHost(hostname: string): string {
   if (bare === 'console' || bare.startsWith('console.')) return CONSOLE_DESTINATION;
   return DEFAULT_DESTINATION;
 }
+
+/**
+ * Where this sign-in should land.
+ *
+ * The sign-in page calls this at the moment of the click with
+ * window.location, so it cannot be stale and cannot be missing because an
+ * effect had not run yet.
+ *
+ * Almost always /fleet-key; with FREE_PLAN on, / instead, which sends a Free
+ * account to Sandbox and anyone else where they'd land today (app/page.tsx).
+ * Exceptions: admin.* → / (the staff dashboard),
+ * console.* → /organization (those hosts 404 Citadel routes). The host gate
+ * may also send ?callbackUrl=…; safeCallbackUrl() keeps that from being an
+ * open redirect. Dedicated hosts get an absolute URL so Auth.js, which
+ * finishes on the app host, sends the user back to the host they started on.
+ */
+export function signInDestination(
+  location: Pick<Location, 'search' | 'hostname' | 'host' | 'origin'>,
+  landOnRoot: boolean,
+): string {
+  const raw = new URLSearchParams(location.search).get('callbackUrl');
+  const fallback = defaultDestinationForHost(location.hostname);
+  let path = safeCallbackUrl(raw, landOnRoot && fallback === DEFAULT_DESTINATION ? '/' : fallback);
+  const host = location.hostname.toLowerCase().replace(/:\d+$/, '');
+  const dedicated = host === 'admin' || host.startsWith('admin.') || host === 'console' || host.startsWith('console.');
+  if (!dedicated) return path;
+  // Console is the enterprise login. A fleet path here would drop the company
+  // admin into the personal workspace on the app host.
+  if (host === 'console' || host.startsWith('console.')) {
+    if (path !== '/organization' && !path.startsWith('/organization/')) path = '/organization';
+  }
+  const local = host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local');
+  if (local) return `${location.origin}${path}`;
+  return `https://${location.host}${path}`;
+}

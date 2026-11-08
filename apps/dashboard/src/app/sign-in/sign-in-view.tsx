@@ -3,7 +3,7 @@
 import { signIn } from 'next-auth/react';
 import { useEffect, useRef, useState } from 'react';
 import { BrandLink, FONT_DISPLAY } from '@whiteroom/ui';
-import { DEFAULT_DESTINATION, defaultDestinationForHost, safeCallbackUrl } from '@/lib/callback-url';
+import { signInDestination } from '@/lib/callback-url';
 import { ThemedShell } from '@/components/ThemedShell';
 import { safeGet, safeRemove, safeSet } from '@/lib/safe-storage';
 
@@ -21,35 +21,9 @@ type Method = 'google' | 'email';
 const LAST_METHOD_KEY = 'wr_last_method';
 const LAST_EMAIL_KEY = 'wr_last_email';
 
-/**
- * Where this sign-in should land.
- *
- * Read at the moment of the click rather than held in state, so it cannot be
- * stale and cannot be missing because an effect had not run yet.
- *
- * Almost always /fleet-key; with FREE_PLAN on, / instead, which sends a Free
- * account to Sandbox and anyone else where they'd land today (app/page.tsx).
- * Exceptions: admin.* → / (the staff dashboard),
- * console.* → /organization (those hosts 404 Citadel routes). The host gate
- * may also send ?callbackUrl=…; safeCallbackUrl() keeps that from being an
- * open redirect. Dedicated hosts get an absolute URL so Auth.js, which
- * finishes on the app host, sends the user back to the host they started on.
- */
-export function destination(landOnRoot: boolean): string {
-  const raw = new URLSearchParams(window.location.search).get('callbackUrl');
-  const fallback = defaultDestinationForHost(window.location.hostname);
-  let path = safeCallbackUrl(raw, landOnRoot && fallback === DEFAULT_DESTINATION ? '/' : fallback);
-  const host = window.location.hostname.toLowerCase().replace(/:\d+$/, '');
-  const dedicated = host === 'admin' || host.startsWith('admin.') || host === 'console' || host.startsWith('console.');
-  if (!dedicated) return path;
-  // Console is the enterprise login. A fleet path here would drop the company
-  // admin into the personal workspace on the app host.
-  if (host === 'console' || host.startsWith('console.')) {
-    if (path !== '/organization' && !path.startsWith('/organization/')) path = '/organization';
-  }
-  const local = host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local');
-  if (local) return `${window.location.origin}${path}`;
-  return `https://${window.location.host}${path}`;
+/** Where this sign-in should land, read at the moment of the click (lib/callback-url.ts). */
+function destination(landOnRoot: boolean): string {
+  return signInDestination(window.location, landOnRoot);
 }
 
 /** What to suggest when the method someone just tried turns out to be the wrong one. */

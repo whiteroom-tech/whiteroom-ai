@@ -151,9 +151,9 @@ export function proxy(request: NextRequest) {
     // and dual-run is fine until sales wants console-only for managers.
   }
 
-  const freeMode = freePlanMode();
-  if (pathname === '/sign-in' && searchParams.has('free') && freeMode !== 'off') {
-    return freeInvite(request, freeMode);
+  if (pathname === '/sign-in' && searchParams.has('free')) {
+    const freeMode = freePlanMode();
+    if (freeMode !== 'off') return freeInvite(request, freeMode);
   }
 
   if (pathname === '/fleet') {

@@ -12,7 +12,8 @@ vi.mock('next/headers', () => ({
 vi.mock('next-auth/react', () => ({ signIn: vi.fn() }));
 
 const { default: SignInPage } = await import('@/app/sign-in/page');
-const { SignInView, destination } = await import('@/app/sign-in/sign-in-view');
+const { SignInView } = await import('@/app/sign-in/sign-in-view');
+const { signInDestination } = await import('@/lib/callback-url');
 const { signInviteCookie } = await import('@/lib/free-invite');
 
 const TODAY = 'New here? Signing in creates your account and provisions your fleet.';
@@ -26,7 +27,7 @@ beforeEach(() => {
   vi.stubEnv('AUTH_SECRET', 'test-secret');
   vi.stubEnv('FREE_INVITE_CODE', 'open-sesame');
 });
-afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
+afterEach(() => vi.unstubAllEnvs());
 
 describe('sign-in subtitle (§6)', () => {
   it('FREE_PLAN off: today\'s page, byte for byte, reading nothing', async () => {
@@ -60,9 +61,9 @@ describe('sign-in subtitle (§6)', () => {
 });
 
 describe('where a sign-in lands', () => {
-  const at = (host: string, search = '') => vi.stubGlobal('window', {
-    location: { hostname: host, host, search, origin: `http://${host}` },
-  });
+  let loc = { hostname: '', host: '', search: '', origin: '' };
+  const at = (host: string, search = '') => { loc = { hostname: host, host, search, origin: `http://${host}` }; };
+  const destination = (landOnRoot: boolean) => signInDestination(loc, landOnRoot);
 
   it('Fleet key today; / with FREE_PLAN on', () => {
     at('app.whiteroom.tech');
