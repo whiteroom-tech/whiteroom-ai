@@ -82,6 +82,7 @@ def model(base_url, headers, body):
             # WhiteRoom's own words when it sends them (without characters a terminal would act on), else the same words from here.
             words = reply.get("error") if isinstance(reply.get("error"), str) else ""
             words = "".join(ch for ch in words if ch == "\n" or (unicodedata.category(ch)[0] != "C" and ch not in "\u2028\u2029")).strip()
+            words = words if len(words) <= 600 else ""
             if reason == "free_paused":
                 raise RuntimeError(words or "Sandbox isn't taking new runs right now. Nothing you set up is lost. Try again later.") from None
             if reason == "sandbox_daily_limit":

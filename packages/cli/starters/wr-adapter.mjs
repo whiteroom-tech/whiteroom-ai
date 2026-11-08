@@ -54,7 +54,8 @@ async function model(base_url, headers, body) {
     const reply = await res.json().catch(() => null);
     const wr = reply?.whiteroom;
     // WhiteRoom's own words when it sends them (without characters a terminal would act on), else the same words from here.
-    const words = typeof reply?.error === "string" ? reply.error.replace(/[^\P{C}\n]|[\u2028\u2029]/gu, "").trim() : "";
+    let words = typeof reply?.error === "string" ? reply.error.replace(/[^\P{C}\n]|[\u2028\u2029]/gu, "").trim() : "";
+    if (words.length > 600) words = "";
     if (wr?.reason === "free_paused") throw new Error(words || "Sandbox isn't taking new runs right now. Nothing you set up is lost. Try again later.");
     if (wr?.reason === "sandbox_daily_limit") {
       const at = Number.isFinite(Date.parse(wr.resetAt)) ? new Date(wr.resetAt).toISOString().slice(11, 16) : "00:00";

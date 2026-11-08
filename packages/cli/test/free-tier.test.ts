@@ -424,6 +424,7 @@ describe("practice run: Free tier answers end to end", () => {
       for (const [status, body, said] of [
         [503, PAUSED, /Sandbox isn't taking new runs right now\. Nothing you set up is lost\. Try again later\./],
         [402, DAILY, /Your Sandbox hit today's call limit\. It takes calls again at 00:00 UTC\./],
+        [503, { ...PAUSED, error: "x".repeat(601) }, new RegExp(WORDS.free_paused.replace(/[.']/g, "\\$&"))],
         [402, { ...DAILY, error: `${WORDS.callsToday}\u001b[2J` }, /Your Sandbox hit today's limit of 1,000 calls\. It takes calls again at 00:00 UTC\.(?!\u001b)/],
       ] as const) {
         const s = await stub({ route: (p) => (p === "/v1/messages" ? [status, body, { "retry-after": "60" }] : undefined) });
