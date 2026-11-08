@@ -58,7 +58,12 @@ describe('Download report', () => {
   });
 
   it('is named by the day it ended and the check’s short id', () => {
-    expect(sandboxReportFileName('sbc_1a2b3c4d-0000', '2026-11-07T23:06:00Z')).toBe('whiteroom-sandbox-check-2026-11-07-1a2b3c.html');
-    expect(sandboxReportFileName(undefined, '2026-11-07T23:06:00Z')).toBe('whiteroom-sandbox-check-2026-11-07.html');
+    expect(sandboxReportFileName('sbc_1a2b3c4d-0000', '2026-11-07T23:06:00Z', 'UTC')).toBe('whiteroom-sandbox-check-2026-11-07-1a2b3c.html');
+    expect(sandboxReportFileName(undefined, '2026-11-07T23:06:00Z', 'UTC')).toBe('whiteroom-sandbox-check-2026-11-07.html');
+    // The day the report's times are in: 04:06 UTC on the 8th is still the 7th in New York.
+    expect(sandboxReportFileName('sbc_1a2b3c', '2026-11-08T04:06:00Z', 'America/New_York')).toBe('whiteroom-sandbox-check-2026-11-07-1a2b3c.html');
+    expect(sandboxReportFileName('sbc_1a2b3c', '2026-11-08T04:06:00Z', 'Europe/Berlin')).toBe('whiteroom-sandbox-check-2026-11-08-1a2b3c.html');
+    // No end time yet (a report read before it was stored): today's date.
+    expect(sandboxReportFileName('sbc_1a2b3c', null, 'UTC')).toMatch(/^whiteroom-sandbox-check-\d{4}-\d{2}-\d{2}-1a2b3c\.html$/);
   });
 });

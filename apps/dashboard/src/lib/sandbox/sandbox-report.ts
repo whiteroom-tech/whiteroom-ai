@@ -5,6 +5,7 @@
 
 import { scrub } from './check-report';
 import { REPORT_CSP } from './practice/report';
+import { viewerZone } from '@/lib/zone-time';
 import { callsText, ROW_GROUP_NAMES, rowsHeadline, STATE_WORDS, type RowState, type SandboxRow } from './sandbox-rows';
 
 /** Control, C1 and bidi characters, which could make the file read differently from what it says. */
@@ -71,9 +72,14 @@ ${o.notes?.length ? `<p class="muted">${o.notes.map(esc).join('<br>')}</p>` : ''
 </main></body></html>`;
 }
 
-/** "whiteroom-sandbox-check-2026-11-07-c_1a2b.html": the day it ended and the check's short id. */
-export function sandboxReportFileName(windowId: string | undefined, endedAt: string | null | undefined): string {
-  const day = (endedAt ?? new Date().toISOString()).slice(0, 10);
+/**
+ * "whiteroom-sandbox-check-2026-11-07-1a2b3c.html": the day it ended in the
+ * viewer's time zone (the one the report's times are in) and the check's short id.
+ */
+export function sandboxReportFileName(windowId: string | undefined, endedAt: string | null | undefined, zone = viewerZone()): string {
+  const at = new Date(endedAt ?? Date.now());
+  // en-CA writes dates as YYYY-MM-DD.
+  const day = new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(at);
   const id = (windowId ?? '').replace(/^sbc_/, '').replace(/[^A-Za-z0-9]/g, '').slice(0, 6);
   return `whiteroom-sandbox-check-${day}${id ? `-${id}` : ''}.html`;
 }

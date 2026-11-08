@@ -247,13 +247,13 @@ describe('Check your agent', () => {
   it('Download report saves the report as one HTML page, named by its day and check', async () => {
     checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z', agentId: 'support-bot' }, { long_task: 'passed' });
     await render(checksEl());
-    const saved: { name: string; type: string }[] = [];
+    const saved: string[] = [];
     const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:report');
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
-    const clicked = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { saved.push({ name: this.download, type: '' }); });
+    const clicked = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { saved.push(this.download); });
     capture.mockClear();
     await click('Download report');
-    expect(saved.map((x) => x.name)).toEqual(['whiteroom-sandbox-check-2026-10-29-chk1.html']);
+    expect(saved).toEqual(['whiteroom-sandbox-check-2026-10-29-chk1.html']);
     expect((created.mock.calls[0][0] as Blob).type).toBe('text/html');
     expect(capture.mock.calls.filter(([n]) => n === 'sandbox_report_downloaded')).toHaveLength(1);
     created.mockRestore();
