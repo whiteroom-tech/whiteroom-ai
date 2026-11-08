@@ -6,7 +6,7 @@ vi.mock('@/lib/owner-credentials', () => ({ rotateApiKey: vi.fn(), replaceProxyU
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { attempt, canConfirm, dialogReducer, INITIAL_DIALOG, nextStep, RotationResult } from '@/app/fleet-key/rotate';
-import { PROXY_ORIGIN } from '@/lib/setup';
+import { KEY_HEADER_LINE, PROXY_ORIGIN } from '@/lib/setup';
 
 const CLOUD = [{ prefix: 'sk-wr-dddddddddddddddd', provider: 'bedrock-sigv4', keyHint: 'none', cloudIdentity: true }];
 const KEY = { prefix: 'sk-wr-aaaaaaaaaaaaaaaa', provider: 'anthropic', keyHint: 'abcd', cloudIdentity: false, wrKey: 'sk-wr-' + 'a'.repeat(40) };
@@ -84,12 +84,14 @@ describe('RotationResult', () => {
     expect(out).toContain('New fleet key (hidden)');
     expect(out).not.toContain('b'.repeat(64));
     expect(out).toContain('I’ve copied them');
+    expect(out).toContain(KEY_HEADER_LINE);
   });
 
   it('when the key couldn’t be saved, says it’s the only copy and offers no dismiss (a reload would lose it)', () => {
     const out = html({ ok: true, apiKey: 'sk-wr-' + 'c'.repeat(64), proxyKeys: [], disconnected: [], notSaved: true });
     expect(out).toContain('only copy');
     expect(out).not.toContain('I’ve copied them');
+    expect(out).not.toContain(KEY_HEADER_LINE); // no proxy URL, no header note
   });
 
   it('says when the new URLs were lost', () => {

@@ -321,6 +321,15 @@ describe('evidence headers', () => {
     const h = evidenceHeader('review_tool_loops', calls, { toolName: 'search_places' });
     expect(h).toMatchObject({ kind: 'table', rows: [['search_places', 'same · a91f03c2', '9', '14']] });
   });
+  it('provider failures: results use the Runs labels', () => {
+    const h = evidenceHeader('review_provider_failures', [
+      c({ requestEnd: '2026-09-28T14:03:00Z', terminal: 'client_cancelled' }),
+      c({ terminal: 'upstream_error' }),
+      c({ requestEnd: '2026-09-28T14:01:00Z', terminal: 'some_new_state' }),
+      c({ requestEnd: '2026-09-28T14:00:00Z' }),
+    ], {});
+    expect(h && h.kind === 'table' && h.rows.map((r) => r[2])).toEqual(['Cancelled', 'Failed', 'some new state', '—']);
+  });
   it('silence: offered vs called', () => {
     const h = evidenceHeader('review_tool_silence', [c({ watchNumber: 50, toolNames: ['search', 'persist_lead'], requestedToolNames: ['search'] })], { toolName: 'persist_lead' });
     expect(h && h.kind === 'table' && h.rows[0].slice(1)).toEqual(['50', 'yes', 'search']);

@@ -23,6 +23,7 @@ import {
   BEDROCK_NOTES,
   BEDROCK_ROLE_LINES,
   BEDROCK_ROLE_SUPPORT,
+  KEY_HEADER_LINE,
   PROXY_KEY_URL,
   SETUP_GUIDE_URL,
   SETUP_LINES,
@@ -138,6 +139,7 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
               <span>Key ending {issued.keyHint} connected. Point your agent at this URL. It&rsquo;s shown once, so copy it now.</span>
               <CopyChip text={issued.proxyUrl} label="Copy the proxy URL" />
               <CopyChip text={issuedEnvHint(issued.provider, issued.proxyUrl)} label="Copy the environment line" />
+              <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{KEY_HEADER_LINE}</span>
               <AgentNaming {...agentNamingFor(issued.provider)} />
             </div>
           </Banner>
