@@ -3,6 +3,8 @@ import type { NextRequest } from 'next/server';
 import { sessionCookieName } from '@/lib/auth-cookies';
 import { PATH_HEADER, isAdminPath } from '@/lib/callback-url';
 import { NONCE_HEADER, scriptPolicy } from '@/lib/csp';
+import { FREE_INVITE_COOKIE, FREE_INVITE_TTL_MS, inviteCodeMatches, signInviteCookie } from '@/lib/free-invite';
+import { freePlanMode } from '@/lib/plans';
 import { LEGACY_REDIRECTS, ROUTES, isUnder } from '@/lib/routes';
 import { staffInternalPath, staffPublicPath } from '@/lib/staff-paths';
 
@@ -81,6 +83,27 @@ function movedPermanently(url: URL) {
   return response;
 }
 
+/**
+ * The Free invite link, /sign-in?free=<code> (FREE_PLAN=invite only). A
+ * matching code gets a short-lived signed cookie that the auth adapter checks
+ * again when the account is made; any code is then dropped from the URL, so
+ * it doesn't linger in history or get shared on. A wrong code just lands on
+ * the ordinary sign-in.
+ */
+function freeInvite(request: NextRequest) {
+  const url = request.nextUrl.clone();
+  url.searchParams.delete('free');
+  const response = NextResponse.redirect(url);
+  const value = inviteCodeMatches(request.nextUrl.searchParams.get('free')) ? signInviteCookie() : null;
+  if (value) {
+    const https = request.nextUrl.protocol === 'https:' || request.headers.get('x-forwarded-proto') === 'https';
+    response.cookies.set(FREE_INVITE_COOKIE, value, {
+      httpOnly: true, secure: https, sameSite: 'lax', path: '/', maxAge: FREE_INVITE_TTL_MS / 1000,
+    });
+  }
+  return response;
+}
+
 function requestHost(request: NextRequest): string {
   // Behind the load balancer the user's hostname arrives in x-forwarded-host
   // (Host is the internal run.app URL). This header is only trustworthy while
@@ -126,6 +149,10 @@ export function proxy(request: NextRequest) {
     }
     // Organization stays on the app host too: members need invites / leave,
     // and dual-run is fine until sales wants console-only for managers.
+  }
+
+  if (pathname === '/sign-in' && searchParams.has('free') && freePlanMode() === 'invite') {
+    return freeInvite(request);
   }
 
   if (pathname === '/fleet') {

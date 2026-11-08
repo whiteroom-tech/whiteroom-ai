@@ -59,6 +59,19 @@ gcloud run services update-traffic whiteroom-dashboard \
   --to-revisions=<revision-name>=100 --region=europe-west1 --project=whiteroom-eu
 ```
 
+## Free invite code
+
+The deploy reads `FREE_INVITE_CODE` from the secret
+`whiteroom-dashboard-free-invite-code` in `whiteroom-eu`. The secret must
+exist (and be readable by `whiteroom-dashboard-run`) before the next deploy,
+or Deploy fails and users stay on the old revision. Any value works while
+`FREE_PLAN` is unset; it only matters with `FREE_PLAN=invite`.
+
+```sh
+printf '%s' "$(openssl rand -hex 12)" | gcloud secrets create whiteroom-dashboard-free-invite-code \
+  --data-file=- --replication-policy=user-managed --locations=europe-west1 --project=whiteroom-eu
+```
+
 ## Database migrations
 
 The EU dashboard database was built from a schema-only dump of staging
