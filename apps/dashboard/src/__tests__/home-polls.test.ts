@@ -36,7 +36,7 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ruleActions: api.rules,
   performanceAgent: api.agent,
 }));
-const { HomeContent } = await import('@/components/home/HomeContent');
+const { FIRST_AGENTS_WAIT_MS, HomeContent } = await import('@/components/home/HomeContent');
 
 const flush = () => act(async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); });
 const isToday = (q: { fromDay: string; toDay: string }) => q.fromDay === q.toDay;
@@ -188,6 +188,26 @@ describe('Home request count', () => {
     // The week isn't read again once the agents are known.
     expect(api.audit).toHaveBeenCalledTimes(1);
     expect(m.text()).toContain('1K input sent · 5 blocked');
+    m.root.unmount();
+  });
+
+  it('a first report that never answers doesn’t hold the week read back: it finishes after FIRST_AGENTS_WAIT_MS, and per-agent input follows the report', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
+    api.hourly.mockResolvedValue({ hourly: [] });
+    let open!: () => void;
+    api.gate = new Promise<void>((r) => { open = r; });
+    const m = await mountWith();
+    // The polls' first tick, then the report still out: the week read stops waiting for its agents and finishes without them.
+    await m.advance(0);
+    expect(api.audit).toHaveBeenCalledTimes(1);
+    await m.advance(FIRST_AGENTS_WAIT_MS);
+    await act(async () => { open(); });
+    await flush();
+    // The first week read had already finished without the agent list (still waiting, it would have been the only
+    // read); once the agents are known, one more read fetches their input.
+    expect(m.text()).toContain('Rule activity');
+    expect(api.audit).toHaveBeenCalledTimes(2);
+    expect(api.agent.mock.calls.map((c) => c[1])).toEqual(['lead-agent']);
     m.root.unmount();
   });
 

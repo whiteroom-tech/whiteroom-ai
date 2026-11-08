@@ -35,6 +35,8 @@ export type AgentsView = 'cards' | 'table';
 export const HOME_POLL_MS = 30_000;
 /** Today's numbers reuse the week's hourly read sent this recently (half a main poll). */
 const SHARED_HOURLY_MS = HOME_POLL_MS / 2;
+/** How long the first week read waits for the first report's agents: a report that fails or hangs mustn't hold the week's figures back. */
+export const FIRST_AGENTS_WAIT_MS = 8_000;
 
 /** A promise with its resolve, for a value that arrives later. */
 function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
@@ -149,7 +151,9 @@ export function HomeContent({ fleetId, authKey, onAuthError, onUpdated, refreshS
   const weekAgents = useRef<string | null>(null);
   const { refresh: refreshWeek } = usePoll(async (stale) => {
     // Before the first report, its agents when it lands; after it, the ones shown.
-    const ids = reportIn.current ? Promise.resolve(agentIdsRef.current) : firstAgents.promise;
+    // If the first report fails or is slow, the week's figures go ahead without per-agent input (the next read has it).
+    const ids = reportIn.current ? Promise.resolve(agentIdsRef.current)
+      : Promise.race([firstAgents.promise, new Promise<string[]>((done) => setTimeout(() => done([]), FIRST_AGENTS_WAIT_MS))]);
     const agentIds = ids.then((list) => { if (!stale()) weekAgents.current = idsKey(list); return list; });
     const { start, audit, scores, rules, hourly, inputs } = await loadWeekReads(fleetId, authKey, {
       hourly: true, agentIds, onHourly: (read) => { weekHourly.current = { at: Date.now(), read }; },

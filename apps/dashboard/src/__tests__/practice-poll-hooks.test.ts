@@ -35,7 +35,7 @@ const Poll = (p: { onRead: (r: { lifecycle: string }) => 'stop' | void; onError:
 const tick = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 
 describe('usePracticePoll', () => {
-  it('reads every 5 s while visible, not at all while hidden, and once at once on coming back', async () => {
+  it('reads every 5 s while visible, not at all while hidden, and at once on coming back', async () => {
     await act(async () => { root.render(h(Poll, { onRead: () => {}, onError: () => {} })); });
     await tick(PRACTICE_POLL_MS.visible);
     expect(reads()).toBe(1);
