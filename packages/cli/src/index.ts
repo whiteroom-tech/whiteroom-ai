@@ -57,8 +57,9 @@ async function main() {
     retryAfter = res.headers.get("retry-after");
     return res;
   };
+  const baseUrl = flags.url ?? process.env.WHITEROOM_URL ?? "http://localhost:3000";
   const client = new WhiteRoomClient({
-    baseUrl: flags.url ?? process.env.WHITEROOM_URL ?? "http://localhost:3000",
+    baseUrl,
     apiKey: flags.key ?? process.env.WHITEROOM_API_KEY,
   });
 
@@ -137,7 +138,7 @@ async function main() {
   } catch (e) {
     if (e instanceof WhiteRoomError) {
       const { freeTierMessage } = await import("./responses.js");
-      console.error(freeTierMessage({ status: e.status, body: e.body, retryAfter }) ?? `Error ${e.status}: ${e.message}`);
+      console.error(freeTierMessage({ status: e.status, body: e.body, retryAfter }, baseUrl) ?? `Error ${e.status}: ${e.message}`);
       process.exit(1);
     }
     throw e;
