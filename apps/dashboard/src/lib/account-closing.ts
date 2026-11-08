@@ -381,6 +381,8 @@ export async function finishDeletedAccounts(): Promise<{ deleted: number; skippe
       }
       await deleteAccountRows(client, id);
       await client.query('COMMIT');
+      // After COMMIT, so a check in between can't cache the row again: its sessions end at their next check on this instance.
+      forgetSessionCheck(id);
       deleted++;
     } catch (err) {
       await client.query('ROLLBACK').catch(() => {});
@@ -444,8 +446,6 @@ export async function deleteAccountRows(q: Queryable, userId: string): Promise<v
   await q.query(`DELETE FROM subscriptions WHERE user_id = $1`, [userId]);
   // accounts and sessions cascade from users (001_nextauth.sql).
   await q.query(`DELETE FROM users WHERE id = $1`, [userId]);
-  // Its sessions end at their next check on this instance, not a minute later.
-  forgetSessionCheck(userId);
 }
 
 /** Why a deletion can't go ahead: `message` for the person deleting, `reason` as a short phrase for the blocked state. */
