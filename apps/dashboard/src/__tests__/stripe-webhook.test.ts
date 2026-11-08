@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   enqueue: vi.fn(),
   mark: vi.fn(),
   retrieve: vi.fn(),
+  activate: vi.fn(),
+  invoices: [] as Array<{ amount_paid: number; status_transitions: { paid_at: number } }>,
   /** What Stripe says the subscription is now (deliver() sets it to the payload unless a test says otherwise). */
   current: null as Record<string, unknown> | null,
 }));
@@ -20,6 +22,7 @@ vi.mock('@/lib/db', () => ({ db: () => ({ query: mocks.query, connect: async () 
 vi.mock('@/lib/entitlements', () => ({
   enqueueEntitlementSync: mocks.enqueue,
   markOutboxDelivered: mocks.mark,
+  activateTrial: mocks.activate,
   withUserEntitlementLock: async (userId: string, fn: (push: () => Promise<boolean>) => Promise<unknown>) => fn(() => mocks.sync(userId)),
 }));
 vi.mock('@/lib/account-closing', () => ({
@@ -29,7 +32,11 @@ vi.mock('@/lib/account-closing', () => ({
   reportRefundNeeded: mocks.refund,
 }));
 vi.mock('@/lib/stripe', () => ({
-  stripe: () => ({ webhooks: { constructEventAsync: mocks.constructEvent }, subscriptions: { retrieve: mocks.retrieve } }),
+  stripe: () => ({
+    webhooks: { constructEventAsync: mocks.constructEvent },
+    subscriptions: { retrieve: mocks.retrieve },
+    invoices: { list: () => (async function* () { yield* mocks.invoices; })() },
+  }),
 }));
 
 const { POST } = await import('@/app/api/stripe/webhook/route');
@@ -91,6 +98,9 @@ beforeEach(() => {
   mocks.cancelClosing.mockResolvedValue(true);
   mocks.cancelStripe.mockResolvedValue('canceled');
   mocks.refund.mockResolvedValue(undefined);
+  mocks.activate.mockResolvedValue(null);
+  mocks.invoices = [];
+  delete process.env.LAPSE_SUSPEND;
 });
 
 describe('stripe webhook: subscription upsert', () => {
@@ -184,8 +194,10 @@ describe('stripe webhook: a subscription on a closing account', () => {
         'EXCLUDED.status = ANY($8)': active.includes(next),
         'subscriptions.lapsed_at IS NOT NULL': row.lapsedAt !== null,
         'subscriptions.status = ANY($8)': active.includes(row.status),
+        // LAPSE_SUSPEND off: today's rule below decides.
+        $9: upsert?.[1][8] as boolean,
       };
-      const value: Record<string, string | null> = { NULL: null, 'subscriptions.lapsed_at': row.lapsedAt, 'now()': now };
+      const value: Record<string, string | null> = { NULL: null, 'subscriptions.lapsed_at': row.lapsedAt, 'now()': now, '$10::timestamptz': null };
       for (const [when, then] of clauses) {
         if (!(when in cond) || !(then in value)) throw new Error(`unknown clause: WHEN ${when} THEN ${then}`);
         if (cond[when]) return { status: next, lapsedAt: value[then] };
@@ -205,6 +217,60 @@ describe('stripe webhook: a subscription on a closing account', () => {
     expect(row.lapsedAt).toBeNull();
     // Never active: no lapse to record.
     expect(write({ status: 'incomplete', lapsedAt: null }, 'incomplete_expired', 't6').lapsedAt).toBeNull();
+    expect(upsert?.[1][8]).toBe(false);
+  });
+
+  describe('with LAPSE_SUSPEND=on: a lapse earns a grace only after a paid period, once', () => {
+    const DAY_S = 86_400;
+    const nowS = () => Math.floor(Date.now() / 1000);
+    let prev: { status: string; lapsed_at: string | null } | null;
+    beforeEach(() => {
+      process.env.LAPSE_SUSPEND = 'on';
+      prev = { status: 'active', lapsed_at: null };
+      const base = mocks.query.getMockImplementation()!;
+      mocks.query.mockImplementation(async (sql: string, params?: unknown[]) =>
+        String(sql).startsWith('SELECT status, lapsed_at::text FROM subscriptions') ? { rows: prev ? [prev] : [] } : base(sql, params));
+    });
+    const stored = () => {
+      const upsert = mocks.query.mock.calls.filter((c) => String(c[0]).includes('INSERT INTO subscriptions')).at(-1)!;
+      expect(upsert[1][8]).toBe(true);
+      return upsert[1][9] as string | null;
+    };
+    const canceled = () => deliver({ ...subscription([{ price: 'price_pro_share', quantity: 1 }]), status: 'canceled' });
+
+    it('a paid subscription that lapses records the lapse now', async () => {
+      mocks.invoices = [{ amount_paid: 1200, status_transitions: { paid_at: nowS() - 5 * DAY_S } }];
+      await canceled();
+      expect(Math.abs(Date.parse(stored()!) - Date.now())).toBeLessThan(5_000);
+    });
+
+    it('one that never paid (a cancelled trial, or only zero invoices) earns none', async () => {
+      prev = { status: 'trialing', lapsed_at: null };
+      mocks.invoices = [{ amount_paid: 0, status_transitions: { paid_at: nowS() - DAY_S } }];
+      await canceled();
+      expect(stored()).toBeNull();
+    });
+
+    it('subscribe and cancel again without paying since the last lapse: the old lapse stands, no new grace', async () => {
+      const old = new Date(Date.now() - 20 * DAY_S * 1000).toISOString();
+      prev = { status: 'active', lapsed_at: old };
+      mocks.invoices = [{ amount_paid: 1200, status_transitions: { paid_at: nowS() - 30 * DAY_S } }];
+      await canceled();
+      expect(stored()).toBe(old);
+      // Paid again after it: a new grace.
+      mocks.invoices = [{ amount_paid: 1200, status_transitions: { paid_at: nowS() - DAY_S } }];
+      await canceled();
+      expect(stored()).not.toBe(old);
+    });
+
+    it('active again keeps the last lapse (so it can be checked next time); a later write of a lapsed one keeps it', async () => {
+      const old = new Date(Date.now() - 3 * DAY_S * 1000).toISOString();
+      prev = { status: 'canceled', lapsed_at: old };
+      await deliver(subscription([{ price: 'price_pro_share', quantity: 1 }]));
+      expect(stored()).toBe(old);
+      await canceled();
+      expect(stored()).toBe(old);
+    });
   });
 
   it('in a deletion’s last minutes, when it can no longer be cancelled: nothing changes here, and the subscription is left for the closed-fleet pass', async () => {
@@ -233,6 +299,22 @@ describe('stripe webhook: a subscription on a closing account', () => {
 // is now, under the user's lock; an old subscription can't replace the current
 // one; and the outbox row is written with the change, so a failed push is
 // re-sent without waiting for another billing event.
+describe('stripe webhook: a Free account\'s free period starts when checkout completes', () => {
+  it('activates it in the subscription write\'s transaction, before its outbox row, only for a live subscription', async () => {
+    await deliver(subscription([{ price: 'price_starter_share', quantity: 1 }]));
+    expect(mocks.activate).toHaveBeenCalledWith(expect.anything(), 'u1');
+    const sqls = mocks.query.mock.calls.map((c) => String(c[0]));
+    const order = mocks.query.mock.invocationCallOrder;
+    const at = (pred: (x: string) => boolean) => order[sqls.findIndex(pred)];
+    expect(at((x) => x === 'BEGIN')).toBeLessThan(mocks.activate.mock.invocationCallOrder[0]);
+    expect(mocks.activate.mock.invocationCallOrder[0]).toBeLessThan(at((x) => x.includes('INSERT INTO entitlement_outbox')));
+
+    mocks.activate.mockClear();
+    await deliver({ ...subscription([{ price: 'price_starter_share', quantity: 1 }]), status: 'incomplete' });
+    expect(mocks.activate).not.toHaveBeenCalled();
+  });
+});
+
 describe('stripe webhook: order, replacement and delivery', () => {
   // What Stripe says now: set by a test, else the same as the event's payload.
   let lastPayload: Record<string, unknown> | null = null;

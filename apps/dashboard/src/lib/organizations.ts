@@ -9,7 +9,8 @@ import 'server-only';
 import { auth } from '@/auth';
 import { db } from '@/lib/db';
 import { logAdminAction, requireAdmin } from '@/lib/admin';
-import { fleetCountSql } from '@/lib/entitlements';
+import { fleetCountSql, resolvePlan } from '@/lib/entitlements';
+import { effectivePlan, freePlanMode, type PlanId } from '@/lib/plans';
 import { fetchFleetUsage, type FleetUsage } from '@/lib/fleet-usage';
 import { canManage, isOrgRole, ORG_ROLES, type OrgRole } from '@/lib/org-roles';
 
@@ -439,6 +440,35 @@ async function logOrgAction(
   }
 }
 
+/**
+ * Whether an account on this plan is kept out of running an organization: it
+ * can't own a new one, and an organization whose owners are all like this
+ * can't take new members. Free always; Suspended only once the Free plan is
+ * on (FREE_PLAN), so an ended free period keeps today's org rules until then.
+ * Joining never changes anyone's own plan: organizations grant visibility only.
+ */
+function withoutOrgAccess(plan: PlanId): boolean {
+  return plan === 'free' || (plan === 'suspended' && freePlanMode() !== 'off');
+}
+
+/** Whether at least one active owner of the organization has a plan that runs it. One query for every owner. */
+async function ownersHaveOrgAccess(q: Queryable, orgId: string): Promise<boolean> {
+  const { rows } = await q.query(
+    `SELECT s.plan, s.status, s.plan_override, s.lapsed_at::text, u.trial_ends_at::text, u.trial_state
+       FROM organization_members m
+       JOIN users u ON u.id = m.user_id
+       LEFT JOIN subscriptions s ON s.user_id = m.user_id
+      WHERE m.org_id = $1 AND m.role = 'owner' AND m.status = 'active'`,
+    [orgId],
+  );
+  return rows.some((r) => !withoutOrgAccess(effectivePlan(
+    r.plan ? { plan: r.plan, status: r.status, planOverride: r.plan_override, lapsedAt: r.lapsed_at } : null,
+    { endsAt: r.trial_ends_at ?? null, state: r.trial_state ?? null },
+  )));
+}
+
+const OWNER_NEEDS_PLAN = "This organization's owner needs a paid plan or free period before anyone new can join.";
+
 const EMAIL_MAX = 320;
 
 function normaliseEmail(raw: unknown): string {
@@ -489,6 +519,7 @@ export async function addMember(ctx: MutationContext, rawEmail: unknown, role: u
     if (existing) {
       throw new OrgError(existing.status === 'active' ? 'Already a member.' : 'Already invited.');
     }
+    if (!(await ownersHaveOrgAccess(q, ctx.orgId))) throw new OrgError(OWNER_NEEDS_PLAN);
 
     const status = ctx.as === 'staff' ? 'active' : 'invited';
 
@@ -580,6 +611,9 @@ export async function acceptInvitation(actor: OrgActor, orgId: unknown): Promise
     if (current) {
       throw new OrgError(`You're already a member of ${current.orgName}. Leave it before joining another organization.`);
     }
+    // Any invitee, Free or Suspended included, may join an organization whose
+    // owner has a plan that runs it; nobody may join one whose owners don't.
+    if (!(await ownersHaveOrgAccess(q, orgId))) throw new OrgError(OWNER_NEEDS_PLAN);
 
     await q.query(
       `UPDATE organization_members SET status = 'active', accepted_at = now()
@@ -654,6 +688,9 @@ export async function createOrganization(actor: OrgActor, rawName: unknown, rawO
     }
     const other = await getActiveMembership(owner.id, q);
     if (other) throw new OrgError(`That account already belongs to ${other.orgName}.`);
+    if (withoutOrgAccess((await resolvePlan(owner.id, q)).plan)) {
+      throw new OrgError('That account needs a paid plan or free period to own an organization.');
+    }
 
     const { rows } = await q.query(
       `INSERT INTO organizations (name, created_by) VALUES ($1, $2) RETURNING id`,

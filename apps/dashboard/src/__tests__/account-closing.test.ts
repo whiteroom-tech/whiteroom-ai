@@ -451,7 +451,7 @@ describe('Cancel deletion', () => {
     setup({ user: { closes_at: IN_14_DAYS, close_reason: 'deleted' }, owner: true, trialEndsAt: PAST });
     expect(await cancelAccountDeletion()).toEqual({ ok: true });
     expect(world.user.closes_at).toBeNull();
-    expect(pushed()).toMatchObject({ plan: 'expired', status: 'inactive', closesAt: null, closeReason: null });
+    expect(pushed()).toMatchObject({ plan: 'suspended', status: 'inactive', closesAt: null, closeReason: null });
   });
 
   it('after the fleet closed, before the account goes: keeps the account with its fleet closed', async () => {
@@ -519,7 +519,7 @@ describe('plan lapse', () => {
     expect(await syncEntitlementsToEngine('u1')).toBe(true);
     expect(world.user.closes_at).toBeNull();
     expect(sendEmail).not.toHaveBeenCalled();
-    expect(pushed()).toMatchObject({ plan: 'expired', status: 'inactive', maxAgents: 0, closesAt: null, closeReason: null });
+    expect(pushed()).toMatchObject({ plan: 'suspended', status: 'inactive', maxAgents: 0, closesAt: null, closeReason: null });
 
     // A subscription row that never named a paid plan (Checkout abandoned) is no lapse either.
     fetchMock.mockClear();
@@ -532,13 +532,13 @@ describe('plan lapse', () => {
   it('after the lapse window the fleet is off', async () => {
     setup({ user: { closes_at: PAST, close_reason: 'lapsed' }, owner: true, sub: { plan: 'starter', status: 'canceled', plan_override: null }, trialEndsAt: PAST });
     await syncEntitlementsToEngine('u1');
-    expect(pushed()).toMatchObject({ plan: 'expired', status: 'inactive', closesAt: new Date(PAST).toISOString() });
+    expect(pushed()).toMatchObject({ plan: 'suspended', status: 'inactive', closesAt: new Date(PAST).toISOString() });
   });
 
   it('a trial-over account that deletes is not switched back on during the window', async () => {
     setup({ user: { closes_at: IN_14_DAYS, close_reason: 'deleted' }, owner: true, trialEndsAt: PAST });
     await syncEntitlementsToEngine('u1');
-    expect(pushed()).toMatchObject({ plan: 'expired', status: 'inactive', closesAt: IN_14_DAYS, closeReason: 'deleted' });
+    expect(pushed()).toMatchObject({ plan: 'suspended', status: 'inactive', closesAt: IN_14_DAYS, closeReason: 'deleted' });
   });
 
   it('a plan that comes back cancels a lapse window, but not a deletion, nor one in its last minutes', async () => {
@@ -836,5 +836,111 @@ describe('the end of a deletion', () => {
     expect(errors.mock.calls.filter((c) => String(c[0]).includes('gave up'))).toHaveLength(1);
     await finishDeletedAccounts();
     expect(sendEmail).toHaveBeenCalledTimes(5);
+  });
+});
+
+describe('plan lapse with LAPSE_SUSPEND=on: 14 days on the plan, then Suspended, never closed', () => {
+  beforeEach(() => { process.env.LAPSE_SUSPEND = 'on'; });
+  afterEach(() => { delete process.env.LAPSE_SUSPEND; });
+
+  const daysAgo = (n: number) => at(-n * DAY);
+
+  it('a paid plan that lapsed before lapses were recorded: Suspended at once, no window, no email', async () => {
+    // lapsed_at is NULL for lapses from before; later writes to the row (invoices, quantity syncs) never set it.
+    setup({ owner: true, sub: { plan: 'pro', status: 'canceled', plan_override: null, lapsed_at: null }, trialEndsAt: PAST });
+    await syncEntitlementsToEngine('u1');
+    expect(world.user.closes_at).toBeNull();
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(pushed()).toMatchObject({ plan: 'suspended', status: 'inactive', closesAt: null });
+  });
+
+  it('a lapsed paid plan keeps running on its plan for 14 days, with no window and no closing email', async () => {
+    setup({ owner: true, sub: { plan: 'pro', status: 'canceled', plan_override: null, lapsed_at: daysAgo(3) }, trialEndsAt: PAST });
+    expect(await syncEntitlementsToEngine('u1')).toBe(true);
+    expect(closingNow()).toEqual({ reason: null, closesAt: null, deleteAfter: null });
+    expect(pushed()).toMatchObject({ fleetId: 'fleet-1', plan: 'pro', status: 'active', maxAgents: 500, closesAt: null, closeReason: null });
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it('after its 14 days the lapsed plan is Suspended: switched off, never closed', async () => {
+    setup({ owner: true, sub: { plan: 'starter', status: 'unpaid', plan_override: null, lapsed_at: daysAgo(15) }, trialEndsAt: PAST });
+    expect(await syncEntitlementsToEngine('u1')).toBe(true);
+    expect(closingNow()).toEqual({ reason: null, closesAt: null, deleteAfter: null });
+    expect(pushed()).toMatchObject({ plan: 'suspended', status: 'inactive', maxAgents: 0, closesAt: null, closeReason: null });
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it('a free period that ran out is Suspended too: no window, no email, switched off but kept', async () => {
+    setup({ owner: true, trialEndsAt: PAST });
+    expect(await syncEntitlementsToEngine('u1')).toBe(true);
+    expect(world.user.closes_at).toBeNull();
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(pushed()).toMatchObject({ plan: 'suspended', status: 'inactive', maxAgents: 0, closesAt: null, closeReason: null });
+
+    // A subscription row that never named a paid plan (Checkout abandoned) is no lapse either.
+    fetchMock.mockClear();
+    setup({ owner: true, sub: { plan: 'none', status: 'canceled', plan_override: null }, trialEndsAt: PAST });
+    await syncEntitlementsToEngine('u1');
+    expect(world.user.closes_at).toBeNull();
+    expect(pushed()).toMatchObject({ plan: 'suspended', status: 'inactive', closesAt: null });
+  });
+
+  it('a running lapse window from before is cancelled on the next push, and the engine told', async () => {
+    setup({ user: { closes_at: at(3 * DAY), close_reason: 'lapsed' }, owner: true, sub: { plan: 'pro', status: 'canceled', plan_override: null, lapsed_at: daysAgo(11) }, trialEndsAt: PAST });
+    expect(await syncEntitlementsToEngine('u1')).toBe(true);
+    expect(closingNow()).toEqual({ reason: null, closesAt: null, deleteAfter: null });
+    expect(pushed()).toMatchObject({ plan: 'pro', status: 'active', closesAt: null, closeReason: null });
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it('a lapse window from before that has already ended stays as it is (the cutover script clears it)', async () => {
+    setup({ user: { closes_at: PAST, close_reason: 'lapsed' }, owner: true, sub: { plan: 'starter', status: 'canceled', plan_override: null, lapsed_at: daysAgo(20) }, trialEndsAt: PAST });
+    await syncEntitlementsToEngine('u1');
+    expect(pushed()).toMatchObject({ plan: 'suspended', status: 'inactive', closesAt: new Date(PAST).toISOString() });
+  });
+
+  it('a trial-over account that deletes is not switched back on during the window', async () => {
+    setup({ user: { closes_at: IN_14_DAYS, close_reason: 'deleted' }, owner: true, trialEndsAt: PAST });
+    await syncEntitlementsToEngine('u1');
+    expect(pushed()).toMatchObject({ plan: 'suspended', status: 'inactive', closesAt: IN_14_DAYS, closeReason: 'deleted' });
+  });
+
+  it('never starts a lapse window; cancels a running one, but not a deletion, nor one in its last minutes', async () => {
+    setup({ sub: { plan: 'pro', status: 'canceled', plan_override: null, lapsed_at: daysAgo(1) }, trialEndsAt: PAST });
+    expect(await reconcileLapse('u1', 'pro', { plan: 'pro', lapsedAt: daysAgo(1) })).toBeNull();
+    expect(await reconcileLapse('u1', 'suspended', { plan: 'pro', lapsedAt: daysAgo(20) })).toBeNull();
+    expect(world.user.closes_at).toBeNull();
+
+    setup({ user: { closes_at: IN_14_DAYS, close_reason: 'lapsed' } });
+    expect(await reconcileLapse('u1', 'suspended', { plan: 'pro', lapsedAt: daysAgo(20) })).toBeNull();
+    expect(world.user.closes_at).toBeNull();
+
+    setup({ user: { closes_at: IN_14_DAYS, close_reason: 'deleted' } });
+    expect(await reconcileLapse('u1', 'suspended', { plan: 'pro', lapsedAt: daysAgo(20) })).toEqual({ reason: 'deleted', closesAt: IN_14_DAYS });
+
+    const soon = at(5 * MIN);
+    setup({ user: { closes_at: soon, close_reason: 'lapsed' } });
+    expect(await reconcileLapse('u1', 'suspended', { plan: 'pro', lapsedAt: daysAgo(20) })).toEqual({ reason: 'lapsed', closesAt: soon });
+  });
+
+  it('a window that has run out stays', async () => {
+    setup({ user: { closes_at: PAST, close_reason: 'lapsed' } });
+    expect(await reconcileLapse('u1', 'suspended', { plan: 'pro', lapsedAt: daysAgo(20) })).toEqual({ reason: 'lapsed', closesAt: new Date(PAST).toISOString() });
+    expect(world.user.closes_at).toBe(PAST);
+  });
+
+  it('cancelling a deletion of a lapsed plan just ends it: no window to go back to', async () => {
+    setup({ user: { closes_at: IN_14_DAYS, close_reason: 'deleted', delete_after: IN_14_DAYS }, owner: true, sub: { plan: 'pro', status: 'canceled', plan_override: null }, trialEndsAt: PAST });
+    expect(await cancelAccountDeletion()).toEqual({ ok: true });
+    expect(closingNow()).toEqual({ reason: null, closesAt: null, deleteAfter: null });
+    expect(pushed()).toMatchObject({ plan: 'pro', status: 'active', closesAt: null, closeReason: null });
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it('an account already closed by an old lapse window still has its subscription cancelled, as before', async () => {
+    setup({ user: { closes_at: PAST, close_reason: 'lapsed' }, sub: { plan: 'pro', status: 'unpaid', plan_override: null, stripe_subscription_id: 'sub_1', stripe_customer_id: 'cus_1', lapsed_at: daysAgo(30) } });
+    stripeApi.retrieve.mockResolvedValue({ id: 'sub_1', status: 'unpaid' });
+    stripeApi.cancel.mockResolvedValue({ id: 'sub_1', status: 'canceled' });
+    expect(await cancelClosedSubscriptions()).toEqual({ cancelled: 1, failed: 0 });
   });
 });

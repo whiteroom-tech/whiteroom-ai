@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/auth', () => ({ auth: async () => ({ user: { id: mocks.userId, email: `${mocks.userId}@example.com` } }) }));
 vi.mock('@/lib/fleet-ownership', () => ({ verifyFleetOwnership: async () => {} }));
-vi.mock('@/lib/entitlements', () => ({ enqueueEntitlementSync: vi.fn(), releaseFleet: mocks.releaseFleet }));
+vi.mock('@/lib/entitlements', () => ({ enqueueEntitlementSync: vi.fn(), releaseFleet: mocks.releaseFleet, activateTrial: vi.fn(async () => null) }));
 vi.mock('@/lib/whiteroom/client', () => ({
   tokenLogin: vi.fn(),
   isAuthError: () => false,

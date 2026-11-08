@@ -2,7 +2,7 @@
 // complete limits and fleets at one revision. Pure: no database, no network.
 // lib/entitlements.ts reads the account and sends it.
 import { createHash } from 'node:crypto';
-import { limitsFor, PLANS, SANDBOX_LIMITS, type PlanId } from '@/lib/plans';
+import { hasProductionAccess, limitsFor, PLANS, SANDBOX_LIMITS, type PlanId } from '@/lib/plans';
 
 /** Whether the revisioned sender is on. Anything but exactly `on` is off, so a deploy that drops the variable sends what it sends today. */
 export function entitlementsV2Enabled(): boolean {
@@ -46,7 +46,7 @@ export interface PrincipalSnapshot {
 export interface SnapshotInput {
   principal: string;
   revision: number;
-  /** The plan the limits come from (already resolved: a lapse window's plan, say). */
+  /** The plan the limits come from (already resolved: a lapsed plan in its grace, say). */
   plan: PlanId;
   /** On Starter only because of the free period. */
   onTrial: boolean;
@@ -65,8 +65,8 @@ export function buildSnapshot(input: SnapshotInput): PrincipalSnapshot {
     revision: input.revision,
     plan: input.onTrial && input.plan === 'starter' ? 'trial' : PLANS[input.plan].id,
     production: {
-      // An ended free period with nothing paid runs nothing, as today.
-      access: input.plan !== 'expired',
+      // Free and Suspended run nothing in production.
+      access: hasProductionAccess(input.plan),
       maxFleets: limits.maxFleets,
       maxAgentsPerFleet: limits.maxAgentsPerFleet,
       includedAgents: limits.includedAgents,

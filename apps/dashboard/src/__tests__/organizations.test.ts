@@ -24,8 +24,10 @@ vi.mock('@/lib/db', () => ({
   }),
 }));
 
+// Each account's plan, as plan resolution would give it (state.plans; Starter when unnamed).
 vi.mock('@/lib/entitlements', () => ({
   fleetCountSql: () => '0',
+  resolvePlan: async (id: string) => ({ plan: state.plans[id] ?? 'starter', sub: null, trialEndsAt: null }),
 }));
 
 type Role = 'owner' | 'admin' | 'member';
@@ -37,6 +39,7 @@ interface State {
   members: Array<{ org_id: string; user_id: string; role: Role; status: Status }>;
   orgAudit: Array<{ org_id: string; actor: string; action: string; target: string | null; details: unknown }>;
   adminAudit: Array<{ action: string }>;
+  plans: Record<string, string>;
 }
 
 let state: State;
@@ -107,6 +110,16 @@ async function fakeQuery(sql: string, params: unknown[] = []) {
     );
   }
 
+  // The owners' subscription and free period, for their plans (state.plans; Starter when unnamed).
+  if (s.startsWith('SELECT s.plan, s.status, s.plan_override, s.lapsed_at::text, u.trial_ends_at::text, u.trial_state FROM organization_members m')) {
+    const past = '2026-01-01T00:00:00Z';
+    return result(state.members.filter((m) => m.org_id === p[0] && m.role === 'owner' && m.status === 'active').map((m) => {
+      const plan = state.plans[m.user_id] ?? 'starter';
+      if (plan === 'free') return { plan: null, trial_ends_at: past, trial_state: 'not_started' };
+      if (plan === 'suspended') return { plan: null, trial_ends_at: past, trial_state: 'ended' };
+      return { plan, status: 'active', plan_override: null, lapsed_at: null, trial_ends_at: past, trial_state: 'ended' };
+    }));
+  }
   if (s.startsWith('SELECT role FROM organization_members WHERE org_id = $1 AND user_id = $2 AND status = \'invited\'')) {
     const m = state.members.find((x) => x.org_id === p[0] && x.user_id === p[1] && x.status === 'invited');
     return result(m ? [{ role: m.role }] : []);
@@ -229,7 +242,9 @@ beforeEach(() => {
     ],
     orgAudit: [],
     adminAudit: [],
+    plans: {},
   };
+  delete process.env.FREE_PLAN;
   signIn(null);
   query.mockReset();
   query.mockImplementation(fakeQuery);
@@ -440,5 +455,78 @@ describe('WhiteRoom admins', () => {
   it('still keeps the last-owner rule', async () => {
     signIn('u-staff');
     expect((await actions.adminRemoveOrgMember('org-globex', 'u-other')).ok).toBe(false);
+  });
+});
+
+// R9: Free and Suspended accounts may join an organization whose owner has a
+// plan that runs it, and nothing else; their own plan never changes. Suspended
+// owners keep today's rules until the Free plan is on (FREE_PLAN).
+describe('Free and Suspended accounts', () => {
+  it('a Free invitee joins an organization with a paying owner and, as an admin, sees its fleets; its own plan is unchanged', async () => {
+    state.plans['u-stranger'] = 'free';
+    signIn('u-owner');
+    expect(await actions.inviteOrgMember('stranger@example.com', 'admin')).toEqual({ ok: true });
+    signIn('u-stranger');
+    expect(await actions.acceptOrgInvitation('org-acme')).toEqual({ ok: true });
+    expect(member('u-stranger')).toMatchObject({ status: 'active', role: 'admin' });
+    const mine = await getMyOrganization();
+    expect(mine.org?.fleets?.map((f) => f.fleetId)).toEqual(expect.arrayContaining(['fleet-owner', 'fleet-member']));
+    expect(state.plans['u-stranger']).toBe('free');
+  });
+
+  it('a Suspended invitee may join an organization with a paying owner too', async () => {
+    process.env.FREE_PLAN = 'invite';
+    state.plans['u-invited'] = 'suspended';
+    signIn('u-invited');
+    expect(await actions.acceptOrgInvitation('org-acme')).toEqual({ ok: true });
+  });
+
+  it('an organization whose owner is Free can neither invite nor be joined, by anyone', async () => {
+    state.plans['u-owner'] = 'free';
+    signIn('u-owner');
+    const refused = { ok: false, error: "This organization's owner needs a paid plan or free period before anyone new can join." };
+    expect(await actions.inviteOrgMember('stranger@example.com', 'member')).toEqual(refused);
+    expect(member('u-stranger')).toBeUndefined();
+    // An invitation sent before the owner's plan ended can't be taken up either.
+    signIn('u-invited');
+    expect(await actions.acceptOrgInvitation('org-acme')).toEqual(refused);
+    expect(member('u-invited')?.status).toBe('invited');
+    // Staff can't add someone to it directly.
+    signIn('u-staff');
+    expect(await actions.adminAddOrgMember('org-acme', 'stranger@example.com', 'member')).toEqual(refused);
+  });
+
+  it('one owner with a plan is enough', async () => {
+    state.plans['u-owner'] = 'free';
+    state.members.push({ org_id: 'org-acme', user_id: 'u-admin', role: 'owner', status: 'active' });
+    state.members = state.members.filter((m) => !(m.user_id === 'u-admin' && m.role === 'admin'));
+    signIn('u-invited');
+    expect(await actions.acceptOrgInvitation('org-acme')).toEqual({ ok: true });
+  });
+
+  it('a Suspended owner keeps today\'s rules while the Free plan is off, and is refused once it is on', async () => {
+    state.plans['u-owner'] = 'suspended';
+    signIn('u-invited');
+    expect(await actions.acceptOrgInvitation('org-acme')).toEqual({ ok: true });
+
+    member('u-invited')!.status = 'invited';
+    for (const mode of ['invite', 'public']) {
+      process.env.FREE_PLAN = mode;
+      expect((await actions.acceptOrgInvitation('org-acme')).ok).toBe(false);
+      expect(member('u-invited')?.status).toBe('invited');
+    }
+  });
+
+  it('a Free account can\'t be made the owner of a new organization; Suspended can\'t once the Free plan is on', async () => {
+    signIn('u-staff');
+    state.plans['u-stranger'] = 'free';
+    expect(await actions.adminCreateOrganization('Initech', 'stranger@example.com')).toEqual({ ok: false, error: 'That account needs a paid plan or free period to own an organization.' });
+    expect(state.orgs).toHaveLength(2);
+
+    state.plans['u-stranger'] = 'suspended';
+    expect((await actions.adminCreateOrganization('Initech', 'stranger@example.com')).ok).toBe(true);
+    state.plans['u-invited'] = 'suspended';
+    process.env.FREE_PLAN = 'public';
+    expect((await actions.adminCreateOrganization('Hooli', 'invited@acme.com')).ok).toBe(false);
   });
 });

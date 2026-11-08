@@ -427,7 +427,8 @@ export async function deleteAccount(confirmEmail: string): Promise<ActionResult>
 
 /**
  * Cancels a deletion. While its window runs: back to normal, or back to the
- * lapse if a paid plan has lapsed meanwhile (same date). After the fleet
+ * lapse if a paid plan has lapsed meanwhile (same date; LAPSE_SUSPEND off
+ * only: with it on a lapse has no window, and the plan runs out its grace). After the fleet
  * closed (a blocked deletion, or one waiting to remove the account): keeps
  * the account, with its fleet closed. Not in the last minutes before the
  * fleet closes.

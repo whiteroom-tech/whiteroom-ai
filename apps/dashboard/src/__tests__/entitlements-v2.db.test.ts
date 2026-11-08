@@ -399,6 +399,47 @@ suite('entitlements v2 against Postgres', () => {
     });
   });
 
+  describe('trial activation', () => {
+    it('only a not_started account activates, once, however many try at once; outbox row in the same statement', async () => {
+      await addUser('u-free', { trialState: 'not_started', trialEndsAt: '2026-11-01T00:00:00Z' });
+      const results = await Promise.all(Array.from({ length: 8 }, () => ent.activateTrial(db(), 'u-free')));
+      expect(results.filter(Boolean)).toHaveLength(1);
+      const [row] = await q(`SELECT trial_state, trial_started_at IS NOT NULL AS started, extract(epoch FROM trial_ends_at - now())::int AS left FROM users WHERE id = 'u-free'`);
+      expect(row).toMatchObject({ trial_state: 'active', started: true });
+      expect(Math.abs(row.left - 30 * 86_400)).toBeLessThan(120);
+      expect(await q(`SELECT reason FROM entitlement_outbox WHERE user_id = 'u-free' AND revision IS NULL`)).toEqual([{ reason: 'trial_activated' }]);
+      // The caller pushes after its commit: the sweep delivers it, as a trial.
+      await runSweep();
+      expect(await pending('u-free')).toEqual([]);
+      expect(JSON.parse(engine.bodies.at(-1)!).principals[0]).toMatchObject({ principal: 'u-free', plan: 'trial' });
+      expect(await ent.activateTrial(db(), 'u-free')).toBeNull();
+    });
+
+    it('rolls back with the transaction it runs in', async () => {
+      await addUser('u-free', { trialState: 'not_started', trialEndsAt: '2026-11-01T00:00:00Z' });
+      const client = await db().connect();
+      try {
+        await client.query('BEGIN');
+        expect(await ent.activateTrial(client, 'u-free')).not.toBeNull();
+        await client.query('ROLLBACK');
+      } finally { client.release(); }
+      expect(await q(`SELECT trial_state FROM users WHERE id = 'u-free'`)).toEqual([{ trial_state: 'not_started' }]);
+      expect(await q(`SELECT count(*)::int AS n FROM entitlement_outbox`)).toEqual([{ n: 0 }]);
+    });
+
+    it('never extends or restarts an existing trial: NULL, active or ended rows are untouched', async () => {
+      await addUser('u-legacy-past', { trialEndsAt: '2026-01-01T00:00:00Z' });
+      await addUser('u-legacy-future', { trialEndsAt: '2026-11-20T00:00:00Z' });
+      await addUser('u-active', { trialState: 'active', trialEndsAt: '2026-11-20T00:00:00Z' });
+      await addUser('u-ended', { trialState: 'ended', trialEndsAt: '2026-01-01T00:00:00Z' });
+      const before = await q(`SELECT id, trial_state, trial_ends_at, trial_started_at FROM users ORDER BY id`);
+      for (const r of before) expect(await ent.activateTrial(db(), r.id)).toBeNull();
+      expect(await q(`SELECT id, trial_state, trial_ends_at, trial_started_at FROM users ORDER BY id`)).toEqual(before);
+      expect(await q(`SELECT count(*)::int AS n FROM entitlement_outbox`)).toEqual([{ n: 0 }]);
+      expect(engine.bodies).toEqual([]);
+    });
+  });
+
   describe('trial_state backfill script', () => {
     it('sets active / ended from trial_ends_at, in batches, leaves trial_ends_at and set states alone, and re-runs cleanly', async () => {
       await q(`INSERT INTO users (id, trial_ends_at) SELECT 'bulk-' || g, now() + (CASE WHEN g % 2 = 0 THEN 1 ELSE -1 END) * interval '3 days' FROM generate_series(1, 2500) g`);

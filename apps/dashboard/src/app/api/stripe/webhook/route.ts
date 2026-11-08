@@ -1,8 +1,8 @@
 import type Stripe from 'stripe';
 import { db } from '@/lib/db';
 import { stripe } from '@/lib/stripe';
-import { enqueueEntitlementSync, markOutboxDelivered, withUserEntitlementLock } from '@/lib/entitlements';
-import { ACTIVE_STATUS_LIST, isActiveStatus, planItem } from '@/lib/plans';
+import { activateTrial, enqueueEntitlementSync, markOutboxDelivered, withUserEntitlementLock } from '@/lib/entitlements';
+import { ACTIVE_STATUS_LIST, isActiveStatus, lapseSuspendOn, planItem } from '@/lib/plans';
 import { cancelClosing, cancelStripeSubscription, getClosing, reportRefundNeeded } from '@/lib/account-closing';
 import { isClosingOpen } from '@/lib/closing-shared';
 
@@ -158,6 +158,7 @@ async function applySubscription(known: Stripe.Subscription): Promise<void> {
     const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer?.id;
     const found = planItem(sub.items.data);
     const plan = found?.plan ?? 'none';
+    const lapse = await lapsedAtToStore(userId, sub);
 
     // The write and its outbox row commit together, so a push that fails (or a
     // process that dies after the commit) is re-sent by the sweep without
@@ -180,6 +181,7 @@ async function applySubscription(known: Stripe.Subscription): Promise<void> {
            cancel_at_period_end   = EXCLUDED.cancel_at_period_end,
            -- The moment a paid subscription stops being active, kept until it's active again.
            lapsed_at              = CASE
+                                      WHEN $9 THEN $10::timestamptz
                                       WHEN EXCLUDED.status = ANY($8) THEN NULL
                                       WHEN subscriptions.lapsed_at IS NOT NULL THEN subscriptions.lapsed_at
                                       WHEN subscriptions.status = ANY($8) THEN now()
@@ -200,9 +202,15 @@ async function applySubscription(known: Stripe.Subscription): Promise<void> {
           periodEnd(sub),
           sub.cancel_at_period_end ?? false,
           ACTIVE_STATUS_LIST,
+          lapse.decided,
+          lapse.at,
         ],
       );
       if (written.rowCount) {
+        // Checkout completed: a Free account's 30 days start now, with this
+        // write (a no-op for every other account). Before the outbox row
+        // below, so the push that row stands for carries it.
+        if (isActiveStatus(sub.status)) await activateTrial(client, userId);
         const { rows } = await client.query(
           `INSERT INTO entitlement_outbox (user_id, reason) VALUES ($1, $2) RETURNING id`,
           [userId, `subscription_${sub.status}`],
@@ -230,6 +238,34 @@ async function applySubscription(known: Stripe.Subscription): Promise<void> {
     // can't turn a successful payment into a retried webhook.
     if (await push()) await markOutboxDelivered(userId, queued);
   });
+}
+
+/**
+ * What subscriptions.lapsed_at becomes (LAPSE_SUSPEND=on only; `decided`
+ * false leaves today's rule in the SQL). With the flag on lapsed_at is the
+ * start of the last lapse that earned a grace, and is kept while the plan is
+ * active again, so a lapse earns a new grace only if a paid period came
+ * after the last one: an invoice actually paid (more than zero) since then.
+ * A subscription that never paid (a trial that's cancelled) earns none, and
+ * subscribe-cancel loops don't repeat it.
+ */
+async function lapsedAtToStore(userId: string, sub: Stripe.Subscription): Promise<{ decided: boolean; at: string | null }> {
+  if (!lapseSuspendOn()) return { decided: false, at: null };
+  const { rows } = await db().query(`SELECT status, lapsed_at::text FROM subscriptions WHERE user_id = $1`, [userId]);
+  const prev = rows[0] as { status: string; lapsed_at: string | null } | undefined;
+  const kept = prev?.lapsed_at ?? null;
+  // Still paying, or already lapsed: the last lapse stays as it was.
+  if (isActiveStatus(sub.status) || !prev || !isActiveStatus(prev.status)) return { decided: true, at: kept };
+  return { decided: true, at: (await paidSince(sub.id, kept)) ? new Date().toISOString() : kept };
+}
+
+/** Whether the subscription has an invoice paid (more than zero) after `since` (any, when null). */
+async function paidSince(subId: string, since: string | null): Promise<boolean> {
+  const after = since ? Date.parse(since) / 1000 : 0;
+  for await (const invoice of stripe().invoices.list({ subscription: subId, status: 'paid', limit: 100 })) {
+    if ((invoice.amount_paid ?? 0) > 0 && (invoice.status_transitions?.paid_at ?? 0) > after) return true;
+  }
+  return false;
 }
 
 /**

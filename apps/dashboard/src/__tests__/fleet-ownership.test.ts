@@ -1,6 +1,6 @@
-import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ query: vi.fn(), auth: vi.fn(), sync: vi.fn(), revoke: vi.fn() }));
+const mocks = vi.hoisted(() => ({ query: vi.fn(), auth: vi.fn(), sync: vi.fn(), revoke: vi.fn(), activate: vi.fn() }));
 vi.mock('@/auth', () => ({ auth: mocks.auth }));
 vi.mock('@/lib/db', () => ({
   db: () => ({
@@ -13,6 +13,7 @@ vi.mock('@/lib/entitlements', () => ({
   enqueueEntitlementSync: vi.fn(async () => {}),
   getSubscriptionRow: async () => null,
   revokeFleetEntitlement: mocks.revoke,
+  activateTrial: mocks.activate,
 }));
 import { randomBytes } from 'node:crypto';
 import { openCred, sealCred } from '@/lib/cred-seal';
@@ -26,6 +27,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock);
   mocks.auth.mockResolvedValue({ user: { id: 'user-1' } });
   mocks.query.mockResolvedValue({ rows: [] });
+  mocks.activate.mockResolvedValue(null);
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -124,10 +126,10 @@ describe('server-side fleet ownership', () => {
 
   describe('fleet limit', () => {
     /** Answers addUserFleet's queries by SQL: the locked user row, the subscription, the fleet count. */
-    function account({ trialEndsAt, fleets, sub = null }: { trialEndsAt: string; fleets: number; sub?: Record<string, unknown> | null }) {
+    function account({ trialEndsAt, fleets, sub = null, trialState = null }: { trialEndsAt: string; fleets: number; sub?: Record<string, unknown> | null; trialState?: string | null }) {
       fetchMock.mockResolvedValue(Response.json({ success: true, fleetId: 'owned' }));
       mocks.query.mockImplementation(async (sql: string) => {
-        if (sql.includes('trial_ends_at') && sql.includes('FOR UPDATE')) return { rows: [{ trial_ends_at: trialEndsAt }] };
+        if (sql.includes('trial_ends_at') && sql.includes('FOR UPDATE')) return { rows: [{ trial_ends_at: trialEndsAt, trial_state: trialState }] };
         if (sql.includes('FROM subscriptions')) return { rows: sub ? [sub] : [] };
         if (sql.includes('distinct_fleets')) return { rows: [{ n: fleets }] };
         return { rows: [] };
@@ -142,10 +144,59 @@ describe('server-side fleet ownership', () => {
       expect(res).toEqual({ ok: false, error: expect.stringContaining('Starter plan includes 1 fleet') });
     });
 
-    it('tells an expired account to subscribe, not that it has a plan called "Trial ended"', async () => {
+    it('tells a Suspended account to pick a plan, not that it has a plan called "Suspended"', async () => {
       account({ trialEndsAt: past(), fleets: 1 });
       const res = await addUserFleet('test-token', 'owned', 'Fleet');
-      expect(res).toEqual({ ok: false, error: 'Your free trial has ended. Subscribe in Settings to link more fleets.' });
+      expect(res).toEqual({ ok: false, error: 'Your plan has ended. Pick a plan in Settings to link more fleets.' });
+    });
+
+    it('with LAPSE_SUSPEND=on a lapsed paid plan keeps its limit through its 14-day grace, then is Suspended', async () => {
+      const lapsedAt = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
+      // Off (as today): the lapse window keeps the fleets running, but a new link is held to Suspended.
+      account({ trialEndsAt: past(), fleets: 1, sub: { plan: 'pro', status: 'canceled', plan_override: null, lapsed_at: lapsedAt(3) } });
+      expect((await addUserFleet('test-token', 'owned', 'Fleet')).ok).toBe(false);
+      process.env.LAPSE_SUSPEND = 'on';
+      onTestFinished(() => { delete process.env.LAPSE_SUSPEND; });
+      account({ trialEndsAt: past(), fleets: 1, sub: { plan: 'pro', status: 'canceled', plan_override: null, lapsed_at: lapsedAt(3) } });
+      expect(await addUserFleet('test-token', 'owned', 'Fleet')).toEqual({ ok: true });
+      account({ trialEndsAt: past(), fleets: 1, sub: { plan: 'pro', status: 'canceled', plan_override: null, lapsed_at: lapsedAt(15) } });
+      expect(await addUserFleet('test-token', 'owned', 'Fleet')).toEqual({ ok: false, error: 'Your plan has ended. Pick a plan in Settings to link more fleets.' });
+    });
+
+    // Linking a fleet is going live: a Free account's 30 days start in the
+    // link's own transaction, before the limit check, so a failed link undoes it.
+    it('starts a Free account\'s free period inside the link, before the limit check', async () => {
+      account({ trialEndsAt: past(), fleets: 0, trialState: 'not_started' });
+      mocks.activate.mockResolvedValue(future());
+      expect(await addUserFleet('test-token', 'owned', 'Fleet')).toEqual({ ok: true });
+      expect(mocks.activate).toHaveBeenCalledWith(expect.anything(), 'user-1');
+      const sqls = mocks.query.mock.calls.map((c) => String(c[0]));
+      const order = mocks.query.mock.invocationCallOrder;
+      const at = (pred: (s: string) => boolean) => order[sqls.findIndex(pred)];
+      expect(at((x) => x === 'BEGIN')).toBeLessThan(mocks.activate.mock.invocationCallOrder[0]);
+      expect(mocks.activate.mock.invocationCallOrder[0]).toBeLessThan(at((x) => x.includes('INSERT INTO user_fleets')));
+    });
+
+    it('a link refused at the limit rolls the activation back with it', async () => {
+      account({ trialEndsAt: past(), fleets: 1, trialState: 'not_started' });
+      mocks.activate.mockResolvedValue(future());
+      expect((await addUserFleet('test-token', 'owned', 'Fleet')).ok).toBe(false);
+      const sqls = mocks.query.mock.calls.map((c) => String(c[0]));
+      expect(sqls).toContain('ROLLBACK');
+      expect(sqls).not.toContain('COMMIT');
+    });
+
+    it('never tries to activate an account whose free period already started or ended', async () => {
+      account({ trialEndsAt: past(), fleets: 0 });
+      await addUserFleet('test-token', 'owned', 'Fleet');
+      account({ trialEndsAt: future(), fleets: 0, trialState: 'active' });
+      await addUserFleet('test-token', 'owned', 'Fleet');
+      expect(mocks.activate).not.toHaveBeenCalled();
+    });
+
+    it('a Free account that somehow has no free period to start is told Starter is where fleets begin', async () => {
+      account({ trialEndsAt: past(), fleets: 0, trialState: 'not_started' });
+      expect(await addUserFleet('test-token', 'owned', 'Fleet')).toEqual({ ok: false, error: 'Production fleets start on Starter. Pick a plan in Settings to link one.' });
     });
 
     it('lets a paying Pro account past the Starter limit, trial or not', async () => {

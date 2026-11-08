@@ -4,12 +4,16 @@ import { stripe } from '@/lib/stripe';
 import { feeSeats, savingsByUtcDay, syncAccountBilling, type BillingStripe } from '@/lib/savings-billing';
 import { syncSecretMatches } from '@/lib/sync-secret';
 import { cancelClosedSubscriptions, finishDeletedAccounts } from '@/lib/account-closing';
+import { ACTIVE_STATUS_LIST, LAPSE_GRACE_DAYS, lapseSuspendOn, PAID_PLAN_IDS } from '@/lib/plans';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /** Expired trials queued per run. The rest wait for the next one. */
 const TRIAL_BATCH = 500;
+
+/** Ended lapse graces queued per run. The rest wait for the next one. */
+const GRACE_BATCH = 500;
 
 /**
  * How long the savings pass may run before leaving the rest for the next run.
@@ -34,7 +38,8 @@ const ACCOUNT_GRACE_MS = 30_000;
  * 1. Expired trials. A trial ends because time passes, not because anything
  *    happened, so no webhook or user action pushes the new limits to the
  *    engine. This queues one entitlement sync per expired trial, and the
- *    outbox sweep delivers it.
+ *    outbox sweep delivers it. The same, with LAPSE_SUSPEND=on, for a lapsed
+ *    paid plan whose grace has run out: it is Suspended from then on.
  *
  * 2. Savings share and platform fee. For each subscription that can bill,
  *    each completed day's billable savings goes to the Stripe meter, and
@@ -50,7 +55,8 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: 'Unauthorized.' }, { status: 401 });
   }
 
-  const trials = await queueExpiredTrials();
+  // Independent passes, each on its own connection.
+  const [trials, graces] = await Promise.all([queueExpiredTrials(), queueEndedGraces()]);
   const billing = process.env.STRIPE_SECRET_KEY
     ? await syncSavingsBilling()
     : { checked: 0, events: 0, feesAdded: 0, feesUpdated: 0, skipped: 0, deferred: 0 };
@@ -76,12 +82,51 @@ export async function POST(req: Request): Promise<Response> {
   // account is never removed while it can bill, so a person has to look.
   // Each run still cancels the rest (the failing one goes to the back).
   const failed = trials === null ? 'Could not queue expired trials.'
+    : graces === null ? 'Could not queue ended lapse graces.'
     : closedSubscriptions === null ? "Could not cancel closed accounts' subscriptions."
     : closedSubscriptions.failed > 0 ? `Could not cancel ${closedSubscriptions.failed} closed account subscription(s).`
     : deletions === null ? 'Could not finish deleted accounts.'
     : null;
   if (failed) return Response.json({ error: failed, billing, closedSubscriptions, deletions }, { status: 500 });
-  return Response.json({ trialsQueued: trials, billing, closedSubscriptions, deletions });
+  return Response.json({ trialsQueued: trials, gracesQueued: graces, billing, closedSubscriptions, deletions });
+}
+
+/**
+ * Queues one entitlement sync for each lapsed paid plan whose grace has run
+ * out since it was last queued, so the engine hears it is Suspended. Once per
+ * lapse: a row already queued after the grace ended (outbox rows are kept 30
+ * days) stops a second. Only graces that ended in the last LAPSE_GRACE_DAYS
+ * are looked at, well inside that. Number queued, or null if the database
+ * refused.
+ */
+async function queueEndedGraces(): Promise<number | null> {
+  // Off: a lapse has a closing window instead, which reaches the engine with every push.
+  if (!lapseSuspendOn()) return 0;
+  // On a client of its own, like queueExpiredTrials: a pool that can't reach
+  // the database is the same refusal, and leaves the billing pass to run.
+  let client: PoolClient | null = null;
+  try {
+    client = await db().connect();
+    const { rows } = await client.query(
+      `INSERT INTO entitlement_outbox (user_id, reason)
+       SELECT s.user_id, 'lapse_grace_ended' FROM subscriptions s
+       WHERE s.lapsed_at IS NOT NULL AND s.plan = ANY($1) AND NOT (s.status = ANY($2))
+         AND s.lapsed_at <= now() - make_interval(days => $3)
+         AND s.lapsed_at > now() - make_interval(days => $3 * 2)
+         AND NOT EXISTS (SELECT 1 FROM entitlement_outbox o
+                         WHERE o.user_id = s.user_id AND o.reason = 'lapse_grace_ended'
+                           AND o.created_at >= s.lapsed_at + make_interval(days => $3))
+       LIMIT $4
+       RETURNING user_id`,
+      [PAID_PLAN_IDS, ACTIVE_STATUS_LIST, LAPSE_GRACE_DAYS, GRACE_BATCH],
+    );
+    return rows.length;
+  } catch (err) {
+    console.error('[billing-sync] could not queue ended lapse graces:', err instanceof Error ? err.message : err);
+    return null;
+  } finally {
+    client?.release();
+  }
 }
 
 /** Number of trials queued, or null if the database refused. */

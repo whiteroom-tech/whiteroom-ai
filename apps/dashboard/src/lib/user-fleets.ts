@@ -4,9 +4,9 @@ import { auth } from '@/auth';
 import { lockFleetHolders } from '@/lib/control-auth';
 import { plainUnlessSealed, readCred, sealCred } from '@/lib/cred-seal';
 import { db } from '@/lib/db';
-import { enqueueEntitlementSync } from '@/lib/entitlements';
+import { activateTrial, enqueueEntitlementSync } from '@/lib/entitlements';
 import { verifyFleetOwnership } from '@/lib/fleet-ownership';
-import { effectivePlan, limitsFor, PLANS } from '@/lib/plans';
+import { effectivePlan, limitsFor, PLANS, trialStatus } from '@/lib/plans';
 import { plural } from '@/lib/format';
 
 export interface UserFleet {
@@ -57,14 +57,14 @@ export async function addUserFleet(
   try {
     await client.query('BEGIN');
     const { rows: locked } = await client.query(
-      'SELECT trial_ends_at::text FROM users WHERE id = $1 FOR UPDATE',
+      'SELECT trial_ends_at::text, trial_state FROM users WHERE id = $1 FOR UPDATE',
       [userId],
     );
 
     const [subRow, quotaRows] = await Promise.all([
       client.query(
         `SELECT plan, status, plan_override, stripe_customer_id, stripe_subscription_id,
-                current_period_end::text, cancel_at_period_end
+                current_period_end::text, cancel_at_period_end, lapsed_at::text
          FROM subscriptions WHERE user_id = $1`,
         [userId],
       ),
@@ -82,8 +82,17 @@ export async function addUserFleet(
       plan: subRow.rows[0].plan,
       status: subRow.rows[0].status,
       planOverride: subRow.rows[0].plan_override,
+      lapsedAt: subRow.rows[0].lapsed_at ?? null,
     } : null;
-    const plan = effectivePlan(sub, locked[0]?.trial_ends_at ?? null);
+    let trial = { endsAt: locked[0]?.trial_ends_at ?? null, state: locked[0]?.trial_state ?? null };
+    // Linking a fleet is going live: a Free account's 30 days start here,
+    // before the fleet-limit check and in this transaction, so a link that
+    // fails below rolls it back. Only tried for an account that can start one.
+    if (trialStatus(trial.state, trial.endsAt) === 'not_started') {
+      const endsAt = await activateTrial(client, userId);
+      if (endsAt) trial = { endsAt, state: 'active' };
+    }
+    const plan = effectivePlan(sub, trial);
     const limit = limitsFor(plan).maxFleets;
     const used = quotaRows.rows[0]?.n ?? 0;
 
@@ -91,8 +100,10 @@ export async function addUserFleet(
       await client.query('ROLLBACK');
       return {
         ok: false,
-        error: plan === 'expired'
-          ? 'Your free trial has ended. Subscribe in Settings to link more fleets.'
+        error: plan === 'suspended'
+          ? 'Your plan has ended. Pick a plan in Settings to link more fleets.'
+          : plan === 'free'
+          ? 'Production fleets start on Starter. Pick a plan in Settings to link one.'
           : `Your ${PLANS[plan].name} plan includes ${limit} ${plural(limit, 'fleet')} and you're using ${used}. Upgrade in Settings to link more.`,
       };
     }

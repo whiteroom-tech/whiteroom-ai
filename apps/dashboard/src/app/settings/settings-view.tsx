@@ -323,7 +323,9 @@ function PlanSection({
   // Never on a custom contract or a comped plan: a Checkout there would start
   // a second, self-serve bill beside it.
   const contracted = plan === 'enterprise' || !!subscription?.planOverride;
-  const canBuy = (p: PlanId) => !contracted && purchasablePlans.includes(p) && (p !== plan || entitlement.onTrial);
+  // A lapsed plan in its grace can be bought again: it's the plan they had.
+  const graceEnd = entitlement.graceEndsAt ? shortDay(entitlement.graceEndsAt) : null;
+  const canBuy = (p: PlanId) => !contracted && purchasablePlans.includes(p) && (p !== plan || entitlement.onTrial || !!graceEnd);
   const trialEnd = shortDay(entitlement.trialEndsAt);
   // Counted in the viewer's zone, so only once it's known: the server's UTC
   // count can differ by a day and would mismatch hydration.
@@ -355,6 +357,7 @@ function PlanSection({
       {showsShare && (
         <p style={{ fontSize: 'var(--fs-sm)', margin: '0 0 14px', fontVariantNumeric: 'tabular-nums' }}>{monthShareLine(plan, monthShare)}</p>
       )}
+      {graceEnd && <p style={{ fontSize: 'var(--fs-sm)', margin: '0 0 14px' }}>Your plan pauses on {graceEnd}. Subscribe again to keep it.</p>}
       {/* Subscribed inside the free period: the badge is gone, so the line says when billing starts. */}
       {selfServe && freeNow && !entitlement.onTrial && <p style={{ fontSize: 'var(--fs-sm)', margin: '0 0 14px' }}>Free until {trialEnd}</p>}
 
@@ -372,7 +375,7 @@ function PlanSection({
               </div>
             )}
           </div>
-        ) : usage.agents !== null && plan === 'expired' ? (
+        ) : usage.agents !== null && (plan === 'suspended' || plan === 'free') ? (
           <Meter label="Agents" used={usage.agents} limit={limits.maxAgentsPerFleet} over={usage.agents > limits.maxAgentsPerFleet ? `${usage.agents - limits.maxAgentsPerFleet} over the ${PLANS[plan].name} limit` : undefined} />
         ) : (
           <Stat label="Agents registered" value={usage.agents === null ? 'Unavailable' : String(usage.agents)} />
@@ -403,7 +406,9 @@ function PlanSection({
                   ? 'Opening…'
                   : p === 'starter' && entitlement.onTrial
                     ? `Subscribe (free until ${trialEnd})`
-                    : `Switch to ${PLANS[p].name}`}
+                    : p === plan && graceEnd
+                      ? `Subscribe to ${PLANS[p].name} again`
+                      : `Switch to ${PLANS[p].name}`}
               </Button>
             )}
           </div>

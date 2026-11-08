@@ -13,7 +13,7 @@ vi.mock('@/auth', () => ({ auth: async () => mocks.session.current }));
 vi.mock('@/lib/savings-billing', () => ({ monthToDateSavingsCents: mocks.monthToDate, billedFrom: mocks.billedFrom }));
 vi.mock('@/lib/entitlements', () => ({
   getSubscriptionRow: mocks.sub,
-  getTrialEndsAt: async (id: string) => (id === 'u1' ? '2026-09-01T00:00:00Z' : null),
+  getTrial: async (id: string) => ({ endsAt: id === 'u1' ? '2026-09-01T00:00:00Z' : null, state: null }),
 }));
 const fakeStripe = vi.hoisted(() => ({ marker: 'stripe' }));
 vi.mock('@/lib/stripe', () => ({ stripe: () => fakeStripe }));

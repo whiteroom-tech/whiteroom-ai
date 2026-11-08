@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 // Guards the real resolver the settings page and the engine sync both call,
 // so the two can't disagree about what a subscription grants.
 import {
@@ -17,7 +17,14 @@ import {
   planForPriceId,
   planItem,
   PLANS,
+  PLAN_IDS,
   purchasablePlans,
+  freePlanMode,
+  hasProductionAccess,
+  isOnFreePeriod,
+  lapseGrace,
+  LAPSE_GRACE_DAYS,
+  SANDBOX_LIMITS,
 } from '../lib/plans';
 
 const NOW = new Date('2026-10-01T00:00:00Z');
@@ -29,9 +36,9 @@ describe('effectivePlan', () => {
     expect(effectivePlan(null, TRIAL_LEFT, NOW)).toBe('starter');
   });
 
-  it('expires an account with no subscription once the free period is over', () => {
-    expect(effectivePlan(null, TRIAL_OVER, NOW)).toBe('expired');
-    expect(effectivePlan(null, null, NOW)).toBe('expired');
+  it('suspends an account with no subscription once the free period is over', () => {
+    expect(effectivePlan(null, TRIAL_OVER, NOW)).toBe('suspended');
+    expect(effectivePlan(null, null, NOW)).toBe('suspended');
   });
 
   it('grants the plan on an active subscription, trial or not', () => {
@@ -48,11 +55,11 @@ describe('effectivePlan', () => {
     expect(effectivePlan({ plan: 'pro', status: 'past_due' }, TRIAL_OVER, NOW)).toBe('pro');
   });
 
-  it('drops a dead subscription back to the trial, or to expired', () => {
+  it('drops a dead subscription back to the trial, or to Suspended', () => {
     expect(effectivePlan({ plan: 'pro', status: 'canceled' }, TRIAL_LEFT, NOW)).toBe('starter');
-    expect(effectivePlan({ plan: 'pro', status: 'canceled' }, TRIAL_OVER, NOW)).toBe('expired');
-    expect(effectivePlan({ plan: 'starter', status: 'unpaid' }, TRIAL_OVER, NOW)).toBe('expired');
-    expect(effectivePlan({ plan: 'pro', status: 'incomplete_expired' }, TRIAL_OVER, NOW)).toBe('expired');
+    expect(effectivePlan({ plan: 'pro', status: 'canceled' }, TRIAL_OVER, NOW)).toBe('suspended');
+    expect(effectivePlan({ plan: 'starter', status: 'unpaid' }, TRIAL_OVER, NOW)).toBe('suspended');
+    expect(effectivePlan({ plan: 'pro', status: 'incomplete_expired' }, TRIAL_OVER, NOW)).toBe('suspended');
   });
 
   // The override is a separate column precisely so the next webhook doesn't
@@ -65,11 +72,11 @@ describe('effectivePlan', () => {
 
   it('ignores an override that cannot be comped', () => {
     expect(effectivePlan({ plan: 'pro', status: 'active', planOverride: 'team' }, TRIAL_OVER, NOW)).toBe('pro');
-    expect(effectivePlan({ plan: 'pro', status: 'active', planOverride: 'expired' }, TRIAL_OVER, NOW)).toBe('pro');
+    expect(effectivePlan({ plan: 'pro', status: 'active', planOverride: 'suspended' }, TRIAL_OVER, NOW)).toBe('pro');
   });
 
   it('does not trust an unknown or legacy plan name', () => {
-    expect(effectivePlan({ plan: 'team', status: 'active' }, TRIAL_OVER, NOW)).toBe('expired');
+    expect(effectivePlan({ plan: 'team', status: 'active' }, TRIAL_OVER, NOW)).toBe('suspended');
     expect(effectivePlan({ plan: 'free', status: 'active' }, TRIAL_LEFT, NOW)).toBe('starter');
   });
 });
@@ -137,10 +144,10 @@ describe('the free period', () => {
     expect(newTrialEndsAt(NOW).toISOString()).toBe('2026-10-31T00:00:00.000Z');
   });
 
-  it('keeps Starter for the 30 days, then expires without a subscription', () => {
+  it('keeps Starter for the 30 days, then Suspended without a subscription', () => {
     const end = newTrialEndsAt(NOW);
     expect(effectivePlan(null, end, new Date('2026-10-30T23:59:59Z'))).toBe('starter');
-    expect(effectivePlan(null, end, new Date('2026-10-31T00:00:01Z'))).toBe('expired');
+    expect(effectivePlan(null, end, new Date('2026-10-31T00:00:01Z'))).toBe('suspended');
     // A stored, longer free period (accounts from before the change) is kept.
     expect(effectivePlan(null, '2026-12-20T00:00:00Z', new Date('2026-11-15T00:00:00Z'))).toBe('starter');
   });
@@ -168,7 +175,7 @@ describe('savings-share maths', () => {
     expect(shareCents('starter', 1000)).toBe(200);
     expect(shareCents('pro', 1000)).toBe(100);
     expect(shareCents('enterprise', 1000)).toBeNull();
-    expect(shareCents('expired', 1000)).toBeNull();
+    expect(shareCents('suspended', 1000)).toBeNull();
   });
 
   // The Stripe share price is per cent saved, so its unit amount is the share in cents.
@@ -203,8 +210,8 @@ describe('published pricing', () => {
     expect(RUNAWAY_AGENT_GUARD).toBe(500);
   });
 
-  it('runs nothing once the trial has expired', () => {
-    expect(limitsFor('expired').maxAgentsPerFleet).toBe(0);
+  it('runs nothing once Suspended (free period over)', () => {
+    expect(limitsFor('suspended').maxAgentsPerFleet).toBe(0);
   });
 
   it('rises across the tiers', () => {
@@ -298,5 +305,105 @@ describe('planItem', () => {
     process.env.STRIPE_PRICE_PRO_SHARE = 'price_p_share';
     expect(planItem([{ price: { id: 'price_retired' } }])).toBeNull();
     expect(planItem([])).toBeNull();
+  });
+});
+
+describe('Free and Suspended', () => {
+  const DAY = 86_400_000;
+  // The grace is LAPSE_SUSPEND=on only; the 'off' case is checked on its own below.
+  beforeEach(() => { process.env.LAPSE_SUSPEND = 'on'; });
+  afterEach(() => { delete process.env.LAPSE_SUSPEND; });
+
+  it('with LAPSE_SUSPEND off (unset or anything else), a lapse gets no grace: Suspended at once, as before', () => {
+    for (const v of [undefined, '', 'off', 'ON', 'true']) {
+      if (v === undefined) delete process.env.LAPSE_SUSPEND; else process.env.LAPSE_SUSPEND = v;
+      expect(effectivePlan(lapsed('pro', 1), TRIAL_OVER, NOW)).toBe('suspended');
+      expect(lapseGrace(lapsed('pro', 1))).toBeNull();
+      expect(isOnFreePeriod('starter', lapsed('starter', 2), NOW)).toBe(true);
+    }
+  });
+
+  const lapsed = (plan: string, daysAgo: number, status = 'canceled') => ({ plan, status, lapsedAt: new Date(NOW.getTime() - daysAgo * DAY).toISOString() });
+
+  it('replace the old ended-trial plan: there is no separate trial-ended plan', () => {
+    expect(PLAN_IDS).toEqual(['free', 'suspended', 'starter', 'pro', 'enterprise']);
+    expect(PLANS.suspended.name).toBe('Suspended');
+    expect(Object.values(PLANS).some((p) => /trial ended/i.test(p.name))).toBe(false);
+  });
+
+  it('Suspended keeps the limits an ended free period had; Free has no production', () => {
+    expect(limitsFor('suspended')).toEqual({ maxFleets: 1, maxAgentsPerFleet: 0, includedAgents: null, retentionDays: 30 });
+    expect(limitsFor('free')).toEqual({ maxFleets: 0, maxAgentsPerFleet: 0, includedAgents: null, retentionDays: 7 });
+    for (const p of ['free', 'suspended'] as const) {
+      expect(hasProductionAccess(p)).toBe(false);
+      expect(SANDBOX_LIMITS[p]).toEqual({ enabled: true, sampleRunsPerDay: 3, practiceRunsPerDay: 5, inflight: 4, rpm: 60, retentionDays: 7 });
+    }
+    for (const p of ['starter', 'pro', 'enterprise'] as const) expect(hasProductionAccess(p)).toBe(true);
+  });
+
+  it('a bare trial date (no state, as today) is never Free: an ended free period is Suspended', () => {
+    expect(effectivePlan(null, TRIAL_OVER, NOW)).toBe('suspended');
+    expect(effectivePlan(null, { endsAt: TRIAL_OVER, state: null }, NOW)).toBe('suspended');
+    expect(effectivePlan(null, { endsAt: TRIAL_OVER, state: 'ended' }, NOW)).toBe('suspended');
+    expect(effectivePlan(null, { endsAt: TRIAL_LEFT, state: 'active' }, NOW)).toBe('starter');
+  });
+
+  it('is Free only when the free period never started and nothing was ever paid', () => {
+    expect(effectivePlan(null, { endsAt: TRIAL_OVER, state: 'not_started' }, NOW)).toBe('free');
+    // A Checkout abandoned before paying leaves a row with no plan.
+    expect(effectivePlan({ plan: 'none', status: 'incomplete' }, { endsAt: TRIAL_OVER, state: 'not_started' }, NOW)).toBe('free');
+    // Ever paid: Suspended, whatever the trial state says.
+    expect(effectivePlan({ plan: 'pro', status: 'canceled' }, { endsAt: TRIAL_OVER, state: 'not_started' }, NOW)).toBe('suspended');
+    // A trial extended past now counts as active whatever the stored state.
+    expect(effectivePlan(null, { endsAt: TRIAL_LEFT, state: 'not_started' }, NOW)).toBe('starter');
+  });
+
+  it('resolves override, then active subscription, then grace, then trial, then Suspended, then Free', () => {
+    const notStarted = { endsAt: TRIAL_OVER, state: 'not_started' };
+    expect(effectivePlan({ plan: 'none', status: 'canceled', planOverride: 'enterprise' }, notStarted, NOW)).toBe('enterprise');
+    expect(effectivePlan({ plan: 'pro', status: 'active' }, notStarted, NOW)).toBe('pro');
+    expect(effectivePlan(lapsed('pro', 3), TRIAL_LEFT, NOW)).toBe('pro');
+    expect(effectivePlan(lapsed('pro', 20), TRIAL_LEFT, NOW)).toBe('starter');
+    expect(effectivePlan(lapsed('pro', 20), TRIAL_OVER, NOW)).toBe('suspended');
+    expect(effectivePlan(null, notStarted, NOW)).toBe('free');
+  });
+
+  it('a lapsed paid plan keeps its plan for 14 days, then is Suspended (never closed)', () => {
+    expect(LAPSE_GRACE_DAYS).toBe(14);
+    expect(effectivePlan(lapsed('pro', 0), TRIAL_OVER, NOW)).toBe('pro');
+    expect(effectivePlan(lapsed('starter', 13.9), TRIAL_OVER, NOW)).toBe('starter');
+    expect(effectivePlan(lapsed('pro', 14), TRIAL_OVER, NOW)).toBe('suspended');
+    expect(effectivePlan(lapsed('pro', 30, 'unpaid'), TRIAL_OVER, NOW)).toBe('suspended');
+    expect(lapseGrace(lapsed('pro', 4))?.endsAt.toISOString()).toBe(new Date(NOW.getTime() + 10 * DAY).toISOString());
+  });
+
+  it('gives no grace to a lapse from before it was recorded, an unknown plan, or a subscription that is active again', () => {
+    expect(effectivePlan({ plan: 'pro', status: 'canceled', lapsedAt: null }, TRIAL_OVER, NOW)).toBe('suspended');
+    expect(effectivePlan(lapsed('team', 1), TRIAL_OVER, NOW)).toBe('suspended');
+    expect(lapseGrace(lapsed('pro', 1, 'active'))).toBeNull();
+    expect(lapseGrace({ plan: 'pro', status: 'canceled', lapsedAt: 'not a date' })).toBeNull();
+  });
+
+  it('counts as on the free period only when nothing paid, in grace or comped gives Starter', () => {
+    expect(isOnFreePeriod('starter', null, NOW)).toBe(true);
+    expect(isOnFreePeriod('starter', { plan: 'starter', status: 'active' }, NOW)).toBe(false);
+    expect(isOnFreePeriod('starter', lapsed('starter', 2), NOW)).toBe(false);
+    expect(isOnFreePeriod('starter', { plan: 'none', status: 'canceled', planOverride: 'starter' }, NOW)).toBe(false);
+    expect(isOnFreePeriod('suspended', null, NOW)).toBe(false);
+  });
+});
+
+describe('freePlanMode', () => {
+  const was = process.env.FREE_PLAN;
+  afterEach(() => { if (was === undefined) delete process.env.FREE_PLAN; else process.env.FREE_PLAN = was; });
+
+  it('is off unless set to exactly invite or public', () => {
+    delete process.env.FREE_PLAN;
+    expect(freePlanMode()).toBe('off');
+    for (const v of ['', 'on', 'OFF', 'Invite', 'true']) { process.env.FREE_PLAN = v; expect(freePlanMode()).toBe('off'); }
+    process.env.FREE_PLAN = 'invite';
+    expect(freePlanMode()).toBe('invite');
+    process.env.FREE_PLAN = 'public';
+    expect(freePlanMode()).toBe('public');
   });
 });

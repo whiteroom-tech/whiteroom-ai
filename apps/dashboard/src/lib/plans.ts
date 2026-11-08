@@ -9,18 +9,23 @@
 // reasons about plan names.
 
 /**
- * Every plan an account can be on. `expired` is not something anyone buys: it
- * is where an account lands when its free Starter period has run out and
- * nothing replaced it.
+ * Every plan an account can be on. Two are not bought:
+ * - `free`: Sandbox only, for an account that has never gone live (no free
+ *   period started, nothing paid). Only new sign-ups with the Free plan
+ *   turned on (FREE_PLAN) start here.
+ * - `suspended`: an account whose free period ran out, or whose paid plan
+ *   lapsed and its grace ran out, with nothing replacing it. Production is
+ *   off; fleets, keys and history are kept, so picking a plan picks up where
+ *   it left off.
  */
-export const PLAN_IDS = ['expired', 'starter', 'pro', 'enterprise'] as const;
+export const PLAN_IDS = ['free', 'suspended', 'starter', 'pro', 'enterprise'] as const;
 export type PlanId = (typeof PLAN_IDS)[number];
 
 /** Plans sold through Stripe Checkout. Enterprise is sold by hand. */
 export const PAID_PLAN_IDS = ['starter', 'pro'] as const;
 export type PaidPlanId = (typeof PAID_PLAN_IDS)[number];
 
-/** Plans an admin may comp. Comping `expired` would just be a lockout. */
+/** Plans an admin may comp. Comping `free` or `suspended` would just be a lockout. */
 export const OVERRIDE_PLAN_IDS = ['starter', 'pro', 'enterprise'] as const;
 
 export function isPaidPlanId(value: unknown): value is PaidPlanId {
@@ -33,6 +38,36 @@ export function isOverridePlanId(value: unknown): value is (typeof OVERRIDE_PLAN
 
 /** How long a new account is free (on Starter). Matches the website. */
 export const TRIAL_DAYS = 30;
+
+/**
+ * With LAPSE_SUSPEND=on: days a paid plan keeps running after its
+ * subscription stops being active (subscriptions.lapsed_at), before the
+ * account is Suspended. Nothing is closed at the end: the account keeps its
+ * fleets and keys.
+ */
+export const LAPSE_GRACE_DAYS = 14;
+
+/**
+ * How a lapsed paid plan ends. `on`: it keeps its plan for LAPSE_GRACE_DAYS,
+ * then the account is Suspended, never closed. Unset or anything else:
+ * as before, a 14-day closing window that ends with the fleet closed
+ * (lib/account-closing.ts). Server-side only.
+ */
+export function lapseSuspendOn(): boolean {
+  return process.env.LAPSE_SUSPEND === 'on';
+}
+
+/**
+ * Whether new sign-ups start on Free (Sandbox only): `off` (today: a new
+ * account gets the 30-day free period at sign-up), `invite` or `public`.
+ * Unset or anything else is `off`.
+ */
+export type FreePlanMode = 'off' | 'invite' | 'public';
+
+export function freePlanMode(): FreePlanMode {
+  const v = process.env.FREE_PLAN;
+  return v === 'invite' || v === 'public' ? v : 'off';
+}
 
 /**
  * Days after the free period before the monthly platform fee starts. A new
@@ -104,7 +139,7 @@ export interface PlanPricing {
 export interface Plan {
   id: PlanId;
   name: string;
-  /** Null for plans with no list price: expired, and Enterprise (custom). */
+  /** Null for plans with no list price: free, suspended, and Enterprise (custom). */
   pricing: PlanPricing | null;
   /** The price in one plain line, as the website says it. */
   priceLine: string;
@@ -125,14 +160,25 @@ export const AUDIT_KEPT = 'at least 12 months on every plan';
 // Prices, agent counts and retention are the ones published at
 // whiteroom.tech/#pricing. Change them there and here together.
 export const PLANS: Record<PlanId, Plan> = {
-  expired: {
-    id: 'expired',
-    name: 'Trial ended',
+  free: {
+    id: 'free',
+    name: 'Free',
     pricing: null,
     priceLine: '',
-    blurb: 'Your free period is over. Subscribe to keep your agents running.',
+    blurb: 'Production fleets start on Starter. Your first 30 days are free.',
+    // Sandbox only: no production fleet, no production agents.
+    limits: { maxFleets: 0, maxAgentsPerFleet: 0, includedAgents: null, retentionDays: 7 },
+    features: [],
+  },
+  suspended: {
+    id: 'suspended',
+    name: 'Suspended',
+    pricing: null,
+    priceLine: '',
+    blurb: 'Your fleets and keys are kept. Pick a plan to switch them back on.',
     // Zero agents plus an inactive status on the engine side: nothing runs, but
-    // the fleet and its history are kept so subscribing picks up where it left off.
+    // the fleet and its history are kept so subscribing picks up where it left
+    // off. The same limits an ended free period had before Suspended existed.
     limits: { maxFleets: 1, maxAgentsPerFleet: 0, includedAgents: null, retentionDays: 30 },
     features: [],
   },
@@ -196,31 +242,74 @@ export function isActiveStatus(status: string): boolean {
   return ACTIVE_STATUSES.has(status);
 }
 
+/** An account's free period: users.trial_ends_at, and users.trial_state when it was read. */
+export interface TrialInfo {
+  endsAt: string | Date | null;
+  state?: string | null;
+}
+
+/** The subscription fields plan resolution reads. */
+export interface PlanRow {
+  plan: string;
+  status: string;
+  planOverride?: string | null;
+  /** When a paid subscription stopped being active (subscriptions.lapsed_at). */
+  lapsedAt?: string | Date | null;
+}
+
+/**
+ * A lapsed paid plan's grace (LAPSE_SUSPEND=on only): the plan it keeps and
+ * when that ends, or null when the row isn't a recorded lapse of a paid
+ * plan, or the flag is off. Whether a lapse earns a grace at all (a paid
+ * period, once per lapse) is decided when the webhook records lapsed_at.
+ * The one place grace is worked out; effectivePlan and Settings read it.
+ */
+export function lapseGrace(row: PlanRow | null | undefined): { plan: PaidPlanId; endsAt: Date } | null {
+  if (!lapseSuspendOn() || !row?.lapsedAt || !isPaidPlanId(row.plan) || isActiveStatus(row.status)) return null;
+  const at = row.lapsedAt instanceof Date ? row.lapsedAt : new Date(row.lapsedAt);
+  if (Number.isNaN(at.getTime())) return null;
+  return { plan: row.plan, endsAt: new Date(at.getTime() + LAPSE_GRACE_DAYS * 86_400_000) };
+}
+
 /**
  * The plan an account actually has right now.
  *
- * In order: an admin override, then a Stripe subscription that is still
- * billing, then the free Starter period, then `expired`. The trial deliberately
- * comes after Stripe — someone who subscribes to Pro on day 10 is on Pro, not
- * on a trial of Starter.
+ * In order: an admin override; a Stripe subscription that is still billing,
+ * or (LAPSE_SUSPEND=on) a paid one in its grace after lapsing; the free period
+ * (Starter); then `suspended` for an account that ever paid or started its
+ * free period; then `free`. The trial deliberately comes after Stripe:
+ * someone who subscribes to Pro on day 10 is on Pro, not on a trial of
+ * Starter.
  *
- * `trialEndsAt` is required rather than optional so that no caller can forget
- * it and quietly treat every unpaid account as expired.
+ * `trial` is required rather than optional so that no caller can forget it
+ * and quietly treat every unpaid account as suspended. A bare trial_ends_at
+ * (no state) reads as before the state existed: never `free`.
  */
 export function effectivePlan(
-  row: {
-    plan: string;
-    status: string;
-    planOverride?: string | null;
-  } | null,
-  trialEndsAt: string | Date | null,
+  row: PlanRow | null,
+  trial: string | Date | null | TrialInfo,
   now: Date = new Date(),
 ): PlanId {
   // An admin-granted override outranks Stripe and survives the next webhook,
   // which is the whole point of it being a separate column.
   if (row?.planOverride && isOverridePlanId(row.planOverride)) return row.planOverride;
   if (row && isActiveStatus(row.status) && isPaidPlanId(row.plan)) return row.plan;
-  return isTrialActive(trialEndsAt, now) ? 'starter' : 'expired';
+  const grace = lapseGrace(row);
+  if (grace && grace.endsAt.getTime() > now.getTime()) return grace.plan;
+  const { endsAt, state } = trial !== null && typeof trial === 'object' && !(trial instanceof Date) ? trial : { endsAt: trial, state: null };
+  if (isTrialActive(endsAt, now)) return 'starter';
+  const everPaid = !!row && (isPaidPlanId(row.plan) || !!row.lapsedAt);
+  return everPaid || trialStatus(state, endsAt, now) !== 'not_started' ? 'suspended' : 'free';
+}
+
+/** Whether the plan runs production fleets: false on Free and Suspended. */
+export function hasProductionAccess(plan: PlanId): boolean {
+  return plan !== 'free' && plan !== 'suspended';
+}
+
+/** On Starter only because of the free period: nothing paid, in grace or comped gives it. */
+export function isOnFreePeriod(plan: PlanId, row: PlanRow | null, now: Date = new Date()): boolean {
+  return plan === 'starter' && !hasProductionAccess(effectivePlan(row, null, now));
 }
 
 export function isTrialActive(trialEndsAt: string | Date | null, now: Date = new Date()): boolean {
@@ -267,11 +356,12 @@ export interface SandboxLimits {
 }
 
 /**
- * Sandbox limits by plan. `trial` is Starter during the free period; an
- * ended free period (`expired`) gets the same Sandbox as Free.
+ * Sandbox limits by plan. `trial` is Starter during the free period;
+ * Suspended gets the same Sandbox as Free.
  */
 export const SANDBOX_LIMITS: Record<PlanId | 'trial', SandboxLimits> = {
-  expired: { enabled: true, sampleRunsPerDay: 3, practiceRunsPerDay: 5, inflight: 4, rpm: 60, retentionDays: 7 },
+  free: { enabled: true, sampleRunsPerDay: 3, practiceRunsPerDay: 5, inflight: 4, rpm: 60, retentionDays: 7 },
+  suspended: { enabled: true, sampleRunsPerDay: 3, practiceRunsPerDay: 5, inflight: 4, rpm: 60, retentionDays: 7 },
   trial: { enabled: true, sampleRunsPerDay: 3, practiceRunsPerDay: 5, inflight: 4, rpm: 60, retentionDays: 30 },
   starter: { enabled: true, sampleRunsPerDay: 3, practiceRunsPerDay: 10, inflight: 4, rpm: 60, retentionDays: 30 },
   pro: { enabled: true, sampleRunsPerDay: 10, practiceRunsPerDay: 25, inflight: 8, rpm: 120, retentionDays: 90 },
@@ -363,7 +453,7 @@ export function priceFor(priceId: string | null | undefined): { plan: PaidPlanId
  * Reverse of stripePriceId, for reading a subscription back off a webhook.
  * Any of a plan's prices (share, fee or the retired one) maps to it. An
  * unrecognised price grants nothing: `none` is not a plan, so effectivePlan
- * falls through to the trial or `expired`.
+ * falls through to the trial, Suspended or Free.
  */
 export function planForPriceId(priceId: string | null | undefined): PaidPlanId | 'none' {
   return priceFor(priceId)?.plan ?? 'none';
