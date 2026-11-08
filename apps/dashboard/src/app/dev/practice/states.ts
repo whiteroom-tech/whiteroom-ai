@@ -7,6 +7,7 @@ import type { SetupData } from '@/components/sandbox/practice/PracticeSetup';
 import type { PracticeCapabilities, PracticeCheck, PracticeControlCheck, PracticeProviderKey, PracticeReport, PracticeResult, PracticeRun, PracticeRunRow } from '@/lib/sandbox/practice/types';
 import { callEstimate, CLI_VERSION, KEY_REFUSALS, rerunConfirm } from '@/lib/sandbox/practice/model';
 import { DEMO_AGENT_CHECKS, demoCheck as check } from '@/lib/sandbox/practice/demo';
+import { FREE_PAUSED_LINE, practiceLimitLine, SANDBOX_BUSY_LINE } from '@/lib/sandbox/refusals';
 
 const FLEET = 'prod-eu';
 const ID = 'r-7f3a2c1e-0b4d-4e8a-9c61-2d5f8e7a1b30';
@@ -114,7 +115,11 @@ export const PRACTICE_STATES = {
   'refused-engine-access': preview({ test: 'agent', ...cloud([AZURE], 'support-gpt4o-mini'), refusal: { message: KEY_REFUSALS.engine_access_key, reason: 'engine_access_key' } }),
   'refused-other-host': preview({ test: 'agent', ...cloud([AZURE], 'support-gpt4o-mini'), refusal: { message: KEY_REFUSALS.other_host, reason: 'other_host' } }),
   'refused-model': preview({ test: 'agent', ...cloud([AZURE], 'support-gpt4o-mini'), refusal: { message: KEY_REFUSALS.model_required, reason: 'model_required' } }),
-  'refused-today': preview({ test: 'agent', setup: SETUP, model: 'claude-haiku-4-5', refusal: { message: 'You can start more tomorrow (00:00 UTC).', reason: 'starts_today' } }),
+  // Free tier §3.10: the reset time in the viewer's zone (here New York, then Kolkata, where it's the next day).
+  'refused-today': preview({ test: 'agent', setup: SETUP, model: 'claude-haiku-4-5', refusal: { message: practiceLimitLine(null, NOW, 'America/New_York'), reason: 'starts_today' } }),
+  'refused-today-tomorrow': preview({ test: 'agent', setup: SETUP, model: 'claude-haiku-4-5', refusal: { message: practiceLimitLine(null, NOW, 'Asia/Kolkata'), reason: 'sandbox_daily_limit' } }),
+  'refused-paused': preview({ test: 'agent', setup: SETUP, model: 'claude-haiku-4-5', refusal: { message: FREE_PAUSED_LINE, reason: 'free_paused' } }),
+  'refused-busy': preview({ test: 'agent', setup: SETUP, model: 'claude-haiku-4-5', refusal: { message: SANDBOX_BUSY_LINE, reason: 'sandbox_busy' } }),
   'refused-open': preview({ test: 'agent', setup: SETUP, model: 'claude-haiku-4-5', refusal: { message: 'You already have a practice test open.', reason: 'owner_busy', run: { id: ID, lifecycle: 'active' } } }),
   'refused-open-elsewhere': preview({ test: 'agent', setup: SETUP, model: 'claude-haiku-4-5', refusal: { message: 'You already have a practice test open.', reason: 'owner_busy', run: { lifecycle: 'active', otherFleet: true } } }),
   code: preview({ run: RUN, code: CODE }),
@@ -139,6 +144,8 @@ export const PRACTICE_STATES = {
   'ended-call-cap': preview(finished(null, { lifecycle: 'interrupted', endReason: 'call_cap' })),
   'ended-no-model-calls': preview(finished(null, { lifecycle: 'interrupted', endReason: 'no_model_calls' })),
   'ended-engine-error': preview(finished(null, { lifecycle: 'interrupted', endReason: 'engine_error' })),
+  /** Stopped because Sandbox was switched off for Free (§3.6). */
+  'ended-paused': preview(finished(null, { lifecycle: 'cancelled', endReason: 'free_paused' })),
   'incomplete-adapter-crashed': preview(finished(INCOMPLETE, { endReason: 'adapter_crashed' })),
   'confirm-rerun': preview({ ...finished(FAILED), confirm: { kind: 'rerun', start: { fleet: FLEET, sample: false, runs: 3, scope: ['c.timeout'] }, text: rerunConfirm(['c.timeout'], 3, callEstimate({ runs: 3, scope: ['c.timeout'], controlCalls: 0, model: 'claude-haiku-4-5' })) } }),
   unavailable: preview({ unavailable: true }),

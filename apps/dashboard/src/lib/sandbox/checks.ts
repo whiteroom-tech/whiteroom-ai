@@ -7,7 +7,8 @@
 // BFF, so both agree on what a valid request and a valid answer look like.
 
 import { timeAgo } from '@/lib/format';
-import { sandboxPost, SandboxFleetError } from './fleet';
+import { busyRefusal, sandboxPost, SandboxFleetError } from './fleet';
+import { retryBusyRead } from './refusals';
 
 // No resume: a check lifts its own stop after 5 seconds, so the page never sends one.
 export const SANDBOX_CHECKS_ACTIONS = ['status', 'start', 'stop'] as const;
@@ -54,6 +55,8 @@ export interface CheckWindow {
   /** The agent the window judges (its first named one), and other agents that called during it, not judged. Absent from older engines. */
   agentId?: string | null;
   otherAgents?: string[];
+  /** Why the run stopped, when the Sandbox stopped it: free_paused (Sandbox switched off for Free). */
+  endReason?: 'free_paused';
 }
 
 /** A saved Sandbox rule judged at its limit for the window's agent. */
@@ -96,8 +99,12 @@ export interface CheckState {
   window: CheckWindow | null;
   checks: CheckResult[];
   rules: CheckRule[];
-  /** The agent, live: its last call to the Sandbox and its calls outside a check. Absent from an older engine. */
-  activity?: { lastCallAt: string | null; callsOutsideWindow24h: number };
+  /**
+   * The agent, live: its last call to the Sandbox and its calls outside a
+   * check. `dailyLimitResetAt`: set while the Sandbox's daily calls are used up
+   * (R7), when it takes calls again. Absent from an older engine.
+   */
+  activity?: { lastCallAt: string | null; callsOutsideWindow24h: number; dailyLimitResetAt?: string };
   /** Absent from an older engine: rows 04–06 then read from their checks alone, and row 03 from the provider error. */
   probes?: RuleProbe[];
   parts?: CheckPart[];
@@ -121,6 +128,7 @@ function windowOf(v: unknown): CheckWindow | null | undefined {
     calls: typeof v.calls === 'number' && Number.isFinite(v.calls) && v.calls >= 0 ? Math.floor(v.calls) : 0,
     ...('agentId' in v && { agentId: str(v.agentId, 128) ? v.agentId : null }),
     ...(Array.isArray(v.otherAgents) && { otherAgents: v.otherAgents.filter((a): a is string => str(a, 128)).slice(0, 10) }),
+    ...(v.endReason === 'free_paused' && { endReason: 'free_paused' as const }),
   };
 }
 
@@ -184,6 +192,7 @@ export function checkStateOf(data: unknown): CheckState | null {
   const activity = a ? {
     lastCallAt: str(a.lastCallAt, 40) && Number.isFinite(Date.parse(a.lastCallAt)) ? a.lastCallAt : null,
     callsOutsideWindow24h: Number.isSafeInteger(a.callsOutsideWindow24h) && (a.callsOutsideWindow24h as number) >= 0 ? a.callsOutsideWindow24h as number : 0,
+    ...(str(a.dailyLimitResetAt, 40) && Number.isFinite(Date.parse(a.dailyLimitResetAt)) && { dailyLimitResetAt: a.dailyLimitResetAt }),
   } : undefined;
   const probes = probesOf(data.probes);
   const parts = partsOf(data.parts);
@@ -313,12 +322,19 @@ function mustState(data: unknown): CheckState {
   return state;
 }
 
-export async function getCheckState(fleet: string, sandboxFleetId: string): Promise<CheckState> {
-  return mustState(await call('status', { fleet, sandboxFleetId }));
+/**
+ * The checks' state: a read, so a busy answer is retried quietly (Part 2
+ * §10.6) until `signal` aborts. `retry: false` for a poll, whose next tick
+ * is the retry.
+ */
+export async function getCheckState(fleet: string, sandboxFleetId: string, signal?: AbortSignal, retry = true): Promise<CheckState> {
+  const read = () => call('status', { fleet, sandboxFleetId });
+  return mustState(await (retry ? retryBusyRead(read, busyRefusal, { signal }) : read()));
 }
 
 /** Start (Check again) or Stop (Finish now); then the current state (the answer's own, or a fresh read). */
 export async function checkAction(action: Exclude<SandboxChecksAction, 'status'>, fleet: string, sandboxFleetId: string): Promise<CheckState> {
   const data = await call(action, { fleet, sandboxFleetId });
-  return checkStateOf(data) ?? getCheckState(fleet, sandboxFleetId);
+  // One read, no busy retries: nothing would stop them once the card goes. The card's poll reads again.
+  return checkStateOf(data) ?? getCheckState(fleet, sandboxFleetId, undefined, false);
 }

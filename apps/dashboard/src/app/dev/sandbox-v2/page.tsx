@@ -9,7 +9,9 @@ import { SANDBOX_V2_STATES, type SandboxV2State } from './states';
 // step 4: checks-ready, checks-waiting, checks-observe, checks-enforce, checks-pause, checks-stopped,
 // checks-errors, checks-done, checks-report, checks-report-pass, checks-report-few, checks-error,
 // sample agent: sample-offer, sample-limit, sample-running, sample-results, sample-connect-own,
-// and outside-window.
+// sample-budget, sandbox-busy, outside-window,
+// Free tier: free-connect, free-invite, free-reset, free-sample-limit(-tomorrow), free-calls-limit(-waiting),
+// free-paused, free-take-it-live(-busy, -refused, -network), suspended-verdict(-talk).
 export const metadata = { title: 'Sandbox v2 preview' };
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ state?: string }> }) {

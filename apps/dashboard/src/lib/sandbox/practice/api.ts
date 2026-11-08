@@ -2,6 +2,7 @@
 // app/api/sandbox/practice. The run code is returned by start and new-code
 // only; it is held in the page and never stored.
 
+import { refusalWords } from '../refusals';
 import { KEY_REFUSALS, PRACTICE_UNAVAILABLE, PROXY_KEY_PREFIX_RE } from './model';
 import type { PracticeCapabilities, PracticeControlCheck, PracticeKeyRefusal, PracticeProviderKey, PracticeResult, PracticeRun, PracticeRunRow, PracticeSource, PracticeSourceProvider, PracticeStart, RunCode } from './types';
 
@@ -101,7 +102,15 @@ export const newRunCode = (fleet: string, id: string) => call<RunCode>(`/${id}/c
 export const endPractice = (fleet: string, id: string) => call<{ lifecycle: string }>(`/${id}/end`, { body: { fleet } });
 
 /** A refusal in words, for both practice pages: a key refusal in the catalog's words, else the engine's or the BFF's own. */
-export function refusalText(e: unknown, fallback = 'That didn’t work. Check your connection and try again.'): string {
+export function refusalText(e: unknown, fallback = 'That didn’t work. Check your connection and try again.', now = Date.now()): string {
   if (!(e instanceof PracticeError)) return fallback;
-  return (e.reason && Object.hasOwn(KEY_REFUSALS, e.reason) && KEY_REFUSALS[e.reason as keyof typeof KEY_REFUSALS]) || e.message || fallback;
+  return (e.reason && Object.hasOwn(KEY_REFUSALS, e.reason) && KEY_REFUSALS[e.reason as keyof typeof KEY_REFUSALS]) || practiceLimitText(e, now) || e.message || fallback;
+}
+
+/** The Sandbox's own refusals of a start (daily limit, paused, busy) in §3.10's words, the reset time in the viewer's zone; else null. */
+export function practiceLimitText(e: PracticeError, now = Date.now()): string | null {
+  const nested = e.body?.whiteroom && typeof e.body.whiteroom === 'object' ? e.body.whiteroom as Record<string, unknown> : {};
+  const text = (v: unknown) => (typeof v === 'string' ? v : undefined);
+  const code = text(e.body?.code) ?? text(nested.reason);
+  return refusalWords({ status: e.status, reason: e.reason, code, resetAt: text(e.body?.resetAt) ?? text(nested.resetAt) }, 'practice', now);
 }

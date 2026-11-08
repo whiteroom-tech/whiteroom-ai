@@ -146,7 +146,8 @@ describe('practice test screens', () => {
   });
 
   it('refusals say what to do next', () => {
-    expect(text(render('refused-today'))).toContain('You can start more tomorrow (00:00 UTC).');
+    // NOW (14:20 UTC) as a New York viewer: 00:00 UTC is 8:00 PM the same day.
+    expect(text(render('refused-today'))).toContain('You’ve used today’s practice runs. You can start more at 8:00 PM your time.');
     const open = text(render('refused-open'));
     expect(open).toContain('You already have a practice test open.');
     expect(open).toMatch(/View it.*End it…/);

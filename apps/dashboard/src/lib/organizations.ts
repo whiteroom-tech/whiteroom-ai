@@ -260,6 +260,16 @@ export async function getMyOrganization(): Promise<MyOrganization> {
   };
 }
 
+/** The organization of this user's newest pending invitation, or null (the Sandbox's invite line). */
+export async function pendingInviteOrgName(userId: string, q: Queryable = db()): Promise<string | null> {
+  const { rows } = await q.query(
+    `SELECT o.name FROM organization_members m JOIN organizations o ON o.id = m.org_id
+     WHERE m.user_id = $1 AND m.status = 'invited' ORDER BY m.created_at DESC LIMIT 1`,
+    [userId],
+  );
+  return typeof rows[0]?.name === 'string' && rows[0].name ? rows[0].name : null;
+}
+
 /** Just enough to decide whether the sidebar shows an Organization link. */
 export async function getOrganizationSummary(): Promise<{ name: string | null; role: OrgRole | null; invitations: number } | null> {
   const session = await auth();

@@ -227,3 +227,9 @@
 .page :global(.wr-link) { text-decoration:underline; text-underline-offset:2px; }
 .nowrap { flex-wrap:nowrap; white-space:nowrap; }
 .field :global(.wr-seg) { justify-self:start; }
+/* Free tier: the verdict's Take it live, and the Sandbox's own one-line notices (limit, stopped). */
+.goLive { display:grid; gap:8px; justify-items:start; }
+.goLive > p { margin:0; }
+.errLine { margin:0; color:var(--bad); font-size:var(--fs-sm); }
+.warnLine { display:flex; align-items:flex-start; gap:8px; margin:0; font-size:var(--fs-sm); color:var(--warn-tx); }
+.warnLine > svg { flex:none; margin-top:2px; color:var(--warn); }
