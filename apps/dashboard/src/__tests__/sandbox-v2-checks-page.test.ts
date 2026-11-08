@@ -378,7 +378,7 @@ describe('Check your agent', () => {
     expect(SANDBOX_CHECKS_ACTIONS).not.toContain('resume');
   });
 
-  it('polls every 30 seconds in a hidden tab, and reads at once when the tab comes back', async () => {
+  it('doesn’t poll in a hidden tab, and reads once at once when the tab comes back', async () => {
     vi.useFakeTimers();
     checks = checkAnswer({ stage: 'observe' });
     const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
@@ -386,15 +386,18 @@ describe('Check your agent', () => {
       await render(checksEl());
       const reads = () => calls().filter((c) => c.url.endsWith('/checks/status')).length;
       expect(reads()).toBe(1);
-      // Hidden: at most one read in 30 seconds after the first (visible would be six).
+      // Hidden: no reads after the first (visible would be six in 30 seconds).
       await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
       await flush();
-      const hiddenReads = reads();
-      expect(hiddenReads).toBeLessThanOrEqual(3);
+      expect(reads()).toBe(1);
       hidden.mockReturnValue(false);
       await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
       await flush();
-      expect(reads()).toBe(hiddenReads + 1);
+      expect(reads()).toBe(2);
+      // Then every 5 seconds again.
+      await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+      await flush();
+      expect(reads()).toBe(3);
     } finally {
       hidden.mockRestore();
     }

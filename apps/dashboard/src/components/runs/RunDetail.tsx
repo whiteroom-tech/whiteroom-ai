@@ -16,6 +16,16 @@ import { collectRunEvents, collectRuns, flagsNote, wouldActText, flagText, GLYPH
 import { usePoll } from '@/hooks/usePoll';
 import { safeSessionGet } from '@/lib/safe-storage';
 
+/** A run whose last call is this old when read has ended: its page stops polling. */
+export const RUN_ENDED_MS = 60 * 60_000;
+
+/** Whether the run had ended when last read: no call for RUN_ENDED_MS before `readAt`. */
+export function runEnded(lastCallAt: string | undefined, readAt: number | null): boolean {
+  if (!lastCallAt || readAt === null) return false;
+  const last = Date.parse(lastCallAt);
+  return Number.isFinite(last) && readAt - last > RUN_ENDED_MS;
+}
+
 /** A mode as the mockup tags it: filled brand "● Enforce", hollow "○ Watch". */
 export function ModeMark({ mode }: { mode: 'watch' | 'enforce' }) {
   return <span className={`wr-run-mtag${mode === 'enforce' ? ' is-block' : ''}`}>{MODE_LABEL[mode]}</span>;
@@ -95,8 +105,18 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
   }, [fleetId, authKey, runId, kind, cursor, onAuthError, preview]);
 
   // usePoll retries a failed load, keeps a live run current, and drops any
-  // response a newer request has overtaken (kind / page changes).
-  const { refresh } = usePoll(load, { intervalMs: 20_000, enabled: !preview && !missing });
+  // response a newer request has overtaken (kind / page changes). A run that
+  // has ended (no call for RUN_ENDED_MS when last read) isn't polled, unless a
+  // read failed (it retries); coming back to the tab reads it once more, in
+  // case its agent carried on.
+  const ended = runEnded(data?.run.endedAt, updatedAt);
+  const { refresh } = usePoll(load, { intervalMs: 20_000, enabled: !preview && !missing && (!ended || failing) });
+  useEffect(() => {
+    if (!ended || preview) return;
+    const onVisible = () => { if (!document.hidden) refresh(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [ended, preview, refresh]);
   const firstQuery = useRef(true);
   useEffect(() => {
     if (firstQuery.current) { firstQuery.current = false; return; }
@@ -211,7 +231,7 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
   return (
     <div className="wr-runs-page">
       {crumb}
-      <PageHeader title={title} fleetId={fleetId} badge={<LiveStatus at={updatedAt} failing={failing && !!data} />}>
+      <PageHeader title={title} fleetId={fleetId} badge={<LiveStatus at={updatedAt} failing={failing && !!data} ended={ended} />}>
         <CopyLinkButton />
         <Button onClick={() => void exportRun()} busy={exporting} busyLabel="Exporting…" disabled={!data}>Export this run</Button>
         <Link href={`/agents/${encodeURIComponent(agentId)}?from=runs`} className="wr-btn wr-btn--secondary wr-btn--h32">Open agent</Link>

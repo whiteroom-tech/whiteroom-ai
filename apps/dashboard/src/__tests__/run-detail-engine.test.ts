@@ -201,3 +201,45 @@ describe('run page exports and links', () => {
     el.remove();
   });
 });
+
+describe('run page polling', () => {
+  const run = (endedAt: string): RunEventsResult => ({ fleetId: 'f1', run: { runId: 'a~4', agentId: 'a', shift: 4, startedAt: endedAt, endedAt, calls: 1 }, events: [], page: 0, pages: 1, total: 0, eventFound: null });
+  async function open() {
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const root = createRoot(el);
+    await act(async () => { root.render(h(RunDetail, { fleetId: 'f1', runId: 'a~4' })); });
+    await flush();
+    return { el, close: async () => { await act(async () => root.unmount()); el.remove(); } };
+  }
+  const advance = async (ms: number) => { await act(async () => { vi.advanceTimersByTime(ms); }); await flush(); };
+
+  it('keeps a run with recent calls live, every 20 s', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      api.events.mockReset().mockResolvedValue(run(new Date().toISOString()));
+      const p = await open();
+      expect(p.el.textContent).toContain('Live · updated');
+      await advance(20_000);
+      expect(api.events).toHaveBeenCalledTimes(2);
+      await p.close();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('stops polling a run that has ended, says it isn’t live, and reads once more on coming back to the tab', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      api.events.mockReset().mockResolvedValue(run(new Date(Date.now() - 2 * 3600_000).toISOString()));
+      const p = await open();
+      expect(api.events).toHaveBeenCalledTimes(1);
+      expect(p.el.textContent).not.toContain('Live');
+      expect(p.el.textContent).toMatch(/Updated \d/);
+      await advance(60_000);
+      expect(api.events).toHaveBeenCalledTimes(1);
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+      await flush();
+      expect(api.events).toHaveBeenCalledTimes(2);
+      await p.close();
+    } finally { vi.useRealTimers(); }
+  });
+});

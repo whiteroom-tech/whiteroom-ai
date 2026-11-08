@@ -17,6 +17,7 @@ import { DEMO_RESULT, DEMO_RUN } from '@/lib/sandbox/practice/demo';
 import { PastTests } from '../PastTests';
 import { StepsRail } from '../StepsRail';
 import { ROUTES } from '@/lib/routes';
+import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { PracticeDialog } from './PracticeDialog';
 import { PracticeResults, type ResultAction } from './PracticeResults';
 import { PracticeRunView } from './PracticeRunView';
@@ -140,13 +141,19 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
   const load = useRef<'idle' | 'loading' | 'done'>('idle');
   const asked = useRef(askedRun);
   asked.current = askedRun;
+  // The page's one session check (FleetAuthProvider in the (citadel) layout); a preview asks nothing.
+  const auth = useFleetAuth({ idle: !!preview });
+  const sessionChecked = auth.status !== 'checking';
+  const sessionFleet = auth.status === 'authenticated' ? auth.fleetId : null;
+  const sessionFailed = auth.status === 'unauthenticated' && !!auth.retryableError;
   useEffect(() => {
-    if (preview || demo || load.current !== 'idle') return;
+    if (preview || demo || !sessionChecked || load.current !== 'idle') return;
     load.current = 'loading';
     let live = true;
     (async () => {
-      const session = await fetch('/api/fleet/session', { credentials: 'same-origin', cache: 'no-store' }).then((r) => (r.ok ? r.json() : null));
-      const f: string | undefined = session?.fleetId;
+      // The check couldn't reach the server: the reload offer, as for any failed load.
+      if (sessionFailed) throw new Error('session check failed');
+      const f = sessionFleet;
       if (!f) throw new PracticeError('Sign in and connect a fleet first: practice tests run on your fleet’s key and controls.', 401);
       if (!live) return;
       setFleet(f);
@@ -170,7 +177,7 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
     ).finally(() => { if (live) setLoading(false); });
     // Left before it finished (to the sample report): load again when back.
     return () => { live = false; if (load.current === 'loading') load.current = 'idle'; };
-  }, [preview, demo, showRun, loadSetup]);
+  }, [preview, demo, sessionChecked, sessionFleet, sessionFailed, showRun, loadSetup]);
 
   // After the first load, a link to another test (Past tests' Open the result) opens it, and a link
   // back to setup (Start a new test) leaves a finished test's result. An open test stays: one at a time.

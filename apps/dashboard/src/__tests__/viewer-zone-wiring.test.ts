@@ -18,7 +18,7 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn(), push: 
 vi.mock('@/auth', () => ({ auth: async () => null, signIn: vi.fn(), signOut: vi.fn(), handlers: {} }));
 vi.mock('@/lib/billing', () => ({ openBillingPortal: vi.fn(), startCheckout: vi.fn() }));
 vi.mock('@/lib/plan-savings', () => ({ getMonthSavings: vi.fn(async () => null) }));
-vi.mock('@/hooks/useFleetAuth', () => ({ useFleetAuth: () => ({ status: 'authenticated', fleetId: null }) }));
+vi.mock('@/hooks/useFleetAuth', () => ({ FleetAuthProvider: ({ children }: { children: React.ReactNode }) => children, useFleetAuth: () => ({ status: 'authenticated', fleetId: null }) }));
 vi.mock('@/components/AppShell', () => ({ AppShell: ({ children }: { children: React.ReactNode }) => children }));
 
 import { Providers } from '@/app/providers';

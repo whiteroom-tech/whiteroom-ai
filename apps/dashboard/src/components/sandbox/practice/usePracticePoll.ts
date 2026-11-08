@@ -4,12 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import { getPracticeRun, retryable } from '@/lib/sandbox/practice/api';
 import type { PracticeRun } from '@/lib/sandbox/practice/types';
 
-/** §10 Polling: every 5 s while the page is visible, 30 s while hidden. */
-export const PRACTICE_POLL_MS = { visible: 5_000, hidden: 30_000 };
+/** §10 Polling: every 5 s while the page is visible; none while hidden (one read on coming back). */
+export const PRACTICE_POLL_MS = { visible: 5_000 };
 
 /**
- * Reads an open practice test every 5 s (30 s while the tab is hidden, at
- * once on coming back), one read at a time, for both practice pages.
+ * Reads an open practice test every 5 s (paused while the tab is hidden, one
+ * read at once on coming back), one read at a time, for both practice pages.
  * `onRead` gets each read and returns 'stop' once the test has ended. A read
  * that asking again won't fix stops the polling and goes to `onError`; a
  * network blip or a busy server just waits for the next read.
@@ -31,9 +31,10 @@ export function usePracticePoll({ fleet, runId, enabled, onRead, onError }: {
     let pending = false;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
-    const next = () => { clearTimeout(timer); if (live && !stopped) timer = setTimeout(poll, document.hidden ? PRACTICE_POLL_MS.hidden : PRACTICE_POLL_MS.visible); };
+    // While hidden nothing is scheduled: coming back reads at once (onVisible).
+    const next = () => { clearTimeout(timer); if (live && !stopped && !document.hidden) timer = setTimeout(poll, PRACTICE_POLL_MS.visible); };
     const poll = async () => {
-      if (pending || stopped || !live) return;
+      if (pending || stopped || !live || document.hidden) return;
       pending = true;
       try {
         const run = await getPracticeRun(fleet, runId);

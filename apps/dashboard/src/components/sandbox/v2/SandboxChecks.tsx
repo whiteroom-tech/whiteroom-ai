@@ -165,7 +165,7 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
     void load();
   }, [load, preview]);
 
-  // Read the checks every 5 seconds (30 when the tab is hidden; the practice poll's timing), one read at a time: a check starts
+  // Read the checks every 5 seconds (none while the tab is hidden, one read on coming back; the practice poll's timing), one read at a time: a check starts
   // on the agent's first call, so the page watches for one too. A state conflict or a failed read
   // keeps polling; only a Sandbox that changed under the page stops it.
   const loaded = state !== null;
@@ -176,9 +176,9 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
     let pending = false;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
-    const next = () => { clearTimeout(timer); if (live && !stopped) timer = setTimeout(poll, document.hidden ? PRACTICE_POLL_MS.hidden : PRACTICE_POLL_MS.visible); };
+    const next = () => { clearTimeout(timer); if (live && !stopped && !document.hidden) timer = setTimeout(poll, PRACTICE_POLL_MS.visible); };
     const poll = async () => {
-      if (pending || stopped || !live) return;
+      if (pending || stopped || !live || document.hidden) return;
       if (acting.current) { next(); return; }
       pending = true;
       const req = ++latest.current;

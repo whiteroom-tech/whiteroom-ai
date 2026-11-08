@@ -83,7 +83,8 @@ export function CostPredictionSection({ fleetId, authKey, agentIds, fleetHourly,
       else setLoadFailed(true);
     }
   }, [fleetId, authKey, api]);
-  const { refresh } = usePoll(load, { intervalMs: 60_000 });
+  // Budgets and month-to-date spend move slowly; a save refreshes at once.
+  const { refresh } = usePoll(load, { intervalMs: 5 * 60_000 });
 
   const agents = useMemo(() => (data ? pickableAgents(data, agentIds) : []), [data, agentIds]);
   const agent = picked && agents.some((a) => a.agentId === picked) ? picked : defaultAgent(agents);

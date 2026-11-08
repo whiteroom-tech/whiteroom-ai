@@ -9,7 +9,7 @@ import { AuditIntegritySection } from '@/components/settings/AuditIntegritySecti
 import { useRouter } from 'next/navigation';
 import { PageHeader, PageLead } from '@/components/citadel/PageChrome';
 import { SettingsCard } from '@/components/settings/SettingsCard';
-import { useFleetAuth } from '@/hooks/useFleetAuth';
+import { FleetAuthProvider, useFleetAuth } from '@/hooks/useFleetAuth';
 import { AppShell } from '@/components/AppShell';
 import { TextSizeControl } from '@/components/TextSizeControl';
 import { Banner, Button, FONT_MONO } from '@whiteroom/ui';
@@ -126,6 +126,8 @@ export function SettingsView({
   }
 
   return (
+    // One fleet session check for the header and the four fleet sections, not one each.
+    <FleetAuthProvider>
     <AppShell>
       <SettingsHeader email={account.email} />
       <main style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
@@ -149,6 +151,7 @@ export function SettingsView({
         </div>
       </main>
     </AppShell>
+    </FleetAuthProvider>
   );
 }
 
