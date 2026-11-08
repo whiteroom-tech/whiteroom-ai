@@ -35,6 +35,8 @@ const DEFAULT_MODEL = anthropic ? "claude-haiku-4-5" : "gpt-4o-mini";
 const BLOCKED = "Stopped: one of my WhiteRoom controls blocked the model call.";
 const GONE = "Stopped: WhiteRoom closed this practice task.";
 // WhiteRoom asks for the same call again shortly: it was refused before anything was sent on.
+// This list, the pause and daily-limit messages and the UTC reset time match the CLI's own
+// (src/responses.ts); test/free-tier.test.ts checks they stay the same.
 const BUSY = ["sandbox_busy", "control_busy", "cleanup_busy", "db_unavailable"];
 
 // One model call through WhiteRoom; a final answer (text) if WhiteRoom stopped it.

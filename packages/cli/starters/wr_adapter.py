@@ -25,6 +25,8 @@ DEFAULT_MODEL = "claude-haiku-4-5" if ANTHROPIC else "gpt-4o-mini"
 BLOCKED = "Stopped: one of my WhiteRoom controls blocked the model call."
 GONE = "Stopped: WhiteRoom closed this practice task."
 # WhiteRoom asks for the same call again shortly: it was refused before anything was sent on.
+# This list, the pause and daily-limit messages and the UTC reset time match the CLI's own
+# (src/responses.ts); test/free-tier.test.ts checks they stay the same.
 BUSY = ("sandbox_busy", "control_busy", "cleanup_busy", "db_unavailable")
 calls = 0
 

@@ -4,12 +4,14 @@
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { after, describe, it } from "node:test";
 import { Engine } from "../src/practice/engine.js";
 import { copy, reportOf, results, type Report } from "../src/practice/text.js";
-import { freeTierCode, freeTierMessage, rerunWontFix, responseCopy, retryAfterSeconds, waitWords } from "../src/responses.js";
+import { BUSY, freeTierCode, freeTierMessage, rerunWontFix, responseCopy, retryAfterSeconds, waitWords } from "../src/responses.js";
 import { cli, fixture, KEY, PKG, startStub, testEnv, type Stub } from "./stub.js";
 
 const stubs: Stub[] = [];
@@ -332,6 +334,42 @@ describe("fleet commands: Free tier refusals in plain words", () => {
     assert.match(r.stderr, /Free plan doesn't include production calls\. Pick a plan/);
     assert.doesNotMatch(r.stderr, /Error 402/);
   });
+
+  it("a busy 503 says how long to wait, from its Retry-After", async () => {
+    const s = await stub({ route: (p) => (p === "/api/white-room" ? [503, busy("control_busy"), { "retry-after": "20" }] : undefined) });
+    const r = await cli(["register", "agent-1", "--url", s.url, "--key", "wr_placeholder"], { env: testEnv() });
+    assert.equal(r.code, 1);
+    assert.match(r.stderr, /WhiteRoom is busy right now\. Try again in 20 seconds\./);
+  });
+});
+
+describe("the starters match the CLI's Free tier answers (one source: src/responses.ts)", () => {
+  const js = readFileSync(join(PKG, "starters/wr-adapter.mjs"), "utf8");
+  const py = readFileSync(join(PKG, "starters/wr_adapter.py"), "utf8");
+  const list = (src: string, re: RegExp) => [...(src.match(re)?.[1] ?? "").matchAll(/"([a-z_]+)"/g)].map((m) => m[1]).sort();
+
+  it("the same busy codes", () => {
+    const want = [...BUSY].sort();
+    assert.deepEqual(list(js, /const BUSY = \[([^\]]*)\]/), want);
+    assert.deepEqual(list(py, /BUSY = \(([^)]*)\)/), want);
+  });
+
+  it("the same pause message", () => {
+    assert.ok(js.includes(JSON.stringify(responseCopy.freePaused)));
+    assert.ok(py.includes(JSON.stringify(responseCopy.freePaused)));
+  });
+
+  // A reset time with an offset: each starter must print it in UTC, as the CLI does.
+  const OFFSET = { error: "x", whiteroom: { reason: "sandbox_daily_limit", forwarded: false, resetAt: "2026-11-09T01:30:00.000+01:00" } };
+  for (const [who, adapter] of [["JS starter", "node starters/wr-adapter.mjs"], ["Python starter", "python3 starters/wr_adapter.py"]] as const) {
+    it(`${who}: the same daily-limit message and UTC reset time`, async () => {
+      const want = freeTierMessage({ status: 402, body: OFFSET })!;
+      assert.equal(want, "Your Sandbox has used all its calls for today. They reset at 00:30 UTC.");
+      const s = await stub({ route: (p) => (p === "/v1/messages" ? [402, OFFSET] : undefined) });
+      const r = await practice(s, ["--adapter", adapter]);
+      assert.ok(r.stderr.includes(want), r.stderr);
+    });
+  }
 });
 
 /** `whiteroom sandbox listen` against a server answering the helper claim (and `next`) with Free tier answers. */
