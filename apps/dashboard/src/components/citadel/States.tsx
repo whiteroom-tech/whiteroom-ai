@@ -26,11 +26,14 @@ export function LoadingLine({ children = 'Loading…', padded = true }: { childr
   return <p aria-busy="true" style={{ margin: 0, padding: padded ? '14px 18px' : 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{children}</p>;
 }
 
-/** A panel's data didn't load (network, server error): says so, with Try again, instead of the panel vanishing. */
-export function LoadFailed({ what, onRetry, busy }: { what: string; onRetry: () => void; busy?: boolean }) {
+/**
+ * A panel's data didn't load (network, server error): says so, with Try again, instead of the panel vanishing.
+ * `text`: the line to show instead of "Couldn't load <what>."
+ */
+export function LoadFailed({ what, onRetry, busy, text }: { what: string; onRetry: () => void; busy?: boolean; text?: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-      <p role="alert" style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--bad)', flex: '1 1 220px' }}>Couldn&rsquo;t load {what}.</p>
+      <p role="alert" style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--bad)', flex: '1 1 220px' }}>{text ?? <>Couldn&rsquo;t load {what}.</>}</p>
       <Button size={28} busy={busy} busyLabel="Loading…" aria-label={`Try loading ${what} again`} onClick={onRetry}>Try again</Button>
     </div>
   );

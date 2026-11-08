@@ -72,7 +72,8 @@ const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : 'T
  * engine has no Sandbox v2 yet, so the page can fall back to what /sandbox
  * did before.
  */
-export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; preview?: SandboxHomePreview; onUnavailable?: () => void }) {
+/** `planLine`: a line from the page that opened the Sandbox (the home fleet's "cleared"), first under the header. */
+export function SandboxHome({ fleet, preview, onUnavailable, planLine }: { fleet: string; preview?: SandboxHomePreview; onUnavailable?: () => void; planLine?: React.ReactNode }) {
   const [status, setStatus] = useState<SandboxFleetStatus | null>(preview ? preview.status : null);
   // The Sandbox key: page state only. It stays on screen for this visit and is
   // gone on reload, since the engine keeps only its hash.
@@ -329,6 +330,7 @@ export function SandboxHome({ fleet, preview, onUnavailable }: { fleet: string; 
     <PageHeader title="Sandbox" />
     <main className={s.content}>
       <div className={v.page} ref={pageRef}>
+        {planLine}
         {step === 'connect' && <p className={v.lead2}>{SANDBOX_LEAD}</p>}
         {error && <Banner variant="error" actions={status === null && !loading && !preview ? <Button size={28} onClick={() => void load()}>Try again</Button> : undefined}>{error}</Banner>}
         {notice && <Banner variant="info" icon="check">{notice}</Banner>}

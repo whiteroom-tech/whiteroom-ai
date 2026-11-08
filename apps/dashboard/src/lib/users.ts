@@ -21,7 +21,8 @@ export interface UserProvisioning {
 /** Why provisioning was refused, for callers to act on (no message matching). */
 export type ProvisioningResult =
   | { ok: true }
-  | { ok: false; code: 'fleet_taken'; error: string };
+  | { ok: false; code: 'fleet_taken'; error: string }
+  | { ok: false; code: 'changed'; error: string };
 
 async function requireUserId(): Promise<string> {
   const session = await auth();
@@ -47,11 +48,16 @@ export async function getUserProvisioning(): Promise<UserProvisioning> {
   };
 }
 
+/**
+ * `expectFleetId`: save only while the account's fleet is still this one
+ * (null: none yet), else change nothing and answer `changed`. The home fleet
+ * (lib/home-fleet-server.ts) uses it so two opens at once keep one fleet.
+ */
 export async function upsertUserProvisioning(input: {
   apiKey: string;
   fleetId: string;
   fleetToken: string | null;
-}): Promise<ProvisioningResult> {
+}, opts: { expectFleetId?: string | null } = {}): Promise<ProvisioningResult> {
   const userId = await requireUserId();
   await verifyFleetOwnership(input?.fleetToken, input?.fleetId);
   if (typeof input.apiKey !== 'string' || !/^sk-wr-[a-zA-Z0-9_-]{16,128}$/.test(input.apiKey)) {
@@ -92,6 +98,10 @@ export async function upsertUserProvisioning(input: {
         [userId],
       );
       oldFleetId = current[0]?.fleet_id ?? null;
+      if (opts?.expectFleetId !== undefined && oldFleetId !== opts.expectFleetId) {
+        await client.query('ROLLBACK');
+        return { ok: false, code: 'changed', error: 'This account’s fleet changed meanwhile.' };
+      }
       const fleetChanged = oldFleetId !== input.fleetId;
 
       // An account may take on a fleet only when it doesn't already belong to
