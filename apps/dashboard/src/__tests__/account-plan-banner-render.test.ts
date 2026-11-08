@@ -207,7 +207,7 @@ describe('AccountPlanBanner', () => {
     expect(api.reads).toEqual(['org-fleet']);
   });
 
-  it('Go live: busy, then a full load of Fleet key\'s connect card (no PLAN_CHANGED re-reads first); the event is captured', async () => {
+  it('Go live: busy, then PLAN_CHANGED and Fleet key\'s connect card; the event is captured', async () => {
     api.state = state('free');
     let resolve!: (v: unknown) => void;
     api.takeItLive.mockReturnValue(new Promise((r) => { resolve = r; }));
@@ -219,7 +219,7 @@ describe('AccountPlanBanner', () => {
     expect(m.text()).toContain('Going live…');
     await act(async () => { resolve({ ok: true, trialEndsAt: '2026-12-08T12:00:00Z' }); });
     await flush();
-    expect(changed).not.toHaveBeenCalled();
+    expect(changed).toHaveBeenCalledOnce();
     expect(assign).toHaveBeenCalledWith('/fleet-key?live=1#point');
     expect(api.capture).toHaveBeenCalledWith('take_it_live', { where: 'banner' });
     window.removeEventListener(PLAN_CHANGED, changed);

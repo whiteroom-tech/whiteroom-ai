@@ -20,10 +20,9 @@ import {
 } from '@/lib/plan-banner-shared';
 
 /**
- * Fired by a page that changes the plan and stays on it (Sandbox's Take it
- * live, before it moves on), so every plan banner and caveat re-reads at
- * once instead of after PLAN_READ_TTL_MS. Go live here needs none: it loads
- * Fleet key afresh.
+ * Fired once going live succeeds (Go live here, Take it live on Sandbox), so
+ * every plan banner and caveat on the page re-reads at once instead of after
+ * PLAN_READ_TTL_MS, whether or not the page then moves on.
  */
 export const PLAN_CHANGED = 'wr:plan-changed';
 
@@ -92,8 +91,8 @@ export function useConnectCaveat(): PlanState['caveat'] {
 /**
  * Starts the free days from a Go live button: busy while it runs, the
  * refusal or network line on failure (never retried on its own), and on
- * success the page goes to Fleet key's connect card (a full load, so every
- * banner there reads the new plan).
+ * success every plan banner re-reads (PLAN_CHANGED) and the page goes to
+ * Fleet key's connect card.
  */
 export function useGoLive(where: 'banner' | 'settings', initial?: GoLiveStatus): GoLiveStatus & { goLive: () => void } {
   const [status, setStatus] = useState<GoLiveStatus>(initial ?? { busy: false, error: '' });
@@ -103,7 +102,8 @@ export function useGoLive(where: 'banner' | 'settings', initial?: GoLiveStatus):
       (res) => {
         if (!res.ok) { setStatus({ busy: false, error: GO_LIVE_REFUSED }); return; }
         analytics.capture('take_it_live', { where });
-        // A full navigation: every banner on the new page reads afresh, so no PLAN_CHANGED is needed here.
+        // The Free banner goes at once, even if the navigation below is slow.
+        window.dispatchEvent(new Event(PLAN_CHANGED));
         window.location.assign(LIVE_LANDING);
       },
       () => setStatus({ busy: false, error: NETWORK_LINE }),
