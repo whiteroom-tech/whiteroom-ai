@@ -10,7 +10,7 @@ import { parseArgs } from "../src/legacy-args.js";
 import { Engine, REDIRECTED, Unreachable } from "../src/practice/engine.js";
 import { PassThrough } from "node:stream";
 import {
-  adapterLabel, adapterProblem, chatCompletions, hiddenPrompt, Interrupted, keyFromEnv, keyHeader, keyShapeProblem, keyVarOf, nodeTooOld, providerByShape, targetOrigin, words,
+  adapterLabel, adapterProblem, chatCompletions, HIDDEN_RECEIVED, hiddenPrompt, Interrupted, keyFromEnv, keyHeader, keyShapeProblem, keyVarOf, nodeTooOld, providerByShape, targetOrigin, words,
 } from "../src/practice/preflight.js";
 import { finalText } from "../src/practice/run.js";
 import { clean, copy, hideSecret, parseRequire, results, type Report } from "../src/practice/text.js";
@@ -111,6 +111,27 @@ describe("preflight", () => {
       for (const c of chunks) t.write(c);
       assert.equal(await p, "wrrt_z");
     }
+    // Something pasted says it arrived, once, without showing it; nothing typed yet says nothing.
+    let said = "";
+    const err = { write: (x: string) => ((said += x), true) };
+    t = term();
+    p = hiddenPrompt("Q: ", t, err);
+    t.write(`${esc}[200~`);
+    assert.equal(said, "Q: ");
+    // Arrow keys, Home and function keys aren't something typed either.
+    t.write(`${esc}[A${esc}[1;5D${esc}OP${esc}[15~`);
+    assert.equal(said, "Q: ");
+    // A marker cut short across reads isn't something typed.
+    t.write(`${esc}[20`);
+    assert.equal(said, "Q: ");
+    t.write(`1~${esc}[200~`);
+    assert.equal(said, "Q: ");
+    t.write(`wrrt_secret${esc}[201~`);
+    t.write("more");
+    assert.equal(said, `Q: ${HIDDEN_RECEIVED}`);
+    t.write("\r");
+    assert.equal(await p, "wrrt_secretmore");
+    assert.ok(!said.includes("secret"));
     t = term();
     p = hiddenPrompt("", t);
     t.write(String.fromCharCode(3));
