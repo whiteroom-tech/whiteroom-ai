@@ -25,13 +25,13 @@ export function buildCredentials(
   return { fleetId: resolvedFleetId, fleetToken: resolvedFleetToken };
 }
 
-/** Every Sandbox fleet's id starts with this; SQL filters use it as `NOT LIKE '${SANDBOX_FLEET_PREFIX}%'`. */
 /** A new dashboard API key: `sk-wr-` and 64 hex characters (browser or server). */
 export function generateApiKey(): string {
   const bytes = globalThis.crypto.getRandomValues(new Uint8Array(32));
   return 'sk-wr-' + Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
+/** Every Sandbox fleet's id starts with this; SQL filters use it as `NOT LIKE '${SANDBOX_FLEET_PREFIX}%'`. */
 export const SANDBOX_FLEET_PREFIX = 'sandbox-';
 /** A Sandbox fleet (sandbox-…): never a production page's fleet. */
 export const isSandboxFleetId = (fleetId: string) => fleetId.startsWith(SANDBOX_FLEET_PREFIX);
