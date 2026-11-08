@@ -12,7 +12,6 @@ import s from '@/components/sandbox/guided.module.css';
 import { SANDBOX_V2_STATES } from '../sandbox-v2/states';
 import type { SandboxOpenState } from './states';
 
-
 /** An open time on the viewer's clock: two hours from now (capped at 23:30 so it stays today), or tomorrow at 05:30. */
 function opensAt(tomorrow: boolean): string {
   const d = new Date();
