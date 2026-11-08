@@ -7,6 +7,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { PracticeCheck, PracticeControlCheck, PracticeReport, PracticeSource } from '@/lib/sandbox/practice/types';
+// The Sandbox's server actions (plan, Take it live): today's page, nothing on the server.
+vi.mock('@/lib/sandbox/sandbox-plan', () => ({ getSandboxPlan: async () => ({ plan: 'other', canBuy: false, invite: null }) }));
+vi.mock('@/lib/user-fleets', () => ({ takeItLive: async () => ({ ok: false }) }));
+// The plan banner's event name only (the banner itself reads the server).
+vi.mock('@/components/AccountPlanBanner', () => ({ PLAN_CHANGED: 'wr:plan-changed' }));
 
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'unauthenticated' }) }));
 // A paid account: the Free home fleet (B3) has nothing to do.

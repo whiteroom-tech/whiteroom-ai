@@ -8,6 +8,11 @@ import { act, createElement as h } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { CheckState, CheckStatus, CheckId } from '@/lib/sandbox/checks';
+// The Sandbox's server actions (plan, Take it live): today's page, nothing on the server.
+vi.mock('@/lib/sandbox/sandbox-plan', () => ({ getSandboxPlan: async () => ({ plan: 'other', canBuy: false, invite: null }) }));
+vi.mock('@/lib/user-fleets', () => ({ takeItLive: async () => ({ ok: false }) }));
+// The plan banner's event name only (the banner itself reads the server).
+vi.mock('@/components/AccountPlanBanner', () => ({ PLAN_CHANGED: 'wr:plan-changed' }));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'unauthenticated' }) }));

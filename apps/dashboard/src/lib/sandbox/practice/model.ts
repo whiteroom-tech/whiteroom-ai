@@ -6,6 +6,7 @@
 
 import CATALOG from '@practice-contract/catalog.json';
 import { failedCallReason } from '@/lib/sandbox/failed-calls';
+import { FREE_PAUSED_STOPPED } from '@/lib/sandbox/refusals';
 import { counted, fmtDay } from '@/lib/format';
 import type {
   PracticeCheck, PracticeControlCheck, PracticeFailedCalls, PracticeKeyRefusal, PracticeProviderKey, PracticeReport, PracticeRun, PracticeRunRow, PracticeSource,
@@ -621,6 +622,7 @@ export function endedBecause(endReason: string | null): string {
     case 'engine_error': return 'WhiteRoom couldn’t finish working out the result (not your agent). Start a new test.';
     case 'stalled': return 'The test stopped moving: your computer stayed in touch but didn’t ask for the next practice task for 5 minutes.';
     case 'too_many_restarts': return 'Practice tasks had to start again too many times, so the test stopped.';
+    case 'free_paused': return FREE_PAUSED_STOPPED;
     default: return 'The test stopped before it finished.';
   }
 }

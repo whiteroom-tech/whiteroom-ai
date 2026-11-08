@@ -6,11 +6,16 @@ import { PageHeader } from '@/components/citadel/PageChrome';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { useCopy } from '@/components/citadel/CopyChip';
 import { analytics } from '@/lib/analytics';
+import Link from 'next/link';
 import {
-  connectSandboxFleet, getSandboxFleetStatus, isUnavailable, outsideWindowText, sandboxSetting,
-  resetSandboxFleet, rotateSandboxFleetKey, SAMPLE_REFUSALS, SandboxFleetError, startSandboxSample,
+  connectSandboxFleet, getSandboxFleetStatus, isSampleLimit, isUnavailable, outsideWindowText, sampleRefusalOf, sandboxSetting,
+  resetSandboxFleet, rotateSandboxFleetKey, SandboxFleetError, startSandboxSample,
   type ConnectRefusal, type IssuedSandboxKey, type SampleRefusal, type SandboxFleetStatus,
 } from '@/lib/sandbox/fleet';
+import { FREE_PAUSED_LINE, NETWORK_LINE, refusalCode, refusalWords } from '@/lib/sandbox/refusals';
+import { OTHER_PLAN, RESET_SEEN_KEY, sandboxPlanLine, type SandboxPlanView } from '@/lib/sandbox/plan-view';
+import { getSandboxPlan } from '@/lib/sandbox/sandbox-plan';
+import { ROUTES } from '@/lib/routes';
 import { ConnectForm, type ConnectRequest } from './ConnectForm';
 import { practiceHref, SandboxChecks, STEP_CARD_ID, type CheckPhase, type SandboxChecksPreview } from './SandboxChecks';
 import { PracticeCoversCard, SandboxRulesCard, WhatWeCheckCard, YourSandboxCard } from './SandboxAside';
@@ -48,12 +53,18 @@ export interface SandboxHomePreview {
   checks?: SandboxChecksPreview;
   /** Connect your own key over the sample, already open. */
   replacing?: boolean;
+  /** `error` is the Sandbox switched off for Free: a warn line with no action (§3.6). */
+  errorPaused?: boolean;
   /** A refused sample start, as the engine words it. */
   sampleRefusal?: { reason: SampleRefusal; message: string };
   /** The rules editor, already open (Edit rules). */
   rulesOpen?: boolean;
   /** Practice tasks open in the page, as they'd show. */
   practice?: SandboxPracticePreview;
+  /** The account's plan (Free line, invite line, the verdict); none: today's page. */
+  plan?: SandboxPlanView;
+  /** The 7-day reset line, not yet seen on this browser. */
+  resetUnseen?: boolean;
 }
 
 type Confirm = 'rotate' | 'reset' | null;
@@ -64,7 +75,18 @@ const CONNECT_CARD_ID = 'sandbox-connect';
 /** Which Sandbox and key a status names; null when there's no key. */
 const keyOf = (st: SandboxFleetStatus | null) => (st?.exists && st.key ? `${st.sandboxFleetId}:${st.key.prefix}` : null);
 
-const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : 'That didn’t work. Check your connection and try again.');
+const message = (e: unknown) => (e instanceof SandboxFleetError ? refusalWords(e, 'other', Date.now()) ?? e.message : NETWORK_LINE);
+/** The Sandbox switched off for Free (free_paused), by its code. */
+const isPaused = (e: unknown) => e instanceof SandboxFleetError && refusalCode(e) === 'free_paused';
+
+/** The 7-day reset `at` hasn't been shown on this browser yet. Storage that can't be read: shown (it's one line). */
+function resetUnseen(at: string | undefined): boolean {
+  if (!at) return false;
+  try { return window.localStorage.getItem(RESET_SEEN_KEY) !== at; } catch { return true; }
+}
+function markResetSeen(at: string): void {
+  try { window.localStorage.setItem(RESET_SEEN_KEY, at); } catch { /* shown again next visit: harmless */ }
+}
 
 /**
  * Sandbox (spec sandbox-v2 §2 steps 1–2): connect the agent's provider key,
@@ -80,6 +102,9 @@ export function SandboxHome({ fleet, preview, onUnavailable, planLine }: { fleet
   const [issued, setIssued] = useState<IssuedSandboxKey | null>(preview?.issued ?? null);
   const [loading, setLoading] = useState(!preview);
   const [error, setError] = useState(preview?.error ?? '');
+  // The error is the paused line: warn, nothing to press. Set with the error, from its code.
+  const [errorPaused, setErrorPaused] = useState(!!preview?.errorPaused);
+  const fail = (e: unknown) => { setError(message(e)); setErrorPaused(isPaused(e)); };
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [replacing, setReplacing] = useState(!!preview?.replacing);
@@ -87,6 +112,11 @@ export function SandboxHome({ fleet, preview, onUnavailable, planLine }: { fleet
   const [sampleBusy, setSampleBusy] = useState(false);
   const [sampleRefusal, setSampleRefusal] = useState<{ reason: SampleRefusal | 'engine' | 'network'; message: string } | null>(preview?.sampleRefusal ?? null);
   const [notice, setNotice] = useState('');
+  // The account's plan, for the Free line and the verdict: today's page until it's read (or if it can't be).
+  const [plan, setPlan] = useState<SandboxPlanView>(preview?.plan ?? OTHER_PLAN);
+  // The 7-day reset line: decided once per visit, when the Sandbox first says when it was reset.
+  const [resetLine, setResetLine] = useState(!!preview?.resetUnseen);
+  const resetDecided = useRef(!!preview);
   // The latest check state, from the checks card's own reads: decides Run your agent or Results.
   const [checks, setChecks] = useState<CheckState | null>(null);
   // Bumped when the checks card must start over (a reset, a sample run, your key over the sample).
@@ -126,11 +156,20 @@ export function SandboxHome({ fleet, preview, onUnavailable, planLine }: { fleet
   const statusRef = useRef(status);
   useEffect(() => { statusRef.current = status; }, [status]);
 
+  // Busy reads retry quietly until the page goes (Part 2 §10.6).
+  const gone = useRef<AbortController | null>(null);
+  useEffect(() => { const c = new AbortController(); gone.current = c; return () => c.abort(); }, []);
+
   /** Reads the Sandbox again; `keepError` keeps the message of the action that prompted it. */
   const load = useCallback(async (keepError = false) => {
     setLoading(true);
     try {
-      const next = await getSandboxFleetStatus(fleet);
+      const next = await getSandboxFleetStatus(fleet, gone.current?.signal);
+      if (!resetDecided.current) {
+        resetDecided.current = true;
+        const at = next.exists ? next.autoResetAt : undefined;
+        if (at && resetUnseen(at)) { setResetLine(true); markResetSeen(at); }
+      }
       // A different Sandbox or key than before (expired, reconnected elsewhere):
       // the key on screen no longer works, so it goes.
       const before = statusRef.current;
@@ -139,7 +178,7 @@ export function SandboxHome({ fleet, preview, onUnavailable, planLine }: { fleet
       if (!keepError) setError('');
     } catch (e) {
       if (isUnavailable(e) && onUnavailable) { onUnavailable(); return; }
-      setError(message(e));
+      fail(e);
     } finally {
       setLoading(false);
     }
@@ -149,6 +188,13 @@ export function SandboxHome({ fleet, preview, onUnavailable, planLine }: { fleet
     if (preview) return;
     void load();
   }, [load, preview]);
+
+  useEffect(() => {
+    if (preview) return;
+    let live = true;
+    getSandboxPlan(fleet).then((p) => { if (live) setPlan(p); }, () => {});
+    return () => { live = false; };
+  }, [fleet, preview]);
 
   // One callback for the steps below: a new one each render would re-run their reads.
   const reload = useCallback(() => { void load(); }, [load]);
@@ -182,6 +228,8 @@ export function SandboxHome({ fleet, preview, onUnavailable, planLine }: { fleet
       // Refused by the engine (with its status), or no answer at all (network: sandboxPost's status 0).
       const httpStatus = e instanceof SandboxFleetError ? e.status : 0;
       if (!preview) analytics.capture('sandbox_v2_connect_refused', httpStatus > 0 ? { reason: 'engine', status: httpStatus } : { reason: 'network' });
+      // Sandbox switched off for Free: the page's warn line (§3.6), not a red line in the form.
+      if (isPaused(e)) { fail(e); return null; }
       return message(e);
     } finally {
       setBusy(false);
@@ -192,7 +240,9 @@ export function SandboxHome({ fleet, preview, onUnavailable, planLine }: { fleet
     if (preview) return;
     setSampleBusy(true); setNotice(''); setError(''); setSampleRefusal(null);
     try {
-      const next = await startSandboxSample(fleet);
+      // One key per press: a repeat of this start is charged once. Never retried by itself.
+      // randomUUID needs a secure page (https or localhost): elsewhere the start goes without a key, as before.
+      const next = await startSandboxSample(fleet, globalThis.crypto?.randomUUID?.());
       // A new run: its own check, so the card and the steps start over.
       setChecks(null);
       setIssued(null);
@@ -203,10 +253,13 @@ export function SandboxHome({ fleet, preview, onUnavailable, planLine }: { fleet
       resetPractice();
       analytics.capture('sandbox_v2_sample_started');
     } catch (e) {
-      const known = e instanceof SandboxFleetError && SAMPLE_REFUSALS.includes(e.reason as SampleRefusal);
-      const reason = known ? (e as SandboxFleetError).reason as SampleRefusal : e instanceof SandboxFleetError && e.status > 0 ? 'engine' : 'network';
+      const known = e instanceof SandboxFleetError ? sampleRefusalOf(e) : null;
+      const reason = known ?? (e instanceof SandboxFleetError && e.status > 0 ? 'engine' : 'network');
       analytics.capture('sandbox_v2_sample_refused', { reason });
-      setSampleRefusal({ reason, message: message(e) });
+      const words = e instanceof SandboxFleetError ? refusalWords(e, 'sample', Date.now()) : null;
+      // Sandbox switched off for Free: the page's error slot, as every other action (§3.6).
+      if (reason === 'free_paused') { setError(words ?? FREE_PAUSED_LINE); setErrorPaused(true); return; }
+      setSampleRefusal({ reason, message: words ?? message(e) });
       // Connected elsewhere meanwhile: show their Sandbox.
       if (reason === 'connected') void load(true);
     } finally {
@@ -238,7 +291,7 @@ export function SandboxHome({ fleet, preview, onUnavailable, planLine }: { fleet
         setNotice(RESET_NOTICE);
       }
     } catch (e) {
-      setError(message(e));
+      fail(e);
       // 404 / 409: the Sandbox changed under the page (expired, reconnected elsewhere).
       if (e instanceof SandboxFleetError && (e.status === 404 || e.status === 409)) void load(true);
     } finally {
@@ -250,7 +303,7 @@ export function SandboxHome({ fleet, preview, onUnavailable, planLine }: { fleet
   const sample = connected?.sample === true;
   const outside = connected && !sample ? outsideWindowText(connected) : null;
   // Today's sample runs are used up (or every run is): the button gives way to a line saying so.
-  const sampleLimit = sampleRefusal?.reason === 'limit_fleet' || sampleRefusal?.reason === 'limit_global';
+  const sampleLimit = isSampleLimit(sampleRefusal?.reason);
   const sampleOffered = !connected && (status?.sampleAvailable === true || sampleLimit);
   // Run the sample again goes once a start is refused for the limit.
   const sampleAgain = sampleLimit ? undefined : () => void startSample();
@@ -309,6 +362,10 @@ export function SandboxHome({ fleet, preview, onUnavailable, planLine }: { fleet
     shownStep.current = step;
   }, [step, loading, status]);
 
+  // One info line above the steps (§5): the page's own line (cleared after 30 days, S17) first and alone on
+  // that visit; else the 7-day reset, else (Connect, Free) an invite or the Free line.
+  const ownLine = planLine ? null : sandboxPlanLine(plan, { resetUnseen: resetLine, connect: step === 'connect' });
+
   const pageRef = useRef<HTMLDivElement>(null);
   const wide = useWide(pageRef);
   const href = practiceHref(checks?.window?.agentId);
@@ -332,11 +389,20 @@ export function SandboxHome({ fleet, preview, onUnavailable, planLine }: { fleet
       <div className={v.page} ref={pageRef}>
         {planLine}
         {step === 'connect' && <p className={v.lead2}>{SANDBOX_LEAD}</p>}
-        {error && <Banner variant="error" actions={status === null && !loading && !preview ? <Button size={28} onClick={() => void load()}>Try again</Button> : undefined}>{error}</Banner>}
+        {/* Switched off for Free: a warn line with nothing to press (§3.6). */}
+        {error && (errorPaused
+          ? <Banner variant="warn">{error}</Banner>
+          : <Banner variant="error" actions={status === null && !loading && !preview ? <Button size={28} onClick={() => void load()}>Try again</Button> : undefined}>{error}</Banner>)}
         {notice && <Banner variant="info" icon="check">{notice}</Banner>}
 
         {loading && <SkeletonCard label="Opening your Sandbox…" style={{ maxWidth: 480 }} />}
 
+        {status !== null && ownLine && (
+          <div className="wr-plan-banner">
+            <Banner variant="info" actions={ownLine.kind === 'invite'
+              ? <Link href={ROUTES.organization} className="wr-btn wr-btn--primary wr-btn--h32">See invite</Link> : undefined}>{ownLine.text}</Banner>
+          </div>
+        )}
         {status !== null && <SandboxSteps current={step} />}
 
         {showForm && (
@@ -404,6 +470,7 @@ export function SandboxHome({ fleet, preview, onUnavailable, planLine }: { fleet
             practiceRun={practiceRun}
             practiceOpen={!!practice}
             rules={rules.state?.rules ?? []}
+            plan={plan}
             below={<>
               {/* In the open: it says the agent ran with nothing checked or blocked. */}
               {outside && <Banner variant="warn">{outside}</Banner>}

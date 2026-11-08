@@ -6,6 +6,8 @@ import { previewReadyMade } from '@/lib/sandbox/rules';
 import { ENGINE_RESTARTED_SENTENCE } from '@/lib/sandbox/check-report';
 import type { PracticeRun } from '@/lib/sandbox/practice/types';
 import type { GovernanceRule } from '@/lib/whiteroom/types';
+import { FREE_PAUSED_LINE, SAMPLE_BUDGET_LINE, SANDBOX_BUSY_LINE, sampleLimitLine } from '@/lib/sandbox/refusals';
+import type { SandboxPlanView } from '@/lib/sandbox/plan-view';
 
 // /dev/sandbox-v2 sample states. Keys are placeholders, never real ones.
 const NOW = Date.parse('2026-10-29T15:00:00Z');
@@ -146,6 +148,14 @@ const support = (c: SandboxChecksPreview, extra: Partial<NonNullable<SandboxChec
 /** The report the practice states sit on: support-bot's live check, ended. */
 const PRACTICE_REPORT = support(checkState('done', FINISHED, { ended: true, rules: RULES, calls: 17 }));
 
+const NY = 'America/New_York';
+const KOLKATA = 'Asia/Kolkata';
+const FREE: SandboxPlanView = { plan: 'free', canBuy: false, invite: null };
+const withActivity = (c: SandboxChecksPreview, extra: Partial<NonNullable<NonNullable<SandboxChecksPreview['state']>['activity']>>): SandboxChecksPreview =>
+  ({ ...c, state: { ...c.state!, activity: { lastCallAt: new Date(NOW - 20_000).toISOString(), callsOutsideWindow24h: 0, ...extra } } });
+/** Every row proven, nothing to fix: the report whose Next is Ready for live traffic. */
+const ALL8: SandboxChecksPreview = { ...withRows(checkState('done', ALL_LIVE, { ended: true, calls: 24 })), practice: { bound: { runId: 'r-1', endedAt: new Date(NOW - 60_000).toISOString(), profile: 'quick', checks: ALL_PRACTICE }, newer: null, other: null } };
+
 export const SANDBOX_V2_STATES = {
   /** No Sandbox yet: step 1. */
   'not-connected': { status: { exists: false }, now: NOW },
@@ -242,7 +252,7 @@ export const SANDBOX_V2_STATES = {
   /** Connect, with the sample agent on offer. */
   'sample-offer': { status: { exists: false, sampleAvailable: true }, now: NOW },
   /** Connect, after today's sample runs are used up. */
-  'sample-limit': { status: { exists: false }, sampleRefusal: { reason: 'limit_fleet', message: 'You’ve used today’s sample runs. Try again tomorrow, or use your own key.' }, now: NOW },
+  'sample-limit': { status: { exists: false }, sampleRefusal: { reason: 'limit_fleet', message: sampleLimitLine(null, NOW, NY) }, now: NOW },
   /** The sample agent running: no setup, no "Nothing happening?". */
   'sample-running': live({ status: sampleStatus(true), checks: { ...sampleRunning, state: { ...sampleRunning.state!, activity: { lastCallAt: new Date(NOW - 2_000).toISOString(), callsOutsideWindow24h: 0 } } } }),
   /** The sample's report: its note, one fix, and Check your own agent. */
@@ -251,6 +261,34 @@ export const SANDBOX_V2_STATES = {
   'sample-connect-own': live({ status: sampleStatus(false), checks: sampleResults, replacing: true }),
   /** The Sandbox card: an agent called outside a check. */
   'outside-window': live({ status: { ...connected(new Date(NOW - 60_000).toISOString()), callsOutsideWindow24h: 42, lastCallOutsideWindowAt: new Date(NOW - 60_000).toISOString() } }),
+
+  // ── Free tier (spec Part 1 §3, mockups S2–S19). Times as a New York viewer sees them; "-tomorrow": a Kolkata viewer. ──
+  /** S2: a Free account on Connect, the Free line above the steps. */
+  'free-connect': { status: { exists: false, sampleAvailable: true }, plan: FREE, now: NOW },
+  /** S10: a pending invite replaces the Free line. */
+  'free-invite': { status: { exists: false, sampleAvailable: true }, plan: { ...FREE, invite: 'Acme Robotics' }, now: NOW },
+  /** S18: the 7-day reset line, once, on Run your agent. */
+  'free-reset': live({ status: { ...connected(new Date(NOW - 8 * DAY).toISOString()), autoResetAt: new Date(NOW - DAY).toISOString() }, plan: FREE, resetUnseen: true, checks: checkState(null, {}) }),
+  /** S8: today's sample runs used up, then the same on the viewer's next day. */
+  'free-sample-limit': { status: { exists: false }, plan: FREE, sampleRefusal: { reason: 'sandbox_daily_limit', message: sampleLimitLine(null, NOW, NY) }, now: NOW },
+  'free-sample-limit-tomorrow': { status: { exists: false }, plan: FREE, sampleRefusal: { reason: 'sandbox_daily_limit', message: sampleLimitLine(null, NOW, KOLKATA) }, now: NOW },
+  /** Every sample run used up today (the global budget). */
+  'sample-budget': { status: { exists: false }, sampleRefusal: { reason: 'sample_budget_exhausted', message: SAMPLE_BUDGET_LINE }, now: NOW },
+  /** S8: the Sandbox's 1,000 calls used up (R7): a warn line in place of the live line. */
+  'free-calls-limit': live({ plan: FREE, checks: withActivity(checkState('observe', OBSERVED, { calls: 6 }), { dailyLimitResetAt: new Date(Date.UTC(2026, 9, 30)).toISOString() }) }),
+  'free-calls-limit-waiting': live({ plan: FREE, checks: withActivity(checkState(null, {}), { dailyLimitResetAt: new Date(Date.UTC(2026, 9, 30)).toISOString() }) }),
+  /** S9: Sandbox switched off for Free: the warn line, and the stopped run's line in its card. */
+  'free-paused': live({ plan: FREE, error: FREE_PAUSED_LINE, errorPaused: true, checks: { ...sampleResults, state: { ...sampleResults.state!, window: { ...sampleResults.state!.window!, endReason: 'free_paused' } } } }),
+  /** A refused button press while the Sandbox is busy. */
+  'sandbox-busy': live({ error: SANDBOX_BUSY_LINE }),
+  /** S4: a clean report on Free: Take it live; pressed; refused; no connection. */
+  'free-take-it-live': live({ plan: FREE, checks: ALL8 }),
+  'free-take-it-live-busy': live({ plan: FREE, checks: { ...ALL8, goLive: { busy: true } } }),
+  'free-take-it-live-refused': live({ plan: FREE, checks: { ...ALL8, goLive: { failed: 'server' } } }),
+  'free-take-it-live-network': live({ plan: FREE, checks: { ...ALL8, goLive: { failed: 'network' } } }),
+  /** S19: Suspended: Choose a plan, or Talk to us while nothing can be bought. */
+  'suspended-verdict': live({ plan: { plan: 'suspended', canBuy: true, invite: null }, checks: ALL8 }),
+  'suspended-verdict-talk': live({ plan: { plan: 'suspended', canBuy: false, invite: null }, checks: ALL8 }),
 } satisfies Record<string, SandboxHomePreview>;
 
 export type SandboxV2State = keyof typeof SANDBOX_V2_STATES;

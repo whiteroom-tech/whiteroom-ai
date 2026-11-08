@@ -2,10 +2,17 @@
 
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Banner, Button, SkeletonCard } from '@whiteroom/ui';
+import { Banner, Button, Icon, SkeletonCard } from '@whiteroom/ui';
 import { ROUTES } from '@/lib/routes';
 import { fmtTime, fmtWhen, timeAgo } from '@/lib/format';
-import { isStaleSandbox, sandboxSetting, SandboxFleetError } from '@/lib/sandbox/fleet';
+import { busyRefusal, isStaleSandbox, sandboxSetting, SandboxFleetError } from '@/lib/sandbox/fleet';
+import { callsLimitLine, FREE_PAUSED_STOPPED, NETWORK_LINE, READ_RETRY } from '@/lib/sandbox/refusals';
+import {
+  CHOOSE_PLAN_HREF, LIVE_HREF, OTHER_PLAN, READY, SUPPORT_MAILTO, SUSPENDED_READY, TAKE_IT_LIVE, TAKE_IT_LIVE_FAILED, TAKE_IT_LIVE_SUB, TAKING_IT_LIVE,
+  type SandboxPlanView,
+} from '@/lib/sandbox/plan-view';
+import { takeItLive } from '@/lib/user-fleets';
+import { PLAN_CHANGED } from '@/components/AccountPlanBanner';
 import {
   activityLine, checkAction, currentCheckOf, getCheckState, isQuiet, stageLine, STATUS_WORDS, type CheckState, type CheckStatus,
 } from '@/lib/sandbox/checks';
@@ -41,6 +48,8 @@ export interface SandboxChecksPreview {
   practice?: PracticeView;
   /** When each decided live test was seen to finish, for the check's time left. */
   seenAt?: (number | null)[];
+  /** Take it live on the verdict, already pressed: busy, or refused (server) / failed (network). */
+  goLive?: GoLiveState;
 }
 
 /** What the report shows of practice tasks: the bound run's results, a newer run on offer, another agent's run apart. */
@@ -69,7 +78,7 @@ export const STEP_CARD_ID = 'sandbox-step';
 /** The usual fixes show after this long with no call. */
 export const IDLE_HELP_MS = 60_000;
 
-const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : 'That didn’t work. Check your connection and try again.');
+const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : NETWORK_LINE);
 
 /**
  * "4. Check your agent" (spec sandbox-v2 §2 steps 4–5, §5): a checking window
@@ -78,7 +87,7 @@ const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : 'T
  * window ends. A check's stop lifts itself after 5 seconds, so there's no
  * Resume here.
  */
-export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState, setup, setupAlways = false, provider = 'anthropic', sample, aside, below, onPractice, practiceRun = null, practiceOpen = false, rules = [] }: {
+export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState, setup, setupAlways = false, provider = 'anthropic', sample, aside, below, onPractice, practiceRun = null, practiceOpen = false, rules = [], plan = OTHER_PLAN }: {
   fleet: string;
   sandboxFleetId: string;
   preview?: SandboxChecksPreview;
@@ -110,6 +119,8 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   practiceOpen?: boolean;
   /** The Sandbox's rules: "Your rule" says what each acts at ("$0.02 a run"). */
   rules?: GovernanceRule[];
+  /** The account's plan: Free and Suspended get their own verdict (Take it live, Choose a plan). */
+  plan?: SandboxPlanView;
 }) {
   const [state, setState] = useState<CheckState | null>(preview ? preview.state : null);
   const [loading, setLoading] = useState(!preview);
@@ -141,13 +152,17 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   // An action is on its way: polls wait, so a read sent before it can't show the state it replaced.
   const acting = useRef(false);
 
+  // Busy reads retry quietly until the card goes (Part 2 §10.6).
+  const gone = useRef<AbortController | null>(null);
+  useEffect(() => { const c = new AbortController(); gone.current = c; return () => c.abort(); }, []);
+
   /** Reads the checks again; `keepError` keeps the message of the action that prompted it. */
   const load = useCallback(async (keepError = false) => {
     const req = ++latest.current;
     const mine = ++loadReq.current;
     setLoading(true);
     try {
-      const next = await getCheckState(fleet, sandboxFleetId);
+      const next = await getCheckState(fleet, sandboxFleetId, gone.current?.signal);
       if (req !== latest.current) return;
       setState(next);
       if (!keepError) setError('');
@@ -175,6 +190,8 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
     let live = true;
     let pending = false;
     let stopped = false;
+    // When the polls started answering busy: quiet until the retry lifetime has passed, then said.
+    let busySince: number | null = null;
     let timer: ReturnType<typeof setTimeout>;
     const next = () => { clearTimeout(timer); if (live && !stopped && !document.hidden) timer = setTimeout(poll, PRACTICE_POLL_MS.visible); };
     const poll = async () => {
@@ -183,10 +200,18 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
       pending = true;
       const req = ++latest.current;
       try {
-        const read = await getCheckState(fleet, sandboxFleetId);
+        // No retry inside the read: the next poll, 5 s on, is the retry.
+        const read = await getCheckState(fleet, sandboxFleetId, undefined, false);
+        busySince = null;
         if (live && req === latest.current) { setState(read); setError(''); }
       } catch (e) {
-        if (live && req === latest.current) {
+        // Busy: quiet while the next polls retry it, said once it has lasted the retry lifetime (Part 2 §10.6).
+        const busy = !!busyRefusal(e);
+        // Any other answer ends the busy stretch: the next one starts its own two minutes.
+        if (!busy) busySince = null;
+        else if (busySince === null) busySince = Date.now();
+        const quietBusy = busy && Date.now() - busySince! < READ_RETRY.lifetimeMs;
+        if (live && req === latest.current && !quietBusy) {
           setError(message(e));
           if (isStaleSandbox(e)) { stopped = true; staleRef.current?.(); }
         }
@@ -342,6 +367,12 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
   const next = reportRows ? nextSteps(reportRows, { few: tooFewCalls(state!), sample: isSample, restarted: restartedCheck(state!) }) : [];
   const href = practiceHref(w?.agentId);
   const live = state && !quiet ? activityLine(state, now, isSample) : null;
+  // Free Sandbox calls a day used up (R7): one warn line in place of the live line, while it holds.
+  const limitAt = state?.activity?.dailyLimitResetAt;
+  const callsLimit = limitAt && Date.parse(limitAt) > now ? callsLimitLine(limitAt, now) : null;
+  // A run the Sandbox stopped (switched off for Free): a small line in the card.
+  const stoppedLine = w?.endReason === 'free_paused' ? <p className={v.warnLine}><Icon name="alert" size={16} /><span>{FREE_PAUSED_STOPPED}</span></p> : null;
+  const limitLine = callsLimit && <p className={v.warnLine}><Icon name="alert" size={16} /><span>{callsLimit}</span></p>;
   return (
     <div className={v.cols}>
       <div className={v.mainCol}>
@@ -355,7 +386,7 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
               : <h2 className={v.cardTitle}>{isSample ? 'Our sample agent' : 'Run your agent'}</h2>}
             {/* The page always passes setup; SandboxChecks on its own (no setup) still says what to do. */}
             {isSample ? <p className={v.text}>{SAMPLE_RUNNING}</p> : setup ?? <p className={v.text}>{RUN_NOW}</p>}
-            {live && <p className={`${v.live} ${live.calling ? v.liveCalling : ''}`}>{live.text}</p>}
+            {limitLine || (live && <p className={`${v.live} ${live.calling ? v.liveCalling : ''}`}>{live.text}</p>)}
             {showTips && <NothingHappening provider={provider} />}
           </>}
 
@@ -372,6 +403,11 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
                 </p>
                 <div className={v.actions}><Button size={32} variant="primary" onClick={finish} busy={busy} busyLabel="Finishing…">Finish now</Button></div>
               </div>
+            ) : limitLine ? (
+              <div className={v.liveRow}>
+                {limitLine}
+                <Button size={28} variant="ghost" onClick={finish} disabled={busy}>Finish now</Button>
+              </div>
             ) : (
               <div className={v.liveRow}>
                 {/* Not a live region: it changes on every read, and the Now box below announces what matters. */}
@@ -386,6 +422,7 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
 
           {state && w && phase === 'results' && <>
             <h2 className={s.srOnly}>Results</h2>
+            {stoppedLine}
             {setup && setupAlways && <div className={`${v.stack} ${v.setup}`}>{setup}</div>}
             <ReportView state={state} checked={whenWords(w.startedAt, now)} calls={w.calls} focus={focusReport} limits={limits}
               onAgain={isSample ? undefined : () => void act('start')} busy={busy} sample={sample}
@@ -395,7 +432,7 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
         {below}
       </div>
       <aside className={v.rcol} aria-label="About your Sandbox">
-        {phase === 'results' && <NextCard items={next.map((x) => <NextLine key={nextKey(x)} step={x} href={href} onPractice={onPractice} />)} />}
+        {phase === 'results' && <NextCard items={next.map((x) => <NextLine key={nextKey(x)} step={x} href={href} onPractice={onPractice} plan={plan} goLive={preview?.goLive} />)} />}
         {aside?.(phase)}
       </aside>
     </div>
@@ -432,15 +469,69 @@ const NEXT_SHORT: Record<string, string> = {
 const nextKey = (x: NextStep) => (x.kind === 'fix' ? `fix-${x.num}` : x.kind);
 
 /** One of the Next card's steps, in plain words, with its link. */
-function NextLine({ step, href, onPractice }: { step: NextStep; href: string; onPractice?: (profile?: PracticeProfile) => void }) {
+function NextLine({ step, href, onPractice, plan, goLive }: { step: NextStep; href: string; onPractice?: (profile?: PracticeProfile) => void; plan: SandboxPlanView; goLive?: GoLiveState }) {
   switch (step.kind) {
     case 'again': return <>Run your agent again, with a longer task, so the live checks can run.</>;
     case 'restarted': return <>WhiteRoom restarted during this check. Check again.</>;
     case 'fix': return <>{NEXT_SHORT[step.num] ?? `${step.text} Then check again.`}</>;
     case 'practice': return <><PracticeLink href={href} onPractice={onPractice && (() => onPractice())} /> for {step.rows}. A few minutes.</>;
-    case 'live': return <>Ready for live traffic. Point your agent at WhiteRoom from <Link href={ROUTES.fleetKey} className="wr-link">Fleet key</Link>.</>;
+    case 'live':
+      if (plan.plan === 'free') return <TakeItLive preview={goLive} />;
+      if (plan.plan === 'suspended') return <SuspendedNext canBuy={plan.canBuy} />;
+      return <>Ready for live traffic. Point your agent at WhiteRoom from <Link href={ROUTES.fleetKey} className="wr-link">Fleet key</Link>.</>;
     case 'deep': return <>Want more? Run the <PracticeLink href={href} onPractice={onPractice && (() => onPractice('deep'))}>Deep test</PracticeLink> for 02’s long-task result.</>;
   }
+}
+
+/** Take it live on the verdict: pressed and waiting, or the line saying it didn't work. */
+export type GoLiveState = { busy: true } | { failed: 'server' | 'network' };
+
+/**
+ * The Free verdict (Part 1 §3.1 row 7, S4): Ready for live traffic, Take it
+ * live, and what it starts. Busy reads "Taking it live…"; a refusal or a
+ * network failure puts its line above the sub-line, which stays. Never
+ * retried by itself (a mutation). On success the plan banners hear of it
+ * (PLAN_CHANGED) and Fleet key opens (a full load) at the line to copy.
+ */
+export function TakeItLive({ preview }: { preview?: GoLiveState }) {
+  const [busy, setBusy] = useState(!!preview && 'busy' in preview);
+  const [failed, setFailed] = useState<'server' | 'network' | null>(preview && 'failed' in preview ? preview.failed : null);
+  async function go() {
+    if (preview || busy) return;
+    setBusy(true); setFailed(null);
+    let done: Awaited<ReturnType<typeof takeItLive>>;
+    try {
+      done = await takeItLive('verdict');
+    } catch {
+      setBusy(false); setFailed('network');
+      return;
+    }
+    if (!done.ok) { setBusy(false); setFailed('server'); return; }
+    analytics.capture('take_it_live', { where: 'verdict' });
+    // Plan banners hear of it at once; then a full load of Fleet key. Busy until then: never pressed twice.
+    window.dispatchEvent(new Event(PLAN_CHANGED));
+    window.location.assign(LIVE_HREF);
+  }
+  return (
+    <div className={v.goLive}>
+      <p>{READY}</p>
+      <Button size={32} variant="primary" onClick={() => void go()} busy={busy} busyLabel={TAKING_IT_LIVE}>{TAKE_IT_LIVE}</Button>
+      {failed && <p className={v.errLine} role="alert">{failed === 'server' ? TAKE_IT_LIVE_FAILED : NETWORK_LINE}</p>}
+      <p>{TAKE_IT_LIVE_SUB}</p>
+    </div>
+  );
+}
+
+/** The Suspended verdict (S19): Choose a plan, or Talk to us when nothing can be bought. Never both. */
+export function SuspendedNext({ canBuy }: { canBuy: boolean }) {
+  return (
+    <div className={v.goLive}>
+      <p>{SUSPENDED_READY(canBuy)}</p>
+      {canBuy
+        ? <Link href={CHOOSE_PLAN_HREF} className="wr-btn wr-btn--primary wr-btn--h32">Choose a plan</Link>
+        : <a href={SUPPORT_MAILTO} className="wr-btn wr-btn--primary wr-btn--h32">Talk to us</a>}
+    </div>
+  );
 }
 
 /** Under the title while the sample runs. */
