@@ -9,6 +9,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { PracticeCheck, PracticeControlCheck, PracticeReport, PracticeSource } from '@/lib/sandbox/practice/types';
 
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'unauthenticated' }) }));
+// A paid account: the Free home fleet (B3) has nothing to do.
+vi.mock('@/lib/home-fleet', () => ({ ensureHomeFleet: async () => ({ kind: 'not_free' }) }));
 vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 
 const {

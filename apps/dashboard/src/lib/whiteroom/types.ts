@@ -160,6 +160,8 @@ export interface PerformanceLiveFeedResult {
 export interface RegisterResult {
   error?: string;
   fleetToken?: string;
+  /** The HTTP status of a refusal (createFleet). */
+  status?: number;
 }
 
 export interface TokenLoginResult {

@@ -10,11 +10,9 @@ import { AppShell } from '@/components/AppShell';
 import { analytics, initAnalytics } from '@/lib/analytics';
 import { createFleet, tokenLogin, fleetProvisioned, registerAgent, claimFleet } from '@/lib/whiteroom/client';
 import { finishSignIn, resyncFleetToken } from './provision';
-
-function generateApiKey() {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return 'sk-wr-' + Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
-}
+import { ensureHomeFleet } from '@/lib/home-fleet';
+import { SandboxClearedLine, SandboxOpensLaterLine } from '@/components/sandbox/HomeFleetLines';
+import { generateApiKey } from '@/lib/fleet-helpers';
 
 function emailToFleetId(email: string) {
   return email.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
@@ -30,6 +28,9 @@ export default function DashboardPage() {
     fleetToken: string | null; isNew: boolean;
   } | null>(null);
   const started = useRef(false);
+  // A Free account's home fleet (free tier §4): its Sandbox opens later (over the sign-up cap), or it replaced a retired one.
+  const [opensAt, setOpensAt] = useState<string | null>(null);
+  const [cleared, setCleared] = useState(false);
 
   useEffect(() => {
     if (status === 'loading') return;
@@ -43,7 +44,7 @@ export default function DashboardPage() {
     async function handleUser(user: NonNullable<typeof session>['user']) {
       const email = user.email || '';
       const name = user.name || email.split('@')[0];
-      const provisioning = await getUserProvisioning();
+      let provisioning = await getUserProvisioning();
       // A key that's stored but can't be decrypted right now must never be
       // replaced: minting a new one would cut off every agent using the old one.
       if (provisioning.apiKeyUnreadable) {
@@ -51,11 +52,24 @@ export default function DashboardPage() {
         setLoading(false);
         return;
       }
+      // A Free account's fleet is its home fleet, never the email-derived one:
+      // with the home fleet not made, or the plan unknown and no fleet yet, nothing is made here.
+      const home = await ensureHomeFleet();
+      if (home.kind === 'failed' || (home.kind === 'unknown' && !provisioning.fleetId)) throw new Error('home fleet');
+      if (home.kind === 'over_cap') {
+        setOpensAt(home.opensAt);
+        setLoading(false);
+        return;
+      }
+      if (home.kind === 'ready') {
+        setCleared(home.cleared);
+        if (home.fleetId !== provisioning.fleetId) provisioning = await getUserProvisioning();
+      }
       // The fleet is fixed once provisioned. Deriving it from the email on
       // every load meant an email change silently provisioned a new, empty
       // fleet and revoked the old one's entitlement (audit F11).
       let fleetId = provisioning.fleetId ?? emailToFleetId(email);
-      const isNew = !provisioning.apiKey;
+      const isNew = !provisioning.apiKey || (home.kind === 'ready' && home.firstFleet);
       const apiKey = provisioning.apiKey ?? generateApiKey();
       let fleetToken = provisioning.fleetToken;
 
@@ -178,10 +192,19 @@ export default function DashboardPage() {
     );
   }
 
+  if (opensAt) {
+    return (
+      <AppShell>
+        <div style={{ padding: 24, maxWidth: 560 }}><SandboxOpensLaterLine opensAt={opensAt} /></div>
+      </AppShell>
+    );
+  }
+
   if (!props) return null;
 
   return (
     <AppShell>
+      {cleared && <div style={{ padding: '16px 24px 0' }}><SandboxClearedLine /></div>}
       <Onboarding {...props} />
     </AppShell>
   );

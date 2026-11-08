@@ -14,6 +14,8 @@ import type { PracticeSource } from '@/lib/sandbox/practice/types';
 const nav = vi.hoisted(() => { const replace = vi.fn(); return { params: new URLSearchParams(), replace, router: { replace } }; });
 vi.mock('next/navigation', () => ({ useSearchParams: () => nav.params, useRouter: () => nav.router }));
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'unauthenticated' }) }));
+// A paid account: the Free home fleet (B3) has nothing to do.
+vi.mock('@/lib/home-fleet', () => ({ ensureHomeFleet: async () => ({ kind: 'not_free' }) }));
 vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 const engine = vi.hoisted(() => ({ list: vi.fn(), run: vi.fn(), result: vi.fn(), source: vi.fn(), gov: vi.fn(), start: vi.fn() }));
 vi.mock('@/lib/sandbox/practice/api', async (orig) => ({

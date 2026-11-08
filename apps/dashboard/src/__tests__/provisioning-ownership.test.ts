@@ -288,3 +288,18 @@ describe('ownership ranking', () => {
     expect((await fleetOwners(['f1'])).get('f1')).toBe('first-provisioner');
   });
 });
+
+describe('upsertUserProvisioning expectFleetId (the home fleet)', () => {
+  it('saves nothing and answers changed when the account’s fleet isn’t the expected one', async () => {
+    mocks.oldFleet = 'home-other';
+    expect(await upsertUserProvisioning(input, { expectFleetId: null })).toEqual({ ok: false, code: 'changed', error: 'This account’s fleet changed meanwhile.' });
+    expect(inserted()).toBe(false);
+    expect(committed()).toBe(false);
+  });
+
+  it('saves when it is', async () => {
+    mocks.oldFleet = null;
+    expect(await upsertUserProvisioning(input, { expectFleetId: null })).toEqual({ ok: true });
+    expect(inserted()).toBe(true);
+  });
+});

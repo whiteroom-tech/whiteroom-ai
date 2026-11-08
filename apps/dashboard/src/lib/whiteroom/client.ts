@@ -135,6 +135,8 @@ interface PostOptions {
    * any cookie session exists to ride on.
    */
   direct?: boolean;
+  /** Server-side only: extra headers for a direct call (the dashboard's service secret). */
+  headers?: Record<string, string>;
 }
 
 /**
@@ -187,7 +189,7 @@ async function postOnce(
       signal: AbortSignal.timeout(15_000),
       redirect: 'error',
       cache: 'no-store',
-      headers: engineAuthHeaders(key),
+      headers: { ...engineAuthHeaders(key), ...opts?.headers },
       body: JSON.stringify(body),
     });
   } catch (e) {
@@ -239,9 +241,9 @@ async function apiCall<T>(
  * Idempotent, so it is safe to assert on every load: a repeat call from the
  * owner returns the same token.
  */
-export async function createFleet(fleetId: string, apiKey: string): Promise<RegisterResult> {
-  const res = await postRaw({ action: 'create_fleet', fleet_id: fleetId }, apiKey);
-  if (!res.ok) return { error: `HTTP ${res.status}` };
+export async function createFleet(fleetId: string, apiKey: string, opts?: { headers?: Record<string, string> }): Promise<RegisterResult> {
+  const res = await postRaw({ action: 'create_fleet', fleet_id: fleetId }, apiKey, opts);
+  if (!res.ok) return { error: `HTTP ${res.status}`, status: res.status };
   return res.json();
 }
 
