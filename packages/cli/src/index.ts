@@ -49,6 +49,14 @@ async function main() {
   }
 
   const { WhiteRoomClient, WhiteRoomError } = await import("@whiteroom-ai/sdk");
+  // The SDK's errors carry no headers: keep the last reply's Retry-After, so a busy answer says how long to wait.
+  let retryAfter: string | null = null;
+  const sdkFetch = globalThis.fetch;
+  globalThis.fetch = async (...a: Parameters<typeof fetch>) => {
+    const res = await sdkFetch(...a);
+    retryAfter = res.headers.get("retry-after");
+    return res;
+  };
   const client = new WhiteRoomClient({
     baseUrl: flags.url ?? process.env.WHITEROOM_URL ?? "http://localhost:3000",
     apiKey: flags.key ?? process.env.WHITEROOM_API_KEY,
@@ -128,7 +136,8 @@ async function main() {
     }
   } catch (e) {
     if (e instanceof WhiteRoomError) {
-      console.error(`Error ${e.status}: ${e.message}`);
+      const { freeTierMessage } = await import("./responses.js");
+      console.error(freeTierMessage({ status: e.status, body: e.body, retryAfter }) ?? `Error ${e.status}: ${e.message}`);
       process.exit(1);
     }
     throw e;

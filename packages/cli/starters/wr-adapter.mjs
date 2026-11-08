@@ -34,6 +34,10 @@ const anthropic = !["OPENAI_API_KEY", "AZURE_OPENAI_API_KEY"].includes(KEY_VAR);
 const DEFAULT_MODEL = anthropic ? "claude-haiku-4-5" : "gpt-4o-mini";
 const BLOCKED = "Stopped: one of my WhiteRoom controls blocked the model call.";
 const GONE = "Stopped: WhiteRoom closed this practice task.";
+// WhiteRoom asks for the same call again shortly: it was refused before anything was sent on.
+// This list, the pause and daily-limit messages and the UTC reset time match the CLI's own
+// (src/responses.ts); test/free-tier.test.ts checks they stay the same.
+const BUSY = ["sandbox_busy", "control_busy", "cleanup_busy", "db_unavailable"];
 
 // One model call through WhiteRoom; a final answer (text) if WhiteRoom stopped it.
 // Never follows a redirect, so the key only goes to WhiteRoom.
@@ -48,7 +52,13 @@ async function model(base_url, headers, body) {
       body: JSON.stringify(body), redirect: "error", signal: AbortSignal.timeout(180_000) });
     if (res.ok) return res.json();
     const wr = (await res.json().catch(() => null))?.whiteroom;
-    const wait = res.status === 503 && wr ? ["WhiteRoom is switching servers. Waiting, then trying again.", Number(res.headers.get("retry-after") || 1)]
+    if (wr?.reason === "free_paused") throw new Error("Sandbox is paused for Free accounts right now. Try again later.");
+    if (wr?.reason === "sandbox_daily_limit") {
+      const at = Number.isFinite(Date.parse(wr.resetAt)) ? new Date(wr.resetAt).toISOString().slice(11, 16) : "00:00";
+      throw new Error(`Your Sandbox has used all its calls for today. They reset at ${at} UTC.`);
+    }
+    const wait = res.status === 503 && BUSY.includes(wr?.reason) ? ["WhiteRoom is busy right now. Waiting, then trying again.", Number(res.headers.get("retry-after") || 1)]
+      : res.status === 503 && wr ? ["WhiteRoom is switching servers. Waiting, then trying again.", Number(res.headers.get("retry-after") || 1)]
       : res.status === 429 && wr ? ["WhiteRoom is saving a summary of your agent's memory. Waiting until it's saved.", 2]
       : res.status === 403 && wr?.retryable ? ["One of your WhiteRoom controls is limiting calls. Waiting, then trying again.", 10]
       : [429, 500, 502, 503, 529].includes(res.status) && !wr && tries < 5 ? ["Your model provider is busy. Waiting, then trying again.", 5 * tries] : null;

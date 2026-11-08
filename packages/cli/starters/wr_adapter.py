@@ -5,6 +5,7 @@
 # back) and finish with one {"type":"final","output":"..."} line. Print your
 # own logs to stderr: stdout is only for these JSON lines.
 import json, os, sys, time, urllib.error, urllib.request
+from datetime import datetime, timezone
 
 # The CLI sets only the variable of the provider the practice test uses.
 # It decides the API: chat completions for OpenAI and Azure OpenAI (where the
@@ -23,6 +24,10 @@ ANTHROPIC = KEY_VAR not in ("OPENAI_API_KEY", "AZURE_OPENAI_API_KEY")
 DEFAULT_MODEL = "claude-haiku-4-5" if ANTHROPIC else "gpt-4o-mini"
 BLOCKED = "Stopped: one of my WhiteRoom controls blocked the model call."
 GONE = "Stopped: WhiteRoom closed this practice task."
+# WhiteRoom asks for the same call again shortly: it was refused before anything was sent on.
+# This list, the pause and daily-limit messages and the UTC reset time match the CLI's own
+# (src/responses.ts); test/free-tier.test.ts checks they stay the same.
+BUSY = ("sandbox_busy", "control_busy", "cleanup_busy", "db_unavailable")
 calls = 0
 
 
@@ -71,7 +76,18 @@ def model(base_url, headers, body):
                 wr = json.load(err).get("whiteroom")
             except Exception:
                 wr = None
-            if err.code == 503 and wr:
+            reason = wr.get("reason") if isinstance(wr, dict) else None
+            if reason == "free_paused":
+                raise RuntimeError("Sandbox is paused for Free accounts right now. Try again later.") from None
+            if reason == "sandbox_daily_limit":
+                try:
+                    at = datetime.fromisoformat(str(wr.get("resetAt")).replace("Z", "+00:00")).astimezone(timezone.utc).strftime("%H:%M")
+                except ValueError:
+                    at = "00:00"
+                raise RuntimeError(f"Your Sandbox has used all its calls for today. They reset at {at} UTC.") from None
+            if err.code == 503 and reason in BUSY:
+                wait = ("WhiteRoom is busy right now. Waiting, then trying again.", float(err.headers.get("retry-after") or 1))
+            elif err.code == 503 and wr:
                 wait = ("WhiteRoom is switching servers. Waiting, then trying again.", float(err.headers.get("retry-after") or 1))
             elif err.code == 429 and wr:
                 wait = ("WhiteRoom is saving a summary of your agent's memory. Waiting until it's saved.", 2)

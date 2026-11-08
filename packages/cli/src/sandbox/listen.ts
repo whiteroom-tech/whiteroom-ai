@@ -11,6 +11,7 @@ import { CATALOG } from "../practice/catalog.js";
 import { Engine, OFFLINE_MS, REDIRECTED, Stopped, Unreachable, type Reply } from "../practice/engine.js";
 import { adapterProblem, chatCompletions, firstLineOfStdin, hiddenPrompt, Interrupted, isProvider, nodeTooOld, targetOrigin } from "../practice/preflight.js";
 import { clean, hideSecret, say, warn } from "../practice/text.js";
+import { freeTierMessage, rerunWontFix } from "../responses.js";
 
 export const HELPER_CODE = /^wrhc_[A-Za-z0-9_-]{43}$/;
 /** A Sandbox URL as the Sandbox page shows it: WhiteRoom's address, then the Sandbox key. */
@@ -45,6 +46,8 @@ export const sandboxCopy = {
     : `Your agent's Sandbox URL isn't this Sandbox's current one, and this code has no tries left. Copy the Sandbox URL from the Sandbox page, set it again, then get a new code.`,
   notConnected: "This Sandbox has no key yet. Connect a provider key in the Sandbox page first.",
   unavailable: "The Sandbox helper isn't available yet. Try again later.",
+  codeStillWorks: "Your helper code still works until it expires.",
+  codeUsed: `The helper disconnected and this code is used. ${NEW_CODE}`,
   unreachable: "Couldn't reach WhiteRoom. Check your connection, then start the helper again.",
   redirected: "WhiteRoom's server tried to send the helper to another address, so it stopped. Nothing was sent anywhere else.",
   outdated: "WhiteRoom sent something this CLI doesn't understand. Update the CLI, then start the helper again.",
@@ -168,7 +171,8 @@ export async function listen(a: ListenArgs): Promise<number> {
   const engine = new Engine(origin, testMs("WHITEROOM_TEST_OFFLINE_MS", OFFLINE_MS));
   let claim: Reply;
   try {
-    claim = await engine.post("/api/sandbox-helper/claim", { code, keyPrefix: sandbox.key.slice(0, 22), host: helperHost() });
+    // A claim starts the session: a busy answer is shown, never sent again by itself.
+    claim = await engine.post("/api/sandbox-helper/claim", { code, keyPrefix: sandbox.key.slice(0, 22), host: helperHost() }, { retryBusy: false });
   } catch (err) {
     // No session yet: a setup problem (2); the code is still unused.
     if (err instanceof Unreachable) return fail(2, sandboxCopy.unreachable);
@@ -179,6 +183,8 @@ export async function listen(a: ListenArgs): Promise<number> {
   if (claim.status === 409 && claim.body?.reason === "not_connected") return fail(2, sandboxCopy.notConnected);
   if (claim.status === REDIRECTED) return fail(2, sandboxCopy.redirected);
   if (claim.status === 404) return fail(2, sandboxCopy.unavailable);
+  const refused = freeTierMessage(claim);
+  if (refused) return fail(2, claim.status === 503 ? `${refused} ${sandboxCopy.codeStillWorks}` : refused);
   const { session, proxyUrl, provider } = claim.body ?? {};
   if (claim.status !== 200 || typeof session !== "string" || !isProvider(provider)) return fail(2, sandboxCopy.outdated);
   engine.session = session;
@@ -252,7 +258,13 @@ export async function listen(a: ListenArgs): Promise<number> {
       try {
         const next = await engine.post("/api/sandbox-helper/next", {}, { retryNetwork: true });
         if (ends(next)) return endListening(next);
-        if (next.status !== 200) return fail(3, sandboxCopy.outdated);
+        if (next.status !== 200) {
+          const plain = freeTierMessage(next);
+          if (!plain) return fail(3, sandboxCopy.outdated);
+          // Busy for too long, paused or refused: the session ends here, so the Sandbox page doesn't wait for it.
+          await engine.once("/api/sandbox-helper/disconnect", {});
+          return fail(rerunWontFix(next.status, next.body) ? 2 : 3, `${plain} ${sandboxCopy.codeUsed}`);
+        }
         if (next.body?.idle) continue;
         const task = next.body?.task;
         if (!task || typeof task.taskId !== "string" || task.kind !== "prompt" || typeof task.prompt !== "string") return fail(3, sandboxCopy.outdated);

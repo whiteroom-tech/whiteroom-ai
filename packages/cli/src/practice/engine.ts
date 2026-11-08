@@ -3,6 +3,7 @@
 // (an IP-limit 429, a 503 while it switches servers) retried.
 
 import { copy, warn } from "./text.js";
+import { BUSY, freeTierCode, LONG_WAIT_S, retryAfterSeconds } from "../responses.js";
 
 /** The CLI's own requests stay at or under this many a minute; WhiteRoom allows 120 per IP. */
 const PER_MINUTE = 60;
@@ -37,6 +38,8 @@ export interface Reply {
   status: number;
   /** The route's JSON, read field by field by the caller. */
   body: any;
+  /** The Retry-After header, for a busy answer the command stops on. */
+  retryAfter?: string | null;
 }
 
 /**
@@ -108,10 +111,16 @@ export class Engine {
    * retried as Retry-After says. `retryNetwork`: also retry a network error or
    * another 5xx, for requests that are safe to repeat; otherwise those throw
    * Unreachable. A redirect is returned as status REDIRECTED, never followed.
+   * Free tier answers: a pause or a 402 is returned at once. A busy answer
+   * (refused before WhiteRoom did anything) is waited out as Retry-After says,
+   * for up to the same offline budget, then returned; `retryBusy: false` (a
+   * claim, which starts a run) returns it at once, so a start is never sent
+   * again by itself.
    */
-  async post(path: string, body: unknown, o: { retryNetwork?: boolean } = {}): Promise<Reply> {
+  async post(path: string, body: unknown, o: { retryNetwork?: boolean; retryBusy?: boolean } = {}): Promise<Reply> {
     const started = Date.now();
     let warned = false;
+    let busyWarned = false;
     for (;;) {
       await pace();
       if (this.signal?.aborted) throw new Stopped();
@@ -128,6 +137,16 @@ export class Engine {
         continue;
       }
       const { json } = res;
+      const freeTier = freeTierCode(res.status, json);
+      if (freeTier) {
+        const reply = { status: res.status, body: json, retryAfter: res.retryAfter };
+        if (!BUSY.has(freeTier) || o.retryBusy === false || Date.now() - started > this.offlineMs) return reply;
+        const wait = retryAfterSeconds(res.retryAfter) ?? 5;
+        if (!busyWarned || wait >= LONG_WAIT_S) warn(copy.busyWaiting);
+        busyWarned = true;
+        await sleep(Math.min(wait * 1000, this.offlineMs), this.signal ?? undefined);
+        continue;
+      }
       if (res.status >= 500 && res.status !== 503) {
         // It may have been handled: only a request that is safe to repeat is sent again.
         if (!o.retryNetwork || Date.now() - started > this.offlineMs) throw new Unreachable();
@@ -137,8 +156,7 @@ export class Engine {
       const wait = res.status === 503 || (res.status === 429 && !ANSWERS_429.has(json?.reason));
       if (wait) {
         if (Date.now() - started > this.offlineMs) throw new Unreachable();
-        const after = res.retryAfter;
-        await sleep(after === null ? 5_000 : Math.min(Math.max(Number(after) || 0, 1), 60) * 1000, this.signal ?? undefined);
+        await sleep((retryAfterSeconds(res.retryAfter) ?? 5) * 1000, this.signal ?? undefined);
         continue;
       }
       return { status: res.status, body: json };

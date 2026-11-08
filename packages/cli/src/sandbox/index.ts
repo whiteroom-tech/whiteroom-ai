@@ -32,7 +32,7 @@ Options:
   --code-stdin           Read the helper code from stdin instead of asking for it
   --url <https url>      Only for testing WhiteRoom itself (a whiteroom.tech address or localhost)
 
-Exit codes (listen): 0 stopped with Ctrl+C, 2 a setup or usage problem, 3 the session ended (get a new code).
+Exit codes (listen): 0 stopped with Ctrl+C, 2 a setup or usage problem (or the Sandbox's calls for today used up), 3 the session ended (get a new code).
 `;
 
 function usage(problem?: string): number {

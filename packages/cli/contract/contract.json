@@ -24,7 +24,9 @@
       "response": {
         "lifecycle": "finished",
         "verdict": "incomplete",
+        "evidence": "complete",
         "report": {
+          "evidence": "complete",
           "testVersion": 2,
           "verdict": "incomplete",
           "runs": 3,
@@ -63,7 +65,8 @@
                   "status": "not_tested",
                   "reason": "not_run"
                 }
-              ]
+              ],
+              "evidence": "complete"
             }
           ],
           "how": {
@@ -704,6 +707,7 @@
         "id": "<run id>",
         "lifecycle": "draft",
         "verdict": null,
+        "evidence": "pending",
         "endReason": null,
         "sourceFleetId": "<fleet>",
         "agentId": "support-bot",
@@ -715,6 +719,9 @@
         "provider": null,
         "proxyKeyDisplayPrefix": null,
         "keyHint": null,
+        "profile": null,
+        "origin": null,
+        "plan": null,
         "createdAt": "<time>",
         "startedAt": null,
         "endedAt": null,
@@ -736,6 +743,7 @@
             "id": "<run id>",
             "lifecycle": "finished",
             "verdict": "passed",
+            "evidence": "complete",
             "endReason": null,
             "sourceFleetId": "<fleet>",
             "agentId": "support-bot",
@@ -745,6 +753,9 @@
               "a.result"
             ],
             "rerun": true,
+            "profile": null,
+            "origin": null,
+            "plan": null,
             "createdAt": "<time>",
             "endedAt": "<time>",
             "checks": {
@@ -771,6 +782,7 @@
         "id": "<run id>",
         "lifecycle": "finished",
         "verdict": "passed",
+        "evidence": "complete",
         "report": {
           "how": {
             "memoryLimitAdjusted": false
@@ -795,6 +807,7 @@
                   "attemptId": "<attempt id>"
                 }
               ],
+              "evidence": "complete",
               "observer": "records",
               "required": true,
               "scenario": "Finishes a job correctly",
@@ -816,6 +829,7 @@
             "proxyKeyDisplayPrefix": null
           },
           "verdict": "passed",
+          "evidence": "complete",
           "testVersion": 2
         },
         "detailsKeptUntil": "<time>",
@@ -832,7 +846,8 @@
       "response": {
         "lifecycle": "cancelled",
         "reason": "ended_by_owner",
-        "tasksFinished": 0
+        "tasksFinished": 0,
+        "evidence": "incomplete"
       }
     },
     {
@@ -845,7 +860,8 @@
       "response": {
         "lifecycle": "interrupted",
         "reason": "engine_error",
-        "tasksFinished": 1
+        "tasksFinished": 1,
+        "evidence": "incomplete"
       }
     },
     {
@@ -860,7 +876,8 @@
       "response": {
         "lifecycle": "active",
         "reason": "engine_update",
-        "tasksFinished": 0
+        "tasksFinished": 0,
+        "evidence": "pending"
       }
     },
     {
@@ -873,7 +890,8 @@
       "response": {
         "lifecycle": "interrupted",
         "reason": "expired",
-        "tasksFinished": 0
+        "tasksFinished": 0,
+        "evidence": "incomplete"
       }
     },
     {
@@ -888,6 +906,7 @@
         "reason": "finished",
         "tasksFinished": 1,
         "verdict": "incomplete",
+        "evidence": "complete",
         "report": {
           "how": {
             "memoryLimitAdjusted": false
@@ -924,6 +943,7 @@
                   "attemptId": null
                 }
               ],
+              "evidence": "complete",
               "observer": "records",
               "required": true,
               "scenario": "Finishes a job correctly",
@@ -945,6 +965,7 @@
             "proxyKeyDisplayPrefix": null
           },
           "verdict": "incomplete",
+          "evidence": "complete",
           "testVersion": 2
         }
       }
@@ -959,7 +980,8 @@
       "response": {
         "lifecycle": "interrupted",
         "reason": "no_model_calls",
-        "tasksFinished": 4
+        "tasksFinished": 4,
+        "evidence": "incomplete"
       }
     },
     {
@@ -1241,7 +1263,9 @@
       "response": {
         "done": true,
         "verdict": "passed",
+        "evidence": "complete",
         "report": {
+          "evidence": "complete",
           "testVersion": 2,
           "verdict": "passed",
           "runs": 3,
@@ -1278,7 +1302,8 @@
                   "status": "passed",
                   "reason": null
                 }
-              ]
+              ],
+              "evidence": "complete"
             },
             {
               "id": "b.baseline",
@@ -1310,7 +1335,8 @@
                   "status": "passed",
                   "reason": null
                 }
-              ]
+              ],
+              "evidence": "complete"
             },
             {
               "id": "b.result",
@@ -1342,7 +1368,8 @@
                   "status": "passed",
                   "reason": null
                 }
-              ]
+              ],
+              "evidence": "complete"
             },
             {
               "id": "b.carries_on",
@@ -1374,7 +1401,8 @@
                   "status": "passed",
                   "reason": null
                 }
-              ]
+              ],
+              "evidence": "complete"
             },
             {
               "id": "b.no_redo",
@@ -1406,7 +1434,8 @@
                   "status": "passed",
                   "reason": null
                 }
-              ]
+              ],
+              "evidence": "complete"
             },
             {
               "id": "c.timeout",
@@ -1438,7 +1467,8 @@
                   "status": "passed",
                   "reason": null
                 }
-              ]
+              ],
+              "evidence": "complete"
             },
             {
               "id": "c.keeps_failing",
@@ -1470,7 +1500,8 @@
                   "status": "passed",
                   "reason": null
                 }
-              ]
+              ],
+              "evidence": "complete"
             },
             {
               "id": "ctl.pause_stop",
@@ -1505,7 +1536,8 @@
                   "status": "passed",
                   "reason": null
                 }
-              ]
+              ],
+              "evidence": "complete"
             },
             {
               "id": "ctl.model_allowlist.<rule id>",
@@ -1540,7 +1572,8 @@
                   "status": "passed",
                   "reason": null
                 }
-              ]
+              ],
+              "evidence": "complete"
             },
             {
               "id": "ctl.loop_breaker.<rule id>",
@@ -1575,7 +1608,8 @@
                   "status": "passed",
                   "reason": null
                 }
-              ]
+              ],
+              "evidence": "complete"
             },
             {
               "id": "ctl.call_rate.<rule id>",
@@ -1610,7 +1644,8 @@
                   "status": "passed",
                   "reason": null
                 }
-              ]
+              ],
+              "evidence": "complete"
             },
             {
               "id": "ctl.spend_cap.<rule id>",
@@ -1645,7 +1680,8 @@
                   "status": "passed",
                   "reason": null
                 }
-              ]
+              ],
+              "evidence": "complete"
             }
           ],
           "how": {
@@ -1693,6 +1729,7 @@
       "response": {
         "done": true,
         "verdict": "incomplete",
+        "evidence": "complete",
         "report": {
           "how": {
             "memoryLimitAdjusted": false
@@ -1729,6 +1766,7 @@
                   "attemptId": null
                 }
               ],
+              "evidence": "complete",
               "observer": "records",
               "required": true,
               "scenario": "Finishes a job correctly",
@@ -1750,6 +1788,7 @@
             "proxyKeyDisplayPrefix": null
           },
           "verdict": "incomplete",
+          "evidence": "complete",
           "testVersion": 2
         }
       }
