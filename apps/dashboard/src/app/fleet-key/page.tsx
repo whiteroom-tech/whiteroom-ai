@@ -11,7 +11,7 @@ import { analytics, initAnalytics } from '@/lib/analytics';
 import { createFleet, tokenLogin, fleetProvisioned, registerAgent, claimFleet } from '@/lib/whiteroom/client';
 import { finishSignIn, resyncFleetToken } from './provision';
 import { ensureHomeFleet } from '@/lib/home-fleet';
-import { SandboxClearedLine, SandboxOpensLaterLine } from '@/components/sandbox/HomeFleetLines';
+import { clearedFleet, forgetCleared, rememberCleared, SandboxClearedLine, SandboxOpensLaterLine } from '@/components/sandbox/HomeFleetLines';
 import { generateApiKey } from '@/lib/fleet-helpers';
 
 function emailToFleetId(email: string) {
@@ -62,7 +62,7 @@ export default function DashboardPage() {
         return;
       }
       if (home.kind === 'ready') {
-        setCleared(home.cleared);
+        if (home.cleared) rememberCleared(home.fleetId);
         if (home.fleetId !== provisioning.fleetId) provisioning = await getUserProvisioning();
       }
       // The fleet is fixed once provisioned. Deriving it from the email on
@@ -113,6 +113,9 @@ export default function DashboardPage() {
         return;
       }
       ({ fleetId, fleetToken } = outcome);
+      // The cleared line, once, over the fleet that replaced a retired one (also after a reload).
+      setCleared(clearedFleet() === fleetId);
+      forgetCleared();
 
       setProps({ name, email, apiKey, fleetId, fleetToken, isNew });
       setLoading(false);

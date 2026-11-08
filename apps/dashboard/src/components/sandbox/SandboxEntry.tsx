@@ -12,8 +12,7 @@ import { ROUTES } from '@/lib/routes';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { ensureHomeFleet } from '@/lib/home-fleet';
 import { SANDBOX_OPEN_FAILED, SANDBOX_OPENING, type HomeFleetResult } from '@/lib/home-fleet-shared';
-import { safeGet, safeRemove, safeSet } from '@/lib/safe-storage';
-import { SandboxClearedLine, SandboxOpensLaterLine } from './HomeFleetLines';
+import { clearedFleet, forgetCleared, rememberCleared, SandboxClearedLine, SandboxOpensLaterLine } from './HomeFleetLines';
 import { TestRunFlow } from './TestRunFlow';
 import { SANDBOX_LEAD, SandboxHome } from './v2/SandboxHome';
 import s from './guided.module.css';
@@ -33,13 +32,6 @@ export async function sandboxDestination(fleet: string): Promise<'practice' | 'c
 }
 
 type Shown = { kind: 'deciding' } | { kind: 'v2'; fleet: string } | { kind: 'connection' } | { kind: 'failed' };
-
-/**
- * The new home fleet that replaced a retired one, until its Sandbox shows the
- * cleared line: the session re-check that follows can reload the page. Shown
- * only over that fleet's Sandbox, and dropped once any Sandbox opens.
- */
-const CLEARED_KEY = 'wr_sandbox_cleared';
 
 /** The Sandbox page while a Free account made over the day's sign-up cap waits (S15): the lead, then when it opens. */
 export function SandboxOpensLater({ opensAt, now }: { opensAt: string; now?: number }) {
@@ -85,7 +77,7 @@ export function SandboxEntry() {
     ensureHomeFleet().then(
       (result) => {
         if (!mounted.current) return;
-        if (result.kind === 'ready' && result.cleared) { safeSet(CLEARED_KEY, result.fleetId); setClearedFor(result.fleetId); }
+        if (result.kind === 'ready' && result.cleared) { rememberCleared(result.fleetId); setClearedFor(result.fleetId); }
         setHome(result);
         setHomeBusy(false);
         // This browser's session now names the new fleet.
@@ -98,7 +90,7 @@ export function SandboxEntry() {
   useEffect(() => {
     if (connection || homeStarted.current) return;
     homeStarted.current = true;
-    setClearedFor(safeGet(CLEARED_KEY));
+    setClearedFor(clearedFleet());
     openHome();
   }, [connection, openHome]);
 
@@ -125,7 +117,7 @@ export function SandboxEntry() {
   // The cleared line shows once, over the new fleet's Sandbox; any Sandbox opening drops it from storage.
   const v2Fleet = home && shown.kind === 'v2' ? shown.fleet : null;
   const showsCleared = !!v2Fleet && v2Fleet === clearedFor;
-  useEffect(() => { if (v2Fleet) safeRemove(CLEARED_KEY); }, [v2Fleet]);
+  useEffect(() => { if (v2Fleet) forgetCleared(); }, [v2Fleet]);
 
   if (connection) return <TestRunFlow />;
   if (home?.kind === 'over_cap') return <SandboxOpensLater opensAt={home.opensAt} />;

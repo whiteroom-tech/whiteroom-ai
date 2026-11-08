@@ -45,6 +45,7 @@ const noRow = { apiKey: null, fleetId: null, fleetToken: null, byok: false, apiK
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
   m.createFleet.mockImplementation(async (fleetId: string) => ({ fleetToken: `wr_${fleetId}` }));
   m.finishSignIn.mockImplementation(async (s: { fleetId: string; fleetToken: string }) => ({ kind: 'ready', fleetId: s.fleetId, fleetToken: s.fleetToken }));
 });
@@ -66,6 +67,20 @@ it('a replaced retired home fleet shows the cleared line', async () => {
   await mount();
   expect(el.querySelector('.wr-plan-banner')?.textContent).toBe('Your Sandbox was cleared after 30 days unused. This is a new one.');
   expect(el.textContent).toContain('ONBOARDING home-abc');
+});
+
+it('the cleared line survives a reload, only for the fleet that replaced the retired one, and shows once', async () => {
+  localStorage.setItem('wr_sandbox_cleared', 'home-abc');
+  m.ensure.mockResolvedValue({ kind: 'ready', fleetId: 'home-abc', changed: false, cleared: false, firstFleet: false });
+  m.provisioning.mockResolvedValue(homeRow);
+  await mount();
+  expect(el.querySelector('.wr-plan-banner')?.textContent).toBe('Your Sandbox was cleared after 30 days unused. This is a new one.');
+  expect(localStorage.getItem('wr_sandbox_cleared')).toBeNull();
+  await act(async () => root.unmount()); document.body.innerHTML = '';
+  localStorage.setItem('wr_sandbox_cleared', 'home-other');
+  await mount();
+  expect(el.querySelector('.wr-plan-banner')).toBeNull();
+  expect(localStorage.getItem('wr_sandbox_cleared')).toBeNull();
 });
 
 it('a home fleet that can’t be made shows the load error and makes no fleet', async () => {
