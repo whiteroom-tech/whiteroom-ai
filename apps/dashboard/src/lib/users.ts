@@ -1,10 +1,11 @@
 'use server';
 
 import { auth } from '@/auth';
-import { fleetHolders, fleetOwner, lockFleetHolders } from '@/lib/control-auth';
+import { fleetHolders, fleetOwner, fleetOwners, lockFleetHolders } from '@/lib/control-auth';
 import { plainUnlessSealed, readCred, sealCred } from '@/lib/cred-seal';
 import { db } from '@/lib/db';
-import { enqueueEntitlementSync, releaseFleet } from '@/lib/entitlements';
+import { entitlementsV2Enabled } from '@/lib/entitlement-snapshot';
+import { enqueueEntitlementSync, lockEntitlementsInTx, recordFleetTransfer, releaseFleet, syncEntitlementsToEngine } from '@/lib/entitlements';
 import { verifyFleetOwnership } from '@/lib/fleet-ownership';
 import { newTrialEndsAt } from '@/lib/plans';
 
@@ -59,10 +60,16 @@ export async function upsertUserProvisioning(input: {
   const session = await auth();
 
   let oldFleetId: string | null = null;
+  // ENTITLEMENTS_V2=on: who owns the fleet this account lets go, once it has (null: nobody).
+  const v2 = entitlementsV2Enabled();
+  let transfer: { to: string | null } | null = null;
 
   const client = await db().connect();
   try {
     await client.query('BEGIN');
+    // v2: this account's entitlement lock first, before any row lock, so a
+    // push holding it never waits on this transaction's locks.
+    if (v2) await lockEntitlementsInTx(client, [userId]);
     await client.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [userId]);
 
     const { rows: current } = await client.query(
@@ -79,7 +86,9 @@ export async function upsertUserProvisioning(input: {
     // already provisioned here changes no ownership, so it skips the check.
     // The lock serialises this with linking (addUserFleet) for the fleet.
     if (fleetChanged) {
-      await lockFleetHolders(client, input.fleetId);
+      // v2 also locks the fleet being let go (its owner changes below), both in id order.
+      if (v2) for (const id of [input.fleetId, oldFleetId].filter((f): f is string => !!f).sort()) await lockFleetHolders(client, id);
+      else await lockFleetHolders(client, input.fleetId);
       const owner = fleetOwner(await fleetHolders(input.fleetId, input.fleetToken as string, client));
       if (owner !== null && owner !== userId) {
         await client.query('ROLLBACK');
@@ -114,6 +123,16 @@ export async function upsertUserProvisioning(input: {
       ],
     );
     await enqueueEntitlementSync(client, userId, 'provisioning_upsert');
+    // v2: the fleet let go changes owner in this transaction, with both
+    // revisions (this account first, then whoever holds it next).
+    if (v2 && oldFleetId && fleetChanged) {
+      const next = (await fleetOwners([oldFleetId], client)).get(oldFleetId) ?? null;
+      if (next !== userId) {
+        if (next) await lockEntitlementsInTx(client, [next]);
+        await recordFleetTransfer(client, { fleetId: oldFleetId, from: userId, to: next });
+        transfer = { to: next };
+      }
+    }
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
@@ -124,7 +143,13 @@ export async function upsertUserProvisioning(input: {
 
   // The provisioned fleet is always its account's own, so letting it go hands
   // it to the next holder's plan, or to starter limits when there's none.
-  if (oldFleetId && oldFleetId !== input.fleetId) {
+  if (v2) {
+    // Sent now, old owner first; anything not acknowledged stays in the outbox for the sweep.
+    if (transfer) {
+      await syncEntitlementsToEngine(userId);
+      if (transfer.to) await syncEntitlementsToEngine(transfer.to);
+    }
+  } else if (oldFleetId && oldFleetId !== input.fleetId) {
     await releaseFleet(oldFleetId);
   }
   return { ok: true };
