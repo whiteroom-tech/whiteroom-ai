@@ -128,7 +128,8 @@ async function main() {
     }
   } catch (e) {
     if (e instanceof WhiteRoomError) {
-      console.error(`Error ${e.status}: ${e.message}`);
+      const { freeTierMessage } = await import("./responses.js");
+      console.error(freeTierMessage({ status: e.status, body: e.body }) ?? `Error ${e.status}: ${e.message}`);
       process.exit(1);
     }
     throw e;

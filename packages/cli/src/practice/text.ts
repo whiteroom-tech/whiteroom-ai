@@ -96,10 +96,14 @@ export const copy = {
   callCap: `Stopped at this test's model-call limit after WhiteRoom had to rerun a task (not your agent). ${button("Start test")} to run it again.`,
   noModelCalls: `Stopped: your agent didn't make any model calls through WhiteRoom in 2 practice tasks in a row. Check your adapter sends its calls to the base_url the CLI gives it. ${button("Start test")} to run it again.`,
   engineError: `WhiteRoom couldn't finish working out the result (not your agent). ${button("Start test")} to run a new test.`,
-  finished: (verdict: unknown) => {
-    const label = typeof verdict === "string" && Object.hasOwn(CATALOG.verdictLabels, verdict) ? `: ${CATALOG.verdictLabels[verdict as Report["verdict"]]}` : "";
+  /** `saved`: the run's evidence state; a pass whose results weren't all saved isn't shown as one. */
+  finished: (verdict: unknown, saved?: unknown) => {
+    const shown = verdict === "passed" && saved !== "complete" ? "incomplete" : verdict;
+    const label = typeof shown === "string" && Object.hasOwn(CATALOG.verdictLabels, shown) ? `: ${CATALOG.verdictLabels[shown as Report["verdict"]]}` : "";
     return `The practice test finished${label}. See the results in the dashboard (${DASHBOARD}), under Past tests.`;
   },
+  codeStillWorks: "Your run code still works.",
+  notProven: "Not proven: some results couldn't be saved. Run it again.",
   sessionGone: `WhiteRoom no longer knows this practice test. ${button("Start test")} to run it again.`,
   cancelled: `Practice test ended. Finished practice tasks were kept. ${button("Start test")} to run it again.`,
   adapterCrashed: (code: string, tail: string[]) => [
@@ -134,6 +138,8 @@ export interface Check {
 }
 export interface Report {
   verdict: "passed" | "not_passed" | "incomplete";
+  /** Whether every result was saved. Only "complete" proves a pass; missing (an older WhiteRoom) reads as not yet saved. */
+  evidence?: "pending" | "incomplete" | "complete";
   runs: number;
   sample: boolean;
   scope: string[] | null;
@@ -180,8 +186,19 @@ export function requiredRowProblem(r: Report, rowId: string): string | null {
   return notEnforced ? `${CATALOG.rowStatusLabels.passed} in ${CATALOG.controls.modes.watch}, not ${CATALOG.controls.modes.enforce}` : null;
 }
 
-/** The results screen in the terminal, and its exit code: 0 Passed, 1 Didn't pass, 3 Didn't finish. With --require, a required row not Passed in Enforce turns a pass into 1. */
+/** A reply's result, with the reply's own `evidence` when the result doesn't carry one. */
+export function reportOf(body: any): Report {
+  const report = body.report as Report;
+  return report.evidence === undefined && body.evidence !== undefined ? { ...report, evidence: body.evidence } : report;
+}
+
+/**
+ * The results screen in the terminal, and its exit code: 0 Passed, 1 Didn't pass, 3 Didn't finish.
+ * A pass is only shown when every result was saved; otherwise it's Not proven (exit 3).
+ * With --require, a required row not Passed in Enforce turns a pass into 1.
+ */
 export function results(r: Report, require: readonly string[] = []): Ending {
+  const proven = r.evidence === "complete";
   const required = r.checks.filter((c) => c.required);
   const runs = plural(r.runs, "run");
   const failed = required.filter((c) => c.status === "failed");
@@ -189,16 +206,20 @@ export function results(r: Report, require: readonly string[] = []): Ending {
   const scope = r.scope && [...new Set(required.map((c) => c.scenario).filter(Boolean))].join(", ");
   const lines: string[] = [""];
   let code: Ending["code"];
-  if (r.verdict === "passed") {
+  if (r.verdict === "passed" && proven) {
     code = 0;
     lines.push(`${CATALOG.verdictLabels.passed} · ${scope ? `${scope} only` : `all ${plural(required.length, "check")}`} · ${runs}`);
   } else if (r.verdict === "not_passed") {
     code = 1;
     lines.push(`${CATALOG.verdictLabels.not_passed} · ${plural(failed.length, "check")} failed`);
+  } else if (r.verdict === "passed") {
+    code = 3;
+    lines.push(copy.notProven);
   } else {
     code = 3;
     const ours = open.length > 0 && open.every((c) => c.testProblem);
     lines.push(`${CATALOG.verdictLabels.incomplete} · ${open.length ? `${plural(open.length, "check")} couldn't run` : "no checks could run"}${ours ? " (not your agent)" : ""}`);
+    if (!proven) lines.push(copy.notProven);
   }
   if (r.sample) lines.push("This was WhiteRoom's sample agent: it checks your controls and this setup, not your own agent.");
   else if (r.runs === 1 && code === 0) lines.push("One run shows your agent can pass. Run it 3 times to see that it passes every time.");
@@ -214,7 +235,7 @@ export function results(r: Report, require: readonly string[] = []): Ending {
     lines.push("", code === 3 ? "What stopped the test" : "What to fix");
     for (const c of fixes) lines.push(`  ${c.label}: ${c.fix}`);
   }
-  const next = code === 1 ? "Rerun failed checks" : code === 3 ? "Rerun checks that didn't run" : !r.sample && r.runs === 1 ? "Run it 3 times" : "Past tests";
+  const next = code === 1 ? "Rerun failed checks" : code === 3 && r.verdict === "passed" ? "Start test" : code === 3 ? "Rerun checks that didn't run" : !r.sample && r.runs === 1 ? "Run it 3 times" : "Past tests";
   const missed = require.map((id) => ({ id, why: requiredRowProblem(r, id) })).filter((x) => x.why);
   if (missed.length) {
     lines.push("", "Required checks (--require) that didn't pass");

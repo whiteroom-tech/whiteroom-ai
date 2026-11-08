@@ -24,7 +24,7 @@ Set the one variable for your agent's provider. For Azure OpenAI, Claude on Azur
 | Claude on Azure (Foundry) | `ANTHROPIC_FOUNDRY_API_KEY` |
 | AWS Bedrock (a long-term Bedrock API key) | `AWS_BEARER_TOKEN_BEDROCK` |
 
-The CLI asks for the run code from the dashboard (or reads it from stdin with `--code-stdin`), and asks for the key if none of these is set. If more than one is set, it stops and asks you to unset the others. Keep the terminal open until it prints the result. Exit codes: `0` passed, `1` didn't pass, `2` a setup or usage problem, `3` didn't finish (safe to run again). With `--require`, `1` also when a required check isn't Passed in Enforce. macOS and Linux only for now.
+The CLI asks for the run code from the dashboard (or reads it from stdin with `--code-stdin`), and asks for the key if none of these is set. If more than one is set, it stops and asks you to unset the others. Keep the terminal open until it prints the result. Exit codes: `0` passed, `1` didn't pass, `2` a setup or usage problem, `3` didn't finish or not proven (safe to run again). A pass is only shown when WhiteRoom saved every result; otherwise it says Not proven and exits `3`. With `--require`, `1` also when a required check isn't Passed in Enforce. macOS and Linux only for now.
 
 ### Requiring checks in CI
 
@@ -58,7 +58,7 @@ The CLI starts the adapter once per practice task and talks to it in JSON lines:
 
 - Send model calls to `base_url` with every header in `headers`. For OpenAI SDKs (Azure OpenAI's too) `base_url` already ends in `/v1`. The adapter's environment has the key in the provider's variable from the table above, and no other provider's.
 - Send the key as that provider's SDK does: `x-api-key` for Anthropic and Foundry, `Authorization: Bearer` for OpenAI and Bedrock, `api-key` for Azure OpenAI. Azure OpenAI and OpenAI take chat completions (on Azure, `model` is your deployment name); Anthropic, Foundry and Bedrock take Anthropic's Messages API. The starters do this.
-- When WhiteRoom answers 429 or 503 with a `whiteroom` field, wait a moment and send the same call again. Let model calls run up to 180 seconds.
+- When WhiteRoom answers 429 or 503 with a `whiteroom` field, wait as `Retry-After` says (or a moment) and send the same call again. Two answers mean stop instead: a 503 whose `whiteroom.reason` is `free_paused` (Sandbox is paused for Free accounts) and a 402 (for example `sandbox_daily_limit`: the Sandbox's calls for today are used up until `whiteroom.resetAt`). The starters do this. Let model calls run up to 180 seconds.
 - `model` is the model chosen for the practice test in the dashboard, or `null` when none was chosen: then use your agent's own model. The starters do this.
 - Write logs to stderr. Lines on stdout that aren't JSON are shown in your terminal and never sent to WhiteRoom.
 - Limits: lines up to 1 MiB, tool calls up to 64 KiB, 200 tool calls per practice task. The adapter is stopped (its whole process group) at the task's deadline.

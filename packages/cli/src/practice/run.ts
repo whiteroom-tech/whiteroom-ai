@@ -11,7 +11,8 @@ import {
   adapterLabel, adapterProblem, chatCompletions, firstLineOfStdin, hiddenPrompt, Interrupted, isKeyVar, isProvider, isShortTermBedrockKey, keyFromEnv, keyHeader, keyShapeProblem,
   keyVarOf, nodeTooOld, providerByShape, RUN_CODE, targetOrigin, type KeyChoice, type Provider,
 } from "./preflight.js";
-import { copy, ending, hideSecret, results, say, warn, type Ending } from "./text.js";
+import { copy, ending, hideSecret, reportOf, results, say, warn, type Ending } from "./text.js";
+import { freeTierMessage, responseCopy } from "../responses.js";
 
 const HEARTBEAT_MS = 30_000;
 /** A practice task WhiteRoom dropped (a restart, a failed capture): ask for it again, it doesn't count (§2 rule 4). */
@@ -77,8 +78,13 @@ interface ControlRequest {
 function sessionEnding(r: Reply): Ending {
   const reason = r.body?.reason;
   // The run already finished (WhiteRoom finished it meanwhile): its result, not a refusal. Without one, tasks/next replays it.
-  if (r.body?.done || reason === "finished") return r.body?.report ? results(r.body.report, required) : { ...ending(3, copy.finished(r.body?.verdict)), result: true, replay: true };
+  if (r.body?.done || reason === "finished") return r.body?.report ? results(reportOf(r.body), required) : { ...ending(3, copy.finished(r.body?.verdict, r.body?.evidence)), result: true, replay: true };
   if (r.status === REDIRECTED) return ending(3, copy.redirected);
+  // Free tier answers: busy, paused, or a limit reached.
+  const plain = freeTierMessage(r);
+  if (plain) return ending(3, plain);
+  // Free Sandbox work was paused: the run was ended as cancelled, which WhiteRoom names engine_update.
+  if (reason === "engine_update" && r.body?.lifecycle === "cancelled") return ending(3, responseCopy.freePaused);
   if (reason === "engine_update") return ending(3, copy.engineUpdate(Number(r.body.tasksFinished) || 0));
   if (reason === "ended_by_owner") return ending(3, copy.endedByOwner);
   if (reason === "expired") return ending(3, copy.expired);
@@ -155,9 +161,10 @@ export async function practiceRun(a: RunArgs): Promise<number> {
   const engine = new Engine(origin);
   let claim: Reply;
   try {
+    // A claim starts the run: a busy answer is shown, never sent again by itself.
     claim = await engine.post("/api/readiness/claim", {
       code, key, cli: { version: VERSION, adapter: a.adapter === undefined ? "sample agent" : adapterLabel(a.adapter) },
-    });
+    }, { retryBusy: false });
   } catch (err) {
     if (err instanceof Unreachable) return fail(ending(3, copy.unreachable));
     throw err;
@@ -177,6 +184,8 @@ export async function practiceRun(a: RunArgs): Promise<number> {
   }
   if (claim.status === 400 && claim.body?.reason === "short_term_key") return fail(ending(2, copy.shortTermKey));
   if (claim.status === REDIRECTED) return fail(ending(2, copy.redirected));
+  const refused = freeTierMessage(claim);
+  if (refused) return fail(ending(3, claim.status === 503 ? `${refused} ${copy.codeStillWorks}` : refused));
   if (claim.status === 410) return fail(ending(2, copy.codeInvalid));
   if (claim.status === 429) return fail(ending(3, copy.busy));
   // The owner ended the test while this claim was on its way.
@@ -324,7 +333,7 @@ export async function practiceRun(a: RunArgs): Promise<number> {
     if (e.replay) {
       engine.signal = null;
       const r = await engine.post("/api/readiness/tasks/next", { key }).catch(() => null);
-      if (r?.status === 200 && r.body?.done && r.body.report) return print(results(r.body.report, required));
+      if (r?.status === 200 && r.body?.done && r.body.report) return print(results(reportOf(r.body), required));
     }
     return fail(e);
   };
