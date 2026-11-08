@@ -133,6 +133,11 @@ export function useFleetAuth({ idle = false }: { idle?: boolean } = {}): FleetAu
   return shared ?? own;
 }
 
+/** The page's shared session (FleetAuthProvider), or null outside one. Checks nothing itself. */
+export function useSharedFleetAuth(): FleetAuthState | null {
+  return useContext(FleetAuthContext);
+}
+
 /** The session check itself. Idle (no requests, no listeners) when `active` is false. */
 function useOwnFleetAuth(active: boolean): FleetAuthState {
   const [status, setStatus] = useState<FleetAuthStatus>('checking');

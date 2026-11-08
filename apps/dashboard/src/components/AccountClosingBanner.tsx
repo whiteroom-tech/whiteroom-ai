@@ -16,6 +16,7 @@ import {
 import { AUDIT_KEPT } from '@/lib/plans';
 import { ROUTES } from '@/lib/routes';
 import { plural } from '@/lib/format';
+import { sharedRead } from '@/lib/shared-read';
 
 /** Fired after a deletion starts or is cancelled, so every banner on the page re-reads. */
 export const CLOSING_CHANGED = 'wr:account-closing-changed';
@@ -48,21 +49,16 @@ export function closingMessage(c: Closing, now = Date.now(), timeZone?: string):
 
 /** How long a read of the closing state is reused across pages: it changes rarely, and a change here re-reads at once. */
 export const CLOSING_READ_TTL_MS = 60_000;
-let lastRead: { at: number; value: Promise<Awaited<ReturnType<typeof getAccountClosing>>> } | null = null;
+const closingRead = sharedRead(() => getAccountClosing(), CLOSING_READ_TTL_MS);
 
 /** The account's closing state, shared by the pages opened within CLOSING_READ_TTL_MS. */
 export function readClosing(fresh = false): ReturnType<typeof getAccountClosing> {
-  if (!fresh && lastRead && Date.now() - lastRead.at < CLOSING_READ_TTL_MS) return lastRead.value;
-  const value = getAccountClosing();
-  lastRead = { at: Date.now(), value };
-  // A failed or unknown read isn't kept, so the next page tries again.
-  value.then((v) => { if (v === 'unknown' && lastRead?.value === value) lastRead = null; }, () => { if (lastRead?.value === value) lastRead = null; });
-  return value;
+  return closingRead.get(undefined, fresh);
 }
 
 /** Test hook: forget the shared read. */
 export function _forgetClosingRead(): void {
-  lastRead = null;
+  closingRead.forget();
 }
 
 const linkClass = 'wr-btn wr-btn--secondary wr-btn--h28';

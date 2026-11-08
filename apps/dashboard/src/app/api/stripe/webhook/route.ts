@@ -247,7 +247,10 @@ async function applySubscription(known: Stripe.Subscription): Promise<void> {
  * active again, so a lapse earns a new grace only if a paid period came
  * after the last one: an invoice actually paid (more than zero) since then.
  * A subscription that never paid (a trial that's cancelled) earns none, and
- * subscribe-cancel loops don't repeat it.
+ * subscribe-cancel loops don't repeat it. One exception: the first lapse of
+ * all (none recorded before), when a real invoice (more than zero) went
+ * unpaid and none was ever paid, gets the grace too, so a first charge that
+ * fails isn't switched off at once.
  */
 async function lapsedAtToStore(userId: string, sub: Stripe.Subscription): Promise<{ decided: boolean; at: string | null }> {
   if (!lapseSuspendOn()) return { decided: false, at: null };
@@ -256,7 +259,23 @@ async function lapsedAtToStore(userId: string, sub: Stripe.Subscription): Promis
   const kept = prev?.lapsed_at ?? null;
   // Still paying, or already lapsed: the last lapse stays as it was.
   if (isActiveStatus(sub.status) || !prev || !isActiveStatus(prev.status)) return { decided: true, at: kept };
-  return { decided: true, at: (await paidSince(sub.id, kept)) ? new Date().toISOString() : kept };
+  const earned = (await paidSince(sub.id, kept)) || (kept === null && (await firstChargeFailed(sub.id)));
+  return { decided: true, at: earned ? new Date().toISOString() : kept };
+}
+
+/**
+ * Whether the subscription has a real invoice (more than zero) whose charge
+ * was tried and failed: uncollectible, or still open after a payment attempt.
+ * An open invoice not yet tried (or still processing) doesn't count. Called
+ * only when none was ever paid.
+ */
+async function firstChargeFailed(subId: string): Promise<boolean> {
+  for (const status of ['open', 'uncollectible'] as const) {
+    for await (const invoice of stripe().invoices.list({ subscription: subId, status, limit: 100 })) {
+      if ((invoice.amount_due ?? 0) > 0 && (status === 'uncollectible' || (invoice.attempted && (invoice.attempt_count ?? 0) > 0))) return true;
+    }
+  }
+  return false;
 }
 
 /** Whether the subscription has an invoice paid (more than zero) after `since` (any, when null). */

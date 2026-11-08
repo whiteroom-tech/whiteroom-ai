@@ -21,7 +21,10 @@ vi.mock('@/lib/home-fleet', () => ({ ensureHomeFleet: m.ensure }));
 vi.mock('@/lib/analytics', () => ({ initAnalytics: vi.fn(), analytics: { identify: vi.fn(), capture: vi.fn() } }));
 vi.mock('@/components/ThemedShell', () => ({ ThemedShell: ({ children }: { children: unknown }) => h('div', null, children as never) }));
 vi.mock('@/components/AppShell', () => ({ AppShell: ({ children }: { children: unknown }) => h('div', null, children as never) }));
-vi.mock('@/app/fleet-key/onboarding', () => ({ Onboarding: ({ fleetId, isNew }: { fleetId: string; isNew: boolean }) => h('div', null, `ONBOARDING ${fleetId}${isNew ? ' new' : ''}`) }));
+// One-time lines (the cleared line, "You're live") come in through Onboarding's notice slot.
+vi.mock('@/app/fleet-key/onboarding', () => ({ Onboarding: ({ fleetId, isNew, notice }: { fleetId: string; isNew: boolean; notice?: unknown }) => h('div', null, notice as never, `ONBOARDING ${fleetId}${isNew ? ' new' : ''}`) }));
+// The plan state (banner, caveat) reads the signed-in account: none here.
+vi.mock('@/auth', () => ({ auth: async () => null, signIn: vi.fn(), signOut: vi.fn(), handlers: {} }));
 vi.mock('@/lib/whiteroom/client', () => ({
   createFleet: m.createFleet,
   fleetProvisioned: (res: { fleetToken?: string }) => typeof res.fleetToken === 'string' && res.fleetToken.length > 0,
