@@ -13,7 +13,7 @@ vi.mock('@/components/home/LiveFeedPanel', () => ({ LiveFeedPanel: () => null })
 
 const calls = (inputTokens: number) => ({ fleetId: 'f1', agentId: 'lead-agent', period: { start: '', end: '' }, hourly: [], totals: { calls: 1, costMicros: 0, inputTokens, cacheReadTokens: 0, cacheWriteTokens: 0 } });
 const counts = (blocked: number) => ({ blocked, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 });
-const api = vi.hoisted(() => ({ audit: vi.fn(), scores: vi.fn(), rules: vi.fn(), hourly: vi.fn(), log: vi.fn(), runs: vi.fn(), days: vi.fn(), agent: vi.fn(), ids: ['lead-agent'] as string[], gate: null as Promise<void> | null }));
+const api = vi.hoisted(() => ({ audit: vi.fn(), scores: vi.fn(), rules: vi.fn(), hourly: vi.fn(), log: vi.fn(), batch: vi.fn(), runs: vi.fn(), days: vi.fn(), agent: vi.fn(), ids: ['lead-agent'] as string[], gate: null as Promise<void> | null }));
 vi.mock('@/lib/control-actors', async (orig) => ({ ...(await orig<typeof import('@/lib/control-actors')>()), fetchControlActors: async () => [] }));
 // The ⋯ stand-in reports an act straight away, as a successful Pause would.
 vi.mock('@/components/home/AgentActions', () => ({ AgentActions: ({ onChanged }: { onChanged: () => void }) => h('button', { type: 'button', onClick: onChanged }, 'acted') }));
@@ -28,6 +28,7 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
     holds: {}, govV1: true,
   }),
   auditLog: api.log,
+  auditLogBatch: api.batch,
   listRuns: api.runs,
   runDays: api.days,
   auditSummary: api.audit,
@@ -37,13 +38,21 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
   performanceAgent: api.agent,
 }));
 const { FIRST_AGENTS_WAIT_MS, HomeContent } = await import('@/components/home/HomeContent');
+const { resetBatchSupport } = await import('@/lib/batched-reads');
+const { CHANGE_TYPES } = await import('@/lib/home-changes');
+
+const ruleAdded = () => ({ id: 'g1', type: 'governance_rule_changed', timestamp: new Date().toISOString(), ruleId: 'gr_1', ruleType: 'spend_cap', message: 'Spend cap: Added new Spend cap rule', by: 'api' });
+/** An engine from before engine PR 345 ignores `types`: every type, its default limit, no top-level `types`. */
+const oldEngineLog = async () => ({ fleetId: 'f1', total: 2, limit: 100, filters: { agentIds: ['lead-agent'], types: [...CHANGE_TYPES, 'llm_call'] }, entries: [{ id: 'c1', type: 'llm_call', timestamp: new Date().toISOString(), agentId: 'lead-agent' }, ruleAdded()] });
+/** Engine PR 345: up to limit_per_type of each type asked, with the types echoed. */
+const newEngineLog = async ({ types, limitPerType }: { types: string[]; limitPerType: number }) => ({ fleetId: 'f1', total: 1, limit: limitPerType, filters: { agentIds: [], types: [...types] }, types: [...types], limitPerType, entries: [ruleAdded()] });
 
 const flush = () => act(async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); });
 const isToday = (q: { fromDay: string; toDay: string }) => q.fromDay === q.toDay;
 const dayReads = () => api.rules.mock.calls.filter(([, q]) => isToday(q)).length;
 const weekRuleReads = () => api.rules.mock.calls.filter(([, q]) => !isToday(q)).length;
 
-afterEach(() => { vi.useRealTimers(); for (const f of Object.values(api)) if (typeof f === 'function') f.mockReset(); api.ids = ['lead-agent']; api.gate = null; });
+afterEach(() => { vi.useRealTimers(); for (const f of Object.values(api)) if (typeof f === 'function') f.mockReset(); api.ids = ['lead-agent']; api.gate = null; resetBatchSupport(); });
 
 async function mount() {
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
@@ -56,6 +65,8 @@ async function mountWith() {
   api.audit.mockResolvedValue({ fleetId: 'f1', savingsBuckets: [{ day: '2026-10-26', agent: 'lead-agent', used: 1000, tasks: 1, handovers: 0, handoverSaved: 0, offloadSaved: 0 }], governance: { blocks: 0, wouldBlocks: 0, byAgent: {}, byRule: {} } });
   api.scores.mockResolvedValue({ fleetId: 'f1', agents: [] });
   api.agent.mockResolvedValue(calls(1000));
+  // The tests below read changes one type at a time, as from an older engine, unless they say otherwise.
+  if (!api.batch.getMockImplementation()) api.batch.mockImplementation(oldEngineLog);
   if (!api.log.getMockImplementation()) api.log.mockImplementation(async ({ type }: { type?: string }) => ({ entries: type === 'governance_rule_changed' ? [{ id: 'g1', type, timestamp: new Date().toISOString(), ruleId: 'gr_1', ruleType: 'spend_cap', message: 'Spend cap: Added new Spend cap rule', by: 'api' }] : [] }));
   if (!api.runs.getMockImplementation()) api.runs.mockResolvedValue({ fleetId: 'f1', runs: [{ runId: 'lead-agent~1', flags: [] }], total: 3, cursor: null });
   if (!api.days.getMockImplementation()) api.days.mockResolvedValue({ fleetId: 'f1', days: [{ day: '2026-10-24', runs: 47 }] });
@@ -257,6 +268,53 @@ describe('Home fact line, last active day and latest changes', () => {
     await act(async () => { acted.click(); });
     await flush();
     expect(api.log.mock.calls.length).toBe(before + 6);
+    m.root.unmount();
+  });
+});
+
+describe('Home latest changes in one read (engine PR 345)', () => {
+  it('reads the six types in one request on a new engine, and shows what six reads did', async () => {
+    const old = await mount();
+    const oldText = old.text();
+    old.root.unmount();
+    vi.useRealTimers();
+    for (const f of [api.batch, api.log]) f.mockReset();
+    resetBatchSupport();
+    api.batch.mockImplementation(newEngineLog);
+    const m = await mount();
+    expect(api.batch).toHaveBeenCalledTimes(1);
+    expect(api.batch.mock.calls[0][0]).toEqual({ fleetId: 'f1', types: CHANGE_TYPES, limitPerType: 5 });
+    expect(api.log).not.toHaveBeenCalled();
+    expect(m.text()).toContain('Spend cap rule added through the API');
+    expect(m.text()).toBe(oldText);
+    // The next poll is one request too.
+    await m.advance(60_000);
+    expect(api.batch).toHaveBeenCalledTimes(2);
+    expect(api.log).not.toHaveBeenCalled();
+    m.root.unmount();
+  });
+
+  it('on an older engine, falls back to one read per type and doesn’t ask it the batch again', async () => {
+    const m = await mount();
+    expect(api.batch).toHaveBeenCalledTimes(1);
+    expect(api.log).toHaveBeenCalledTimes(6);
+    // The older engine's answer (every type, call events too) isn't used.
+    expect(m.text()).toContain('Spend cap rule added through the API');
+    await m.advance(60_000);
+    expect(api.batch).toHaveBeenCalledTimes(1);
+    expect(api.log).toHaveBeenCalledTimes(12);
+    m.root.unmount();
+  });
+
+  it('a failed batch read keeps the last list and says so, as a failed type did', async () => {
+    api.batch.mockImplementation(newEngineLog);
+    const m = await mount();
+    expect(m.text()).toContain('Spend cap rule added through the API');
+    api.batch.mockRejectedValue(new Error('down'));
+    await m.advance(60_000);
+    expect(m.text()).toContain('Spend cap rule added through the API');
+    expect(m.text()).toContain('Couldn’t refresh changes.');
+    expect(api.log).not.toHaveBeenCalled();
     m.root.unmount();
   });
 });

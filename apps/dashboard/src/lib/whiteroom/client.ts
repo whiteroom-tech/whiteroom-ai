@@ -11,6 +11,7 @@ import type {
   VerifyAuditResult,
   AuditSummaryResult,
   RuleWouldActResult,
+  RuleWouldActBatchResult,
   ListRunsResult,
   GovernanceResponse,
   RuleActionsResult,
@@ -21,6 +22,7 @@ import type {
   AgentHold,
   AgentInfo,
   AuditLogResponse,
+  AuditLogBatchResponse,
   BedrockRoleStatus,
   ClaimFleetResult,
   DeleteBedrockRoleResult,
@@ -354,6 +356,29 @@ export function auditLog(
       type: opts.type,
       search: opts.search,
       limit: opts.limit,
+    },
+    key,
+  );
+}
+
+/**
+ * Several event types in one audit_log read (engine PR 345): up to
+ * `limitPerType` newest of each, merged newest first. Older engines ignore
+ * `types` and answer with every type, so only a top-level `types` echo means
+ * the batch was honoured (lib/batched-reads falls back without it).
+ */
+export function auditLogBatch(
+  opts: { fleetId: string; types: readonly string[]; limitPerType?: number; agentId?: string; search?: string },
+  key?: string,
+): Promise<AuditLogBatchResponse> {
+  return apiCall<AuditLogBatchResponse>(
+    {
+      action: 'audit_log',
+      fleet_id: opts.fleetId,
+      types: opts.types,
+      limit_per_type: opts.limitPerType,
+      agent_id: opts.agentId,
+      search: opts.search,
     },
     key,
   );
@@ -777,6 +802,24 @@ export function auditSummary(fleetId: string, from: Date, key?: string, hoursBac
 /** Would-act counts per agent for one rule version (engine rule_would_act). */
 export function ruleWouldAct(fleetId: string, ruleId: string, ruleVersion: number, key?: string): Promise<RuleWouldActResult> {
   return apiCall<RuleWouldActResult>({ action: 'rule_would_act', fleet_id: fleetId, rule_id: ruleId, rule_version: ruleVersion }, key);
+}
+
+/** The most rules one rule_would_act batch takes. */
+export const RULE_WOULD_ACT_BATCH_MAX = 50;
+
+/**
+ * rule_would_act for up to 50 rule versions in one read (engine PR 345);
+ * results[i] answers rules[i]. Older engines answer 400 ("rule_id is required.").
+ */
+export function ruleWouldActBatch(
+  fleetId: string,
+  rules: ReadonlyArray<{ ruleId: string; ruleVersion: number }>,
+  key?: string,
+): Promise<RuleWouldActBatchResult> {
+  return apiCall<RuleWouldActBatchResult>({
+    action: 'rule_would_act', fleet_id: fleetId,
+    rules: rules.map((r) => ({ rule_id: r.ruleId, rule_version: r.ruleVersion })),
+  }, key);
 }
 
 /** Rule actions for a range of the viewer's days; `unsupported` keeps the audit-log counts. */

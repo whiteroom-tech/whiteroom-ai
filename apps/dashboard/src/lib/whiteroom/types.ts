@@ -127,6 +127,17 @@ export interface AuditLogResponse {
 }
 
 /**
+ * audit_log with `types` (engine PR 345). `types` and `limitPerType` are absent
+ * from older engines, which ignore the batch (`filters.types` is not the echo:
+ * it lists every type the fleet holds).
+ */
+export interface AuditLogBatchResponse extends AuditLogResponse {
+  /** The types read, deduped. */
+  types?: string[];
+  limitPerType?: number;
+}
+
+/**
  * The Performance tab's live feed (performance_live_feed action): full
  * detail with credentials removed (real reply text, tool-call arguments), kept
  * only for `ttlHours` and then deleted. A different store from audit_log
@@ -855,6 +866,12 @@ export interface RuleWouldActResult {
   fleetId: string; ruleId: string; byAgent: Record<string, number>; unversioned: boolean;
   /** When the counted version was saved; null when it's no longer current; absent from older engines (E3). */
   since?: string | null;
+}
+
+/** engine rule_would_act with `rules` (engine PR 345): results[i] answers rules[i]. */
+export interface RuleWouldActBatchResult {
+  fleetId: string;
+  results: Array<Omit<RuleWouldActResult, 'fleetId'> & { ruleVersion: number }>;
 }
 
 /** Settings › Audit trail (engine audit_integrity, Phase 1 spec H2). */

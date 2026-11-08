@@ -21,8 +21,9 @@ import { ChoiceDialog } from "./_components/ChoiceDialog";
 import { useFleetAuth } from "@/hooks/useFleetAuth";
 import {
   WhiteRoomApiError, alertsGet, controlFailure, governanceCreateRule, governanceDeleteRule, governanceList, governanceUpdateRule, isAuthError,
-  performanceAgent, performanceFleetHourly, performanceIndex, ruleActions as fetchRuleActions, ruleWouldAct,
+  performanceAgent, performanceFleetHourly, performanceIndex, ruleActions as fetchRuleActions,
 } from "@/lib/whiteroom/client";
+import { wouldActsFor } from "@/lib/batched-reads";
 import type {
   GovernanceHistoryEntry, GovernanceResponse, GovernanceRule, GovernanceRuleType, KeywordParams, ModelAllowlistParams, RuleActionCounts, RuleActionsResult, RuleWouldActResult, SpendCapParams,
 } from "@/lib/whiteroom/types";
@@ -229,10 +230,10 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const fetchData = useCallback(async (): Promise<boolean> => {
     try {
       const d = await governanceList(fleetId, authKey);
-      // One read per Watch rule. A failed read leaves that rule without a line rather than "hasn't fired".
+      // The Watch rules' counts, in one read per 50. A failed read leaves its rules without a line rather than "hasn't fired".
       const req = ++wouldReq.current;
-      void Promise.all(d.rules.filter((r) => r.mode === "watch").map((r) => ruleWouldAct(fleetId, r.id, r.version, authKey).then((c) => [`${r.id}@${r.version}`, c] as const, () => null)))
-        .then((pairs) => { if (req === wouldReq.current) setWouldActs(Object.fromEntries(pairs.filter((p) => p !== null))); });
+      void wouldActsFor(fleetId, d.rules.filter((r) => r.mode === "watch"), authKey)
+        .then((counts) => { if (req === wouldReq.current) setWouldActs(counts); });
       setRules(d.rules);
       setHistory(d.history);
       void loadActors(d.history);
