@@ -22,11 +22,26 @@ export function pgConfig(): PoolConfig {
   };
 }
 
+/** Pool size per instance when DB_POOL_MAX is unset or invalid (prod). */
+export const DEFAULT_POOL_MAX = 10;
+
+/**
+ * Connections per instance, from DB_POOL_MAX: a whole number from 2 to 50.
+ * Anything else falls back to DEFAULT_POOL_MAX. Staging sets it lower so its
+ * small database isn't run out of connection slots.
+ */
+export function poolMax(raw = process.env.DB_POOL_MAX): number {
+  const value = raw?.trim();
+  if (!value || !/^\d+$/.test(value)) return DEFAULT_POOL_MAX;
+  const n = Number(value);
+  return n >= 2 && n <= 50 ? n : DEFAULT_POOL_MAX;
+}
+
 // Lazily constructed: no connection attempt happens at module import time, so
 // `next build`'s page-data collection pass doesn't need real DB env vars.
 export function db(): Pool {
   if (!pool) {
-    pool = new Pool({ ...pgConfig(), max: 10, idleTimeoutMillis: 5 * 60_000 });
+    pool = new Pool({ ...pgConfig(), max: poolMax(), idleTimeoutMillis: 5 * 60_000 });
     // Idle sockets can fail outside a query's catch block. Handle the event
     // without logging connection details or allowing an uncaught exception.
     pool.on('error', () => console.error('[db] idle connection failed'));
