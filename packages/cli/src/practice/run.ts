@@ -12,7 +12,7 @@ import {
   keyVarOf, nodeTooOld, providerByShape, RUN_CODE, targetOrigin, type KeyChoice, type Provider,
 } from "./preflight.js";
 import { copy, ending, hideSecret, reportOf, results, say, warn, type Ending } from "./text.js";
-import { freeTierMessage, responseCopy } from "../responses.js";
+import { freeTierMessage, rerunWontFix } from "../responses.js";
 
 const HEARTBEAT_MS = 30_000;
 /** A practice task WhiteRoom dropped (a restart, a failed capture): ask for it again, it doesn't count (§2 rule 4). */
@@ -80,11 +80,11 @@ function sessionEnding(r: Reply): Ending {
   // The run already finished (WhiteRoom finished it meanwhile): its result, not a refusal. Without one, tasks/next replays it.
   if (r.body?.done || reason === "finished") return r.body?.report ? results(reportOf(r.body), required) : { ...ending(3, copy.finished(r.body?.verdict, r.body?.evidence)), result: true, replay: true };
   if (r.status === REDIRECTED) return ending(3, copy.redirected);
-  // Free tier answers: busy, paused, or a limit reached.
+  // Free tier answers: busy or paused (try again: 3), or a limit or plan a rerun won't fix (2).
   const plain = freeTierMessage(r);
-  if (plain) return ending(3, plain);
-  // Free Sandbox work was paused: the run was ended as cancelled, which WhiteRoom names engine_update.
-  if (reason === "engine_update" && r.body?.lifecycle === "cancelled") return ending(3, responseCopy.freePaused);
+  if (plain) return ending(rerunWontFix(r.status, r.body) ? 2 : 3, plain);
+  // Cancelled on WhiteRoom's side without a reason this CLI can name: never guessed.
+  if (reason === "engine_update" && r.body?.lifecycle === "cancelled") return ending(3, copy.stoppedByWhiteRoom);
   if (reason === "engine_update") return ending(3, copy.engineUpdate(Number(r.body.tasksFinished) || 0));
   if (reason === "ended_by_owner") return ending(3, copy.endedByOwner);
   if (reason === "expired") return ending(3, copy.expired);
@@ -185,7 +185,7 @@ export async function practiceRun(a: RunArgs): Promise<number> {
   if (claim.status === 400 && claim.body?.reason === "short_term_key") return fail(ending(2, copy.shortTermKey));
   if (claim.status === REDIRECTED) return fail(ending(2, copy.redirected));
   const refused = freeTierMessage(claim);
-  if (refused) return fail(ending(3, claim.status === 503 ? `${refused} ${copy.codeStillWorks}` : refused));
+  if (refused) return fail(ending(rerunWontFix(claim.status, claim.body) ? 2 : 3, claim.status === 503 ? `${refused} ${copy.codeStillWorks}` : refused));
   if (claim.status === 410) return fail(ending(2, copy.codeInvalid));
   if (claim.status === 429) return fail(ending(3, copy.busy));
   // The owner ended the test while this claim was on its way.

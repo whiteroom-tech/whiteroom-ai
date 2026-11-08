@@ -55,6 +55,8 @@ export const copy = {
   restart: "WhiteRoom restarted this practice task, so it starts again. This doesn't count against your agent.",
   lostTask: "Lost contact with WhiteRoom during this practice task, so it starts again. This doesn't count against your agent.",
   offline: "Lost connection to WhiteRoom. Trying again for up to 5 minutes.",
+  busyWaiting: "WhiteRoom is busy. Waiting, then trying again.",
+  stoppedByWhiteRoom: "This practice test was stopped on WhiteRoom's side. Run it again later.",
   deadline: "Your agent didn't finish this practice task in time, so it was stopped.",
   pressAgain: "Press Ctrl+C again to end the practice test. Finished practice tasks are kept.",
 
@@ -96,10 +98,10 @@ export const copy = {
   callCap: `Stopped at this test's model-call limit after WhiteRoom had to rerun a task (not your agent). ${button("Start test")} to run it again.`,
   noModelCalls: `Stopped: your agent didn't make any model calls through WhiteRoom in 2 practice tasks in a row. Check your adapter sends its calls to the base_url the CLI gives it. ${button("Start test")} to run it again.`,
   engineError: `WhiteRoom couldn't finish working out the result (not your agent). ${button("Start test")} to run a new test.`,
-  /** `saved`: the run's evidence state; a pass whose results weren't all saved isn't shown as one. */
+  /** `saved`: the run's evidence state; a pass whose results weren't all saved is Not proven, never Passed. */
   finished: (verdict: unknown, saved?: unknown) => {
-    const shown = verdict === "passed" && saved !== "complete" ? "incomplete" : verdict;
-    const label = typeof shown === "string" && Object.hasOwn(CATALOG.verdictLabels, shown) ? `: ${CATALOG.verdictLabels[shown as Report["verdict"]]}` : "";
+    if (verdict === "passed" && saved === "incomplete") return `The practice test finished. Not proven: some results couldn't be saved. Run it again.`;
+    const label = typeof verdict === "string" && Object.hasOwn(CATALOG.verdictLabels, verdict) ? `: ${CATALOG.verdictLabels[verdict as Report["verdict"]]}` : "";
     return `The practice test finished${label}. See the results in the dashboard (${DASHBOARD}), under Past tests.`;
   },
   codeStillWorks: "Your run code still works.",
@@ -138,7 +140,7 @@ export interface Check {
 }
 export interface Report {
   verdict: "passed" | "not_passed" | "incomplete";
-  /** Whether every result was saved. Only "complete" proves a pass; missing (an older WhiteRoom) reads as not yet saved. */
+  /** Whether every result was saved: "incomplete" means some weren't, so a pass isn't proven. Missing (an older WhiteRoom) keeps the verdict as it is. */
   evidence?: "pending" | "incomplete" | "complete";
   runs: number;
   sample: boolean;
@@ -194,11 +196,11 @@ export function reportOf(body: any): Report {
 
 /**
  * The results screen in the terminal, and its exit code: 0 Passed, 1 Didn't pass, 3 Didn't finish.
- * A pass is only shown when every result was saved; otherwise it's Not proven (exit 3).
+ * A pass whose results weren't all saved (evidence "incomplete") is Not proven (exit 3), never Passed.
  * With --require, a required row not Passed in Enforce turns a pass into 1.
  */
 export function results(r: Report, require: readonly string[] = []): Ending {
-  const proven = r.evidence === "complete";
+  const proven = r.evidence !== "incomplete";
   const required = r.checks.filter((c) => c.required);
   const runs = plural(r.runs, "run");
   const failed = required.filter((c) => c.status === "failed");

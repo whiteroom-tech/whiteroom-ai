@@ -35,7 +35,7 @@ const DEFAULT_MODEL = anthropic ? "claude-haiku-4-5" : "gpt-4o-mini";
 const BLOCKED = "Stopped: one of my WhiteRoom controls blocked the model call.";
 const GONE = "Stopped: WhiteRoom closed this practice task.";
 // WhiteRoom asks for the same call again shortly: it was refused before anything was sent on.
-const BUSY = ["sandbox_busy", "control_busy", "db_unavailable"];
+const BUSY = ["sandbox_busy", "control_busy", "cleanup_busy", "db_unavailable"];
 
 // One model call through WhiteRoom; a final answer (text) if WhiteRoom stopped it.
 // Never follows a redirect, so the key only goes to WhiteRoom.

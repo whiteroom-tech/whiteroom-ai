@@ -24,7 +24,7 @@ Set the one variable for your agent's provider. For Azure OpenAI, Claude on Azur
 | Claude on Azure (Foundry) | `ANTHROPIC_FOUNDRY_API_KEY` |
 | AWS Bedrock (a long-term Bedrock API key) | `AWS_BEARER_TOKEN_BEDROCK` |
 
-The CLI asks for the run code from the dashboard (or reads it from stdin with `--code-stdin`), and asks for the key if none of these is set. If more than one is set, it stops and asks you to unset the others. Keep the terminal open until it prints the result. Exit codes: `0` passed, `1` didn't pass, `2` a setup or usage problem, `3` didn't finish or not proven (safe to run again). A pass is only shown when WhiteRoom saved every result; otherwise it says Not proven and exits `3`. With `--require`, `1` also when a required check isn't Passed in Enforce. macOS and Linux only for now.
+The CLI asks for the run code from the dashboard (or reads it from stdin with `--code-stdin`), and asks for the key if none of these is set. If more than one is set, it stops and asks you to unset the others. Keep the terminal open until it prints the result. Exit codes: `0` passed, `1` didn't pass, `2` a setup or usage problem, or a refusal running it again won't fix (the Sandbox's calls for today are used up, or the plan doesn't allow it), `3` didn't finish, WhiteRoom was busy or paused, or not proven (safe to run again). When WhiteRoom couldn't save every result of a passing test, it says Not proven and exits `3`, never Passed. With `--require`, `1` also when a required check isn't Passed in Enforce. macOS and Linux only for now.
 
 ### Requiring checks in CI
 

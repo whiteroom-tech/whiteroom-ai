@@ -5,6 +5,7 @@
 # back) and finish with one {"type":"final","output":"..."} line. Print your
 # own logs to stderr: stdout is only for these JSON lines.
 import json, os, sys, time, urllib.error, urllib.request
+from datetime import datetime, timezone
 
 # The CLI sets only the variable of the provider the practice test uses.
 # It decides the API: chat completions for OpenAI and Azure OpenAI (where the
@@ -24,7 +25,7 @@ DEFAULT_MODEL = "claude-haiku-4-5" if ANTHROPIC else "gpt-4o-mini"
 BLOCKED = "Stopped: one of my WhiteRoom controls blocked the model call."
 GONE = "Stopped: WhiteRoom closed this practice task."
 # WhiteRoom asks for the same call again shortly: it was refused before anything was sent on.
-BUSY = ("sandbox_busy", "control_busy", "db_unavailable")
+BUSY = ("sandbox_busy", "control_busy", "cleanup_busy", "db_unavailable")
 calls = 0
 
 
@@ -77,8 +78,10 @@ def model(base_url, headers, body):
             if reason == "free_paused":
                 raise RuntimeError("Sandbox is paused for Free accounts right now. Try again later.") from None
             if reason == "sandbox_daily_limit":
-                reset = str(wr.get("resetAt") or "")
-                at = reset[11:16] if len(reset) >= 16 and reset[13] == ":" else "00:00"
+                try:
+                    at = datetime.fromisoformat(str(wr.get("resetAt")).replace("Z", "+00:00")).astimezone(timezone.utc).strftime("%H:%M")
+                except ValueError:
+                    at = "00:00"
                 raise RuntimeError(f"Your Sandbox has used all its calls for today. They reset at {at} UTC.") from None
             if err.code == 503 and reason in BUSY:
                 wait = ("WhiteRoom is busy right now. Waiting, then trying again.", float(err.headers.get("retry-after") or 1))

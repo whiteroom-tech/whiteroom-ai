@@ -7,8 +7,8 @@ const DASHBOARD = "https://app.whiteroom.tech";
 
 /** 503 answers that mean "try again in a moment": WhiteRoom refused before doing anything, so the same request can be sent again. */
 export const BUSY = new Set(["sandbox_busy", "control_busy", "cleanup_busy", "db_unavailable"]);
-/** How many times in all a request that gets a busy answer is sent before the command says so and stops. */
-export const MAX_BUSY_TRIES = 5;
+/** A busy wait this long or longer is announced again. */
+export const LONG_WAIT_S = 10;
 
 export const responseCopy = {
   freePaused: "Sandbox is paused for Free accounts right now. Try again later.",
@@ -18,7 +18,7 @@ export const responseCopy = {
   cantSave: (wait: string) => `WhiteRoom can't save Sandbox results right now. Try again in ${wait}.`,
   dailyLimit: (at: string) => `Your Sandbox has used all its calls for today. They reset at ${at} UTC.`,
   planFree: `The Free plan doesn't include production calls. Pick a plan in the dashboard (${DASHBOARD}) to use this fleet.`,
-  suspended: `Production calls are paused because the last payment didn't go through. Update billing in the dashboard (${DASHBOARD}).`,
+  suspended: `This fleet has no active plan. Pick a plan in WhiteRoom (${DASHBOARD}) to switch it back on.`,
   unclaimed: `This fleet isn't linked to a WhiteRoom account yet. Sign up or sign in at ${DASHBOARD} to set it up.`,
   revoked: `This fleet is no longer linked to a WhiteRoom account. Link it again in the dashboard (${DASHBOARD}).`,
   notAvailable: `This fleet can't take production calls yet. Sign up or sign in at ${DASHBOARD} to set it up.`,
@@ -40,19 +40,29 @@ export function freeTierCode(status: number, body: any): string | null {
   return null;
 }
 
-/** Seconds to wait from a Retry-After header, kept between 1 and 60 (a missing or odd value waits 5). */
-export function retryAfterSeconds(header: string | null | undefined): number {
+/**
+ * The one Retry-After parser: seconds to wait, at least 1 and at most `max`
+ * (60 for a wait the CLI does itself), or null when the header is missing or
+ * isn't a number of seconds.
+ */
+export function retryAfterSeconds(header: string | null | undefined, max = 60): number | null {
   const n = Number(header);
-  return header == null || header === "" || !Number.isFinite(n) ? 5 : Math.min(Math.max(Math.ceil(n), 1), 60);
+  return header == null || header.trim() === "" || !Number.isFinite(n) ? null : Math.min(Math.max(Math.ceil(n), 1), max);
 }
 
-/** "30 seconds", "a minute", "2 minutes": how long Retry-After asks for, in words. */
+/** "30 seconds", "a minute", "2 minutes": how long Retry-After asks for, in words ("a minute" without one). */
 export function waitWords(header: string | null | undefined): string {
-  const n = Number(header);
-  if (header == null || header === "" || !Number.isFinite(n) || n <= 0) return "a minute";
-  if (n < 60) return `${Math.ceil(n)} second${Math.ceil(n) === 1 ? "" : "s"}`;
+  const n = retryAfterSeconds(header, Infinity);
+  if (n === null || n === 60) return "a minute";
+  if (n < 60) return `${n} second${n === 1 ? "" : "s"}`;
   const m = Math.round(n / 60);
   return m <= 1 ? "a minute" : `${m} minutes`;
+}
+
+/** Refusals running the same command again won't fix (the day's calls used up, the plan): a setup problem (exit 2), not a retry (3). */
+export function rerunWontFix(status: number, body: any): boolean {
+  const code = freeTierCode(status, body);
+  return code !== null && code !== "free_paused" && !BUSY.has(code);
 }
 
 /** When the daily calls come back, as HH:MM (UTC) from the reply's resetAt; midnight when it has none. */
