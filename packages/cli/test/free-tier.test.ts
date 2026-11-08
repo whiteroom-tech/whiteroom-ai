@@ -11,7 +11,7 @@ import type { AddressInfo } from "node:net";
 import { after, describe, it } from "node:test";
 import { Engine } from "../src/practice/engine.js";
 import { copy, reportOf, results, type Report } from "../src/practice/text.js";
-import { BUSY, freeTierCode, freeTierMessage, rerunWontFix, responseCopy, retryAfterSeconds, waitWords } from "../src/responses.js";
+import { BUSY, dashboardFor, freeTierCode, freeTierMessage, replyWords, rerunWontFix, responseCopy, retryAfterSeconds, waitWords } from "../src/responses.js";
 import { cli, fixture, KEY, PKG, startStub, testEnv, type Stub } from "./stub.js";
 
 const stubs: Stub[] = [];
@@ -27,39 +27,87 @@ after(async () => {
 });
 const practice = (s: Stub, extra: string[] = []) => cli(["practice", "run", "--code-stdin", "--url", s.url, ...extra]);
 
-const PAUSED = { error: "x", reason: "free_paused", code: "free_paused", whiteroom: { reason: "free_paused", forwarded: false } };
-const busy = (reason: string) => ({ error: "x", whiteroom: { reason, forwarded: false } });
-const gate = (reason: string) => ({ error: { type: "quota_exceeded", message: "x" }, whiteroom: { reason, forwarded: false } });
-const DAILY = { error: "x", whiteroom: { reason: "sandbox_daily_limit", forwarded: false, resetAt: "2026-11-09T00:00:00.000Z" } };
+// Replies without words, as an older or terser WhiteRoom might send: the CLI's own text shows.
+const PAUSED = { reason: "free_paused", code: "free_paused", whiteroom: { reason: "free_paused", forwarded: false } };
+const busy = (reason: string) => ({ whiteroom: { reason, forwarded: false } });
+const gate = (reason: string) => ({ error: { type: "quota_exceeded" }, whiteroom: { reason, forwarded: false } });
+const DAILY = { whiteroom: { reason: "sandbox_daily_limit", forwarded: false, resetAt: "2026-11-09T00:00:00.000Z" } };
+const US = "https://app.whiteroom.tech";
+const EU = "https://eu.app.whiteroom.tech";
+const EU_PROXY = "https://eu.proxy.whiteroom.tech";
 
-describe("Free tier messages", () => {
-  it("503 free_paused, from any field, says Sandbox is paused for Free accounts", () => {
-    assert.equal(freeTierMessage({ status: 503, body: PAUSED }), "Sandbox is paused for Free accounts right now. Try again later.");
-    assert.equal(freeTierMessage({ status: 503, body: { reason: "free_paused" } }), responseCopy.freePaused);
-    assert.equal(freeTierMessage({ status: 503, body: { whiteroom: { reason: "free_paused" } } }), responseCopy.freePaused);
+// The canonical words (spec §3.10), one per code, as WhiteRoom sends them.
+const WORDS = {
+  free_paused: "Sandbox isn't taking new runs right now. Nothing you set up is lost. Try again later.",
+  busy: "Sandbox is busy. Try again in a moment.",
+  busyMinute: "Sandbox is busy. Try again in a minute.",
+  controlBusy: "WhiteRoom is busy. Try again in a moment.",
+  db_unavailable: "Sandbox can't take calls right now. Try again in a moment.",
+  callsToday: "Your Sandbox hit today's limit of 1,000 calls. It takes calls again at 00:00 UTC.",
+  sampleRunsToday: "You've used today's sample runs. More at 00:00 UTC, or use your own key now.",
+  practiceRunsToday: "You've used today's practice runs. You can start more at 00:00 UTC.",
+  sample_budget_exhausted: "Our sample agent is done for today. You can still use your own key.",
+  plan_free: (app: string) => `Free accounts can't make live calls. Click Go live at ${app} to start your 30 free days.`,
+  suspended: (app: string) => `Your plan has ended, so your agents' live calls are refused. Choose a plan to switch them back on. Nothing is lost.\n${app}/settings#plan`,
+  unclaimed: (app: string) => `This line isn't set up yet. Sign in at ${app} and copy your line from the Fleet key page.`,
+  revoked: (app: string) => `This key no longer works. Get your current line from the Fleet key page at ${app}.`,
+};
+
+describe("Free tier messages: the CLI's own text, one per code", () => {
+  it("503 free_paused, from any field", () => {
+    assert.equal(freeTierMessage({ status: 503, body: PAUSED }), WORDS.free_paused);
+    assert.equal(freeTierMessage({ status: 503, body: { reason: "free_paused" } }), WORDS.free_paused);
+    assert.equal(freeTierMessage({ status: 503, body: { whiteroom: { reason: "free_paused" } } }), WORDS.free_paused);
   });
 
-  it("503 busy answers say who is busy and how long to wait, from Retry-After", () => {
-    assert.equal(freeTierMessage({ status: 503, body: busy("sandbox_busy"), retryAfter: "30" }), "The Sandbox is busy right now. Try again in 30 seconds.");
-    assert.equal(freeTierMessage({ status: 503, body: busy("control_busy"), retryAfter: "1" }), "WhiteRoom is busy right now. Try again in 1 second.");
-    assert.equal(freeTierMessage({ status: 503, body: busy("cleanup_busy"), retryAfter: "120" }), "WhiteRoom is busy cleaning up Sandboxes. Try again in 2 minutes.");
-    assert.equal(freeTierMessage({ status: 503, body: busy("db_unavailable"), retryAfter: "5" }), "WhiteRoom can't save Sandbox results right now. Try again in 5 seconds.");
-    assert.equal(freeTierMessage({ status: 503, body: busy("sandbox_busy") }), "The Sandbox is busy right now. Try again in a minute.");
+  it("503 busy answers: a moment, or how long Retry-After asks for when it's long", () => {
+    assert.equal(freeTierMessage({ status: 503, body: busy("sandbox_busy"), retryAfter: "1" }), WORDS.busy);
+    assert.equal(freeTierMessage({ status: 503, body: busy("sandbox_busy"), retryAfter: "60" }), WORDS.busyMinute);
+    assert.equal(freeTierMessage({ status: 503, body: busy("sandbox_busy") }), WORDS.busy);
+    assert.equal(freeTierMessage({ status: 503, body: busy("cleanup_busy"), retryAfter: "1" }), WORDS.busy);
+    assert.equal(freeTierMessage({ status: 503, body: busy("control_busy"), retryAfter: "1" }), WORDS.controlBusy);
+    assert.equal(freeTierMessage({ status: 503, body: busy("control_busy"), retryAfter: "30" }), "WhiteRoom is busy. Try again in 30 seconds.");
+    assert.equal(freeTierMessage({ status: 503, body: busy("db_unavailable"), retryAfter: "5" }), WORDS.db_unavailable);
   });
 
-  it("402 sandbox_daily_limit names the reset time in UTC (the sample start's 429 code too)", () => {
-    assert.equal(freeTierMessage({ status: 402, body: DAILY }), "Your Sandbox has used all its calls for today. They reset at 00:00 UTC.");
-    assert.equal(freeTierMessage({ status: 429, body: { reason: "limit_fleet", code: "sandbox_daily_limit", resetAt: "2026-11-09T00:00:00.000Z" } }), responseCopy.dailyLimit("00:00"));
-    assert.equal(freeTierMessage({ status: 402, body: busy("sandbox_daily_limit") }), responseCopy.dailyLimit("00:00"));
+  it("the day's limits: Sandbox calls (402), sample runs and practice runs (429), with the reset time in UTC", () => {
+    assert.equal(freeTierMessage({ status: 402, body: DAILY }), WORDS.callsToday);
+    assert.equal(freeTierMessage({ status: 402, body: busy("sandbox_daily_limit") }), WORDS.callsToday);
+    assert.equal(freeTierMessage({ status: 429, body: { reason: "limit_fleet", code: "sandbox_daily_limit", resetAt: "2026-11-09T00:00:00.000Z" } }), WORDS.sampleRunsToday);
+    assert.equal(freeTierMessage({ status: 429, body: { reason: "starts_today" } }), WORDS.practiceRunsToday);
+    assert.equal(freeTierMessage({ status: 429, body: { reason: "limit_global", code: "sample_budget_exhausted" } }), WORDS.sample_budget_exhausted);
+    assert.equal(freeTierMessage({ status: 402, body: { whiteroom: { reason: "sandbox_daily_limit", resetAt: "2026-11-09T01:30:00.000+01:00" } } }), "Your Sandbox hit today's limit of 1,000 calls. It takes calls again at 00:30 UTC.");
   });
 
-  it("402 quota_exceeded reasons say what to do: pick a plan, update billing, sign up, link again", () => {
-    assert.match(freeTierMessage({ status: 402, body: gate("plan_free") })!, /Free plan doesn't include production calls\. Pick a plan in the dashboard/);
-    assert.equal(freeTierMessage({ status: 402, body: gate("suspended") }), "This fleet has no active plan. Pick a plan in WhiteRoom (https://app.whiteroom.tech) to switch it back on.");
-    assert.doesNotMatch(freeTierMessage({ status: 402, body: gate("suspended") })!, /payment|billing/);
-    assert.match(freeTierMessage({ status: 402, body: gate("unclaimed") })!, /isn't linked to a WhiteRoom account yet\. Sign up or sign in/);
-    assert.match(freeTierMessage({ status: 402, body: gate("revoked") })!, /no longer linked to a WhiteRoom account\. Link it again/);
-    assert.match(freeTierMessage({ status: 402, body: gate("not_available") })!, /can't take production calls yet\. Sign up or sign in/);
+  it("older answers still map: the sample start's 429 reasons without a code", () => {
+    assert.equal(freeTierCode(429, { reason: "limit_fleet" }), "sandbox_daily_limit");
+    assert.equal(freeTierMessage({ status: 429, body: { reason: "limit_fleet" } }), WORDS.sampleRunsToday);
+    assert.equal(freeTierCode(429, { reason: "limit_global" }), "sample_budget_exhausted");
+    assert.equal(freeTierMessage({ status: 429, body: { reason: "limit_global" } }), WORDS.sample_budget_exhausted);
+    assert.equal(freeTierCode(429, { reason: "starts_today" }), "starts_today");
+    // Only as 429s: another status with those reasons isn't a Free tier answer.
+    assert.equal(freeTierCode(409, { reason: "limit_fleet" }), null);
+  });
+
+  it("402 production refusals, with the US dashboard link by default", () => {
+    assert.equal(freeTierMessage({ status: 402, body: gate("plan_free") }), WORDS.plan_free(US));
+    assert.equal(freeTierMessage({ status: 402, body: gate("suspended") }), WORDS.suspended(US));
+    assert.equal(freeTierMessage({ status: 402, body: gate("unclaimed") }), WORDS.unclaimed(US));
+    assert.equal(freeTierMessage({ status: 402, body: gate("not_available") }), WORDS.unclaimed(US));
+    assert.equal(freeTierMessage({ status: 402, body: gate("revoked") }), WORDS.revoked(US));
+    assert.equal(freeTierMessage({ status: 402, body: gate("plan_free") }, "https://proxy.whiteroom.tech"), WORDS.plan_free(US));
+  });
+
+  it("pointed at the EU proxy, links go to the EU dashboard", () => {
+    for (const r of ["plan_free", "suspended", "unclaimed", "revoked"] as const) {
+      assert.equal(freeTierMessage({ status: 402, body: gate(r) }, EU_PROXY), WORDS[r](EU));
+    }
+    assert.equal(freeTierMessage({ status: 402, body: gate("not_available") }, `${EU_PROXY}/`), WORDS.unclaimed(EU));
+    assert.equal(dashboardFor(EU_PROXY), EU);
+    assert.equal(dashboardFor("https://EU.PROXY.whiteroom.tech:443/x"), EU);
+    for (const u of ["https://proxy.whiteroom.tech", "http://127.0.0.1:3000", "https://eu.proxy.example.com", "https://proxy.eu.whiteroom.tech", "not a url", undefined, null]) {
+      assert.equal(dashboardFor(u), US, String(u));
+    }
   });
 
   it("anything else isn't a Free tier answer", () => {
@@ -78,15 +126,41 @@ describe("Free tier messages", () => {
   it("Retry-After: one parser; waits kept between 1 and 60 seconds, put in words", () => {
     assert.deepEqual(["0", "1", "2.5", "600", null, "", "soon"].map((h) => retryAfterSeconds(h)), [1, 1, 3, 60, null, null, null]);
     assert.equal(retryAfterSeconds("600", Infinity), 600);
-    assert.deepEqual(["1", "45", "60", "90", "300", null, "0"].map(waitWords), ["1 second", "45 seconds", "a minute", "2 minutes", "5 minutes", "a minute", "1 second"]);
+    assert.deepEqual(["1", "9", "10", "45", "60", "90", "300", null, "0"].map(waitWords), ["a moment", "a moment", "10 seconds", "45 seconds", "a minute", "2 minutes", "5 minutes", "a moment", "a moment"]);
   });
 
-  it("a rerun won't fix the daily limit or a plan refusal (exit 2); busy and paused are worth retrying (3)", () => {
+  it("a rerun won't fix the day's limits or a plan refusal (exit 2); busy and paused are worth retrying (3)", () => {
     assert.equal(rerunWontFix(402, DAILY), true);
     for (const r of ["plan_free", "suspended", "unclaimed", "revoked", "not_available"]) assert.equal(rerunWontFix(402, gate(r)), true);
+    for (const reason of ["limit_fleet", "limit_global", "starts_today"]) assert.equal(rerunWontFix(429, { reason }), true);
     assert.equal(rerunWontFix(503, PAUSED), false);
     for (const r of ["sandbox_busy", "control_busy", "cleanup_busy", "db_unavailable"]) assert.equal(rerunWontFix(503, busy(r)), false);
     assert.equal(rerunWontFix(409, { reason: "expired" }), false);
+  });
+});
+
+describe("Free tier messages: WhiteRoom's own words come first", () => {
+  it("prints the words the reply carries (error, or error.message), as sent", () => {
+    const prod = { error: WORDS.controlBusy, whiteroom: { reason: "control_busy", forwarded: false } };
+    assert.equal(freeTierMessage({ status: 503, body: prod, retryAfter: "1" }), WORDS.controlBusy);
+    const sandbox = { error: WORDS.busy, whiteroom: { reason: "control_busy", forwarded: false } };
+    assert.equal(freeTierMessage({ status: 503, body: sandbox, retryAfter: "1" }), WORDS.busy);
+    const minute = { error: WORDS.busyMinute, whiteroom: { reason: "sandbox_busy", forwarded: false } };
+    assert.equal(freeTierMessage({ status: 503, body: minute, retryAfter: "60" }), WORDS.busyMinute);
+    const cap = { error: "Your Sandbox hit today's limit of 500 calls. It takes calls again at 00:00 UTC.", whiteroom: { reason: "sandbox_daily_limit", forwarded: false } };
+    assert.equal(freeTierMessage({ status: 402, body: cap }), cap.error);
+    const eu = { error: { type: "quota_exceeded", message: WORDS.suspended(EU) }, whiteroom: { reason: "suspended", forwarded: false } };
+    assert.equal(freeTierMessage({ status: 402, body: eu }), WORDS.suspended(EU));
+    const older = { error: "You can start more tomorrow (00:00 UTC).", reason: "starts_today" };
+    assert.equal(freeTierMessage({ status: 429, body: older }), older.error);
+  });
+
+  it("strips characters a terminal would act on, and ignores empty or overlong words", () => {
+    assert.equal(replyWords({ error: "Sandbox \u001b[31mis busy.\u0007\r\nTry again.\u202e" }), "Sandbox [31mis busy.\nTry again.");
+    assert.equal(replyWords({ error: " \u0000 " }), null);
+    assert.equal(replyWords({ error: "x".repeat(601) }), null);
+    assert.equal(replyWords({ error: { type: "quota_exceeded" } }), null);
+    assert.equal(freeTierMessage({ status: 503, body: { ...PAUSED, error: "" } }), WORDS.free_paused);
   });
 });
 
@@ -227,7 +301,7 @@ describe("practice run: Free tier answers end to end", () => {
     const s = await stub({ route: (p) => (p === "/api/readiness/claim" ? [503, PAUSED, { "retry-after": "60" }] : undefined) });
     const r = await practice(s);
     assert.equal(r.code, 3);
-    assert.match(r.stderr, /Sandbox is paused for Free accounts right now\. Try again later\. Your run code still works\./);
+    assert.match(r.stderr, /Sandbox isn't taking new runs right now\. Nothing you set up is lost\. Try again later\. Your run code still works\./);
     assert.equal(s.count("/api/readiness/claim"), 1);
   });
 
@@ -235,7 +309,7 @@ describe("practice run: Free tier answers end to end", () => {
     const s = await stub({ route: (p) => (p === "/api/readiness/claim" ? [503, busy("control_busy"), { "retry-after": "2" }] : undefined) });
     const r = await practice(s);
     assert.equal(r.code, 3);
-    assert.match(r.stderr, /WhiteRoom is busy right now\. Try again in 2 seconds\. Your run code still works\./);
+    assert.match(r.stderr, /WhiteRoom is busy\. Try again in a moment\. Your run code still works\./);
     assert.equal(s.count("/api/readiness/claim"), 1);
   });
 
@@ -251,7 +325,7 @@ describe("practice run: Free tier answers end to end", () => {
     const s = await stub({ route: (p, _b, n) => (p === "/api/readiness/tasks/next" && n === 2 ? [503, PAUSED, { "retry-after": "60" }] : undefined) });
     const r = await practice(s);
     assert.equal(r.code, 3);
-    assert.match(r.stderr, /Sandbox is paused for Free accounts right now\. Try again later\./);
+    assert.match(r.stderr, /Sandbox isn't taking new runs right now\. Nothing you set up is lost\. Try again later\./);
     assert.equal(s.count("/api/readiness/tasks/next"), 2);
   });
 
@@ -260,26 +334,34 @@ describe("practice run: Free tier answers end to end", () => {
     const r = await practice(s);
     assert.equal(r.code, 3);
     assert.match(r.stderr, /This practice test was stopped on WhiteRoom's side\. Run it again later\./);
-    assert.doesNotMatch(r.stderr, /was updated|Free accounts/);
+    assert.doesNotMatch(r.stderr, /was updated|Free accounts|new runs/);
   });
 
   it("a 409 naming free_paused says paused", async () => {
     const s = await stub({ route: (p, _b, n) => (p === "/api/readiness/tasks/next" && n === 2 ? [409, { lifecycle: "cancelled", reason: "free_paused", tasksFinished: 1 }] : undefined) });
     const r = await practice(s);
     assert.equal(r.code, 3);
-    assert.match(r.stderr, /Sandbox is paused for Free accounts right now/);
+    assert.match(r.stderr, /Sandbox isn't taking new runs right now/);
   });
 
   it("refusals a rerun won't fix exit 2: the daily limit at claim, a plan refusal mid-run", async () => {
     let s = await stub({ route: (p) => (p === "/api/readiness/claim" ? [402, DAILY] : undefined) });
     let r = await practice(s);
     assert.equal(r.code, 2);
-    assert.match(r.stderr, /They reset at 00:00 UTC\./);
+    assert.match(r.stderr, /It takes calls again at 00:00 UTC\./);
     assert.doesNotMatch(r.stderr, /run code still works/);
     s = await stub({ route: (p, _b, n) => (p === "/api/readiness/tasks/next" && n === 2 ? [402, gate("plan_free")] : undefined) });
     r = await practice(s);
     assert.equal(r.code, 2);
-    assert.match(r.stderr, /Pick a plan/);
+    assert.match(r.stderr, /Click Go live at https:\/\/app\.whiteroom\.tech to start your 30 free days\./);
+  });
+
+  it("claim refused for today's practice runs (429 starts_today): the reply's words, exit 2, sent once", async () => {
+    const s = await stub({ route: (p) => (p === "/api/readiness/claim" ? [429, { error: WORDS.practiceRunsToday, reason: "starts_today" }] : undefined) });
+    const r = await practice(s);
+    assert.equal(r.code, 2);
+    assert.ok(r.stderr.includes(WORDS.practiceRunsToday), r.stderr);
+    assert.equal(s.count("/api/readiness/claim"), 1);
   });
 
   it("a result with evidence pending (an older WhiteRoom) shows the verdict as it is", async () => {
@@ -313,8 +395,8 @@ describe("practice run: Free tier answers end to end", () => {
 
     it(`${who}: paused or out of daily calls, it stops with plain words instead of waiting`, async () => {
       for (const [status, body, said] of [
-        [503, PAUSED, /Sandbox is paused for Free accounts right now\. Try again later\./],
-        [402, DAILY, /Your Sandbox has used all its calls for today\. They reset at 00:00 UTC\./],
+        [503, PAUSED, /Sandbox isn't taking new runs right now\. Nothing you set up is lost\. Try again later\./],
+        [402, DAILY, /Your Sandbox hit today's limit of 1,000 calls\. It takes calls again at 00:00 UTC\./],
       ] as const) {
         const s = await stub({ route: (p) => (p === "/v1/messages" ? [status, body, { "retry-after": "60" }] : undefined) });
         const r = await practice(s, ["--adapter", adapter]);
@@ -331,15 +413,23 @@ describe("fleet commands: Free tier refusals in plain words", () => {
     const s = await stub({ route: (p) => (p === "/api/white-room" ? [402, gate("plan_free")] : undefined) });
     const r = await cli(["register", "agent-1", "--url", s.url, "--key", "wr_placeholder"], { env: testEnv() });
     assert.equal(r.code, 1);
-    assert.match(r.stderr, /Free plan doesn't include production calls\. Pick a plan/);
+    assert.match(r.stderr, /Free accounts can't make live calls\. Click Go live at /);
     assert.doesNotMatch(r.stderr, /Error 402/);
+  });
+
+  it("a 402 whose reply carries words prints them as sent, link on its own line", async () => {
+    const body = { error: { type: "quota_exceeded", message: WORDS.suspended(EU) }, whiteroom: { reason: "suspended", forwarded: false } };
+    const s = await stub({ route: (p) => (p === "/api/white-room" ? [402, body] : undefined) });
+    const r = await cli(["register", "agent-1", "--url", s.url, "--key", "wr_placeholder"], { env: testEnv() });
+    assert.equal(r.code, 1);
+    assert.ok(r.stderr.includes(WORDS.suspended(EU)), r.stderr);
   });
 
   it("a busy 503 says how long to wait, from its Retry-After", async () => {
     const s = await stub({ route: (p) => (p === "/api/white-room" ? [503, busy("control_busy"), { "retry-after": "20" }] : undefined) });
     const r = await cli(["register", "agent-1", "--url", s.url, "--key", "wr_placeholder"], { env: testEnv() });
     assert.equal(r.code, 1);
-    assert.match(r.stderr, /WhiteRoom is busy right now\. Try again in 20 seconds\./);
+    assert.match(r.stderr, /WhiteRoom is busy\. Try again in 20 seconds\./);
   });
 });
 
@@ -360,11 +450,11 @@ describe("the starters match the CLI's Free tier answers (one source: src/respon
   });
 
   // A reset time with an offset: each starter must print it in UTC, as the CLI does.
-  const OFFSET = { error: "x", whiteroom: { reason: "sandbox_daily_limit", forwarded: false, resetAt: "2026-11-09T01:30:00.000+01:00" } };
+  const OFFSET = { whiteroom: { reason: "sandbox_daily_limit", forwarded: false, resetAt: "2026-11-09T01:30:00.000+01:00" } };
   for (const [who, adapter] of [["JS starter", "node starters/wr-adapter.mjs"], ["Python starter", "python3 starters/wr_adapter.py"]] as const) {
     it(`${who}: the same daily-limit message and UTC reset time`, async () => {
       const want = freeTierMessage({ status: 402, body: OFFSET })!;
-      assert.equal(want, "Your Sandbox has used all its calls for today. They reset at 00:30 UTC.");
+      assert.equal(want, "Your Sandbox hit today's limit of 1,000 calls. It takes calls again at 00:30 UTC.");
       const s = await stub({ route: (p) => (p === "/v1/messages" ? [402, OFFSET] : undefined) });
       const r = await practice(s, ["--adapter", adapter]);
       assert.ok(r.stderr.includes(want), r.stderr);
@@ -409,8 +499,8 @@ describe("sandbox listen: Free tier answers", () => {
 
   it("claim refused while paused or busy: plain words, exit 2, claimed once", async () => {
     for (const [answer, said] of [
-      [[503, PAUSED, { "retry-after": "60" }], /Sandbox is paused for Free accounts right now\. Try again later\. Your helper code still works/],
-      [[503, busy("control_busy"), { "retry-after": "3" }], /WhiteRoom is busy right now\. Try again in 3 seconds\. Your helper code still works/],
+      [[503, PAUSED, { "retry-after": "60" }], /Sandbox isn't taking new runs right now\. Nothing you set up is lost\. Try again later\. Your helper code still works/],
+      [[503, busy("control_busy"), { "retry-after": "3" }], /WhiteRoom is busy\. Try again in a moment\. Your helper code still works/],
     ] as const) {
       const s = await helperStub(answer as [number, unknown, Record<string, string>]);
       const r = await listen(s.url);
@@ -427,7 +517,7 @@ describe("sandbox listen: Free tier answers", () => {
     const s = await helperStub(CLAIMED, [503, PAUSED, { "retry-after": "60" }]);
     const r = await listen(s.url);
     assert.equal(r.code, 3, r.stderr);
-    assert.match(r.stderr, /Sandbox is paused for Free accounts right now\. Try again later\./);
+    assert.match(r.stderr, /Sandbox isn't taking new runs right now\. Nothing you set up is lost\. Try again later\./);
     assert.match(r.stderr, NEW_CODE);
     assert.ok(s.seen.includes("/api/sandbox-helper/disconnect"));
     assert.doesNotMatch(r.stderr, /Update the CLI/);
@@ -438,7 +528,7 @@ describe("sandbox listen: Free tier answers", () => {
     const r = await listen(s.url, { WHITEROOM_TEST_OFFLINE_MS: "2500" });
     assert.equal(r.code, 3, r.stderr);
     assert.match(r.stderr, /WhiteRoom is busy\. Waiting, then trying again\./);
-    assert.match(r.stderr, /WhiteRoom is busy right now\. Try again in 1 second\./);
+    assert.match(r.stderr, /WhiteRoom is busy\. Try again in a moment\./);
     assert.match(r.stderr, NEW_CODE);
     assert.ok(s.seen.filter((p) => p.endsWith("/next")).length >= 2);
     assert.ok(s.seen.includes("/api/sandbox-helper/disconnect"));
@@ -448,7 +538,7 @@ describe("sandbox listen: Free tier answers", () => {
     const s = await helperStub(CLAIMED, [402, DAILY]);
     const r = await listen(s.url);
     assert.equal(r.code, 2, r.stderr);
-    assert.match(r.stderr, /They reset at 00:00 UTC\./);
+    assert.match(r.stderr, /It takes calls again at 00:00 UTC\./);
     assert.ok(s.seen.includes("/api/sandbox-helper/disconnect"));
   });
 });

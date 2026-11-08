@@ -183,7 +183,7 @@ export async function listen(a: ListenArgs): Promise<number> {
   if (claim.status === 409 && claim.body?.reason === "not_connected") return fail(2, sandboxCopy.notConnected);
   if (claim.status === REDIRECTED) return fail(2, sandboxCopy.redirected);
   if (claim.status === 404) return fail(2, sandboxCopy.unavailable);
-  const refused = freeTierMessage(claim);
+  const refused = freeTierMessage(claim, origin);
   if (refused) return fail(2, claim.status === 503 ? `${refused} ${sandboxCopy.codeStillWorks}` : refused);
   const { session, proxyUrl, provider } = claim.body ?? {};
   if (claim.status !== 200 || typeof session !== "string" || !isProvider(provider)) return fail(2, sandboxCopy.outdated);
@@ -259,7 +259,7 @@ export async function listen(a: ListenArgs): Promise<number> {
         const next = await engine.post("/api/sandbox-helper/next", {}, { retryNetwork: true });
         if (ends(next)) return endListening(next);
         if (next.status !== 200) {
-          const plain = freeTierMessage(next);
+          const plain = freeTierMessage(next, origin);
           if (!plain) return fail(3, sandboxCopy.outdated);
           // Busy for too long, paused or refused: the session ends here, so the Sandbox page doesn't wait for it.
           await engine.once("/api/sandbox-helper/disconnect", {});

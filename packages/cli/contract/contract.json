@@ -1149,7 +1149,7 @@
       },
       "status": 429,
       "response": {
-        "error": "You can start more tomorrow (00:00 UTC).",
+        "error": "You've used today's practice runs. You can start more at 00:00 UTC.",
         "reason": "starts_today"
       }
     },
@@ -1171,7 +1171,7 @@
       },
       "status": 429,
       "response": {
-        "error": "You can start more tomorrow (00:00 UTC).",
+        "error": "You've used today's practice runs. You can start more at 00:00 UTC.",
         "reason": "starts_today"
       }
     },

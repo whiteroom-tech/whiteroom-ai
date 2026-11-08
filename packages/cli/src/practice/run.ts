@@ -41,6 +41,8 @@ export interface RunArgs {
 
 /** This run's --require rows, for wherever its result is printed. */
 let required: readonly string[] = [];
+/** The WhiteRoom address this run talks to (its region names the dashboard links in refusals). */
+let engineOrigin: string | null = null;
 
 interface Progress {
   done: number;
@@ -81,7 +83,7 @@ function sessionEnding(r: Reply): Ending {
   if (r.body?.done || reason === "finished") return r.body?.report ? results(reportOf(r.body), required) : { ...ending(3, copy.finished(r.body?.verdict, r.body?.evidence)), result: true, replay: true };
   if (r.status === REDIRECTED) return ending(3, copy.redirected);
   // Free tier answers: busy or paused (try again: 3), or a limit or plan a rerun won't fix (2).
-  const plain = freeTierMessage(r);
+  const plain = freeTierMessage(r, engineOrigin);
   if (plain) return ending(rerunWontFix(r.status, r.body) ? 2 : 3, plain);
   // Cancelled on WhiteRoom's side without a reason this CLI can name: never guessed.
   if (reason === "engine_update" && r.body?.lifecycle === "cancelled") return ending(3, copy.stoppedByWhiteRoom);
@@ -114,6 +116,7 @@ export async function practiceRun(a: RunArgs): Promise<number> {
   if (process.env.WHITEROOM_URL) say(copy.ignoringUrl);
   const origin = targetOrigin(a.url);
   if (!origin) return fail(ending(2, copy.badUrl));
+  engineOrigin = origin;
   if (a.adapter !== undefined) {
     const why = adapterProblem(a.adapter);
     if (why) return fail(ending(2, copy.adapterMissing(a.adapter, why)));
@@ -184,7 +187,7 @@ export async function practiceRun(a: RunArgs): Promise<number> {
   }
   if (claim.status === 400 && claim.body?.reason === "short_term_key") return fail(ending(2, copy.shortTermKey));
   if (claim.status === REDIRECTED) return fail(ending(2, copy.redirected));
-  const refused = freeTierMessage(claim);
+  const refused = freeTierMessage(claim, origin);
   if (refused) return fail(ending(rerunWontFix(claim.status, claim.body) ? 2 : 3, claim.status === 503 ? `${refused} ${copy.codeStillWorks}` : refused));
   if (claim.status === 410) return fail(ending(2, copy.codeInvalid));
   if (claim.status === 429) return fail(ending(3, copy.busy));

@@ -78,13 +78,13 @@ def model(base_url, headers, body):
                 wr = None
             reason = wr.get("reason") if isinstance(wr, dict) else None
             if reason == "free_paused":
-                raise RuntimeError("Sandbox is paused for Free accounts right now. Try again later.") from None
+                raise RuntimeError("Sandbox isn't taking new runs right now. Nothing you set up is lost. Try again later.") from None
             if reason == "sandbox_daily_limit":
                 try:
                     at = datetime.fromisoformat(str(wr.get("resetAt")).replace("Z", "+00:00")).astimezone(timezone.utc).strftime("%H:%M")
                 except ValueError:
                     at = "00:00"
-                raise RuntimeError(f"Your Sandbox has used all its calls for today. They reset at {at} UTC.") from None
+                raise RuntimeError(f"Your Sandbox hit today's limit of 1,000 calls. It takes calls again at {at} UTC.") from None
             if err.code == 503 and reason in BUSY:
                 wait = ("WhiteRoom is busy right now. Waiting, then trying again.", float(err.headers.get("retry-after") or 1))
             elif err.code == 503 and wr:
