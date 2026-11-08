@@ -104,8 +104,8 @@ function resetTime(body: any): string {
 }
 
 const MAX_WORDS = 600;
-/** Control, zero-width, line/paragraph separator and bidi characters, never printed (a plain line break is kept). */
-const UNPRINTABLE = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/g;
+/** Unicode control, format (zero-width, bidi, tag), private-use and unassigned characters and the line/paragraph separators, never printed (a plain line break is kept). As the starters strip. */
+const UNPRINTABLE = /[^\P{C}\n]|[\u2028\u2029]/gu;
 
 /** The words WhiteRoom's reply carries (`error`, or `error.message`), safe to print; null when there are none. */
 export function replyWords(body: any): string | null {

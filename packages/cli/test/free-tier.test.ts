@@ -184,7 +184,7 @@ describe("Free tier messages: WhiteRoom's own words come first", () => {
   it("strips characters a terminal would act on, and ignores empty or overlong words", () => {
     assert.equal(replyWords({ error: "Sandbox \u001b[31mis busy.\u0007\r\nTry again.\u202e" }), "Sandbox [31mis busy.\nTry again.");
     assert.equal(replyWords({ error: " \u0000 " }), null);
-    assert.equal(replyWords({ error: "a\u2028b\u2029c\u200bd\u2066e" }), "abcde");
+    assert.equal(replyWords({ error: "a\u2028b\u2029c\u200bd\u2066e\u00adf\ufeffg\u{e0041}h" }), "abcdefgh");
     assert.equal(replyWords({ error: "x".repeat(601) }), null);
     assert.equal(replyWords({ error: { type: "quota_exceeded" } }), null);
     assert.equal(freeTierMessage({ status: 503, body: { ...PAUSED, error: "" } }), WORDS.free_paused);
@@ -424,7 +424,7 @@ describe("practice run: Free tier answers end to end", () => {
       for (const [status, body, said] of [
         [503, PAUSED, /Sandbox isn't taking new runs right now\. Nothing you set up is lost\. Try again later\./],
         [402, DAILY, /Your Sandbox hit today's call limit\. It takes calls again at 00:00 UTC\./],
-        [503, { ...PAUSED, error: "x".repeat(601) }, new RegExp(WORDS.free_paused.replace(/[.']/g, "\\$&"))],
+        [503, { ...PAUSED, error: "x".repeat(601) }, /^Sandbox isn't taking new runs right now\. Nothing you set up is lost\. Try again later\.$/m],
         [402, { ...DAILY, error: `${WORDS.callsToday}\u001b[2J` }, /Your Sandbox hit today's limit of 1,000 calls\. It takes calls again at 00:00 UTC\.(?!\u001b)/],
       ] as const) {
         const s = await stub({ route: (p) => (p === "/v1/messages" ? [status, body, { "retry-after": "60" }] : undefined) });
