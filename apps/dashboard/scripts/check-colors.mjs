@@ -30,6 +30,7 @@ const EXEMPT = new Set([
   'apps/dashboard/src/lib/magic-link-email.ts',
   'apps/dashboard/src/lib/sandbox/report.ts',
   'apps/dashboard/src/lib/sandbox/practice/report.ts',
+  'apps/dashboard/src/lib/sandbox/sandbox-report.ts',
   'packages/ui/src/Logo.tsx',
 ]);
 
