@@ -36,7 +36,7 @@ export const CHOOSE_PLAN_HREF = `${ROUTES.settings}#plan`;
 export const SUPPORT_MAILTO = `mailto:${SUPPORT_EMAIL}`;
 
 /** After Take it live: Fleet key, with its one-time "You're live" banner, at the line to copy. */
-export const LIVE_HREF = `${ROUTES.fleetKey}?live=1#point`;
+export { LIVE_LANDING as LIVE_HREF } from '@/lib/plan-banner-shared';
 
 /**
  * The one info line above the steps (§5), Free only (and so never on an

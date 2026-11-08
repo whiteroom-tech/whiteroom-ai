@@ -26,7 +26,7 @@ const { PLAN_CHANGED } = await import('@/components/AccountPlanBanner');
 const { SANDBOX_V2_STATES } = await import('@/app/dev/sandbox-v2/states');
 const R = await import('@/lib/sandbox/refusals');
 const { sandboxPlanLine, OTHER_PLAN } = await import('@/lib/sandbox/plan-view');
-const { refusalResponse } = await import('@/lib/sandbox/fleet-server');
+const { engineBody, refusalResponse } = await import('@/lib/sandbox/fleet-server');
 const { statusOf, sampleRefusalOf, SandboxFleetError } = await import('@/lib/sandbox/fleet');
 const { checkStateOf } = await import('@/lib/sandbox/checks');
 const { endedBecause } = await import('@/lib/sandbox/practice/model');
@@ -107,6 +107,16 @@ describe('§3.10: the Sandbox refusal codes in the dashboard’s words', () => {
     // A resetAt that isn't an ISO time, or on a code that isn't a daily limit, is dropped; unknown codes too.
     expect(await refusalResponse(402, { error: 'x', code: 'sandbox_daily_limit', resetAt: 'tomorrow' }, null).json()).toEqual({ error: 'x', code: 'sandbox_daily_limit' });
     expect(await refusalResponse(400, { error: 'x', code: 'made_up', resetAt: RESET }, null).json()).toEqual({ error: 'x' });
+  });
+
+  it('the BFF forwards a sample start’s idempotency key only when it is one, and refuses anything else', async () => {
+    expect(engineBody('sample', 'prod-eu', {})).toEqual({ action: 'sandbox_sample_start', fleet_id: 'prod-eu' });
+    expect(engineBody('sample', 'prod-eu', { idempotencyKey: 'press-1' }))
+      .toEqual({ action: 'sandbox_sample_start', fleet_id: 'prod-eu', idempotency_key: 'press-1' });
+    for (const bad of [42, '', 'has space', 'x'.repeat(129), 'semi;colon']) {
+      const out = engineBody('sample', 'prod-eu', { idempotencyKey: bad });
+      expect('error' in out && (out.error as Response).status).toBe(400);
+    }
   });
 
   it('the page reads the refusal’s code, resetAt, the 7-day reset, the R7 hold and a stopped run', () => {

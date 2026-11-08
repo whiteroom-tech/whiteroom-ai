@@ -8,7 +8,7 @@ import { dayKey, viewerZone } from '@/lib/zone-time';
 /** Free Sandbox calls a day (R7): the number the calls line names. */
 export const SANDBOX_DAILY_CALLS = 1000;
 
-export const NETWORK_LINE = 'That didn’t work. Check your connection and try again.';
+export { NETWORK_LINE } from '@/lib/plan-banner-shared';
 export const FREE_PAUSED_LINE = 'Sandbox isn’t taking new runs right now. Nothing you set up is lost. Try again later.';
 export const FREE_PAUSED_STOPPED = 'Stopped: Sandbox isn’t taking runs right now. Run it again later.';
 export const SANDBOX_BUSY_LINE = 'Sandbox is busy. Try again in a moment.';

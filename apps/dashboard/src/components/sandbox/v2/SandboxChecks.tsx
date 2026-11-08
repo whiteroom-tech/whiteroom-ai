@@ -78,7 +78,7 @@ export const STEP_CARD_ID = 'sandbox-step';
 /** The usual fixes show after this long with no call. */
 export const IDLE_HELP_MS = 60_000;
 
-const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : 'That didn’t work. Check your connection and try again.');
+const message = (e: unknown) => (e instanceof SandboxFleetError ? e.message : NETWORK_LINE);
 
 /**
  * "4. Check your agent" (spec sandbox-v2 §2 steps 4–5, §5): a checking window
@@ -207,7 +207,9 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
       } catch (e) {
         // Busy: quiet while the next polls retry it, said once it has lasted the retry lifetime (Part 2 §10.6).
         const busy = !!busyRefusal(e);
-        if (busy && busySince === null) busySince = Date.now();
+        // Any other answer ends the busy stretch: the next one starts its own two minutes.
+        if (!busy) busySince = null;
+        else if (busySince === null) busySince = Date.now();
         const quietBusy = busy && Date.now() - busySince! < READ_RETRY.lifetimeMs;
         if (live && req === latest.current && !quietBusy) {
           setError(message(e));

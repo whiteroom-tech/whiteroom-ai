@@ -278,7 +278,7 @@ export const SANDBOX_V2_STATES = {
   'free-calls-limit': live({ plan: FREE, checks: withActivity(checkState('observe', OBSERVED, { calls: 6 }), { dailyLimitResetAt: new Date(Date.UTC(2026, 9, 30)).toISOString() }) }),
   'free-calls-limit-waiting': live({ plan: FREE, checks: withActivity(checkState(null, {}), { dailyLimitResetAt: new Date(Date.UTC(2026, 9, 30)).toISOString() }) }),
   /** S9: Sandbox switched off for Free: the warn line, and the stopped run's line in its card. */
-  'free-paused': live({ plan: FREE, error: FREE_PAUSED_LINE, checks: { ...sampleResults, state: { ...sampleResults.state!, window: { ...sampleResults.state!.window!, endReason: 'free_paused' } } } }),
+  'free-paused': live({ plan: FREE, error: FREE_PAUSED_LINE, errorPaused: true, checks: { ...sampleResults, state: { ...sampleResults.state!, window: { ...sampleResults.state!.window!, endReason: 'free_paused' } } } }),
   /** A refused button press while the Sandbox is busy. */
   'sandbox-busy': live({ error: SANDBOX_BUSY_LINE }),
   /** S4: a clean report on Free: Take it live; pressed; refused; no connection. */

@@ -12,7 +12,7 @@ import {
   resetSandboxFleet, rotateSandboxFleetKey, SandboxFleetError, startSandboxSample,
   type ConnectRefusal, type IssuedSandboxKey, type SampleRefusal, type SandboxFleetStatus,
 } from '@/lib/sandbox/fleet';
-import { FREE_PAUSED_LINE, NETWORK_LINE, refusalWords } from '@/lib/sandbox/refusals';
+import { FREE_PAUSED_LINE, NETWORK_LINE, refusalCode, refusalWords } from '@/lib/sandbox/refusals';
 import { OTHER_PLAN, RESET_SEEN_KEY, sandboxPlanLine, type SandboxPlanView } from '@/lib/sandbox/plan-view';
 import { getSandboxPlan } from '@/lib/sandbox/sandbox-plan';
 import { ROUTES } from '@/lib/routes';
@@ -53,6 +53,8 @@ export interface SandboxHomePreview {
   checks?: SandboxChecksPreview;
   /** Connect your own key over the sample, already open. */
   replacing?: boolean;
+  /** `error` is the Sandbox switched off for Free: a warn line with no action (§3.6). */
+  errorPaused?: boolean;
   /** A refused sample start, as the engine words it. */
   sampleRefusal?: { reason: SampleRefusal; message: string };
   /** The rules editor, already open (Edit rules). */
@@ -74,6 +76,8 @@ const CONNECT_CARD_ID = 'sandbox-connect';
 const keyOf = (st: SandboxFleetStatus | null) => (st?.exists && st.key ? `${st.sandboxFleetId}:${st.key.prefix}` : null);
 
 const message = (e: unknown) => (e instanceof SandboxFleetError ? refusalWords(e, 'other', Date.now()) ?? e.message : NETWORK_LINE);
+/** The Sandbox switched off for Free (free_paused), by its code. */
+const isPaused = (e: unknown) => e instanceof SandboxFleetError && refusalCode(e) === 'free_paused';
 
 /** The 7-day reset `at` hasn't been shown on this browser yet. Storage that can't be read: shown (it's one line). */
 function resetUnseen(at: string | undefined): boolean {
@@ -98,6 +102,9 @@ export function SandboxHome({ fleet, preview, onUnavailable, planLine }: { fleet
   const [issued, setIssued] = useState<IssuedSandboxKey | null>(preview?.issued ?? null);
   const [loading, setLoading] = useState(!preview);
   const [error, setError] = useState(preview?.error ?? '');
+  // The error is the paused line: warn, nothing to press. Set with the error, from its code.
+  const [errorPaused, setErrorPaused] = useState(!!preview?.errorPaused);
+  const fail = (e: unknown) => { setError(message(e)); setErrorPaused(isPaused(e)); };
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [replacing, setReplacing] = useState(!!preview?.replacing);
@@ -171,7 +178,7 @@ export function SandboxHome({ fleet, preview, onUnavailable, planLine }: { fleet
       if (!keepError) setError('');
     } catch (e) {
       if (isUnavailable(e) && onUnavailable) { onUnavailable(); return; }
-      setError(message(e));
+      fail(e);
     } finally {
       setLoading(false);
     }
@@ -221,10 +228,9 @@ export function SandboxHome({ fleet, preview, onUnavailable, planLine }: { fleet
       // Refused by the engine (with its status), or no answer at all (network: sandboxPost's status 0).
       const httpStatus = e instanceof SandboxFleetError ? e.status : 0;
       if (!preview) analytics.capture('sandbox_v2_connect_refused', httpStatus > 0 ? { reason: 'engine', status: httpStatus } : { reason: 'network' });
-      const words = message(e);
       // Sandbox switched off for Free: the page's warn line (§3.6), not a red line in the form.
-      if (words === FREE_PAUSED_LINE) { setError(words); return null; }
-      return words;
+      if (isPaused(e)) { fail(e); return null; }
+      return message(e);
     } finally {
       setBusy(false);
     }
@@ -252,7 +258,7 @@ export function SandboxHome({ fleet, preview, onUnavailable, planLine }: { fleet
       analytics.capture('sandbox_v2_sample_refused', { reason });
       const words = e instanceof SandboxFleetError ? refusalWords(e, 'sample', Date.now()) : null;
       // Sandbox switched off for Free: the page's error slot, as every other action (§3.6).
-      if (reason === 'free_paused') { setError(words ?? FREE_PAUSED_LINE); return; }
+      if (reason === 'free_paused') { setError(words ?? FREE_PAUSED_LINE); setErrorPaused(true); return; }
       setSampleRefusal({ reason, message: words ?? message(e) });
       // Connected elsewhere meanwhile: show their Sandbox.
       if (reason === 'connected') void load(true);
@@ -285,7 +291,7 @@ export function SandboxHome({ fleet, preview, onUnavailable, planLine }: { fleet
         setNotice(RESET_NOTICE);
       }
     } catch (e) {
-      setError(message(e));
+      fail(e);
       // 404 / 409: the Sandbox changed under the page (expired, reconnected elsewhere).
       if (e instanceof SandboxFleetError && (e.status === 404 || e.status === 409)) void load(true);
     } finally {
@@ -384,7 +390,7 @@ export function SandboxHome({ fleet, preview, onUnavailable, planLine }: { fleet
         {planLine}
         {step === 'connect' && <p className={v.lead2}>{SANDBOX_LEAD}</p>}
         {/* Switched off for Free: a warn line with nothing to press (§3.6). */}
-        {error && (error === FREE_PAUSED_LINE
+        {error && (errorPaused
           ? <Banner variant="warn">{error}</Banner>
           : <Banner variant="error" actions={status === null && !loading && !preview ? <Button size={28} onClick={() => void load()}>Try again</Button> : undefined}>{error}</Banner>)}
         {notice && <Banner variant="info" icon="check">{notice}</Banner>}
