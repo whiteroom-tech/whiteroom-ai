@@ -244,6 +244,22 @@ describe('Check your agent', () => {
     expect(text()).toContain('Also called during this check: billing-agent (not checked).');
   });
 
+  it('Download report saves the report as one HTML page, named by its day and check', async () => {
+    checks = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z', agentId: 'support-bot' }, { long_task: 'passed' });
+    await render(checksEl());
+    const saved: { name: string; type: string }[] = [];
+    const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:report');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    const clicked = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { saved.push({ name: this.download, type: '' }); });
+    capture.mockClear();
+    await click('Download report');
+    expect(saved.map((x) => x.name)).toEqual(['whiteroom-sandbox-check-2026-10-29-chk1.html']);
+    expect((created.mock.calls[0][0] as Blob).type).toBe('text/html');
+    expect(capture.mock.calls.filter(([n]) => n === 'sandbox_report_downloaded')).toHaveLength(1);
+    created.mockRestore();
+    clicked.mockRestore();
+  });
+
   it('a not-proven row in the report: an amber ? and the engine\u2019s Not proven line', async () => {
     const answer = checkAnswer({ stage: 'done', endedAt: '2026-10-29T10:06:00.000Z', agentId: 'support-bot' }, { long_task: 'passed', pause_stop: 'not_checked' });
     const ps = answer.checks.find((c) => c.id === 'pause_stop')!;

@@ -27,6 +27,8 @@ import { leftMs } from '@/lib/sandbox/seen-times';
 import { otherRunLine, practiceTaskLines, tasksDone } from '@/lib/sandbox/sandbox-practice';
 import type { PracticeProfile, PracticeResult } from '@/lib/sandbox/practice/types';
 import { PROXY_ORIGIN } from '@/lib/setup';
+import { saveBlob } from '@/lib/download';
+import { sandboxReportFileName, sandboxReportHtml } from '@/lib/sandbox/sandbox-report';
 import s from '../guided.module.css';
 import v from './v2.module.css';
 
@@ -513,6 +515,12 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
     };
     void copyText(rowsSummary(rows, { when, calls, notes, lead: few })).then((ok) => show(ok ? 'copied' : 'failed'));
   };
+  // The same rows as one HTML page to keep or share, keys and IDs hidden as in Copy summary.
+  const download = () => {
+    const html = sandboxReportHtml(rows, { agent, calls, when, lead: few, notes });
+    saveBlob(new Blob([html], { type: 'text/html' }), sandboxReportFileName(state.window?.id, state.window?.endedAt));
+    analytics.capture('sandbox_report_downloaded', { tone: head.tone });
+  };
   // The eight rows, in number order and their two groups, always; too few calls adds one line on what the live checks need.
   // A restart cut it short: say so (the agent's calls weren't the reason). Else too few calls: what the live checks need.
   const decided = state.checks.some((c) => c.status === 'passed' || c.status === 'failed');
@@ -584,6 +592,7 @@ export function ReportView({ state, checked, calls, onAgain, busy = false, focus
       {!sample && (onPractice
         ? <Button size={32} variant="secondary" onClick={() => onPractice()}>{practiceLabel}</Button>
         : <Link href={href} className="wr-btn wr-btn--secondary wr-btn--h32">{practiceLabel}</Link>)}
+      {!sample && <Button size={32} variant="ghost" onClick={download}>Download report</Button>}
       <Button size={32} variant="ghost" onClick={copy}>{copied === 'copied' ? 'Copied' : 'Copy summary'}</Button>
       <span className={v.text} aria-live="polite">{copied === 'failed' ? 'Couldn’t copy. Try again.' : sample?.refusal ?? ''}</span>
     </div>

@@ -10,7 +10,7 @@ const ROOTS = [join(__dirname, '..'), join(__dirname, '../../../../packages/ui/s
 const ALLOWED = new Set(['components/citadel/FleetLogin.tsx:fontSize: 26', 'components/Sidebar.tsx:fontSize: 16']);
 // Standalone documents (email, downloadable reports) render outside the
 // dashboard, where the Text size setting doesn't apply.
-const STANDALONE = new Set(['lib/magic-link-email.ts', 'lib/sandbox/report.ts', 'lib/sandbox/practice/report.ts']);
+const STANDALONE = new Set(['lib/magic-link-email.ts', 'lib/sandbox/report.ts', 'lib/sandbox/practice/report.ts', 'lib/sandbox/sandbox-report.ts']);
 // Any font size that isn't a --fs-* token: fontSize: 12 / '12px' / fontSize={12};
 // font-size: 12px / clamp(…) / 2vw (only var(), inherit and the root's % are
 // allowed); and the font: shorthand with a size in it.
