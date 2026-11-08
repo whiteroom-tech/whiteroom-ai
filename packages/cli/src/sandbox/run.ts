@@ -31,6 +31,7 @@ export const runCopy = {
   noTerminal: "No terminal to ask for the Sandbox URL. Set WHITEROOM_SANDBOX_URL to it instead. Nothing was run.",
   notWhiteRoom: "That Sandbox URL isn't a WhiteRoom address. Copy it again from the Sandbox page. Nothing was run.",
   pointsAtWhiteRoom: (vars: string[]) => `${vars.join(" and ")} already ${vars.length === 1 ? "points" : "point"} at WhiteRoom, so your agent's calls could go to production instead of your Sandbox. Unset ${vars.length === 1 ? "it" : "them"}, then run this again. Nothing was run.`,
+  gotUrl: (end: string) => `Got your Sandbox URL (key ending …${end}).`,
   running: (name: string) => `Running your agent with ${name} set to your Sandbox URL. The checks start on its first call; results are on the Sandbox page.`,
   cancelled: "Stopped. Nothing was run.",
   notFound: (cmd: string) => `Couldn't start \`${cmd}\`: no such command. Check the command, then run this again.${WINDOWS}`,
@@ -104,6 +105,8 @@ export async function run(a: RunArgs, env: NodeJS.ProcessEnv = process.env, aske
   }
   const checked = sandboxUrlOf(raw, env);
   if ("problem" in checked) return fail(checked.problem);
+  // The URL was hidden as it was pasted: say which one arrived (its key's last characters only).
+  if (!env.WHITEROOM_SANDBOX_URL) say(runCopy.gotUrl(checked.url.slice(-6)));
   const setting = sandboxSetting(a.provider, checked.url);
   const settings = sandboxSettings(a.provider, checked.url);
   const clash = whiteRoomBaseUrls(env, Object.keys(settings));

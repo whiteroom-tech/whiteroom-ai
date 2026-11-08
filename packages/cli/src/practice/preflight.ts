@@ -163,15 +163,18 @@ export class Interrupted extends Error {}
 
 type Terminal = Pick<NodeJS.ReadStream, "setRawMode" | "setEncoding" | "resume" | "pause" | "on" | "off">;
 
+/** Shown once something has been typed or pasted at a hidden prompt: nothing else on screen says it arrived. */
+export const HIDDEN_RECEIVED = "(received, press Enter)";
+
 /** Reads a line from the terminal without echoing it. Ctrl+C rejects with Interrupted. */
-export function hiddenPrompt(question: string, stdin: Terminal = process.stdin): Promise<string> {
-  const { stderr } = process;
+export function hiddenPrompt(question: string, stdin: Terminal = process.stdin, stderr: Pick<NodeJS.WriteStream, "write"> = process.stderr): Promise<string> {
   stderr.write(question);
   stdin.setRawMode(true);
   stdin.setEncoding("utf8");
   stdin.resume();
   return new Promise((resolvePrompt, reject) => {
     let raw = "";
+    let noted = false;
     const done = () => {
       stdin.off("data", onData);
       stdin.setRawMode(false);
@@ -181,7 +184,14 @@ export function hiddenPrompt(question: string, stdin: Terminal = process.stdin):
     const onData = (chunk: string) => {
       raw += chunk;
       const end = raw.search(/[\r\n\u0003]/);
-      if (end < 0) return;
+      if (end < 0) {
+        // Something visible arrived (paste markers aside): say so, once, without showing it.
+        if (!noted && /[^\x00-\x1f\x7f]/.test(raw.replace(/\x1b\[20[01]~?|\x1b\[?2?0?[01]?/g, ""))) {
+          noted = true;
+          stderr.write(HIDDEN_RECEIVED);
+        }
+        return;
+      }
       if (raw[end] === "\u0003") return done(), reject(new Interrupted());
       // A terminal with bracketed paste wraps a paste in ESC[200~ … ESC[201~, and a
       // marker can arrive split across chunks, so it's removed from the whole line.
