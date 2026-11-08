@@ -150,14 +150,39 @@ describe("Free tier messages: WhiteRoom's own words come first", () => {
     const cap = { error: "Your Sandbox hit today's limit of 500 calls. It takes calls again at 00:00 UTC.", whiteroom: { reason: "sandbox_daily_limit", forwarded: false } };
     assert.equal(freeTierMessage({ status: 402, body: cap }), cap.error);
     const eu = { error: { type: "quota_exceeded", message: WORDS.suspended(EU) }, whiteroom: { reason: "suspended", forwarded: false } };
-    assert.equal(freeTierMessage({ status: 402, body: eu }), WORDS.suspended(EU));
+    assert.equal(freeTierMessage({ status: 402, body: eu }, EU_PROXY), WORDS.suspended(EU));
     const older = { error: "You can start more tomorrow (00:00 UTC).", reason: "starts_today" };
     assert.equal(freeTierMessage({ status: 429, body: older }), older.error);
+  });
+
+  it("production refusals (402) always use the CLI's text, so an older reply without a link still gets the region's link", () => {
+    for (const [reason, older] of [
+      ["plan_free", "Start a trial or choose a plan in the WhiteRoom dashboard."],
+      ["suspended", "Choose a plan in the WhiteRoom dashboard to resume."],
+      ["unclaimed", "Sign up at https://app.whiteroom.tech, then connect it from the dashboard."],
+      ["revoked", "Link it again in the WhiteRoom dashboard."],
+      ["not_available", "Sign in to WhiteRoom to set it up."],
+    ] as const) {
+      const body = { error: { type: "quota_exceeded", message: older }, whiteroom: { reason, forwarded: false } };
+      const want = reason === "not_available" ? WORDS.unclaimed : WORDS[reason];
+      assert.equal(freeTierMessage({ status: 402, body }, EU_PROXY), want(EU));
+      assert.equal(freeTierMessage({ status: 402, body }), want(US));
+    }
+  });
+
+  it("every command passes the address it talks to, so its links follow the region", () => {
+    for (const [file, arg] of [["src/index.ts", "baseUrl"], ["src/practice/run.ts", "(?:origin|engineOrigin)"], ["src/sandbox/listen.ts", "origin"]] as const) {
+      const src = readFileSync(join(PKG, file), "utf8");
+      const calls = [...src.matchAll(/freeTierMessage\(([^;]*?)\)(?: \?\?|;)/g)].map((m) => m[1]);
+      assert.ok(calls.length > 0, file);
+      for (const c of calls) assert.match(c, new RegExp(`, ${arg}$`), `${file}: freeTierMessage(${c})`);
+    }
   });
 
   it("strips characters a terminal would act on, and ignores empty or overlong words", () => {
     assert.equal(replyWords({ error: "Sandbox \u001b[31mis busy.\u0007\r\nTry again.\u202e" }), "Sandbox [31mis busy.\nTry again.");
     assert.equal(replyWords({ error: " \u0000 " }), null);
+    assert.equal(replyWords({ error: "a\u2028b\u2029c\u200bd\u2066e" }), "abcde");
     assert.equal(replyWords({ error: "x".repeat(601) }), null);
     assert.equal(replyWords({ error: { type: "quota_exceeded" } }), null);
     assert.equal(freeTierMessage({ status: 503, body: { ...PAUSED, error: "" } }), WORDS.free_paused);
@@ -417,12 +442,12 @@ describe("fleet commands: Free tier refusals in plain words", () => {
     assert.doesNotMatch(r.stderr, /Error 402/);
   });
 
-  it("a 402 whose reply carries words prints them as sent, link on its own line", async () => {
-    const body = { error: { type: "quota_exceeded", message: WORDS.suspended(EU) }, whiteroom: { reason: "suspended", forwarded: false } };
+  it("a 402 suspended: the plan line, then the dashboard link on its own line", async () => {
+    const body = { error: { type: "quota_exceeded", message: "Choose a plan in the WhiteRoom dashboard to resume." }, whiteroom: { reason: "suspended", forwarded: false } };
     const s = await stub({ route: (p) => (p === "/api/white-room" ? [402, body] : undefined) });
     const r = await cli(["register", "agent-1", "--url", s.url, "--key", "wr_placeholder"], { env: testEnv() });
     assert.equal(r.code, 1);
-    assert.ok(r.stderr.includes(WORDS.suspended(EU)), r.stderr);
+    assert.ok(r.stderr.includes(WORDS.suspended(US)), r.stderr);
   });
 
   it("a busy 503 says how long to wait, from its Retry-After", async () => {

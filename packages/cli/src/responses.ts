@@ -103,8 +103,8 @@ function resetTime(body: any): string {
 }
 
 const MAX_WORDS = 600;
-/** Control and bidi characters a terminal would act on, never printed (a line break is kept). */
-const UNPRINTABLE = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩]/g;
+/** Control, zero-width, line/paragraph separator and bidi characters, never printed (a plain line break is kept). */
+const UNPRINTABLE = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/g;
 
 /** The words WhiteRoom's reply carries (`error`, or `error.message`), safe to print; null when there are none. */
 export function replyWords(body: any): string | null {
@@ -137,11 +137,13 @@ function ownText(code: string, r: { status: number; body: any; retryAfter?: stri
 
 /**
  * The plain message for a Free tier answer, or null when the reply isn't one:
- * WhiteRoom's own words when the reply carries them, else this CLI's text,
- * with links to the dashboard of the region `engineUrl` is in.
+ * WhiteRoom's own words when the reply carries them, else this CLI's text.
+ * The production refusals (402) always use this CLI's text: it links to the
+ * dashboard of the region `engineUrl` is in, which an older reply may not.
  */
 export function freeTierMessage(r: { status: number; body: any; retryAfter?: string | null }, engineUrl?: string | null): string | null {
   const code = freeTierCode(r.status, r.body);
   if (code === null) return null;
-  return replyWords(r.body) ?? ownText(code, r, dashboardFor(engineUrl));
+  const own = () => ownText(code, r, dashboardFor(engineUrl));
+  return GATE.includes(code) ? own() : replyWords(r.body) ?? own();
 }
