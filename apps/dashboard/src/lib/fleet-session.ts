@@ -1,5 +1,6 @@
 import 'server-only';
 import { cookies } from 'next/headers';
+import type { Session } from 'next-auth';
 import { auth } from '@/auth';
 import { readCred } from '@/lib/cred-seal';
 import { db } from '@/lib/db';
@@ -36,7 +37,12 @@ const ANON = 'anon';
 /** ~30 days, matching the long-lived nature of fleet tokens. */
 const COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 
-async function currentOwner(): Promise<string> {
+/**
+ * `session`: the caller's already-read session (the BFF reads it once per
+ * request); left out, it's read here.
+ */
+async function currentOwner(session?: Session | null): Promise<string> {
+  if (session !== undefined) return session?.user?.id || ANON;
   try {
     return (await auth())?.user?.id || ANON;
   } catch {
@@ -44,7 +50,7 @@ async function currentOwner(): Promise<string> {
   }
 }
 
-export async function setFleetAuthCookie(token: string): Promise<void> {
+export async function setFleetAuthCookie(token: string, session?: Session | null): Promise<void> {
   const options = {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
@@ -52,7 +58,7 @@ export async function setFleetAuthCookie(token: string): Promise<void> {
     path: '/',
     maxAge: COOKIE_MAX_AGE_SECONDS,
   };
-  const owner = await currentOwner();
+  const owner = await currentOwner(session);
   const jar = await cookies();
   jar.set(FLEET_AUTH_COOKIE, token, options);
   jar.set(FLEET_AUTH_OWNER_COOKIE, owner, options);
@@ -72,12 +78,12 @@ export async function clearFleetAuthCookie(): Promise<void> {
  * gets their own linked fleet adopted instead — once — since nothing says the
  * cookie was theirs.
  */
-export async function getFleetAuthCookie(): Promise<string | null> {
+export async function getFleetAuthCookie(session?: Session | null): Promise<string | null> {
   const jar = await cookies();
   const token = jar.get(FLEET_AUTH_COOKIE)?.value;
   if (!token) return null;
   const owner = jar.get(FLEET_AUTH_OWNER_COOKIE)?.value || ANON;
-  if (owner !== (await currentOwner())) return null;
+  if (owner !== (await currentOwner(session))) return null;
   return token;
 }
 

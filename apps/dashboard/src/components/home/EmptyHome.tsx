@@ -36,10 +36,10 @@ export function EmptyHome() {
             </ol>
             <AgentNaming />
             <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-              Using Azure OpenAI, AWS Bedrock or your own provider key? <Link href={ROUTES.fleetKey} className="wr-link">Fleet key &rarr;</Link>
+              Using Azure OpenAI, AWS Bedrock or your own provider key? <Link prefetch={false} href={ROUTES.fleetKey} className="wr-link">Fleet key &rarr;</Link>
             </p>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', paddingTop: 4 }}>
-              <Link href={ROUTES.sandbox} className="wr-btn wr-btn--primary wr-btn--h32">Test in Sandbox &rarr;</Link>
+              <Link prefetch={false} href={ROUTES.sandbox} className="wr-btn wr-btn--primary wr-btn--h32">Test in Sandbox &rarr;</Link>
               <a href={SETUP_GUIDE_URL} target="_blank" rel="noopener noreferrer" className="wr-btn wr-btn--ghost wr-btn--h32">Read the setup guide</a>
               <span style={{ marginLeft: 'auto', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Checks for a call every 5 s</span>
             </div>

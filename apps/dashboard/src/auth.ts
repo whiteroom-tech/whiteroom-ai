@@ -1,4 +1,5 @@
-import NextAuth from 'next-auth';
+import { cache } from 'react';
+import NextAuth, { type Session } from 'next-auth';
 import Google from 'next-auth/providers/google';
 import Resend from 'next-auth/providers/resend';
 import { db } from '@/lib/db';
@@ -7,6 +8,7 @@ import { authCookies } from '@/lib/auth-cookies';
 import { resolvePostLoginUrl } from '@/lib/auth-redirect';
 import { magicLinkEmail } from '@/lib/magic-link-email';
 import { tooManyMagicLinks } from '@/lib/magic-link-limit';
+import { sessionCheckRow } from '@/lib/session-check';
 
 // How long a token may go without being re-checked against
 // users.sessions_valid_after. Also the upper bound on how long a revoked
@@ -29,7 +31,7 @@ async function readRole(userId: string | undefined): Promise<string> {
   }
 }
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+const nextAuth = NextAuth({
   // The adapter is what makes email sign-in possible at all: magic links need
   // their one-time tokens persisted server-side (verification_token), which a
   // pure-JWT setup has nowhere to put. It also owns users/accounts, so the
@@ -155,15 +157,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (!token.sub) return null;
 
       try {
-        const { rows } = await db().query(
-          `SELECT sessions_valid_after, role FROM users WHERE id = $1`,
-          [token.sub],
-        );
+        // Read at most once a minute per account (lib/session-check): auth()
+        // outside /api/auth can't save the refreshed cookie, so once due, every
+        // call lands here. The row is never older than that minute, so a
+        // revocation still holds within SESSION_REVALIDATE_SECONDS.
+        const row = await sessionCheckRow(token.sub);
         // No row means the account was deleted while this token was still
         // live — the session has to go with it.
-        if (rows.length === 0) return null;
+        if (!row) return null;
 
-        const validAfter: Date | null = rows[0].sessions_valid_after;
+        const validAfter = row.validAfter;
         if (validAfter && token.sessionStart * 1000 <= validAfter.getTime()) return null;
 
         // Rides along on the query that was already happening. This copy of
@@ -171,7 +174,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // so it being up to SESSION_REVALIDATE_SECONDS stale is fine. Nothing
         // is authorised from it: requireAdmin() re-reads the database on every
         // admin request precisely because this value can lag a revocation.
-        token.role = rows[0].role ?? 'user';
+        token.role = row.role;
         token.revalidatedAt = now;
         return token;
       } catch {
@@ -189,3 +192,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   },
 });
+
+export const { handlers, signIn, signOut } = nextAuth;
+
+/**
+ * The signed-in session, read once per request: React cache() shares one
+ * answer between the layout, the page and every helper a server render calls
+ * (each auth() decodes the cookie and may revalidate it). Outside a render, a
+ * route handler say, each call reads it afresh, as before; the BFF reads it
+ * once and passes it on.
+ */
+export const auth: () => Promise<Session | null> = cache(() => nextAuth.auth());

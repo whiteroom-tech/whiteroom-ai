@@ -6,6 +6,7 @@ import 'server-only';
 import { appOrigin } from '@/lib/app-origin';
 import { db, type Queryable } from '@/lib/db';
 import { sendEmail } from '@/lib/email';
+import { forgetSessionCheck } from '@/lib/session-check';
 import { accountClosingEmail, deletionBlockedEmail } from '@/lib/magic-link-email';
 import { isActiveStatus, isPaidPlanId, type PaidPlanId, type PlanId } from '@/lib/plans';
 import { stripe } from '@/lib/stripe';
@@ -443,6 +444,8 @@ export async function deleteAccountRows(q: Queryable, userId: string): Promise<v
   await q.query(`DELETE FROM subscriptions WHERE user_id = $1`, [userId]);
   // accounts and sessions cascade from users (001_nextauth.sql).
   await q.query(`DELETE FROM users WHERE id = $1`, [userId]);
+  // Its sessions end at their next check on this instance, not a minute later.
+  forgetSessionCheck(userId);
 }
 
 /** Why a deletion can't go ahead: `message` for the person deleting, `reason` as a short phrase for the blocked state. */

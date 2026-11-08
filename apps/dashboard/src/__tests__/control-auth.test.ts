@@ -23,7 +23,7 @@ vi.mock('@/lib/fleet-session', () => ({
 import { randomBytes } from 'node:crypto';
 import { sealCred } from '@/lib/cred-seal';
 import { recordLegacyFleetIds } from '@/lib/control-auth';
-import { controlAccessError, controlActionOf, credentialGrant, DASHBOARD_ONLY_ACTIONS, fleetOwner, SECRET_READ_ACTIONS, secretReadFleet } from '@/lib/control-auth';
+import { controlAccessError, controlActionOf, credentialGrant, DASHBOARD_ONLY_ACTIONS, fleetOwner, SECRET_READ_ACTIONS, secretReadOf } from '@/lib/control-auth';
 import { WhiteRoomApiError } from '@/lib/whiteroom/client';
 import { POST } from '@/app/api/fleet/engine/route';
 
@@ -70,16 +70,16 @@ describe('controlActionOf', () => {
   });
 });
 
-describe('secretReadFleet', () => {
+describe('secretReadOf', () => {
   it('names the fleet for the reads that carry the secret: rule lists and the full audit export', () => {
     expect([...SECRET_READ_ACTIONS].sort()).toEqual(['export_audit_full', 'governance_list']);
-    expect(secretReadFleet(body({ action: 'export_audit_full', fleet_id: 'f1' }))).toBe('f1');
-    expect(secretReadFleet(body({ action: 'governance_list', fleet_id: 'f1' }))).toBe('f1');
-    // Any holder of the fleet may read it, so it isn't an owner-only control action.
+    expect(secretReadOf(body({ action: 'export_audit_full', fleet_id: 'f1' }))).toEqual({ action: 'export_audit_full', fleetId: 'f1' });
+    expect(secretReadOf(body({ action: 'governance_list', fleet_id: 'f1' }))).toEqual({ action: 'governance_list', fleetId: 'f1' });
+    // A read, not a control action: it isn't recorded as a change, and a non-owner still gets governance_list (counts only).
     expect(controlActionOf(body({ action: 'export_audit_full', fleet_id: 'f1' }))).toBeNull();
-    expect(secretReadFleet(body({ action: 'export_audit', fleet_id: 'f1' }))).toBeNull();
-    expect(secretReadFleet(body({ action: 'export_audit_full' }))).toBeNull();
-    expect(secretReadFleet('not json')).toBeNull();
+    expect(secretReadOf(body({ action: 'export_audit', fleet_id: 'f1' }))).toBeNull();
+    expect(secretReadOf(body({ action: 'export_audit_full' }))).toBeNull();
+    expect(secretReadOf('not json')).toBeNull();
   });
 });
 
@@ -386,6 +386,51 @@ describe('the engine BFF', () => {
   it('answers a control action with no fleet_id with 400', async () => {
     mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
     expect((await call({ action: 'pause_agent', agent_id: 'a' })).status).toBe(400);
+  });
+
+  it('gives the owner the secret for the Keywords lists and the full audit export', async () => {
+    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
+    fakeDb([{ token: 'wr_fleet_token', fleetId: 'f1' }]);
+    for (const action of ['governance_list', 'export_audit_full']) {
+      fetchMock.mockClear();
+      expect((await call({ action, fleet_id: 'f1' })).status).toBe(200);
+      expect(sentHeaders()['x-wr-dashboard-secret']).toBe('dash-secret');
+    }
+  });
+
+  it('gives a token-holding non-owner Keyword counts (no secret) and refuses the full export', async () => {
+    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
+    // u1 holds the fleet's token but linked it after the account that provisioned it.
+    fakeDb([{ token: 'wr_fleet_token', fleetId: 'f1' }], [
+      { userId: 'u-owner', provisioned: true, since: 1 },
+      { userId: 'u1', provisioned: false, since: 2 },
+    ]);
+    expect((await call({ action: 'governance_list', fleet_id: 'f1' })).status).toBe(200);
+    expect(sentHeaders()['x-wr-dashboard-secret']).toBeUndefined();
+    fetchMock.mockClear();
+    const res = await call({ action: 'export_audit_full', fleet_id: 'f1' });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ code: 'control_denied', error: expect.stringMatching(/Only this fleet’s owner can export/) });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('gives a fleet cookie alone (no account) Keyword counts and no full export', async () => {
+    mocks.auth.mockResolvedValue(null);
+    await call({ action: 'governance_list', fleet_id: 'f1' });
+    expect(sentHeaders()['x-wr-dashboard-secret']).toBeUndefined();
+    fetchMock.mockClear();
+    expect((await call({ action: 'export_audit_full', fleet_id: 'f1' })).status).toBe(403);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mocks.query).not.toHaveBeenCalled();
+  });
+
+  it('reads the session once per request and hands it to the fleet cookie check', async () => {
+    const session = { user: { id: 'u1' } };
+    mocks.auth.mockResolvedValue(session);
+    fakeDb([{ token: 'wr_fleet_token', fleetId: 'f1' }]);
+    await call({ action: 'governance_update_rule', fleet_id: 'f1', rule_id: 'r' });
+    expect(mocks.auth).toHaveBeenCalledTimes(1);
+    expect(mocks.cookie).toHaveBeenCalledWith(session);
   });
 
   it('forwards without the secret while it isn’t configured (old engines accept, new ones refuse)', async () => {
