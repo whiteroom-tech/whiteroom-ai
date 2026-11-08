@@ -118,6 +118,9 @@ describe("preflight", () => {
     p = hiddenPrompt("Q: ", t, err);
     t.write(`${esc}[200~`);
     assert.equal(said, "Q: ");
+    // Arrow keys, Home and function keys aren't something typed either.
+    t.write(`${esc}[A${esc}[1;5D${esc}OP${esc}[15~`);
+    assert.equal(said, "Q: ");
     // A marker cut short across reads isn't something typed.
     t.write(`${esc}[20`);
     assert.equal(said, "Q: ");
