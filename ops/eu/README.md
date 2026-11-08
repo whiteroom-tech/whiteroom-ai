@@ -59,6 +59,30 @@ gcloud run services update-traffic whiteroom-dashboard \
   --to-revisions=<revision-name>=100 --region=europe-west1 --project=whiteroom-eu
 ```
 
+## When EU turns on FREE_PLAN=invite (step 4.10)
+
+The Free invite link needs `FREE_INVITE_CODE`, kept in Secret Manager (this
+repo is public). It isn't in `cloudbuild-dashboard-eu.yaml` yet, so routine
+deploys don't depend on the secret. Without it, no invite link works (the
+dashboard treats a missing code as "no invite").
+
+1. Create the secret (any hard-to-guess value; change it to close the link):
+
+   ```sh
+   printf '%s' "$(openssl rand -hex 12)" | gcloud secrets create whiteroom-dashboard-free-invite-code \
+     --data-file=- --replication-policy=user-managed --locations=europe-west1 --project=whiteroom-eu
+   ```
+
+2. In `cloudbuild-dashboard-eu.yaml`, append it to the end of the `--set-secrets=` list:
+
+   ```
+   ...,WR_CRED_ENCRYPTION_KEY=whiteroom-dashboard-cred-key:1,FREE_INVITE_CODE=whiteroom-dashboard-free-invite-code:latest \
+   ```
+
+   and add `|FREE_PLAN=invite` to the end of `--set-env-vars`. Both flags
+   replace the whole list on every deploy, so edit the file rather than the
+   service.
+
 ## Database migrations
 
 The EU dashboard database was built from a schema-only dump of staging
