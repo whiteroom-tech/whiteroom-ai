@@ -101,7 +101,7 @@ it('over the sign-up cap: says when the Sandbox opens and makes no fleet', async
   m.ensure.mockResolvedValue({ kind: 'over_cap', opensAt: new Date(Date.now() + 3_600_000).toISOString() });
   m.provisioning.mockResolvedValue(noRow);
   await mount();
-  expect(el.textContent).toMatch(/Your account is ready\. We’ll open your Sandbox/);
+  expect(el.textContent).toMatch(/Your account is ready\. We'll open your Sandbox/);
   expect(m.createFleet).not.toHaveBeenCalled();
 });
 

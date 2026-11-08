@@ -168,7 +168,7 @@ it('over the sign-up cap: the lead and when it opens, in place of Connect', asyn
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ error: 'No fleet session.', signedIn: true }, 401)));
   await mount();
   expect(el.textContent).toContain('LEAD');
-  expect(el.textContent).toMatch(/Your account is ready\. We’ll open your Sandbox (tomorrow )?at \d{1,2}:\d{2}\s?[AP]M your time\./);
+  expect(el.textContent).toMatch(/Your account is ready\. We'll open your Sandbox (tomorrow )?at \d{1,2}:\d{2}\s?[AP]M your time\./);
   expect(el.textContent).not.toContain('LEGACY CONNECTION TEST');
 });
 
