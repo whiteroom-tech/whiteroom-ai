@@ -1,7 +1,7 @@
 'use server';
 
 import { auth } from '@/auth';
-import { getSubscriptionRow, getTrialEndsAt } from '@/lib/entitlements';
+import { getSubscriptionRow, getTrial } from '@/lib/entitlements';
 import { isActiveStatus } from '@/lib/plans';
 import { billedFrom, monthToDateSavingsCents } from '@/lib/savings-billing';
 import { stripe } from '@/lib/stripe';
@@ -20,7 +20,7 @@ export async function getMonthSavings(): Promise<{ savedCents: number } | { bill
   try {
     const sub = await getSubscriptionRow(userId);
     if (!sub?.stripeSubscriptionId || !isActiveStatus(sub.status) || !process.env.STRIPE_SECRET_KEY) return { billed: false };
-    const firstDay = await billedFrom(stripe(), sub.stripeSubscriptionId, await getTrialEndsAt(userId));
+    const firstDay = await billedFrom(stripe(), sub.stripeSubscriptionId, (await getTrial(userId)).endsAt);
     if (!firstDay) return { billed: false };
     const savedCents = await monthToDateSavingsCents(userId, firstDay);
     return savedCents === null ? null : { savedCents };

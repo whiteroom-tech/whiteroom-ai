@@ -168,7 +168,7 @@ export async function listUsers(opts: { query?: string; page?: number } = {}): P
     db().query(`SELECT count(*)::int AS n FROM users u ${where}`, params),
     db().query(
       `SELECT u.id, u.email, u.name, u.role, u.created_at::text, u."emailVerified",
-              s.plan, s.status, s.plan_override, s.current_period_end::text, s.cancel_at_period_end, u.trial_ends_at::text,
+              s.plan, s.status, s.plan_override, s.current_period_end::text, s.cancel_at_period_end, s.lapsed_at::text, u.trial_ends_at::text, u.trial_state,
               ${fleetCountSql('u')} AS fleet_count,
               org.org_id, org.org_name, org.org_role
        FROM users u
@@ -202,9 +202,10 @@ function toAdminUserRow(r: Record<string, unknown>): AdminUserRow {
           plan: r.plan as string,
           status: r.status as string,
           planOverride: (r.plan_override as string) ?? null,
+          lapsedAt: (r.lapsed_at as string) ?? null,
         }
       : null,
-    (r.trial_ends_at as string) ?? null,
+    { endsAt: (r.trial_ends_at as string) ?? null, state: (r.trial_state as string) ?? null },
   );
   return {
     id: r.id as string,
@@ -244,7 +245,7 @@ export async function getUserDetail(userId: string): Promise<AdminUserDetail | n
 
   const { rows } = await db().query(
     `SELECT u.id, u.email, u.name, u.role, u.created_at::text, u."emailVerified", u.fleet_id,
-            s.plan, s.status, s.plan_override, s.current_period_end::text, s.cancel_at_period_end, u.trial_ends_at::text,
+            s.plan, s.status, s.plan_override, s.current_period_end::text, s.cancel_at_period_end, s.lapsed_at::text, u.trial_ends_at::text, u.trial_state,
             ${fleetCountSql('u')} AS fleet_count,
             org.org_id, org.org_name, org.org_role
      FROM users u

@@ -36,8 +36,9 @@ describe('buildSnapshot', () => {
     ['starter', { access: true, maxFleets: 1, maxAgentsPerFleet: 500, includedAgents: 3, retentionDays: 30 }],
     ['pro', { access: true, maxFleets: 10, maxAgentsPerFleet: 500, includedAgents: 7, retentionDays: 365 }],
     ['enterprise', { access: true, maxFleets: 100, maxAgentsPerFleet: 1000, includedAgents: null, retentionDays: 365 }],
-    // An ended free period runs nothing, as the unversioned push's status: inactive.
-    ['expired', { access: false, maxFleets: 1, maxAgentsPerFleet: 0, includedAgents: null, retentionDays: 30 }],
+    // Suspended (an ended free period, or a lapse past its grace) runs nothing, as the unversioned push's status: inactive.
+    ['suspended', { access: false, maxFleets: 1, maxAgentsPerFleet: 0, includedAgents: null, retentionDays: 30 }],
+    ['free', { access: false, maxFleets: 0, maxAgentsPerFleet: 0, includedAgents: null, retentionDays: 7 }],
   ] as const)('%s: production limits are plans.ts, unchanged', (plan, production) => {
     const s = buildSnapshot({ ...base, plan, onTrial: false });
     expect(s.production).toEqual(production);

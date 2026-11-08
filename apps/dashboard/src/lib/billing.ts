@@ -6,8 +6,8 @@ import { db } from '@/lib/db';
 import { stripe } from '@/lib/stripe';
 import { getClosing } from '@/lib/account-closing';
 import { CANCEL_CUTOFF_MS, closingDate, isClosingOpen, SUPPORT_EMAIL } from '@/lib/closing-shared';
-import { getSubscriptionRow, getTrialEndsAt } from '@/lib/entitlements';
-import { hasLiveSubscription, isPaidPlanId, isTrialActive, stripePriceId } from '@/lib/plans';
+import { getSubscriptionRow, getTrial } from '@/lib/entitlements';
+import { hasLiveSubscription, isPaidPlanId, isTrialActive, newTrialEndsAt, stripePriceId, trialStatus } from '@/lib/plans';
 import { HOUR_MS } from '@/lib/format';
 
 /**
@@ -71,6 +71,12 @@ async function ensureCustomer(userId: string, email: string | null): Promise<str
   return customer.id;
 }
 
+/**
+ * Starts Stripe Checkout for a paid plan. Open to every account that can
+ * still have one, Free and Suspended included (and a lapsed plan in its
+ * grace, to subscribe again); refused while the account is being deleted and
+ * once its fleet has closed.
+ */
 export async function startCheckout(plan: string): Promise<UrlResult> {
   if (!isPaidPlanId(plan)) {
     return { ok: false, error: 'Pick a paid plan to continue.' };
@@ -116,8 +122,14 @@ export async function startCheckout(plan: string): Promise<UrlResult> {
     // billed until the free period would have ended anyway. Stripe refuses a
     // trial_end under 48 hours out, and at that point there's nothing left
     // worth carrying.
+    //
+    // A Free account's 30 days haven't started: they start when this
+    // checkout completes (the webhook activates them), so they are offered
+    // here in full. Nothing is written until then, so an abandoned checkout
+    // costs no free days.
     let trialEnd: number | undefined;
-    const trialEndsAt = await getTrialEndsAt(user.id);
+    const trial = await getTrial(user.id);
+    const trialEndsAt = trialStatus(trial.state, trial.endsAt) === 'not_started' ? newTrialEndsAt().toISOString() : trial.endsAt;
     const ms = trialEndsAt ? new Date(trialEndsAt).getTime() : 0;
     if (isTrialActive(trialEndsAt) && ms - Date.now() > 48 * HOUR_MS) {
       trialEnd = Math.floor(ms / 1000);

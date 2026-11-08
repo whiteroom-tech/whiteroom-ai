@@ -23,12 +23,12 @@ const { SettingsView, freeDaysLeft } = await import('@/app/settings/settings-vie
 const { limitsFor } = await import('@/lib/plans');
 
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-type ViewOpts = { plan?: 'starter' | 'pro' | 'expired' | 'enterprise'; onTrial?: boolean; purchasable?: Array<'starter' | 'pro'>; comped?: boolean };
+type ViewOpts = { plan?: 'starter' | 'pro' | 'suspended' | 'enterprise'; onTrial?: boolean; purchasable?: Array<'starter' | 'pro'>; comped?: boolean; graceEndsAt?: string | null };
 const comp = { plan: 'none', status: 'active', planOverride: 'pro', stripeCustomerId: 'pending_u', stripeSubscriptionId: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, lapsedAt: null };
-const view = (agents: number, { plan = 'starter', onTrial = true, purchasable = ['starter', 'pro'], comped = false, freeDays = 30 }: ViewOpts & { freeDays?: number } = {}) => text(renderToStaticMarkup(h(SettingsView, {
+const view = (agents: number, { plan = 'starter', onTrial = true, purchasable = ['starter', 'pro'], comped = false, freeDays = 30, graceEndsAt = null }: ViewOpts & { freeDays?: number } = {}) => text(renderToStaticMarkup(h(SettingsView, {
   closing: null, billingResult: null, purchasablePlans: purchasable,
   account: { id: 'u', email: 'a@example.test', name: 'A', image: null, timezone: null, emailVerified: true, methods: [], pendingEmailChange: null, fleetCount: 1 },
-  entitlement: { plan, planName: plan, limits: limitsFor(plan), subscription: comped ? comp : null, trialEndsAt: new Date(Date.now() + (onTrial ? freeDays : -30) * 86_400_000).toISOString(), onTrial, usage: { fleets: 1, agents } },
+  entitlement: { plan, planName: plan, limits: limitsFor(plan), subscription: comped ? comp : null, trialEndsAt: new Date(Date.now() + (onTrial ? freeDays : -30) * 86_400_000).toISOString(), onTrial, graceEndsAt, usage: { fleets: 1, agents } },
   samples: { audit: { fleetId: 'f', mode: 'sequenced', headSeq: 2045, verifiedThroughSeq: 939, verifiedAt: new Date().toISOString(), prunedBeforeTracking: false, legacyEvents: 0, gaps: { count: 0, recent: [] }, anchoring: { enabled: false } } },
 })));
 
@@ -144,5 +144,20 @@ describe('plan dates and card headings', () => {
     const { SettingsCard } = await import('@/components/settings/SettingsCard');
     expect(renderToStaticMarkup(h(SettingsCard, { id: 'x', title: 'T', level: 3 }))).toContain('<h3 id="x-title"');
     expect(renderToStaticMarkup(h(SettingsCard, { id: 'x', title: 'T' }))).toContain('<h2 id="x-title"');
+  });
+});
+
+describe('Settings plan: a lapsed plan in its grace', () => {
+  it('says in one line when it pauses, and offers the same plan again', () => {
+    const t = view(2, { plan: 'pro', onTrial: false, graceEndsAt: '2026-11-20T12:00:00.000Z' });
+    expect(t).toMatch(/Your plan pauses on Nov 2\d\. Subscribe again to keep it\./);
+    expect(t).toContain('Subscribe to Pro again');
+    expect(t).toContain('Switch to Starter');
+  });
+
+  it('shows neither outside a grace', () => {
+    const t = view(2, { plan: 'pro', onTrial: false });
+    expect(t).not.toContain('pauses on');
+    expect(t).not.toContain('Subscribe to Pro again');
   });
 });

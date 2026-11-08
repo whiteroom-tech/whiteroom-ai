@@ -18,7 +18,10 @@ import { db, lockClient, type Queryable } from '@/lib/db';
 import { fetchFleetUsage } from '@/lib/fleet-usage';
 import { PROXY_URL } from '@/lib/whiteroom/client';
 import { fleetOwners } from '@/lib/control-auth';
-import { effectivePlan, limitsFor, PLANS, type PlanId, type PlanLimits } from '@/lib/plans';
+import {
+  effectivePlan, hasProductionAccess, isOnFreePeriod, lapseGrace, limitsFor, PLANS, TRIAL_DAYS,
+  type PlanId, type PlanLimits, type TrialInfo,
+} from '@/lib/plans';
 import { lapsedPaidPlan, markClosed, reconcileLapse } from '@/lib/account-closing';
 import {
   buildSnapshot, entitlementsV2Enabled, outcomeFor, snapshotHash, v2Body,
@@ -48,6 +51,8 @@ export interface Entitlement {
   trialEndsAt: string;
   /** On Starter because of the free period, not because they pay for it. */
   onTrial: boolean;
+  /** LAPSE_SUSPEND=on: a lapsed paid plan in its grace, the day it pauses (ISO). Null otherwise. */
+  graceEndsAt?: string | null;
   /** `agents` is null when the engine couldn't be reached. */
   usage: { fleets: number; agents: number | null };
 }
@@ -74,20 +79,21 @@ export async function getSubscriptionRow(userId: string, q: Queryable = db()): P
 }
 
 /**
- * When this user's free Starter period ends. Null only if the user row is
- * gone, which effectivePlan treats as an expired trial.
+ * This user's free period: when it ends (trial_ends_at) and its state
+ * (trial_state). Null fields only if the user row is gone, which
+ * effectivePlan treats as an ended free period. The one reader of both.
  */
-export async function getTrialEndsAt(userId: string, q: Queryable = db()): Promise<string | null> {
-  const { rows } = await q.query(`SELECT trial_ends_at::text FROM users WHERE id = $1`, [userId]);
-  return rows[0]?.trial_ends_at ?? null;
+export async function getTrial(userId: string, q: Queryable = db()): Promise<TrialInfo & { endsAt: string | null }> {
+  const { rows } = await q.query(`SELECT trial_ends_at::text, trial_state FROM users WHERE id = $1`, [userId]);
+  return { endsAt: rows[0]?.trial_ends_at ?? null, state: rows[0]?.trial_state ?? null };
 }
 
 /** The plan this user is on right now, read fresh from the database (inside `q`'s transaction when given one). */
 export async function resolvePlan(userId: string, q: Queryable = db()): Promise<{ plan: PlanId; sub: SubscriptionRow | null; trialEndsAt: string | null }> {
   // One after the other: a transaction's client runs one query at a time.
   const sub = await getSubscriptionRow(userId, q);
-  const trialEndsAt = await getTrialEndsAt(userId, q);
-  return { plan: effectivePlan(sub, trialEndsAt), sub, trialEndsAt };
+  const trial = await getTrial(userId, q);
+  return { plan: effectivePlan(sub, trial), sub, trialEndsAt: trial.endsAt };
 }
 
 /**
@@ -129,9 +135,17 @@ export async function getEntitlement(): Promise<Entitlement> {
     subscription: sub,
     trialEndsAt: trialEndsAt ?? new Date(0).toISOString(),
     // Starter that disappears without the trial: nothing paid or comped it.
-    onTrial: plan === 'starter' && effectivePlan(sub, null) === 'expired',
+    onTrial: isOnFreePeriod(plan, sub),
+    // Only while the grace is still running: once it ends the plan is Suspended and there's no date to show.
+    graceEndsAt: graceEndsAtNow(sub),
     usage: { fleets: fleetCount, agents },
   };
+}
+
+/** The day a running lapse grace ends (ISO), or null when there's none or it has ended. */
+export function graceEndsAtNow(sub: Parameters<typeof lapseGrace>[0], now = new Date()): string | null {
+  const grace = lapseGrace(sub);
+  return grace && grace.endsAt > now ? grace.endsAt.toISOString() : null;
 }
 
 /**
@@ -400,8 +414,9 @@ async function pushEntitlements(userId: string, held: { lost: boolean }): Promis
   const [{ plan, sub }, fleetIds] = await Promise.all([resolvePlan(userId), fleetIdsFor(userId)]);
 
   // A lapsed paid plan starts the 14-day closing window, and one that came back
-  // cancels it (lib/account-closing.ts). Before the fleet check: an account
-  // with no fleet still gets the email and the banner.
+  // cancels it (lib/account-closing.ts). With LAPSE_SUSPEND=on no window
+  // starts: one left from before is cancelled. Before the fleet check: an
+  // account with no fleet still gets the email and the banner.
   let closing: Closing | null;
   try {
     closing = await reconcileLapse(userId, plan, sub);
@@ -412,8 +427,9 @@ async function pushEntitlements(userId: string, held: { lost: boolean }): Promis
   if (fleetIds.length === 0) return true;
 
   // During the window the fleets keep working: a lapsed paid plan runs on
-  // the plan it had until the window ends. An ended free period stays off,
-  // window or not (a trial account that deletes isn't switched back on).
+  // the plan it had until the window ends (with LAPSE_SUSPEND=on, through its
+  // grace instead: effectivePlan). Suspended stays off, window or not (a
+  // trial account that deletes isn't switched back on).
   const windowOpen = !!closing && isClosingOpen(closing);
   const applied: PlanId = (windowOpen && lapsedPaidPlan(plan, sub)) || plan;
   const limits = limitsFor(applied);
@@ -425,7 +441,7 @@ async function pushEntitlements(userId: string, held: { lost: boolean }): Promis
       // The engine only ever gates on "is this allowed to run"; the nuance of
       // why (trial over vs. a cancelled subscription) stays on this side. An
       // inactive fleet refuses every agent, including ones already in it.
-      status: applied === 'expired' ? 'inactive' : 'active',
+      status: hasProductionAccess(applied) ? 'active' : 'inactive',
       maxAgents: limits.maxAgentsPerFleet,
       retentionDays: limits.retentionDays,
       // When the fleet closes, or null: sent every time, so a cancel lands.
@@ -556,11 +572,12 @@ export async function revokeFleetEntitlement(fleetId: string): Promise<void> {
 async function readSnapshot(userId: string, q: Queryable, revision: number, closing: Closing | null, transfers: FleetTransfer[]): Promise<PrincipalSnapshot> {
   const { plan, sub } = await resolvePlan(userId, q);
   const fleetIds = await fleetIdsFor(userId, q);
-  // As the unversioned push: a lapsed paid plan keeps its plan while its window runs.
+  // As the unversioned push: a lapsed paid plan keeps its plan while its
+  // window runs (with LAPSE_SUSPEND=on, through its grace: effectivePlan).
   const windowOpen = !!closing && isClosingOpen(closing);
   const lapsed = windowOpen ? lapsedPaidPlan(plan, sub) : null;
   const applied: PlanId = lapsed || plan;
-  const onTrial = !lapsed && plan === 'starter' && effectivePlan(sub, null) === 'expired';
+  const onTrial = !lapsed && isOnFreePeriod(plan, sub);
   return buildSnapshot({ principal: userId, revision, plan: applied, onTrial, fleetIds, transfers, closing });
 }
 
@@ -687,4 +704,31 @@ async function pushEntitlementsV2(userId: string, held: { lost: boolean }, secre
     if (await markClosed(userId)) console.warn(`[entitlements] user ${userId}: the engine reports the fleet closed; recorded`);
   }
   return true;
+}
+
+/**
+ * Starts a Free account's 30 days, once, in one statement with its outbox
+ * row, through `q` (the caller's transaction, so it commits only with what
+ * it belongs to): when the account first goes live, linking a fleet (in that
+ * link's transaction) or once its checkout completes (the Stripe webhook).
+ * Only a row in `not_started` moves, and only new Free sign-ups get that
+ * state, so this can never extend or restart an existing trial (a NULL,
+ * active or ended row is untouched). Repeats and concurrent calls are
+ * no-ops. The caller pushes after its commit, as it would anyway. Returns
+ * the new end of the free period, or null when nothing changed.
+ */
+export async function activateTrial(q: Queryable, userId: string): Promise<string | null> {
+  const { rows } = await q.query(
+    `WITH started AS (
+       UPDATE users SET trial_state = 'active', trial_started_at = now(),
+              trial_ends_at = now() + make_interval(days => $2), updated_at = now()
+        WHERE id = $1 AND trial_state = 'not_started'
+        RETURNING id, trial_ends_at
+     ), queued AS (
+       INSERT INTO entitlement_outbox (user_id, reason) SELECT id, 'trial_activated' FROM started
+     )
+     SELECT trial_ends_at::text FROM started`,
+    [userId, TRIAL_DAYS],
+  );
+  return rows[0]?.trial_ends_at ?? null;
 }

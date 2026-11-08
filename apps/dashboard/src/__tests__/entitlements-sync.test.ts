@@ -80,7 +80,7 @@ describe('syncEntitlementsToEngine', () => {
   it('turns a fleet off once the free period is over and nothing is paid', async () => {
     account({ sub: null, trialEndsAt: new Date(Date.now() - 86_400_000).toISOString() });
     expect(await syncEntitlementsToEngine('u1')).toBe(true);
-    expect(pushed()).toMatchObject({ fleetId: 'fleet-1', plan: 'expired', status: 'inactive', maxAgents: 0 });
+    expect(pushed()).toMatchObject({ fleetId: 'fleet-1', plan: 'suspended', status: 'inactive', maxAgents: 0 });
   });
 
   // Starter's 3 agents are soft: the engine gets only the runaway guard, never 3.
@@ -489,5 +489,22 @@ describe('a lock connection that drops mid-work', () => {
     onPro();
     expect(await withUserEntitlementLock('u1', (push) => push())).toBe(true);
     expect(delayedRows()).toHaveLength(0);
+  });
+});
+
+describe('graceEndsAtNow', () => {
+  afterEach(() => { vi.unstubAllEnvs(); });
+
+  it('gives the pause date only while a lapse grace is still running', async () => {
+    vi.stubEnv('LAPSE_SUSPEND', 'on');
+    const { graceEndsAtNow } = await import('@/lib/entitlements');
+    const now = new Date('2026-11-20T00:00:00Z');
+    const sub = (lapsedAt: string) => ({ plan: 'pro', status: 'canceled', lapsedAt });
+    // Lapsed 10 days ago: 4 days of grace left.
+    expect(graceEndsAtNow(sub('2026-11-10T00:00:00Z') as never, now)).toBe('2026-11-24T00:00:00.000Z');
+    // Lapsed 15 days ago: the grace has ended, so no date.
+    expect(graceEndsAtNow(sub('2026-11-05T00:00:00Z') as never, now)).toBeNull();
+    vi.stubEnv('LAPSE_SUSPEND', '');
+    expect(graceEndsAtNow(sub('2026-11-10T00:00:00Z') as never, now)).toBeNull();
   });
 });

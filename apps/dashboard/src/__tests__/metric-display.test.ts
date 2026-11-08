@@ -15,7 +15,7 @@ describe('agents against the plan (M16, soft limit)', () => {
 
   it('has no included count on Enterprise or an ended free period', () => {
     expect(agentsIncluded('enterprise', 40)).toBeNull();
-    expect(agentsIncluded('expired', 2)).toBeNull();
+    expect(agentsIncluded('suspended', 2)).toBeNull();
   });
 });
 
@@ -32,7 +32,7 @@ describe('this month\'s share', () => {
 
   it('is absent on plans without a share', () => {
     expect(monthShareLine('enterprise', 100)).toBeNull();
-    expect(monthShareLine('expired', 100)).toBeNull();
+    expect(monthShareLine('suspended', 100)).toBeNull();
   });
 
   it('formats cents as dollars', () => {

@@ -8,7 +8,7 @@ import { db, type Queryable } from '@/lib/db';
 import { sendEmail } from '@/lib/email';
 import { forgetSessionCheck } from '@/lib/session-check';
 import { accountClosingEmail, deletionBlockedEmail } from '@/lib/magic-link-email';
-import { isActiveStatus, isPaidPlanId, type PaidPlanId, type PlanId } from '@/lib/plans';
+import { isActiveStatus, isPaidPlanId, lapseSuspendOn, type PaidPlanId, type PlanId } from '@/lib/plans';
 import { stripe } from '@/lib/stripe';
 import {
   CANCEL_CUTOFF_MS,
@@ -32,6 +32,13 @@ import {
 // delete_after has passed (finishDeletedAccounts). The window reaches the
 // engine with each entitlement push, so the outbox delivers it like any
 // limit change.
+//
+// With LAPSE_SUSPEND=on a lapse closes nothing: the paid plan keeps running
+// through its grace, then the account is Suspended (lib/plans.ts lapseGrace),
+// its fleets and keys kept. No lapse window is started; one left from before
+// is cancelled on the next push (reconcileLapse), and any that can't be is
+// cleared by scripts/clear-pending-lapses.sql. Unset or anything else: the
+// lapse window below, exactly as before.
 
 function toClosing(row: Record<string, unknown> | undefined): Closing | null {
   if (!row?.closes_at) return null;
@@ -193,8 +200,9 @@ export async function sendClosingEmail(userId: string, closing: Closing): Promis
 }
 
 /**
- * The paid plan that lapsed, or null. A lapse is a paid subscription that
- * ended: the effective plan is 'expired' and the subscription row still
+ * The paid plan that lapsed, or null (LAPSE_SUSPEND off: the lapse window's
+ * plan). A lapse is a paid subscription that
+ * ended: the effective plan is 'suspended' and the subscription row still
  * names the paid plan it had. A free period that ran out is not a lapse:
  * that fleet is switched off but kept, so subscribing later picks up where
  * it left off.
@@ -203,7 +211,7 @@ export function lapsedPaidPlan(plan: PlanId, sub: { plan: string; lapsedAt?: str
   // Only a lapse the webhook recorded: one from before that (lapsed_at NULL)
   // keeps the behaviour it had, rather than getting a window, an email and a
   // closed fleet the day this ships.
-  return plan === 'expired' && sub?.lapsedAt && isPaidPlanId(sub.plan) ? sub.plan : null;
+  return !lapseSuspendOn() && plan === 'suspended' && sub?.lapsedAt && isPaidPlanId(sub.plan) ? sub.plan : null;
 }
 
 /**
@@ -212,6 +220,10 @@ export function lapsedPaidPlan(plan: PlanId, sub: { plan: string; lapsedAt?: str
  * that turns out not to be one) cancels it while it's still running. A
  * deletion window is left alone either way. Returns the window to send to
  * the engine.
+ *
+ * With LAPSE_SUSPEND=on no lapse starts a window (lapsedPaidPlan is always
+ * null), so this only cancels a lapse window started before, while it's
+ * still running.
  */
 export async function reconcileLapse(userId: string, plan: PlanId, sub: { plan: string; lapsedAt?: string | null } | null): Promise<Closing | null> {
   const current = await getClosing(userId);

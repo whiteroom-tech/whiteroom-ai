@@ -74,7 +74,8 @@ describe.each([undefined, '', 'off', 'OFF', 'true', 'yes', 'on '])('ENTITLEMENTS
     await syncEntitlementsToEngine('u1');
     mocks.owner = null;
     await releaseFleet('fleet-1');
-    expect(mocks.sql.join('\n')).not.toMatch(/entitlement_revision|revision|payload_hash|snapshot|trial_state|pg_advisory_xact_lock/);
+    // trial_state is read (plan resolution: Free vs Suspended), never written here.
+    expect(mocks.sql.join('\n')).not.toMatch(/entitlement_revision|revision|payload_hash|snapshot|SET trial_state|pg_advisory_xact_lock/);
   });
 
   it('an unacknowledged push still queues the delayed re-push (not_before)', async () => {

@@ -48,6 +48,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   process.env.WR_ENTITLEMENT_SYNC_SECRET = SECRET;
   process.env.STRIPE_SECRET_KEY = 'sk_test_x';
+  delete process.env.LAPSE_SUSPEND;
   mocks.clientQuery.mockResolvedValue({ rows: [] });
   mocks.query.mockReset().mockResolvedValue({ rows: [] });
   mocks.syncAccount.mockReset().mockResolvedValue(NOTHING);
@@ -70,10 +71,46 @@ describe('billing sync', () => {
     const body = await (await run(SECRET)).json();
 
     expect(body.trialsQueued).toBe(2);
-    const sqls = mocks.clientQuery.mock.calls.map((c) => c[0] as string);
+    const all = mocks.clientQuery.mock.calls.map((c) => c[0] as string);
+    const sqls = all.slice(0, all.indexOf('COMMIT') + 1);
     expect(sqls[0]).toBe('BEGIN');
-    expect(sqls.some((s) => s.includes('INSERT INTO entitlement_outbox'))).toBe(true);
+    expect(sqls.some((s) => s.includes("'trial_expired'"))).toBe(true);
     expect(sqls.at(-1)).toBe('COMMIT');
+  });
+
+  it('queues nothing for lapse graces with LAPSE_SUSPEND off (a lapse has its closing window instead)', async () => {
+    const body = await (await run(SECRET)).json();
+    expect(body.gracesQueued).toBe(0);
+    expect(mocks.clientQuery.mock.calls.some((c) => String(c[0]).includes("'lapse_grace_ended'"))).toBe(false);
+  });
+
+  it('with LAPSE_SUSPEND=on, queues one engine sync per lapsed paid plan whose 14-day grace has run out, once', async () => {
+    process.env.LAPSE_SUSPEND = 'on';
+    mocks.clientQuery.mockImplementation(async (sql: string) =>
+      sql.includes("'lapse_grace_ended'") ? { rows: [{ user_id: 'u3' }] } : { rows: [] },
+    );
+    const body = await (await run(SECRET)).json();
+    expect(body.gracesQueued).toBe(1);
+    const call = mocks.clientQuery.mock.calls.find((c) => String(c[0]).includes("'lapse_grace_ended'"))!;
+    const sql = String(call[0]);
+    expect(sql).toContain('s.lapsed_at <= now() - make_interval(days => $3)');
+    expect(sql).toContain('NOT EXISTS');
+    expect(call[1]).toEqual([['starter', 'pro'], ['active', 'trialing', 'past_due'], 14, 500]);
+  });
+
+  it('returns 500 when ended graces cannot be queued, with the other passes still run', async () => {
+    process.env.LAPSE_SUSPEND = 'on';
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    mocks.clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes("'lapse_grace_ended'")) throw new Error('db down');
+      return { rows: [] };
+    });
+    mocks.query.mockResolvedValueOnce({ rows: [account('u1')] });
+    const res = await run(SECRET);
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe('Could not queue ended lapse graces.');
+    expect(body.billing.checked).toBe(1);
   });
 
 });
