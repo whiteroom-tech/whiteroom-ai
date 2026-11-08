@@ -136,6 +136,35 @@ describe('ensureHomeFleetFor', () => {
     expect(deps.save).not.toHaveBeenCalled();
   });
 
+  it('a lost fleet that comes back with a new token: the token is saved and the session moves to it', async () => {
+    const { row, deps } = world({ stored: { apiKey: KEY, fleetId: 'home-a', fleetToken: 'wr_a' }, token: 'no', status: 'gone' });
+    deps.createFleet.mockResolvedValueOnce({ token: 'wr_a2' });
+    expect(await ensureHomeFleetFor('u1', deps)).toEqual({ kind: 'ready', fleetId: 'home-a', changed: true, cleared: false, firstFleet: false });
+    expect(deps.save).toHaveBeenCalledWith({ apiKey: KEY, fleetId: 'home-a', fleetToken: 'wr_a2' }, { expectFleetId: 'home-a' });
+    expect(row.fleetToken).toBe('wr_a2');
+    expect(deps.adoptSession).toHaveBeenCalledWith('wr_a2', 'wr_a');
+    expect(deps.newFleetId).not.toHaveBeenCalled();
+  });
+
+  it('…and if another open replaced it meanwhile, that fleet is the one kept', async () => {
+    const { row, deps } = world({ stored: { apiKey: KEY, fleetId: 'home-a', fleetToken: 'wr_a' }, token: 'no', status: 'gone' });
+    deps.createFleet.mockResolvedValueOnce({ token: 'wr_a2' });
+    deps.save.mockImplementationOnce(async () => {
+      Object.assign(row, { fleetId: 'home-b', fleetToken: 'wr_b' });
+      return { ok: false, code: 'changed', error: 'changed' };
+    });
+    expect(await ensureHomeFleetFor('u1', deps)).toEqual({ kind: 'ready', fleetId: 'home-b', changed: true, cleared: false, firstFleet: false });
+    expect(deps.adoptSession).toHaveBeenCalledWith('wr_b', 'wr_a');
+  });
+
+  it('…and a save refused otherwise is a failure', async () => {
+    const { deps } = world({ stored: { apiKey: KEY, fleetId: 'home-a', fleetToken: 'wr_a' }, token: 'no', status: 'gone' });
+    deps.createFleet.mockResolvedValueOnce({ token: 'wr_a2' });
+    deps.save.mockResolvedValueOnce({ ok: false, code: 'fleet_taken', error: 'taken' });
+    expect(await ensureHomeFleetFor('u1', deps)).toEqual({ kind: 'failed' });
+    expect(deps.adoptSession).not.toHaveBeenCalled();
+  });
+
   it.each([403, 502])('a gone fleet whose create is refused otherwise (%i) is a failure, not a replacement', async (status) => {
     const { deps } = world({ stored: { apiKey: KEY, fleetId: 'home-a', fleetToken: 'wr_a' }, token: 'no', status: 'gone' });
     deps.createFleet.mockResolvedValueOnce({ status });
