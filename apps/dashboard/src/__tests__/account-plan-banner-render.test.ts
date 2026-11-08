@@ -139,6 +139,21 @@ describe('each banner', () => {
     expect(talk.find('Choose a plan')).toBeUndefined();
   });
 
+  it('a state without cardFixable (an older server during a deploy) keeps Update card', async () => {
+    const st = { ...state('grace') } as Record<string, unknown>;
+    delete st.cardFixable;
+    const m = await mount(h(PlanBannerView, { kind: 'grace', state: st as never, timeZone: 'UTC', fleetKey: false, goLive: idle, onGoLive: () => {}, onUpdateCard: () => {}, cardStatus: idle }));
+    expect(m.find('Update card')).toBeDefined();
+    expect(m.text()).toContain('Update your card to keep it.');
+  });
+
+  it('grace Choose a plan is counted', async () => {
+    api.state = state('grace', { cardFixable: false });
+    const m = await mount(h(AccountPlanBanner));
+    await m.click(m.find('Choose a plan')!);
+    expect(api.capture).toHaveBeenCalledWith('grace_choose_plan', { action: 'choose_plan' });
+  });
+
   it('the info fill only on the new info banners (Free, trial ending); warn banners as they are', async () => {
     for (const kind of PLAN_BANNER_ORDER) {
       const m = await mount(view(kind));

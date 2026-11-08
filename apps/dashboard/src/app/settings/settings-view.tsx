@@ -37,7 +37,7 @@ import { fmtTime, plural } from '@/lib/format';
 import { browserZone as readBrowserZone, dayKey, daysBetween, setViewerZone } from '@/lib/zone-time';
 import { useSavedViewerZone, useViewerZone } from '@/hooks/useViewerZone';
 import { GOING_LIVE_LABEL, useGoLive, type GoLiveStatus } from '@/components/AccountPlanBanner';
-import { GRACE_LINE, graceFix, NO_CARD, PAST_DUE_LINE, planDay } from '@/lib/plan-banner-shared';
+import { GRACE_LINE, graceFix, NO_CARD, PAST_DUE_LINE, planDay, subscriptionEnded } from '@/lib/plan-banner-shared';
 
 const PROVIDER_LABELS: Record<string, string> = {
   google: 'Google',
@@ -336,11 +336,14 @@ function PlanSection({
   // A plan cancelled on purpose that runs out isn't a failed payment: it keeps today's line.
   const cancelled = !!graceEnd && !!subscription?.cancelAtPeriodEnd;
   // Once Stripe has cancelled the subscription a new card can't keep it: a new plan does (or us, when none can be bought).
-  const ended = subscription?.status === 'canceled' || subscription?.status === 'incomplete_expired';
+  const ended = subscriptionEnded(subscription?.status);
   const fix = graceFix(!ended, !contracted && purchasablePlans.length > 0);
   const cardFailed = graceEnd && !cancelled ? GRACE_LINE(graceEnd, fix) : hasLiveSubscription(subscription) && subscription?.status === 'past_due' ? PAST_DUE_LINE : null;
   const cardAction = graceEnd && !cancelled ? fix : 'card';
-  const canBuy = (p: PlanId) => !contracted && purchasablePlans.includes(p) && (p !== plan || entitlement.onTrial || !!graceEnd);
+  // The same plan again only once its subscription is gone; while it exists (unpaid), a new card keeps it and a
+  // second Checkout would start a second subscription beside it, so plan changes go through the portal then.
+  const graceLive = !!graceEnd && !ended && !!subscription?.stripeSubscriptionId;
+  const canBuy = (p: PlanId) => !contracted && purchasablePlans.includes(p) && (p !== plan || entitlement.onTrial || (!!graceEnd && !graceLive));
   const live = useGoLive('settings', goLivePreview);
   const trialEnd = shortDay(entitlement.trialEndsAt);
   // Counted in the viewer's zone, so only once it's known: the server's UTC
@@ -363,7 +366,7 @@ function PlanSection({
         {/* Only when there's a real Stripe customer behind it. A comped account
             has a `pending_…` placeholder in that column (see setPlanOverride),
             and offering it a portal link would just produce an error. */}
-        {subscription?.stripeCustomerId?.startsWith('cus_') && !cardFailed && (
+        {subscription?.stripeCustomerId?.startsWith('cus_') && (!cardFailed || cardAction !== 'card') && (
           <Button variant="secondary" disabled={busy !== null} onClick={() => go(openBillingPortal, 'portal')}>
             {busy === 'portal' ? 'Opening…' : 'Manage billing'}
           </Button>
@@ -389,9 +392,9 @@ function PlanSection({
               {busy === 'portal' ? 'Opening…' : 'Update card'}
             </Button>
           ) : cardAction === 'buy' ? (
-            <a href="#settings-plan-choices" className="wr-btn wr-btn--primary wr-btn--h32">Choose a plan</a>
+            <Button variant="primary" disabled={busy !== null} onClick={() => document.getElementById('settings-plan-choices')?.scrollIntoView({ block: 'start' })}>Choose a plan</Button>
           ) : (
-            <a href={`mailto:${SUPPORT_EMAIL}`} className="wr-btn wr-btn--primary wr-btn--h32">Talk to us</a>
+            <Button variant="primary" disabled={busy !== null} onClick={() => { window.location.href = `mailto:${SUPPORT_EMAIL}`; }}>Talk to us</Button>
           )}
         </div>
       )}
@@ -438,7 +441,7 @@ function PlanSection({
               <Button
                 variant={p === 'starter' && entitlement.onTrial ? 'secondary' : 'primary'}
                 disabled={busy !== null || pending}
-                onClick={() => go(() => (subscribed ? openBillingPortal() : startCheckout(p)), p)}
+                onClick={() => go(() => (subscribed || graceLive ? openBillingPortal() : startCheckout(p)), p)}
               >
                 {busy === p
                   ? 'Opening…'

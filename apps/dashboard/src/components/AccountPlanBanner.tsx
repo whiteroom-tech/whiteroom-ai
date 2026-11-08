@@ -137,11 +137,15 @@ export function PlanBannerView({ kind, state, timeZone, fleetKey, goLive, onGoLi
     const sandbox = <Link key="sandbox" prefetch={false} href={ROUTES.sandbox} className={btn(fleetKey ? 'secondary' : 'primary')}>Open Sandbox</Link>;
     actions = fleetKey ? [live, sandbox] : [sandbox, live];
     error = goLive.error;
-  } else if (kind === 'past_due' || (kind === 'grace' && state.cardFixable)) {
+  } else if (kind === 'past_due' || (kind === 'grace' && state.cardFixable !== false)) {
     actions = <Button size={32} variant="primary" busy={cardStatus.busy} busyLabel="Opening…" onClick={onUpdateCard}>Update card</Button>;
     error = cardStatus.error;
   } else {
-    const choose = () => { if (kind === 'suspended') analytics.capture('suspended_choose_plan', { action: state.canBuy ? 'choose_plan' : 'talk_to_us' }); };
+    const action = state.canBuy ? 'choose_plan' : 'talk_to_us';
+    const choose = () => {
+      if (kind === 'suspended') analytics.capture('suspended_choose_plan', { action });
+      else if (kind === 'grace') analytics.capture('grace_choose_plan', { action });
+    };
     actions = state.canBuy
       ? <Link prefetch={false} href={`${ROUTES.settings}#plan`} className={btn('primary')} onClick={choose}>Choose a plan</Link>
       : <a href={`mailto:${SUPPORT_EMAIL}`} className={btn('primary')} onClick={choose}>Talk to us</a>;
@@ -149,7 +153,7 @@ export function PlanBannerView({ kind, state, timeZone, fleetKey, goLive, onGoLi
   const warn = kind === 'grace' || kind === 'past_due' || kind === 'suspended';
   const banner = (
     <Banner variant={warn ? 'warn' : 'info'} actions={actions}>
-      {planBannerText(kind, state.canBuy, day, state.cardFixable)}
+      {planBannerText(kind, state.canBuy, day, state.cardFixable !== false)}
       {error && <span role="alert" style={{ display: 'block', color: 'var(--bad)', marginTop: 4 }}>{error}</span>}
     </Banner>
   );

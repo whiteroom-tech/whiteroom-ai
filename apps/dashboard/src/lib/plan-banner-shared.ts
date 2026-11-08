@@ -31,6 +31,15 @@ export interface PlanState {
   trialEndsAt: string | null;
 }
 
+/**
+ * Whether a Stripe subscription is gone for good, as far as a new card goes:
+ * cancelled (by Stripe after failed retries, or expired before its first
+ * payment) or paused. A new card doesn't bring these back; a new plan does.
+ */
+export function subscriptionEnded(status: string | null | undefined): boolean {
+  return status === 'canceled' || status === 'incomplete_expired' || status === 'paused';
+}
+
 /** The last days of the free period, when the trial-ending banner shows. */
 export const TRIAL_ENDING_DAYS = 7;
 

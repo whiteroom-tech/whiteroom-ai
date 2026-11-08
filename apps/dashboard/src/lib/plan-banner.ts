@@ -5,7 +5,7 @@ import { db } from '@/lib/db';
 import { fleetOwners } from '@/lib/control-auth';
 import { graceEndsAtNow, resolvePlan } from '@/lib/entitlements';
 import { effectivePlan, hasLiveSubscription, hasProductionAccess, isOnFreePeriod, purchasablePlans } from '@/lib/plans';
-import { decidePlanState, needsGate, type PlanState } from '@/lib/plan-banner-shared';
+import { decidePlanState, needsGate, subscriptionEnded, type PlanState } from '@/lib/plan-banner-shared';
 import { readGateState } from '@/lib/prod-gate';
 
 /**
@@ -31,9 +31,10 @@ export async function getPlanBanner(fleetId?: string | null): Promise<PlanState 
       billingStatus: hasLiveSubscription(sub) ? sub!.status : null,
       // A cancellation that runs out isn't a failed payment: Settings keeps its own line for that.
       graceEndsAt: sub?.cancelAtPeriodEnd ? null : graceEndsAtNow(sub),
-      subscriptionEnded: sub?.status === 'canceled' || sub?.status === 'incomplete_expired',
+      subscriptionEnded: subscriptionEnded(sub?.status),
       paidOrgFleet,
-      canBuy: purchasablePlans().length > 0,
+      // As Settings decides it: nothing self-serve on a comped plan or a contract.
+      canBuy: purchasablePlans().length > 0 && plan !== 'enterprise' && !sub?.planOverride,
       gate: needsGate(facts) ? await readGateState() : 'unknown',
     });
   } catch (err) {

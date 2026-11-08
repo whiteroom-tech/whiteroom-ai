@@ -147,25 +147,37 @@ describe('plan dates and card headings', () => {
   });
 });
 
+const graceView = (status: string, purchasable: Array<'starter' | 'pro'>) => text(renderToStaticMarkup(h(SettingsView, {
+  closing: null, billingResult: null, purchasablePlans: purchasable,
+  account: { id: 'u', email: 'a@example.test', name: 'A', image: null, timezone: null, emailVerified: true, methods: [], pendingEmailChange: null, fleetCount: 1 },
+  entitlement: { plan: 'pro', planName: 'Pro', limits: limitsFor('pro'), subscription: { plan: 'pro', status, planOverride: null, stripeCustomerId: 'cus_x', stripeSubscriptionId: 'sub_x', currentPeriodEnd: null, cancelAtPeriodEnd: false, lapsedAt: new Date().toISOString() }, trialEndsAt: new Date(Date.now() - 86_400_000).toISOString(), onTrial: false, graceEndsAt: new Date(Date.now() + 10 * 86_400_000).toISOString(), usage: { fleets: 1, agents: 1 } },
+})));
+
 describe('Settings plan: a lapsed plan in its grace', () => {
   it('says in one line when it switches off, with Update card, and still offers the same plan again', () => {
-    const t = view(2, { plan: 'pro', onTrial: false, graceEndsAt: '2026-11-20T12:00:00.000Z' });
-    expect(t).toContain('Your plan switches off on Nov 20 because a payment failed. Update your card to keep it. Update card');
+    const t = view(2, { plan: 'pro', onTrial: false, graceEndsAt: new Date(Date.now() + 10 * 86_400_000).toISOString() });
+    expect(t).toMatch(/Your plan switches off on [A-Z][a-z]{2} \d+(, \d{4})? because a payment failed\. Update your card to keep it\. Update card/);
     expect(t).not.toContain('pauses on');
     expect(t).toContain('Subscribe to Pro again');
     expect(t).toContain('Switch to Starter');
   });
 
   it('once Stripe has cancelled the subscription: Choose a plan (Talk to us when nothing can be bought), not Update card', () => {
-    const ended = (purchasable: Array<'starter' | 'pro'>) => text(renderToStaticMarkup(h(SettingsView, {
-      closing: null, billingResult: null, purchasablePlans: purchasable,
-      account: { id: 'u', email: 'a@example.test', name: 'A', image: null, timezone: null, emailVerified: true, methods: [], pendingEmailChange: null, fleetCount: 1 },
-      entitlement: { plan: 'pro', planName: 'Pro', limits: limitsFor('pro'), subscription: { plan: 'pro', status: 'canceled', planOverride: null, stripeCustomerId: 'cus_x', stripeSubscriptionId: 'sub_x', currentPeriodEnd: null, cancelAtPeriodEnd: false, lapsedAt: new Date().toISOString() }, trialEndsAt: new Date(Date.now() - 86_400_000).toISOString(), onTrial: false, graceEndsAt: '2026-11-20T12:00:00.000Z', usage: { fleets: 1, agents: 1 } },
-    })));
-    const buy = ended(['starter', 'pro']);
-    expect(buy).toContain('Your plan switches off on Nov 20 because a payment failed. Choose a plan to keep it. Choose a plan');
+    const buy = graceView('canceled', ['starter', 'pro']);
+    expect(buy).toMatch(/Your plan switches off on [A-Z][a-z]{2} \d+(, \d{4})? because a payment failed\. Choose a plan to keep it\. Choose a plan/);
     expect(buy).not.toContain('Update card');
-    expect(ended([])).toContain('because a payment failed. Talk to us to keep it. Talk to us');
+    // Invoices and the saved card stay reachable.
+    expect(buy).toContain('Manage billing');
+    expect(buy).toContain('Subscribe to Pro again');
+    expect(graceView('canceled', [])).toContain('because a payment failed. Talk to us to keep it. Talk to us');
+    expect(graceView('paused', ['starter', 'pro'])).toContain('Choose a plan to keep it.');
+  });
+
+  it('while the subscription still exists (unpaid): Update card, and no second Checkout for the same plan', () => {
+    const t = graceView('unpaid', ['starter', 'pro']);
+    expect(t).toContain('Update your card to keep it. Update card');
+    expect(t).not.toContain('Subscribe to Pro again');
+    expect(t).not.toContain('Manage billing');
   });
 
   it('shows neither outside a grace', () => {
@@ -181,9 +193,9 @@ describe('Settings plan: a plan cancelled on purpose, in its grace', () => {
     const t = text(renderToStaticMarkup(h(SettingsView, {
       closing: null, billingResult: null, purchasablePlans: ['starter', 'pro'],
       account: { id: 'u', email: 'a@example.test', name: 'A', image: null, timezone: null, emailVerified: true, methods: [], pendingEmailChange: null, fleetCount: 1 },
-      entitlement: { plan: 'pro', planName: 'Pro', limits: limitsFor('pro'), subscription: { plan: 'pro', status: 'canceled', planOverride: null, stripeCustomerId: 'cus_x', stripeSubscriptionId: 'sub_x', currentPeriodEnd: null, cancelAtPeriodEnd: true, lapsedAt: new Date().toISOString() }, trialEndsAt: new Date(Date.now() - 86_400_000).toISOString(), onTrial: false, graceEndsAt: '2026-11-20T12:00:00.000Z', usage: { fleets: 1, agents: 1 } },
+      entitlement: { plan: 'pro', planName: 'Pro', limits: limitsFor('pro'), subscription: { plan: 'pro', status: 'canceled', planOverride: null, stripeCustomerId: 'cus_x', stripeSubscriptionId: 'sub_x', currentPeriodEnd: null, cancelAtPeriodEnd: true, lapsedAt: new Date().toISOString() }, trialEndsAt: new Date(Date.now() - 86_400_000).toISOString(), onTrial: false, graceEndsAt: new Date(Date.now() + 10 * 86_400_000).toISOString(), usage: { fleets: 1, agents: 1 } },
     })));
-    expect(t).toContain('Your plan pauses on Nov 20. Subscribe again to keep it.');
+    expect(t).toMatch(/Your plan pauses on [A-Z][a-z]{2} \d+(, \d{4})?\. Subscribe again to keep it\./);
     expect(t).not.toContain('payment failed');
     expect(t).not.toContain('Update card');
   });

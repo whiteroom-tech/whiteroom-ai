@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  subscriptionEnded,
   bannerShownOn, decidePlanState, needsGate, PLAN_BANNER_ORDER, planBannerText, planDay, type PlanFacts,
 } from '@/lib/plan-banner-shared';
 
@@ -65,6 +66,13 @@ describe('decidePlanState', () => {
   it('a member looking at a paid organization\'s fleet gets no plan banner and no caveat', () => {
     expect(decide({ plan: 'free', billingStatus: null, paidOrgFleet: true })).toMatchObject({ banner: null, caveat: null });
     expect(decide({ billingStatus: 'past_due', paidOrgFleet: true }).banner).toBeNull();
+  });
+});
+
+describe('subscriptionEnded', () => {
+  it('cancelled, expired or paused: a new card can\'t bring it back', () => {
+    for (const s of ['canceled', 'incomplete_expired', 'paused']) expect(subscriptionEnded(s)).toBe(true);
+    for (const s of ['past_due', 'unpaid', 'active', 'trialing', null, undefined]) expect(subscriptionEnded(s)).toBe(false);
   });
 });
 

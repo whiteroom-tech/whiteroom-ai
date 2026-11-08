@@ -143,6 +143,20 @@ describe('getPlanBanner', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('a comped plan or a contract can buy nothing self-serve, as Settings says', async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_x';
+    process.env.STRIPE_PRICE_STARTER_SHARE = 'price_x';
+    try {
+      m.plan = { plan: 'pro', sub: { plan: 'pro', status: 'canceled', stripeSubscriptionId: 'sub_1', planOverride: 'pro' }, trialEndsAt: null };
+      expect(await getPlanBanner()).toMatchObject({ canBuy: false });
+      m.plan = { plan: 'enterprise', sub: null, trialEndsAt: null };
+      expect(await getPlanBanner()).toMatchObject({ canBuy: false });
+    } finally {
+      delete process.env.STRIPE_SECRET_KEY;
+      delete process.env.STRIPE_PRICE_STARTER_SHARE;
+    }
+  });
+
   it('Choose a plan only when a plan can be bought', async () => {
     m.plan = { plan: 'free', sub: null, trialEndsAt: null };
     expect(await getPlanBanner()).toMatchObject({ canBuy: false });
