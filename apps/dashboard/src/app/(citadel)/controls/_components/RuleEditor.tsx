@@ -27,7 +27,7 @@ import { Chip, field, GroupPicker, InlineSelect, MODEL_GROUPS, NumberField, Scop
 /** When each rule acts; Keywords depends on where it looks (KEYWORD_ACTS), Loop breaker on its number (loopActs). */
 const ACTS: Record<Exclude<GovernanceRule['ruleType'], 'keyword' | 'loop_breaker'>, string> = {
   spend_cap: 'Acts before the next call.', model_allowlist: 'Acts before the call.',
-  tool_list: 'Acts before the agent gets the tool call.', call_rate: 'Acts on the call over the limit.',
+  tool_list: 'Acts before the agent gets the tool call. Also covers tools the provider runs, like web search.', call_rate: 'Acts on the call over the limit.',
 };
 const KEYWORD_ACTS: Record<KeywordWhere, string> = {
   incoming: 'Acts before the call reaches the model.',

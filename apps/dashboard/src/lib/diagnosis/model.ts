@@ -6,6 +6,7 @@ import type { FleetDiagnosis } from '@/lib/whiteroom/types';
 import { isDiagnosisDetector, notMeasuredShort, STATUS_LABEL, TITLES } from './copy';
 import { fmtCount, plural, timeAgo } from '@/lib/format';
 import { formatInZone } from '@/lib/zone-time';
+import { callOutcomeLabel } from '@/lib/runs';
 
 /** Refetch on window focus at most this often (§6.7). */
 export const FOCUS_REFETCH_MS = 5 * 60_000;
@@ -269,7 +270,7 @@ export function evidenceHeader(detector: string, calls: EvidenceCall[], measures
     case 'review_provider_failures':
       return {
         kind: 'table', caption: 'Failed calls, newest first', columns: ['Time', 'Model', 'Result'],
-        rows: byTime.map((c) => [time(c), String(c.reportedModel ?? c.requestedModel ?? '—'), String(c.terminal ?? '—').replace(/_/g, ' ')]),
+        rows: byTime.map((c) => [time(c), String(c.reportedModel ?? c.requestedModel ?? '—'), c.terminal == null ? '—' : callOutcomeLabel(String(c.terminal)) ?? String(c.terminal).replace(/_/g, ' ')]),
       };
     default:
       return null;

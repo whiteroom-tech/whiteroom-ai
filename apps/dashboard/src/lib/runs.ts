@@ -400,6 +400,11 @@ const CALL_OUTCOME: Record<string, { label: string; tone: TagTone } | undefined>
   unknown: { label: 'Status unknown', tone: 'muted' },
 };
 
+/** A call's outcome as Runs labels it ("Cancelled"), or null for a complete call or an unknown type. */
+export function callOutcomeLabel(type: string): string | null {
+  return CALL_OUTCOME[type]?.label ?? null;
+}
+
 /** Why a rule acted, said plainly: "model not on the allowlist". Falls back to the engine's short reason. */
 const REASON_TEXT: Record<string, string> = {
   model_not_allowed: 'model not on the allowlist',

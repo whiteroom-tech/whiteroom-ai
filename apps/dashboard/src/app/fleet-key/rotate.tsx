@@ -10,7 +10,7 @@ import { Banner, Button } from '@whiteroom/ui';
 import { ConfirmDialog } from '@/components/citadel/ConfirmDialog';
 import { CopyChip } from '@/components/citadel/CopyChip';
 import { PROVIDER_LABELS, issuedEnvHint } from '@/lib/provider-key-form';
-import { PROXY_ORIGIN } from '@/lib/setup';
+import { KEY_HEADER_LINE, PROXY_ORIGIN } from '@/lib/setup';
 import { replaceProxyUrls, rotateApiKey, type CredentialChange, type CredentialKey } from '@/lib/owner-credentials';
 
 export type RotationKind = 'api-key' | 'proxy-urls';
@@ -172,6 +172,7 @@ export function RotationResult({ result, onDismiss }: { result: Extract<Credenti
             <CopyChip text={issuedEnvHint(k.provider, `${PROXY_ORIGIN}/${k.wrKey}`)} label={`Copy the environment line for the ${label(k)}`} />
           </div>
         ))}
+        {result.proxyKeys.some((k) => k.wrKey) && <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{KEY_HEADER_LINE}</span>}
         {result.proxyKeysLost && <span>The new proxy URLs couldn’t be shown. Replace the URLs again to get new ones.</span>}
         {result.disconnected.length > 0 && <span>Disconnected: {result.disconnected.map(label).join(', ')}.</span>}
         {/* Unsaved, a reload would bring back the old, dead key: the banner stays. */}

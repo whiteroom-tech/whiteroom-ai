@@ -21,6 +21,9 @@ export const SETUP_LINES = {
 export const AGENT_HEADER = 'x-whiteroom-agent';
 export const AGENT_PLACEHOLDER = '<agent-name>';
 
+/** Under a proxy URL: the key can go in a header instead. */
+export const KEY_HEADER_LINE = 'You can also send the key in an X-WhiteRoom-Key header instead of the URL.';
+
 /** Title of the collapsed naming recipes: most agents need none of it. */
 export const AGENT_NAME_TITLE = 'Agents without a system prompt';
 export const AGENT_NAME_WHY = 'Agents with a system prompt are named automatically. For one without, send its name in a header:';

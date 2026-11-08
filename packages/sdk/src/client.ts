@@ -54,7 +54,7 @@ export class WhiteRoomClient {
     return data as T;
   }
 
-  async health(): Promise<{ status: string; app: string; version: string }> {
+  async health(): Promise<{ status: string }> {
     const res = await fetch(`${this.baseUrl}/health`, {
       signal: AbortSignal.timeout(this.timeoutMs),
     });

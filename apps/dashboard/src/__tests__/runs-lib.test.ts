@@ -107,6 +107,10 @@ describe('run detail rows', () => {
     expect(row.text).toBe('Model call · claude-haiku-4-5 · asked for search, read_file');
     expect(row.tag).toEqual({ label: 'Failed', tone: 'warn' });
     expect(timelineRow({ id: 'call:2', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete' }).tag).toBeUndefined();
+    // The agent disconnected: neutral, not an error.
+    const cancelled = timelineRow({ id: 'call:5', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'client_cancelled' });
+    expect(cancelled.tag).toEqual({ label: 'Cancelled', tone: 'muted' });
+    expect(cancelled.glyph).toBe('call');
     // A rule event's ×N can include the run before's repeats; Rule actions has this run's exact count.
     const rule = timelineRow({ id: 'ev:1', kind: 'event', at: '2026-10-01T14:00:00Z', type: 'governance_would_block', detail: { ruleType: 'spend_cap', reason: 'budget_exceeded', occurrences: 10, agentId: 'lead-agent' } } as Parameters<typeof timelineRow>[0]);
     expect(rule.text).toBe('Would have been blocked by the spend cap (budget exceeded)');
