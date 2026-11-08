@@ -30,13 +30,16 @@ export function EmptyHome() {
                 <span>Change one URL so your agent&rsquo;s calls go through WhiteRoom.</span>
                 <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
                   {Object.values(SETUP_LINES).map((l) => <CopyChip key={l} text={l} />)}
+                  <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
+                    Get a proxy key on <Link prefetch={false} href={ROUTES.fleetKey} className="wr-link">Fleet key</Link> by connecting your Anthropic or OpenAI key. Each provider key gets its own. Your agent keeps sending its own key.
+                  </p>
                 </div>
               </li>
               <li><span>Run your agent exactly as before. No CLI commands needed.</span></li>
             </ol>
             <AgentNaming />
             <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-              Using Azure OpenAI, AWS Bedrock or your own provider key? <Link prefetch={false} href={ROUTES.fleetKey} className="wr-link">Fleet key &rarr;</Link>
+              Using Azure OpenAI or AWS Bedrock? <Link prefetch={false} href={ROUTES.fleetKey} className="wr-link">Fleet key &rarr;</Link>
             </p>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', paddingTop: 4 }}>
               <Link prefetch={false} href={ROUTES.sandbox} className="wr-btn wr-btn--primary wr-btn--h32">Test in Sandbox &rarr;</Link>

@@ -25,7 +25,7 @@ describe('buildSnapshot', () => {
     expect(s).toEqual({
       principal: 'u1', revision: 7, plan: 'trial',
       production: { access: true, maxFleets: 1, maxAgentsPerFleet: 500, includedAgents: 3, retentionDays: 30 },
-      sandbox: { enabled: true, sampleRunsPerDay: 3, practiceRunsPerDay: 5, inflight: 4, rpm: 60, retentionDays: 30 },
+      sandbox: { enabled: true, sampleRunsPerDay: 3, practiceRunsPerDay: 10, inflight: 4, rpm: 60, retentionDays: 30 },
       fleets: [{ id: 'f-a', role: 'production' }, { id: 'f-b', role: 'production' }],
       transfers: [],
       closing: null,

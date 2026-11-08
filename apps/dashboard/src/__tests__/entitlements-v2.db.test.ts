@@ -455,4 +455,39 @@ suite('entitlements v2 against Postgres', () => {
       expect(psql(['-f', script('backfill-trial-state.sql')]).trim().split('\n').at(-1)).toBe('0|1250|1251|1');
     });
   });
+
+  describe('v2 bind-all script', () => {
+    const run = async (apply: boolean, batchSize?: number) => {
+      const { bindAll } = await import('../../scripts/v2-bind-all');
+      return bindAll((text, values) => db().query(text, values), { apply, batchSize });
+    };
+    const bindRows = () => q(`SELECT user_id, delivered_at IS NULL AS pending FROM entitlement_outbox WHERE reason = 'v2_bind' ORDER BY user_id, id`);
+
+    it('dry run counts and writes nothing', async () => {
+      for (const id of ['b1', 'b2', 'b3']) await addUser(id, { fleet: `f-${id}` });
+      await enqueue('b2', 'v2_bind');
+      expect(await run(false)).toEqual({ users: 3, pending: 1, queued: 0 });
+      expect(await bindRows()).toEqual([{ user_id: 'b2', pending: true }]);
+    });
+
+    it('--apply queues every account in batches, skips one already pending, and re-runs to nothing', async () => {
+      for (let i = 0; i < 7; i++) await addUser(`b${i}`, { fleet: `f-b${i}` });
+      await enqueue('b3', 'v2_bind');
+      // A delivered v2_bind row doesn't count as pending.
+      await enqueue('b4', 'v2_bind');
+      await q(`UPDATE entitlement_outbox SET delivered_at = now() WHERE user_id = 'b4'`);
+      expect(await run(true, 3)).toEqual({ users: 7, pending: 1, queued: 6 });
+      expect((await bindRows()).filter((r) => r.pending).map((r) => r.user_id)).toEqual(['b0', 'b1', 'b2', 'b3', 'b4', 'b5', 'b6']);
+      expect(await run(true, 3)).toEqual({ users: 7, pending: 7, queued: 0 });
+    });
+
+    it('the sweep delivers the queued rows as v2 snapshots, binding each account\'s fleet', async () => {
+      for (const id of ['b1', 'b2']) await addUser(id, { fleet: `f-${id}` });
+      await run(true);
+      await runSweep();
+      expect(await bindRows()).toEqual([{ user_id: 'b1', pending: false }, { user_id: 'b2', pending: false }]);
+      expect(engine.bindings.get('f-b1')).toMatchObject({ principal: 'b1', state: 'bound' });
+      expect(engine.bindings.get('f-b2')).toMatchObject({ principal: 'b2', state: 'bound' });
+    });
+  });
 });

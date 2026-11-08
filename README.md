@@ -1,17 +1,24 @@
 # WhiteRoom
 
-Work/rest governance for AI agents. Inspired by maritime watch law — bounded work sessions, mandatory handovers, tamper-evident audit trails.
+The AI Agents watchkeeper; control risk, save tokens, and improve performance
 
 WhiteRoom sits between your code and the LLM API. Set one environment variable — no SDK required, no code changes.
 
 ## Quickstart
 
+1. Sign up at https://app.whiteroom.tech.
+2. Open Sandbox, copy its line into your .env and run your agent.
+   Or from a terminal: `npx @whiteroom-ai/cli sandbox run --provider anthropic -- python agent.py`
+3. Connect: copy your line from the Fleet key page.
+
+Your line looks like this:
+
 ```bash
 # Anthropic
-export ANTHROPIC_BASE_URL=https://proxy.whiteroom.tech
+export ANTHROPIC_BASE_URL=https://proxy.whiteroom.tech/<your-proxy-key>
 
 # OpenAI
-export OPENAI_BASE_URL=https://proxy.whiteroom.tech/v1
+export OPENAI_BASE_URL=https://proxy.whiteroom.tech/<your-proxy-key>/v1
 ```
 
 Your existing agent framework runs unchanged. WhiteRoom intercepts calls, applies governance, and forwards to the LLM.

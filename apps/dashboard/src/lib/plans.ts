@@ -357,12 +357,13 @@ export interface SandboxLimits {
 
 /**
  * Sandbox limits by plan. `trial` is Starter during the free period;
- * Suspended gets the same Sandbox as Free.
+ * Suspended gets the same Sandbox as Free, except trial and Suspended keep
+ * the 10 practice runs a day everyone had before plans set them.
  */
 export const SANDBOX_LIMITS: Record<PlanId | 'trial', SandboxLimits> = {
   free: { enabled: true, sampleRunsPerDay: 3, practiceRunsPerDay: 5, inflight: 4, rpm: 60, retentionDays: 7 },
-  suspended: { enabled: true, sampleRunsPerDay: 3, practiceRunsPerDay: 5, inflight: 4, rpm: 60, retentionDays: 7 },
-  trial: { enabled: true, sampleRunsPerDay: 3, practiceRunsPerDay: 5, inflight: 4, rpm: 60, retentionDays: 30 },
+  suspended: { enabled: true, sampleRunsPerDay: 3, practiceRunsPerDay: 10, inflight: 4, rpm: 60, retentionDays: 7 },
+  trial: { enabled: true, sampleRunsPerDay: 3, practiceRunsPerDay: 10, inflight: 4, rpm: 60, retentionDays: 30 },
   starter: { enabled: true, sampleRunsPerDay: 3, practiceRunsPerDay: 10, inflight: 4, rpm: 60, retentionDays: 30 },
   pro: { enabled: true, sampleRunsPerDay: 10, practiceRunsPerDay: 25, inflight: 8, rpm: 120, retentionDays: 90 },
   enterprise: { enabled: true, sampleRunsPerDay: 10, practiceRunsPerDay: 25, inflight: 8, rpm: 120, retentionDays: 90 },

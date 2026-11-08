@@ -197,14 +197,14 @@
 
     <h3>Anthropic (Claude)</h3>
     <div class="code-block">
-      <span class="label">Terminal</span>
-      <code><span class="keyword">export</span> <span class="string">ANTHROPIC_BASE_URL</span>=https://proxy.whiteroom.tech</code>
+      <span class="label">.env · from the Fleet key page</span>
+      <code><span class="keyword">export</span> <span class="string">ANTHROPIC_BASE_URL</span>=https://proxy.whiteroom.tech/&lt;your-proxy-key&gt;</code>
     </div>
 
     <h3>OpenAI</h3>
     <div class="code-block">
-      <span class="label">Terminal</span>
-      <code><span class="keyword">export</span> <span class="string">OPENAI_BASE_URL</span>=https://proxy.whiteroom.tech/v1</code>
+      <span class="label">.env · from the Fleet key page</span>
+      <code><span class="keyword">export</span> <span class="string">OPENAI_BASE_URL</span>=https://proxy.whiteroom.tech/&lt;your-proxy-key&gt;/v1</code>
     </div>
 
     <div class="note">
@@ -221,7 +221,7 @@
       <span class="label">Python</span>
       <code><span class="comment"># Set the env variable, then use LangChain as normal</span>
 <span class="keyword">import</span> os
-os.environ[<span class="string">"OPENAI_BASE_URL"</span>] = <span class="string">"https://proxy.whiteroom.tech/v1"</span>
+os.environ[<span class="string">"OPENAI_BASE_URL"</span>] = <span class="string">"https://proxy.whiteroom.tech/&lt;your-proxy-key&gt;/v1"</span>
 
 <span class="keyword">from</span> langchain_openai <span class="keyword">import</span> ChatOpenAI
 llm = ChatOpenAI(model=<span class="string">"gpt-4o"</span>)
@@ -233,7 +233,7 @@ llm = ChatOpenAI(model=<span class="string">"gpt-4o"</span>)
       <span class="label">Python</span>
       <code><span class="comment"># Set before importing CrewAI</span>
 <span class="keyword">import</span> os
-os.environ[<span class="string">"OPENAI_BASE_URL"</span>] = <span class="string">"https://proxy.whiteroom.tech/v1"</span>
+os.environ[<span class="string">"OPENAI_BASE_URL"</span>] = <span class="string">"https://proxy.whiteroom.tech/&lt;your-proxy-key&gt;/v1"</span>
 
 <span class="keyword">from</span> crewai <span class="keyword">import</span> Agent, Task, Crew
 <span class="comment"># Agents are automatically governed</span></code>
@@ -245,7 +245,7 @@ os.environ[<span class="string">"OPENAI_BASE_URL"</span>] = <span class="string"
       <code><span class="keyword">import</span> anthropic
 
 client = anthropic.Anthropic(
-    base_url=<span class="string">"https://proxy.whiteroom.tech"</span>
+    base_url=<span class="string">"https://proxy.whiteroom.tech/&lt;your-proxy-key&gt;"</span>
 )
 <span class="comment"># Your existing API key is used automatically</span></code>
     </div>
