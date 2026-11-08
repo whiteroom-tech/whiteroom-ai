@@ -373,6 +373,8 @@
 }
 .wr-banner__actions { display: flex; align-items: center; gap: 8px; align-self: center; }
 .wr-banner--info .wr-banner__icon { color: var(--brand); }
+/* Free-tier info banners (AccountPlanBanner, Fleet key's "You're live"): a brand tint over the card, so it doesn't depend on the page behind. */
+.wr-plan-banner .wr-banner { background: linear-gradient(var(--brand-dim), var(--brand-dim)), var(--card); }
 .wr-banner--warn { background: var(--warn-bg); border-color: var(--warn-line); }
 .wr-banner--warn .wr-banner__icon { color: var(--warn); }
 .wr-banner--error { border-color: var(--bad); }

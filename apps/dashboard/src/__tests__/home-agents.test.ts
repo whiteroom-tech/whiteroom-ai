@@ -5,6 +5,8 @@ import { Window } from 'happy-dom';
 
 const textOf = (html: string) => { const el = new Window().document.createElement('div'); el.innerHTML = html; return el.textContent ?? ''; };
 
+// The plan banner and Home's connect-line caveat read the signed-in account: none here.
+vi.mock('@/auth', () => ({ auth: async () => null, signIn: vi.fn(), signOut: vi.fn(), handlers: {} }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {} }) }));
 
 import { HomeView } from '@/components/home/HomeContent';

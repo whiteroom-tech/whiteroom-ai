@@ -4,10 +4,11 @@ import { auth } from '@/auth';
 import { lockFleetHolders } from '@/lib/control-auth';
 import { plainUnlessSealed, readCred, sealCred } from '@/lib/cred-seal';
 import { db } from '@/lib/db';
-import { activateTrial, enqueueEntitlementSync } from '@/lib/entitlements';
+import { activateTrial, enqueueEntitlementSync, getSubscriptionRow, syncEntitlementsToEngine } from '@/lib/entitlements';
 import { verifyFleetOwnership } from '@/lib/fleet-ownership';
-import { effectivePlan, limitsFor, PLANS, trialStatus } from '@/lib/plans';
+import { effectivePlan, hasLiveSubscription, isTrialActive, limitsFor, PLANS, trialStatus } from '@/lib/plans';
 import { plural } from '@/lib/format';
+import { getClosing } from '@/lib/account-closing';
 
 export interface UserFleet {
   id: string;
@@ -144,4 +145,62 @@ export async function addUserFleet(
   }
 
   return { ok: true };
+}
+
+/** Where going live was asked for: the Sandbox verdict (Take it live), the Free banner or Settings (Go live). */
+export type GoLiveFrom = 'verdict' | 'banner' | 'settings';
+
+/**
+ * Go live / Take it live: starts a Free account's 30 free days (activateTrial,
+ * in one transaction with its outbox row), then pushes the new limits after
+ * the commit (a failed push stays queued for the sweep). The home fleet
+ * becomes the live fleet as it is. Only a Free account can; a repeat after
+ * it went live (a second click, another tab) answers as the first did and
+ * changes nothing. `{ ok: false }`: refused, or it couldn't be done; the
+ * caller says "Couldn't … Try again."
+ */
+export async function takeItLive(where: GoLiveFrom): Promise<{ ok: true; trialEndsAt: string } | { ok: false }> {
+  // `where` only says which button was used; anything else is refused, and it is never logged.
+  if (where !== 'verdict' && where !== 'banner' && where !== 'settings') return { ok: false };
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) return { ok: false };
+
+  let endsAt: string | null = null;
+  let started = false;
+  const client = await db().connect();
+  try {
+    await client.query('BEGIN');
+    // The row lock orders this against a concurrent link, checkout or second click.
+    const { rows } = await client.query(
+      'SELECT trial_ends_at::text, trial_state, trial_started_at IS NOT NULL AS went_live FROM users WHERE id = $1 FOR UPDATE',
+      [userId],
+    );
+    const user = rows[0];
+    if (user) {
+      const sub = await getSubscriptionRow(userId, client);
+      const trial = { endsAt: user.trial_ends_at ?? null, state: user.trial_state ?? null };
+      // Never for an account that is being deleted or has closed.
+      const closing = await getClosing(userId, client);
+      if (closing) {
+        console.warn('[go-live] refused while the account is closing');
+      } else if (effectivePlan(sub, trial) === 'free') {
+        endsAt = await activateTrial(client, userId);
+        started = endsAt !== null;
+      } else if (user.went_live && user.trial_state === 'active' && isTrialActive(trial.endsAt) && !hasLiveSubscription(sub)) {
+        // Already live from a Free start, still in its free days: the same answer again.
+        endsAt = trial.endsAt;
+      }
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[go-live] couldn\'t start the free days:', err instanceof Error ? err.message : 'unknown error');
+    return { ok: false };
+  } finally {
+    client.release();
+  }
+
+  if (started) await syncEntitlementsToEngine(userId);
+  return endsAt ? { ok: true, trialEndsAt: endsAt } : { ok: false };
 }

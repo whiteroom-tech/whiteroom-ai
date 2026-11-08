@@ -148,16 +148,98 @@ describe('plan dates and card headings', () => {
 });
 
 describe('Settings plan: a lapsed plan in its grace', () => {
-  it('says in one line when it pauses, and offers the same plan again', () => {
+  it('says in one line when it switches off, with Update card, and still offers the same plan again', () => {
     const t = view(2, { plan: 'pro', onTrial: false, graceEndsAt: '2026-11-20T12:00:00.000Z' });
-    expect(t).toMatch(/Your plan pauses on Nov 2\d\. Subscribe again to keep it\./);
+    expect(t).toContain('Your plan switches off on Nov 20 because a payment failed. Update your card to keep it. Update card');
+    expect(t).not.toContain('pauses on');
     expect(t).toContain('Subscribe to Pro again');
     expect(t).toContain('Switch to Starter');
   });
 
+  it('once Stripe has cancelled the subscription: Choose a plan (Talk to us when nothing can be bought), not Update card', () => {
+    const ended = (purchasable: Array<'starter' | 'pro'>) => text(renderToStaticMarkup(h(SettingsView, {
+      closing: null, billingResult: null, purchasablePlans: purchasable,
+      account: { id: 'u', email: 'a@example.test', name: 'A', image: null, timezone: null, emailVerified: true, methods: [], pendingEmailChange: null, fleetCount: 1 },
+      entitlement: { plan: 'pro', planName: 'Pro', limits: limitsFor('pro'), subscription: { plan: 'pro', status: 'canceled', planOverride: null, stripeCustomerId: 'cus_x', stripeSubscriptionId: 'sub_x', currentPeriodEnd: null, cancelAtPeriodEnd: false, lapsedAt: new Date().toISOString() }, trialEndsAt: new Date(Date.now() - 86_400_000).toISOString(), onTrial: false, graceEndsAt: '2026-11-20T12:00:00.000Z', usage: { fleets: 1, agents: 1 } },
+    })));
+    const buy = ended(['starter', 'pro']);
+    expect(buy).toContain('Your plan switches off on Nov 20 because a payment failed. Choose a plan to keep it. Choose a plan');
+    expect(buy).not.toContain('Update card');
+    expect(ended([])).toContain('because a payment failed. Talk to us to keep it. Talk to us');
+  });
+
   it('shows neither outside a grace', () => {
     const t = view(2, { plan: 'pro', onTrial: false });
-    expect(t).not.toContain('pauses on');
+    expect(t).not.toContain('switches off on');
+    expect(t).not.toContain('Update card');
     expect(t).not.toContain('Subscribe to Pro again');
+  });
+});
+
+describe('Settings plan: a plan cancelled on purpose, in its grace', () => {
+  it('keeps today\'s line, with no payment-failed words or Update card', () => {
+    const t = text(renderToStaticMarkup(h(SettingsView, {
+      closing: null, billingResult: null, purchasablePlans: ['starter', 'pro'],
+      account: { id: 'u', email: 'a@example.test', name: 'A', image: null, timezone: null, emailVerified: true, methods: [], pendingEmailChange: null, fleetCount: 1 },
+      entitlement: { plan: 'pro', planName: 'Pro', limits: limitsFor('pro'), subscription: { plan: 'pro', status: 'canceled', planOverride: null, stripeCustomerId: 'cus_x', stripeSubscriptionId: 'sub_x', currentPeriodEnd: null, cancelAtPeriodEnd: true, lapsedAt: new Date().toISOString() }, trialEndsAt: new Date(Date.now() - 86_400_000).toISOString(), onTrial: false, graceEndsAt: '2026-11-20T12:00:00.000Z', usage: { fleets: 1, agents: 1 } },
+    })));
+    expect(t).toContain('Your plan pauses on Nov 20. Subscribe again to keep it.');
+    expect(t).not.toContain('payment failed');
+    expect(t).not.toContain('Update card');
+  });
+});
+
+describe('Settings plan: a card that failed (past_due)', () => {
+  const sub = (status: string) => ({ plan: 'pro', status, planOverride: null, stripeCustomerId: 'cus_x', stripeSubscriptionId: 'sub_x', currentPeriodEnd: null, cancelAtPeriodEnd: false, lapsedAt: null });
+  const pastDue = (status: string) => text(renderToStaticMarkup(h(SettingsView, {
+    closing: null, billingResult: null, purchasablePlans: ['starter', 'pro'],
+    account: { id: 'u', email: 'a@example.test', name: 'A', image: null, timezone: null, emailVerified: true, methods: [], pendingEmailChange: null, fleetCount: 1 },
+    entitlement: { plan: 'pro', planName: 'Pro', limits: limitsFor('pro'), subscription: sub(status), trialEndsAt: new Date(Date.now() - 86_400_000).toISOString(), onTrial: false, usage: { fleets: 1, agents: 1 } },
+  })));
+
+  it('keeps the pill, says it in the banner words, and Update card takes the place of Manage billing', () => {
+    const t = pastDue('past_due');
+    expect(t).toContain('payment failed');
+    expect(t).toContain('Your card payment failed. Update your card to keep your plan. Update card');
+    expect(t).not.toContain('Manage billing');
+  });
+
+  it('a paying account sees Manage billing, as today', () => {
+    const t = pastDue('active');
+    expect(t).toContain('Manage billing');
+    expect(t).not.toContain('Update card');
+  });
+});
+
+describe('Settings plan: Free', () => {
+  const free = (goLive?: { busy: boolean; error: string }) => text(renderToStaticMarkup(h(SettingsView, {
+    closing: null, billingResult: null, purchasablePlans: [],
+    account: { id: 'u', email: 'a@example.test', name: 'A', image: null, timezone: null, emailVerified: true, methods: [], pendingEmailChange: null, fleetCount: 1 },
+    entitlement: { plan: 'free', planName: 'Free', limits: limitsFor('free'), subscription: null, trialEndsAt: new Date(Date.now() - 60_000).toISOString(), onTrial: false, usage: { fleets: 1, agents: 0 } },
+    samples: goLive ? { goLive } : undefined,
+  })));
+
+  it('offers Go live with "No card needed.", and hides the Fleets and Agents meters', () => {
+    const t = free();
+    expect(t).toContain('Go live No card needed.');
+    expect(t).not.toMatch(/Fleets \d/);
+    expect(t).not.toMatch(/Agents (registered )?\d/);
+    expect(t).toContain('History kept 7 days');
+  });
+
+  it('busy says "Going live…"; a refusal sits between the button and "No card needed."', () => {
+    expect(free({ busy: true, error: '' })).toContain('Going live… No card needed.');
+    const html = renderToStaticMarkup(h(SettingsView, {
+      closing: null, billingResult: null, purchasablePlans: [],
+      account: { id: 'u', email: 'a@example.test', name: 'A', image: null, timezone: null, emailVerified: true, methods: [], pendingEmailChange: null, fleetCount: 1 },
+      entitlement: { plan: 'free', planName: 'Free', limits: limitsFor('free'), subscription: null, trialEndsAt: new Date().toISOString(), onTrial: false, usage: { fleets: 1, agents: 0 } },
+      samples: { goLive: { busy: false, error: "Couldn't go live. Try again." } },
+    }));
+    expect(text(html)).toContain('Go live Couldn&#x27;t go live. Try again. No card needed.');
+    expect(html).toMatch(/<p role="alert"[^>]*>Couldn&#x27;t go live\. Try again\.<\/p>/);
+  });
+
+  it('a paid plan gets no Go live', () => {
+    expect(view(1, { plan: 'pro', onTrial: false })).not.toContain('Go live');
   });
 });

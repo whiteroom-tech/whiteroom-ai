@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { Sidebar } from '@/components/Sidebar';
 import { PhoneTabBar } from '@/components/PhoneTabBar';
 import { AccountClosingBanner } from '@/components/AccountClosingBanner';
+import { AccountPlanBanner } from '@/components/AccountPlanBanner';
 import { applyTheme, storedTheme } from '@/lib/theme';
 
 /**
@@ -49,6 +50,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <Sidebar />
       <div inert={menuOpen} style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
         <AccountClosingBanner />
+        <AccountPlanBanner />
         {children}
       </div>
       {menuOpen && <div className="wr-menu-scrim" aria-hidden="true" onClick={closeMenu} />}

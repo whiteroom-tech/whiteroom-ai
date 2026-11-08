@@ -6,6 +6,8 @@ import { CopyChip } from '@/components/citadel/CopyChip';
 import { SETUP_GUIDE_URL, SETUP_LINES } from '@/lib/setup';
 import { AgentNaming } from '@/components/citadel/AgentNaming';
 import { ROUTES } from '@/lib/routes';
+import { useConnectCaveat } from '@/components/AccountPlanBanner';
+import { ConnectCaveat } from '@/components/ConnectCaveat';
 
 /**
  * Home with no agents yet (README › Screens › 8). The strip, Agents, Activity
@@ -13,6 +15,7 @@ import { ROUTES } from '@/lib/routes';
  * view on the first call.
  */
 export function EmptyHome() {
+  const caveat = useConnectCaveat();
   return (
     <div className="wr-page-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24 }}>
       <div style={{ maxWidth: 560, margin: '24px auto 0' }}>
@@ -30,6 +33,7 @@ export function EmptyHome() {
                 <span>Change one URL so your agent&rsquo;s calls go through WhiteRoom.</span>
                 <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
                   {Object.values(SETUP_LINES).map((l) => <CopyChip key={l} text={l} />)}
+                  <ConnectCaveat caveat={caveat} />
                   <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
                     Get a proxy key on <Link prefetch={false} href={ROUTES.fleetKey} className="wr-link">Fleet key</Link> by connecting your Anthropic or OpenAI key. Each provider key gets its own. Your agent keeps sending its own key.
                   </p>

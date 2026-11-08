@@ -33,6 +33,8 @@ import { AgentNaming } from '@/components/citadel/AgentNaming';
 import { fmtDay } from '@/lib/format';
 import type { CredentialChange } from '@/lib/owner-credentials';
 import { RotateDialog, RotationResult } from './rotate';
+import { ConnectCaveat } from '@/components/ConnectCaveat';
+import type { PlanState } from '@/lib/plan-banner-shared';
 
 /** AWS Bedrock has two unrelated ways in: a bearer key (Claude only, via Mantle) or a cross-account IAM role (any model, via WhiteRoom's native adapter). */
 type BedrockMode = 'api-key' | 'role';
@@ -44,6 +46,10 @@ interface Props {
   fleetId: string;
   fleetToken: string | null;
   isNew: boolean;
+  /** A one-time line above the page (after going live), from the page. */
+  notice?: React.ReactNode;
+  /** Under the connect card, while its line can't work yet (Free, or Suspended once refused). */
+  caveat?: PlanState['caveat'];
 }
 
 // BYOK: one account can connect several provider keys at once. The engine
@@ -457,7 +463,7 @@ function maskKey(key: string): string {
   return key.length > 12 ? `${key.slice(0, 6)}…${key.slice(-4)}` : '••••';
 }
 
-export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, previewKeys }: Props & { previewKeys?: ProviderKey[] }) {
+export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, notice, caveat, previewKeys }: Props & { previewKeys?: ProviderKey[] }) {
   const [showKey, setShowKey] = useState(isNew);
   const [rotating, setRotating] = useState(false);
   // A rotated API key: shown once, then the page reloads onto the new key and token.
@@ -486,6 +492,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
       <PageHeader title="Fleet key" fleetId={fleetId} fleetTitle={`Signed in as ${email}`} />
       <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
         <main className="wr-setup-page">
+          {notice}
           <PageLead>Connect an agent to WhiteRoom.</PageLead>
           <div className="wr-setup-narrow">
           {isNew && (
@@ -536,6 +543,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
                   <RecipeStep label="Or with the OpenAI SDK against Azure's v1 API" code={`from openai import OpenAI\n\nclient = OpenAI(\n    base_url="${PROXY_KEY_URL}/openai/v1",\n    api_key="<your-azure-api-key>",\n    ${AGENT_PY_HEADERS},  # optional if your agent has a system prompt\n)`} />
                 </>
               )}
+              <ConnectCaveat caveat={caveat} />
             </div>
           </SettingsCard>
 

@@ -8,6 +8,8 @@ import { createRoot, type Root } from 'react-dom/client';
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const nav = vi.hoisted(() => ({ path: '/home' }));
+// The plan banner and Home's connect-line caveat read the signed-in account: none here.
+vi.mock('@/auth', () => ({ auth: async () => null, signIn: vi.fn(), signOut: vi.fn(), handlers: {} }));
 vi.mock('next/navigation', () => ({ usePathname: () => nav.path }));
 const api = vi.hoisted(() => ({ pause: vi.fn(), resume: vi.fn(), check: vi.fn() }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({

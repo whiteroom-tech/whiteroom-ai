@@ -13,6 +13,7 @@ import { finishSignIn, resyncFleetToken } from './provision';
 import { ensureHomeFleet } from '@/lib/home-fleet';
 import { clearedFleet, forgetCleared, rememberCleared, SandboxClearedLine, SandboxOpensLaterLine } from '@/components/sandbox/HomeFleetLines';
 import { generateApiKey } from '@/lib/fleet-helpers';
+import { useArrivedLive, usePlanState, YoureLive } from '@/components/AccountPlanBanner';
 
 function emailToFleetId(email: string) {
   return email.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
@@ -31,6 +32,9 @@ export default function DashboardPage() {
   // A Free account's home fleet (free tier §4): its Sandbox opens later (over the sign-up cap), or it replaced a retired one.
   const [opensAt, setOpensAt] = useState<string | null>(null);
   const [cleared, setCleared] = useState(false);
+  const plan = usePlanState();
+  // Arrived from going live (?live=1): the one-time "You're live" line.
+  const arrivedLive = useArrivedLive();
 
   useEffect(() => {
     if (status === 'loading') return;
@@ -207,8 +211,17 @@ export default function DashboardPage() {
 
   return (
     <AppShell>
-      {cleared && <div style={{ padding: '16px 24px 0' }}><SandboxClearedLine /></div>}
-      <Onboarding {...props} />
+      {/* One-time lines sit in the page body above the lead, as Sandbox's do; plan banners are in AppShell's slot. */}
+      <Onboarding
+        {...props}
+        notice={(arrivedLive && plan?.trialEndsAt) || cleared ? (
+          <>
+            {arrivedLive && plan?.trialEndsAt && <YoureLive trialEndsAt={plan.trialEndsAt} />}
+            {cleared && <SandboxClearedLine />}
+          </>
+        ) : null}
+        caveat={plan?.caveat}
+      />
     </AppShell>
   );
 }

@@ -36,6 +36,8 @@ import { BlockedFix, CLOSING_CHANGED, closingMessage, SupportLink } from '@/comp
 import { fmtTime, plural } from '@/lib/format';
 import { browserZone as readBrowserZone, dayKey, daysBetween, setViewerZone } from '@/lib/zone-time';
 import { useSavedViewerZone, useViewerZone } from '@/hooks/useViewerZone';
+import { GOING_LIVE_LABEL, useGoLive, type GoLiveStatus } from '@/components/AccountPlanBanner';
+import { GRACE_LINE, graceFix, NO_CARD, PAST_DUE_LINE, planDay } from '@/lib/plan-banner-shared';
 
 const PROVIDER_LABELS: Record<string, string> = {
   google: 'Google',
@@ -95,7 +97,7 @@ export function SettingsView({
   /** The account's closing window (deleted or plan lapsed), null, or 'unknown' when it couldn't be read. */
   closing: ClosingState;
   /** /dev/settings: sample fleet settings for the sections that read the engine. */
-  samples?: { data?: DataSettings; smaller?: CompressionPreview; alerts?: AlertsStatus; audit?: AuditIntegrity };
+  samples?: { data?: DataSettings; smaller?: CompressionPreview; alerts?: AlertsStatus; audit?: AuditIntegrity; goLive?: GoLiveStatus };
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -139,7 +141,7 @@ export function SettingsView({
           )}
 
           <ProfileSection account={account} pending={pending} run={run} />
-          <div id="plan"><PlanSection entitlement={entitlement} purchasablePlans={purchasablePlans} setBanner={setBanner} pending={pending} /></div>
+          <div id="plan"><PlanSection entitlement={entitlement} purchasablePlans={purchasablePlans} setBanner={setBanner} pending={pending} goLivePreview={samples?.goLive} /></div>
           <DataPrivacySection preview={samples?.data} />
           <SmallerHandoversSection sample={samples?.smaller} />
           <div id="alerts"><AlertsSection preview={samples?.alerts} /></div>
@@ -271,11 +273,14 @@ function PlanSection({
   purchasablePlans,
   setBanner,
   pending,
+  goLivePreview,
 }: {
   entitlement: Entitlement;
   purchasablePlans: PlanId[];
   setBanner: (b: Notice) => void;
   pending: boolean;
+  /** /dev/settings: Go live as busy or refused. */
+  goLivePreview?: GoLiveStatus;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const { plan, limits, usage, subscription } = entitlement;
@@ -324,12 +329,23 @@ function PlanSection({
   // a second, self-serve bill beside it.
   const contracted = plan === 'enterprise' || !!subscription?.planOverride;
   // A lapsed plan in its grace can be bought again: it's the plan they had.
-  const graceEnd = entitlement.graceEndsAt ? shortDay(entitlement.graceEndsAt) : null;
+  // Its day in the viewer's zone once known (UTC while hydrating, as the server renders it).
+  const zone = useViewerZone();
+  const graceEnd = entitlement.graceEndsAt ? (zone ? planDay(entitlement.graceEndsAt, zone) : shortDay(entitlement.graceEndsAt)) : null;
+  // A card that failed (still retrying, or lapsed into its grace) is fixed in the billing portal: Update card.
+  // A plan cancelled on purpose that runs out isn't a failed payment: it keeps today's line.
+  const cancelled = !!graceEnd && !!subscription?.cancelAtPeriodEnd;
+  // Once Stripe has cancelled the subscription a new card can't keep it: a new plan does (or us, when none can be bought).
+  const ended = subscription?.status === 'canceled' || subscription?.status === 'incomplete_expired';
+  const fix = graceFix(!ended, !contracted && purchasablePlans.length > 0);
+  const cardFailed = graceEnd && !cancelled ? GRACE_LINE(graceEnd, fix) : hasLiveSubscription(subscription) && subscription?.status === 'past_due' ? PAST_DUE_LINE : null;
+  const cardAction = graceEnd && !cancelled ? fix : 'card';
   const canBuy = (p: PlanId) => !contracted && purchasablePlans.includes(p) && (p !== plan || entitlement.onTrial || !!graceEnd);
+  const live = useGoLive('settings', goLivePreview);
   const trialEnd = shortDay(entitlement.trialEndsAt);
   // Counted in the viewer's zone, so only once it's known: the server's UTC
   // count can differ by a day and would mismatch hydration.
-  const trialDaysLeft = useViewerZone() !== null ? freeDaysLeft(entitlement.trialEndsAt) : null;
+  const trialDaysLeft = zone !== null ? freeDaysLeft(entitlement.trialEndsAt) : null;
 
   return (
     <Section title="Plan" description="Limits apply to every fleet on the account">
@@ -347,7 +363,7 @@ function PlanSection({
         {/* Only when there's a real Stripe customer behind it. A comped account
             has a `pending_…` placeholder in that column (see setPlanOverride),
             and offering it a portal link would just produce an error. */}
-        {subscription?.stripeCustomerId?.startsWith('cus_') && (
+        {subscription?.stripeCustomerId?.startsWith('cus_') && !cardFailed && (
           <Button variant="secondary" disabled={busy !== null} onClick={() => go(openBillingPortal, 'portal')}>
             {busy === 'portal' ? 'Opening…' : 'Manage billing'}
           </Button>
@@ -357,15 +373,37 @@ function PlanSection({
       {showsShare && (
         <p style={{ fontSize: 'var(--fs-sm)', margin: '0 0 14px', fontVariantNumeric: 'tabular-nums' }}>{monthShareLine(plan, monthShare)}</p>
       )}
-      {graceEnd && <p style={{ fontSize: 'var(--fs-sm)', margin: '0 0 14px' }}>Your plan pauses on {graceEnd}. Subscribe again to keep it.</p>}
+      {plan === 'free' && (
+        <div style={{ display: 'grid', gap: 6, justifyItems: 'start', margin: '0 0 14px' }}>
+          <Button variant="primary" busy={live.busy} busyLabel={GOING_LIVE_LABEL} disabled={busy !== null || pending} onClick={live.goLive}>Go live</Button>
+          {live.error && <p role="alert" style={{ fontSize: 'var(--fs-sm)', color: 'var(--bad)', margin: 0 }}>{live.error}</p>}
+          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: 0 }}>{NO_CARD}</p>
+        </div>
+      )}
+      {cancelled && <p style={{ fontSize: 'var(--fs-sm)', margin: '0 0 14px' }}>Your plan pauses on {graceEnd}. Subscribe again to keep it.</p>}
+      {cardFailed && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', margin: '0 0 14px' }}>
+          <p style={{ fontSize: 'var(--fs-sm)', margin: 0, flex: '1 1 260px' }}>{cardFailed}</p>
+          {cardAction === 'card' ? (
+            <Button variant="primary" disabled={busy !== null} onClick={() => go(openBillingPortal, 'portal')}>
+              {busy === 'portal' ? 'Opening…' : 'Update card'}
+            </Button>
+          ) : cardAction === 'buy' ? (
+            <a href="#settings-plan-choices" className="wr-btn wr-btn--primary wr-btn--h32">Choose a plan</a>
+          ) : (
+            <a href={`mailto:${SUPPORT_EMAIL}`} className="wr-btn wr-btn--primary wr-btn--h32">Talk to us</a>
+          )}
+        </div>
+      )}
       {/* Subscribed inside the free period: the badge is gone, so the line says when billing starts. */}
       {selfServe && freeNow && !entitlement.onTrial && <p style={{ fontSize: 'var(--fs-sm)', margin: '0 0 14px' }}>Free until {trialEnd}</p>}
 
       <div className="wr-settings-stats">
-        <Meter label="Fleets" used={usage.fleets} limit={limits.maxFleets} over={usage.fleets > limits.maxFleets ? `${usage.fleets - limits.maxFleets} over the ${PLANS[plan].name} limit` : undefined} />
+        {/* Not on Free: its Sandbox fleet isn't counted, and 0 / 0 agents says nothing. */}
+        {plan !== 'free' && <Meter label="Fleets" used={usage.fleets} limit={limits.maxFleets} over={usage.fleets > limits.maxFleets ? `${usage.fleets - limits.maxFleets} over the ${PLANS[plan].name} limit` : undefined} />}
         {/* Live registered agents, never 0 when the engine can't be reached (M16).
             The plan's agent count is soft: going over it stops nothing. */}
-        {agents ? (
+        {plan === 'free' ? null : agents ? (
           <div className="wr-settings-stat" data-warn={agents.over ? '' : undefined}>
             <div className="wr-settings-stat__label">Agents</div>
             <div className="wr-settings-stat__num">{agents.value}</div>
@@ -375,7 +413,7 @@ function PlanSection({
               </div>
             )}
           </div>
-        ) : usage.agents !== null && (plan === 'suspended' || plan === 'free') ? (
+        ) : usage.agents !== null && plan === 'suspended' ? (
           <Meter label="Agents" used={usage.agents} limit={limits.maxAgentsPerFleet} over={usage.agents > limits.maxAgentsPerFleet ? `${usage.agents - limits.maxAgentsPerFleet} over the ${PLANS[plan].name} limit` : undefined} />
         ) : (
           <Stat label="Agents registered" value={usage.agents === null ? 'Unavailable' : String(usage.agents)} />
@@ -386,7 +424,7 @@ function PlanSection({
         History means calls and runs. The audit trail is kept for {AUDIT_KEPT}.
       </p>
 
-      <div className="wr-settings-plans">
+      <div className="wr-settings-plans" id="settings-plan-choices">
         {(['starter', 'pro', 'enterprise'] as const).map((p) => (
           <div key={p} className="wr-settings-plan">
             <h3 style={{ margin: 0, fontSize: 'var(--fs-card)', fontWeight: 600 }}>{PLANS[p].name}</h3>

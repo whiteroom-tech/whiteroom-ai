@@ -12,7 +12,8 @@ const mocks = vi.hoisted(() => ({
   mark: vi.fn(),
   retrieve: vi.fn(),
   activate: vi.fn(),
-  invoices: [] as Array<{ amount_paid: number; status_transitions: { paid_at: number } }>,
+  /** Invoices with no status are paid ones. */
+  invoices: [] as Array<{ amount_paid?: number; amount_due?: number; status?: string; attempted?: boolean; attempt_count?: number; status_transitions?: { paid_at: number } }>,
   /** What Stripe says the subscription is now (deliver() sets it to the payload unless a test says otherwise). */
   current: null as Record<string, unknown> | null,
 }));
@@ -35,7 +36,7 @@ vi.mock('@/lib/stripe', () => ({
   stripe: () => ({
     webhooks: { constructEventAsync: mocks.constructEvent },
     subscriptions: { retrieve: mocks.retrieve },
-    invoices: { list: () => (async function* () { yield* mocks.invoices; })() },
+    invoices: { list: (p: { status?: string }) => (async function* () { yield* mocks.invoices.filter((i) => (i.status ?? 'paid') === p.status); })() },
   }),
 }));
 
@@ -261,6 +262,36 @@ describe('stripe webhook: a subscription on a closing account', () => {
       mocks.invoices = [{ amount_paid: 1200, status_transitions: { paid_at: nowS() - DAY_S } }];
       await canceled();
       expect(stored()).not.toBe(old);
+    });
+
+    it('the first lapse of all, from a real invoice that failed with none ever paid, gets the grace', async () => {
+      prev = { status: 'past_due', lapsed_at: null };
+      mocks.invoices = [{ amount_due: 1200, status: 'open', attempted: true, attempt_count: 4 }];
+      await deliver({ ...subscription([{ price: 'price_pro_share', quantity: 1 }]), status: 'unpaid' });
+      expect(Math.abs(Date.parse(stored()!) - Date.now())).toBeLessThan(5_000);
+      prev = { status: 'past_due', lapsed_at: null };
+      mocks.invoices = [{ amount_due: 1200, status: 'uncollectible' }];
+      await canceled();
+      expect(stored()).not.toBeNull();
+    });
+
+    it('a failed invoice earns no new grace once a lapse is recorded, and a zero invoice none at all', async () => {
+      const old = new Date(Date.now() - 20 * DAY_S * 1000).toISOString();
+      prev = { status: 'past_due', lapsed_at: old };
+      mocks.invoices = [{ amount_due: 1200, status: 'open', attempted: true, attempt_count: 1 }];
+      await canceled();
+      expect(stored()).toBe(old);
+      prev = { status: 'trialing', lapsed_at: null };
+      mocks.invoices = [{ amount_due: 0, status: 'open', attempted: true, attempt_count: 1 }];
+      await canceled();
+      expect(stored()).toBeNull();
+    });
+
+    it('an open invoice not yet charged (or still processing) is no failed charge', async () => {
+      prev = { status: 'active', lapsed_at: null };
+      mocks.invoices = [{ amount_due: 1200, status: 'open', attempted: false, attempt_count: 0 }];
+      await canceled();
+      expect(stored()).toBeNull();
     });
 
     it('active again keeps the last lapse (so it can be checked next time); a later write of a lapsed one keeps it', async () => {
