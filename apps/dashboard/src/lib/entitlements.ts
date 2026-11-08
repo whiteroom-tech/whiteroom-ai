@@ -18,7 +18,7 @@ import { db, lockClient, type Queryable } from '@/lib/db';
 import { fetchFleetUsage } from '@/lib/fleet-usage';
 import { PROXY_URL } from '@/lib/whiteroom/client';
 import { fleetOwners } from '@/lib/control-auth';
-import { effectivePlan, limitsFor, PLANS, TRIAL_DAYS, trialStatus, type PlanId, type PlanLimits, type TrialStatus } from '@/lib/plans';
+import { effectivePlan, limitsFor, PLANS, type PlanId, type PlanLimits } from '@/lib/plans';
 import { lapsedPaidPlan, markClosed, reconcileLapse } from '@/lib/account-closing';
 import {
   buildSnapshot, entitlementsV2Enabled, outcomeFor, snapshotHash, v2Body,
@@ -687,45 +687,4 @@ async function pushEntitlementsV2(userId: string, held: { lost: boolean }, secre
     if (await markClosed(userId)) console.warn(`[entitlements] user ${userId}: the engine reports the fleet closed; recorded`);
   }
   return true;
-}
-
-/** This account's trial state (users.trial_state, read as plans.ts trialStatus says). Null when the row is gone. */
-export async function getTrialStatus(userId: string, q: Queryable = db()): Promise<TrialStatus | null> {
-  const { rows } = await q.query(`SELECT trial_state, trial_ends_at::text FROM users WHERE id = $1`, [userId]);
-  if (!rows[0]) return null;
-  return trialStatus(rows[0].trial_state, rows[0].trial_ends_at);
-}
-
-/**
- * Starts a Free account's 30 days, once: when it first goes live (or starts
- * checkout), before the fleet-limit check. Only a row in `not_started` moves,
- * and only new Free sign-ups get that state (D2), so this can never extend or
- * restart an existing trial (a NULL, active or ended row is untouched).
- * Repeats and concurrent calls are no-ops. The outbox row commits with it;
- * the push follows the commit, like the other writers. Returns the new end of
- * the free period, or null when nothing changed.
- */
-export async function activateTrial(userId: string): Promise<string | null> {
-  const client = await db().connect();
-  let endsAt: string | null = null;
-  try {
-    await client.query('BEGIN');
-    const { rows } = await client.query(
-      `UPDATE users SET trial_state = 'active', trial_started_at = now(),
-              trial_ends_at = now() + make_interval(days => $2), updated_at = now()
-        WHERE id = $1 AND trial_state = 'not_started'
-        RETURNING trial_ends_at::text`,
-      [userId, TRIAL_DAYS],
-    );
-    if (rows[0]) await enqueueEntitlementSync(client, userId, 'trial_activated');
-    await client.query('COMMIT');
-    endsAt = rows[0]?.trial_ends_at ?? null;
-  } catch (err) {
-    await client.query('ROLLBACK').catch(() => {});
-    throw err;
-  } finally {
-    client.release();
-  }
-  if (endsAt) await syncEntitlementsToEngine(userId);
-  return endsAt;
 }

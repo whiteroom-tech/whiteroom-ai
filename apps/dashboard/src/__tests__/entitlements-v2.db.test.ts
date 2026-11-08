@@ -399,37 +399,6 @@ suite('entitlements v2 against Postgres', () => {
     });
   });
 
-  describe('trial activation', () => {
-    it('only a not_started account activates, once, however many try at once; outbox row with it, pushed after', async () => {
-      await addUser('u-free', { trialState: 'not_started', trialEndsAt: '2026-11-01T00:00:00Z' });
-      const results = await Promise.all(Array.from({ length: 8 }, () => ent.activateTrial('u-free')));
-      expect(results.filter(Boolean)).toHaveLength(1);
-      const [row] = await q(`SELECT trial_state, trial_started_at IS NOT NULL AS started, extract(epoch FROM trial_ends_at - now())::int AS left FROM users WHERE id = 'u-free'`);
-      expect(row).toMatchObject({ trial_state: 'active', started: true });
-      expect(Math.abs(row.left - 30 * 86_400)).toBeLessThan(120);
-      expect(await q(`SELECT reason FROM entitlement_outbox WHERE user_id = 'u-free' AND revision IS NULL`)).toEqual([{ reason: 'trial_activated' }]);
-      // Pushed after the commit: delivered, as a trial.
-      expect(await pending('u-free')).toEqual([]);
-      expect(JSON.parse(engine.bodies.at(-1)!).principals[0]).toMatchObject({ principal: 'u-free', plan: 'trial' });
-      expect(await ent.getTrialStatus('u-free')).toBe('active');
-      expect(await ent.activateTrial('u-free')).toBeNull();
-    });
-
-    it('never extends or restarts an existing trial: NULL, active or ended rows are untouched', async () => {
-      await addUser('u-legacy-past', { trialEndsAt: '2026-01-01T00:00:00Z' });
-      await addUser('u-legacy-future', { trialEndsAt: '2026-11-20T00:00:00Z' });
-      await addUser('u-active', { trialState: 'active', trialEndsAt: '2026-11-20T00:00:00Z' });
-      await addUser('u-ended', { trialState: 'ended', trialEndsAt: '2026-01-01T00:00:00Z' });
-      const before = await q(`SELECT id, trial_state, trial_ends_at, trial_started_at FROM users ORDER BY id`);
-      for (const r of before) expect(await ent.activateTrial(r.id)).toBeNull();
-      expect(await q(`SELECT id, trial_state, trial_ends_at, trial_started_at FROM users ORDER BY id`)).toEqual(before);
-      expect(await q(`SELECT count(*)::int AS n FROM entitlement_outbox`)).toEqual([{ n: 0 }]);
-      expect(engine.bodies).toEqual([]);
-      expect(await ent.getTrialStatus('u-legacy-past')).toBe('ended');
-      expect(await ent.getTrialStatus('u-legacy-future')).toBe('active');
-    });
-  });
-
   describe('trial_state backfill script', () => {
     it('sets active / ended from trial_ends_at, in batches, leaves trial_ends_at and set states alone, and re-runs cleanly', async () => {
       await q(`INSERT INTO users (id, trial_ends_at) SELECT 'bulk-' || g, now() + (CASE WHEN g % 2 = 0 THEN 1 ELSE -1 END) * interval '3 days' FROM generate_series(1, 2500) g`);
