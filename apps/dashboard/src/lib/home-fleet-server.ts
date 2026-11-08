@@ -141,8 +141,13 @@ async function fleetStatus(fleetId: string): Promise<FleetStatus> {
  */
 async function createFleetAsDashboard(fleetId: string, apiKey: string): Promise<{ token: string } | { status: number }> {
   const secret = process.env.WR_DASHBOARD_SERVICE_SECRET;
+  // Without it the create would count against a shared network's allowance and fail now and then: fail every time, and say why.
+  if (!secret) {
+    console.error('[home-fleet] WR_DASHBOARD_SERVICE_SECRET is not set; home fleets can’t be made');
+    return { status: 0 };
+  }
   try {
-    const res = await createFleet(fleetId, apiKey, { headers: secret ? { [CONTROL_SECRET_HEADER]: secret } : {} });
+    const res = await createFleet(fleetId, apiKey, { headers: { [CONTROL_SECRET_HEADER]: secret } });
     return fleetProvisioned(res) ? { token: res.fleetToken } : { status: res.status ?? 0 };
   } catch {
     return { status: 0 };

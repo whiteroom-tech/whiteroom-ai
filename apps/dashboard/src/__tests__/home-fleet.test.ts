@@ -254,6 +254,12 @@ describe('the real dependencies', () => {
     expect(await deps.createFleet('home-a', KEY)).toEqual({ status: 0 });
     createFleet.mockRejectedValueOnce(new Error('network'));
     expect(await deps.createFleet('home-a', KEY)).toEqual({ status: 0 });
+    // No service secret: nothing is sent, and it fails every time.
+    vi.stubEnv('WR_DASHBOARD_SERVICE_SECRET', '');
+    createFleet.mockClear();
+    vi.spyOn(console, 'error').mockImplementationOnce(() => {});
+    expect(await deps.createFleet('home-a', KEY)).toEqual({ status: 0 });
+    expect(createFleet).not.toHaveBeenCalled();
     vi.unstubAllEnvs();
   });
 
