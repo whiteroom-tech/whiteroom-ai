@@ -233,6 +233,51 @@ export function limitsFor(plan: PlanId): PlanLimits {
   return PLANS[plan].limits;
 }
 
+/**
+ * Where an account's free period is (users.trial_state):
+ * - `not_started`: a Free account that hasn't gone live yet.
+ * - `active` / `ended`: the 30 days are running, or have run out.
+ *
+ * A NULL state (rows written before the column existed, or by older code
+ * during a rollout) reads exactly as before: from trial_ends_at alone. So
+ * does any stored state whenever trial_ends_at says otherwise: an extended
+ * trial (trial_ends_at moved on) counts as active, whatever wrote it.
+ * Only `not_started` with no free period running stays `not_started`.
+ */
+export type TrialStatus = 'not_started' | 'active' | 'ended';
+
+export function trialStatus(state: string | null | undefined, trialEndsAt: string | Date | null, now: Date = new Date()): TrialStatus {
+  if (isTrialActive(trialEndsAt, now)) return 'active';
+  return state === 'not_started' ? 'not_started' : 'ended';
+}
+
+/** Sandbox limits for an account, sent to the engine alongside its plan limits (entitlements v2). */
+export interface SandboxLimits {
+  enabled: boolean;
+  /** Sample-agent runs a day (the sample runs on WhiteRoom's model key). */
+  sampleRunsPerDay: number;
+  /** Practice runs a day. */
+  practiceRunsPerDay: number;
+  /** Sandbox model calls in flight at once. */
+  inflight: number;
+  /** Sandbox model calls a minute. */
+  rpm: number;
+  /** How long Sandbox data is kept. */
+  retentionDays: number;
+}
+
+/**
+ * Sandbox limits by plan. `trial` is Starter during the free period; an
+ * ended free period (`expired`) gets the same Sandbox as Free.
+ */
+export const SANDBOX_LIMITS: Record<PlanId | 'trial', SandboxLimits> = {
+  expired: { enabled: true, sampleRunsPerDay: 3, practiceRunsPerDay: 5, inflight: 4, rpm: 60, retentionDays: 7 },
+  trial: { enabled: true, sampleRunsPerDay: 3, practiceRunsPerDay: 5, inflight: 4, rpm: 60, retentionDays: 30 },
+  starter: { enabled: true, sampleRunsPerDay: 3, practiceRunsPerDay: 10, inflight: 4, rpm: 60, retentionDays: 30 },
+  pro: { enabled: true, sampleRunsPerDay: 10, practiceRunsPerDay: 25, inflight: 8, rpm: 120, retentionDays: 90 },
+  enterprise: { enabled: true, sampleRunsPerDay: 10, practiceRunsPerDay: 25, inflight: 8, rpm: 120, retentionDays: 90 },
+};
+
 /** The three Stripe prices a paid plan can have. */
 export type PriceKind = 'share' | 'fee' | 'legacy';
 

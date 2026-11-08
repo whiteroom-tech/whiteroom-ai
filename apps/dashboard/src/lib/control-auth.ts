@@ -174,10 +174,15 @@ export async function lockFleetHolders(q: Queryable, fleetId: string): Promise<v
   await q.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`provision-fleet:${fleetId}`]);
 }
 
-/** Each fleet's owner (fleetOwner over every account holding it), in one query; absent when nobody holds it. */
-export async function fleetOwners(fleetIds: string[]): Promise<Map<string, string>> {
+/** Each fleet's owner (fleetOwner over every account holding it), in one query; absent when nobody holds it. `q`: a transaction's client, to see its own writes. */
+export async function fleetOwners(
+  fleetIds: string[],
+  q: Queryable = db(),
+  /** Leave out this account's provisioned holding: who owns each fleet once it lets that go. */
+  opts: { notProvisionedBy?: string } = {},
+): Promise<Map<string, string>> {
   if (fleetIds.length === 0) return new Map();
-  const { rows } = await db().query(
+  const { rows } = await q.query(
     `SELECT fleet_id AS "fleetId", id AS "userId", true AS provisioned, ${PROVISIONED_SINCE} AS since
        FROM users WHERE fleet_id = ANY($1)
      UNION ALL
@@ -187,6 +192,7 @@ export async function fleetOwners(fleetIds: string[]): Promise<Map<string, strin
   );
   const holders = new Map<string, FleetHolder[]>();
   for (const r of rows as (FleetHolder & { fleetId: string })[]) {
+    if (opts.notProvisionedBy && r.provisioned && r.userId === opts.notProvisionedBy) continue;
     holders.set(r.fleetId, [...(holders.get(r.fleetId) ?? []), r]);
   }
   const owners = new Map<string, string>();

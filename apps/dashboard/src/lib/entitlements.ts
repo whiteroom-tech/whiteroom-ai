@@ -20,6 +20,10 @@ import { PROXY_URL } from '@/lib/whiteroom/client';
 import { fleetOwners } from '@/lib/control-auth';
 import { effectivePlan, limitsFor, PLANS, type PlanId, type PlanLimits } from '@/lib/plans';
 import { lapsedPaidPlan, markClosed, reconcileLapse } from '@/lib/account-closing';
+import {
+  buildSnapshot, entitlementsV2Enabled, outcomeFor, snapshotHash, v2Body,
+  type FleetTransfer, type PrincipalSnapshot, type V2Result,
+} from '@/lib/entitlement-snapshot';
 import { isClosingOpen, type Closing } from '@/lib/closing-shared';
 
 export interface SubscriptionRow {
@@ -176,8 +180,8 @@ async function countFleets(userId: string): Promise<number> {
  * can link it, an agent or a teammate included, and their plan must not
  * replace the owner's.
  */
-async function fleetIdsFor(userId: string): Promise<string[]> {
-  const { rows } = await db().query(
+async function fleetIdsFor(userId: string, q: Queryable = db()): Promise<string[]> {
+  const { rows } = await q.query(
     // Sandbox fleets (sandbox-…) never take the plan: they don't count toward it and its limits aren't pushed to them.
     `SELECT fleet_id FROM users WHERE id = $1 AND fleet_id IS NOT NULL AND fleet_id NOT LIKE '${SANDBOX_FLEET_PREFIX}%'
      UNION
@@ -185,7 +189,7 @@ async function fleetIdsFor(userId: string): Promise<string[]> {
     [userId],
   );
   const ids = rows.map((r) => r.fleet_id as string);
-  const owners = await fleetOwners(ids);
+  const owners = await fleetOwners(ids, q);
   return ids.filter((id) => owners.get(id) === userId);
 }
 
@@ -194,6 +198,9 @@ async function fleetIdsFor(userId: string): Promise<string[]> {
  * applied, and with no owner left it drops to starter limits. Called only
  * when the account that let go was the owner; anyone else letting go
  * changes nothing.
+ *
+ * Unversioned pushes only: with ENTITLEMENTS_V2=on the caller (users.ts)
+ * doesn't call this, and the old owner's own snapshot releases the fleet.
  */
 export async function releaseFleet(fleetId: string): Promise<void> {
   const owner = (await fleetOwners([fleetId])).get(fleetId);
@@ -210,7 +217,16 @@ export async function enqueueEntitlementSync(
   client: Pick<ReturnType<typeof db>, 'query'>,
   userId: string,
   reason: string,
+  /** ENTITLEMENTS_V2=on only: fleets moving to this account, sent with its next snapshot. */
+  transfers?: FleetTransfer[],
 ): Promise<void> {
+  if (transfers?.length) {
+    await client.query(
+      `INSERT INTO entitlement_outbox (user_id, reason, transfers) VALUES ($1, $2, $3::jsonb)`,
+      [userId, reason, JSON.stringify(transfers)],
+    );
+    return;
+  }
   await client.query(
     `INSERT INTO entitlement_outbox (user_id, reason) VALUES ($1, $2)`,
     [userId, reason],
@@ -379,6 +395,7 @@ async function pushEntitlements(userId: string, held: { lost: boolean }): Promis
     console.warn('[entitlements] WR_ENTITLEMENT_SYNC_SECRET unset — skipping engine sync');
     return false;
   }
+  if (entitlementsV2Enabled()) return pushEntitlementsV2(userId, held, secret);
 
   const [{ plan, sub }, fleetIds] = await Promise.all([resolvePlan(userId), fleetIdsFor(userId)]);
 
@@ -515,3 +532,159 @@ export async function revokeFleetEntitlement(fleetId: string): Promise<void> {
   }
 }
 
+
+
+// ---------------------------------------------------------------------------
+// Revisioned entitlements (ENTITLEMENTS_V2=on). Off by default: with the flag
+// unset or anything but `on`, nothing below runs and every push is the one above.
+//
+// Each push builds the account's current snapshot and compares it (by hash,
+// revision left out) with the account's newest frozen outbox row:
+// - same, and delivered: nothing to send (no revision, no row);
+// - same, not delivered: that row is resent as it is (byte for byte);
+// - different: a new revision from entitlement_revision, frozen into a new
+//   row with its hash and snapshot; every older undelivered revisioned row
+//   of the account is marked delivered, since a full snapshot replaces it.
+// Only the newest row is ever sent, one request per push. The engine's
+// answer: applied / duplicate delivered, stale dropped; conflict, rejected,
+// a 4xx or a reply without this account's result is logged as an ALERT and
+// left undelivered until the next change replaces it. Because a late older
+// push is answered stale, the delayed re-push (not_before) isn't used here.
+// ---------------------------------------------------------------------------
+
+/** The account's snapshot, read through `q`. One query at a time. */
+async function readSnapshot(userId: string, q: Queryable, revision: number, closing: Closing | null, transfers: FleetTransfer[]): Promise<PrincipalSnapshot> {
+  const { plan, sub } = await resolvePlan(userId, q);
+  const fleetIds = await fleetIdsFor(userId, q);
+  // As the unversioned push: a lapsed paid plan keeps its plan while its window runs.
+  const windowOpen = !!closing && isClosingOpen(closing);
+  const lapsed = windowOpen ? lapsedPaidPlan(plan, sub) : null;
+  const applied: PlanId = lapsed || plan;
+  const onTrial = !lapsed && plan === 'starter' && effectivePlan(sub, null) === 'expired';
+  return buildSnapshot({ principal: userId, revision, plan: applied, onTrial, fleetIds, transfers, closing });
+}
+
+type Sent =
+  | { kind: 'answered'; result: V2Result; closed: unknown[] | null }
+  /** No answer or a 5xx: may still land, so the same row is resent next time. */
+  | { kind: 'failed' }
+  /** A 4xx, or a 2xx without this account's result. */
+  | { kind: 'refused'; why: string };
+
+async function sendSnapshot(snapshot: PrincipalSnapshot, secret: string): Promise<Sent> {
+  try {
+    const res = await fetch(`${PROXY_URL}/internal/entitlements`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(10_000),
+      redirect: 'error',
+      headers: { 'Content-Type': 'application/json', 'x-wr-sync-secret': secret },
+      body: v2Body(snapshot),
+    });
+    if (res.status >= 500) { console.error(`[entitlements] engine sync failed: HTTP ${res.status}`); return { kind: 'failed' }; }
+    if (!res.ok) return { kind: 'refused', why: `HTTP ${res.status}` };
+    const body = await res.json().catch(() => null);
+    const result = outcomeFor(body, snapshot.principal, snapshot.revision);
+    if (!result) return { kind: 'refused', why: 'no result for this account' };
+    const closed = Array.isArray((body as { closed?: unknown })?.closed) ? (body as { closed: unknown[] }).closed : null;
+    return { kind: 'answered', result, closed };
+  } catch {
+    console.error('[entitlements] engine sync failed');
+    return { kind: 'failed' };
+  }
+}
+
+/** Logs a push the engine didn't take: it needs a person (monitoring alerts on [entitlements] errors). */
+function alert(userId: string, revision: number, what: string): void {
+  console.error(`[entitlements] ALERT: engine answered ${what} for user ${userId} revision ${revision}; left undelivered until the next change`);
+}
+
+/**
+ * The revisioned push, under the user's entitlement lock (see pushEntitlements).
+ * Returns whether the engine now has the account's current snapshot.
+ */
+async function pushEntitlementsV2(userId: string, held: { lost: boolean }, secret: string): Promise<boolean> {
+  // The change rows this push answers for, read before the account is: each
+  // was committed before the read, so the snapshot reflects it.
+  const { rows: changes } = await db().query(
+    `SELECT id::text, transfers FROM entitlement_outbox
+      WHERE user_id = $1 AND delivered_at IS NULL AND revision IS NULL
+        AND (not_before IS NULL OR not_before <= now())`,
+    [userId],
+  );
+  const changeIds = (changes as Array<{ id: string }>).map((r) => r.id);
+  const transfers = (changes as Array<{ transfers: FleetTransfer[] | null }>).flatMap((r) => r.transfers ?? []);
+
+  // As the unversioned push: a lapse window is kept in step on every push.
+  let closing: Closing | null;
+  try {
+    const { plan, sub } = await resolvePlan(userId);
+    closing = await reconcileLapse(userId, plan, sub);
+  } catch (err) {
+    console.error('[entitlements] closing check failed:', err instanceof Error ? err.message : 'unknown error');
+    return false;
+  }
+
+  const current = await readSnapshot(userId, db(), 0, closing, transfers);
+  const hash = snapshotHash(current);
+  const { rows: [newest] } = await db().query(
+    `SELECT id::text, payload_hash, snapshot, delivered_at IS NOT NULL AS delivered FROM entitlement_outbox
+      WHERE user_id = $1 AND revision IS NOT NULL ORDER BY revision DESC LIMIT 1`,
+    [userId],
+  );
+  const markChanges = () => changeIds.length
+    ? db().query(`UPDATE entitlement_outbox SET delivered_at = now() WHERE id = ANY($1::bigint[]) AND delivered_at IS NULL`, [changeIds])
+    : Promise.resolve();
+
+  let row: { id: string; snapshot: PrincipalSnapshot };
+  if (newest && newest.payload_hash === hash) {
+    // The engine already has it: nothing to send.
+    if (newest.delivered) { await markChanges(); return true; }
+    row = newest;
+  } else {
+    const { rows: [r] } = await db().query(`SELECT nextval('entitlement_revision')::text AS r`);
+    const snapshot = { ...current, revision: Number(r.r) };
+    const { rows: [ins] } = await db().query(
+      `INSERT INTO entitlement_outbox (user_id, reason, revision, payload_hash, snapshot)
+       VALUES ($1, 'push', $2, $3, $4::jsonb) RETURNING id::text`,
+      [userId, snapshot.revision, hash, JSON.stringify(snapshot)],
+    );
+    // Replaced: a full snapshot supersedes every older one.
+    await db().query(
+      `UPDATE entitlement_outbox SET delivered_at = now()
+        WHERE user_id = $1 AND delivered_at IS NULL AND revision IS NOT NULL AND revision < $2`,
+      [userId, snapshot.revision],
+    );
+    row = { id: ins.id, snapshot };
+  }
+
+  const { revision } = row.snapshot;
+  if (held.lost) { console.error('[entitlements] lock lost before the push; not sent'); return false; }
+  const sent = await sendSnapshot(row.snapshot, secret);
+  // Lost while in flight: not delivered; the same row is resent under a fresh
+  // lock, and answered duplicate if this one landed.
+  if (held.lost) { console.error('[entitlements] lock lost during the push'); return false; }
+  if (sent.kind === 'failed') return false;
+  if (sent.kind === 'refused') { alert(userId, revision, sent.why); return false; }
+  const { outcome } = sent.result;
+  if (outcome === 'conflict' || outcome === 'rejected') {
+    alert(userId, revision, `${outcome}${sent.result.reason ? `: ${sent.result.reason}` : ''}`);
+    return false;
+  }
+  // As the unversioned push: a deletion's closing time must be confirmed
+  // stored, or a deleted account could be removed with its fleets open.
+  if (row.snapshot.closing && outcome !== 'stale' && sent.result.closing !== 'stored') {
+    alert(userId, revision, `${outcome} without closing: "stored"`);
+    return false;
+  }
+  if (outcome === 'stale') console.warn(`[entitlements] engine already has a newer revision than ${revision} for user ${userId}; dropped`);
+
+  await db().query(`UPDATE entitlement_outbox SET delivered_at = now() WHERE id = $1 AND delivered_at IS NULL`, [row.id]);
+  await markChanges();
+
+  // As the unversioned push: the engine has the final say on closing.
+  const fleetIds = row.snapshot.fleets.map((f) => f.id);
+  if (sent.closed?.some((id) => fleetIds.includes(id as string)) && (!closing || isClosingOpen(closing))) {
+    if (await markClosed(userId)) console.warn(`[entitlements] user ${userId}: the engine reports the fleet closed; recorded`);
+  }
+  return true;
+}
