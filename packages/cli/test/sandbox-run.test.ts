@@ -92,9 +92,20 @@ describe("sandbox run", () => {
 
   it("in a terminal it asks for the Sandbox URL (the .env line works too); Ctrl+C at the prompt runs nothing and exits 130", async () => {
     const asked: string[] = [];
-    const code = await run({ provider: "anthropic", command: [process.execPath, "-e", `process.exit(process.env.ANTHROPIC_BASE_URL === ${JSON.stringify(SANDBOX_URL)} ? 7 : 1)`] }, testEnv(),
+    // What the CLI itself prints: the URL it got, by its key's last characters only.
+    let printed = "";
+    const write = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string | Uint8Array) => ((printed += String(chunk)), true)) as typeof process.stdout.write;
+    let code: number;
+    try {
+      code = await run({ provider: "anthropic", command: [process.execPath, "-e", `process.exit(process.env.ANTHROPIC_BASE_URL === ${JSON.stringify(SANDBOX_URL)} ? 7 : 1)`] }, testEnv(),
       { terminal: true, ask: async (q) => (asked.push(q), `ANTHROPIC_BASE_URL=${SANDBOX_URL}`) });
+    } finally {
+      process.stdout.write = write;
+    }
     assert.equal(code, 7);
+    assert.match(printed, /Got your Sandbox URL \(key ending …aaaaaa\)\./);
+    assert.ok(!printed.includes(SANDBOX_KEY));
     assert.deepEqual(asked, ["Paste your Sandbox URL from the Sandbox page (it won't show): "]);
     const cancelled = await run({ provider: "anthropic", command: ["no-such-agent-command-xyz"] }, testEnv(), { terminal: true, ask: async () => { throw new Interrupted(); } });
     assert.equal(cancelled, 130);
