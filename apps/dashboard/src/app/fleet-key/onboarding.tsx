@@ -513,7 +513,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, pr
               {tab === 'direct' ? (
                 <>
                   <p style={{ margin: 0 }}>Change one URL so your agent&rsquo;s calls go through WhiteRoom. Agents with a system prompt need no code changes.</p>
-                  <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Connect your Anthropic or OpenAI key under Provider keys below to get your proxy key. Your agent keeps sending its own key.</p>
+                  {!rotated && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Connect your Anthropic or OpenAI key under Provider keys below to get your proxy key. Your agent keeps sending its own key.</p>}
                   <CopyChip text={SETUP_LINES.anthropic} label="Copy the Anthropic setup line" />
                   <CopyChip text={SETUP_LINES.openai} label="Copy the OpenAI setup line" />
                   <AgentNaming />

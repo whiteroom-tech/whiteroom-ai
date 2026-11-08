@@ -7,8 +7,8 @@ savings for long-running LLM agents.
 https://whiteroom.tech
 
 ## Endpoints
-- `POST https://proxy.whiteroom.tech/v1/messages` — Anthropic format
-- `POST https://proxy.whiteroom.tech/v1/chat/completions` — OpenAI format
+- `POST https://proxy.whiteroom.tech/<your-proxy-key>/v1/messages` — Anthropic format
+- `POST https://proxy.whiteroom.tech/<your-proxy-key>/v1/chat/completions` — OpenAI format
 - `GET https://proxy.whiteroom.tech/health` — health check
 
 ## How to use it
