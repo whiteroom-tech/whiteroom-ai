@@ -76,6 +76,11 @@ describe('client address', () => {
     expect(call('INSERT INTO free_signups')![1][1]).toBeNull();
   });
 
+  it('isn\'t stored at all without a key', () => {
+    vi.stubEnv('AUTH_SECRET', '');
+    expect(ipHash('203.0.113.7')).toBeNull();
+  });
+
   it('is stored only as a keyed hash', async () => {
     await createFreeUser(USER, NOW);
     const stored = call('INSERT INTO free_signups')![1][1];

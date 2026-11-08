@@ -3,7 +3,8 @@ import { db, type Queryable } from '@/lib/db';
 
 /**
  * When a Free account's Sandbox opens, for an account made over the day's
- * sign-up cap (users.sandbox_opens_at, migration 016). Null when it's open:
+ * sign-up cap (users.sandbox_opens_at, migration 016). The home-fleet code
+ * reads it: no home fleet, so no Sandbox, until then. Null when it's open:
  * never deferred, its time has come, or the read failed (logged; a deferred
  * Sandbox opening early is harmless, a Sandbox that never opens is not).
  */

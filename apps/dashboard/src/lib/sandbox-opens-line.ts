@@ -1,6 +1,7 @@
 // The over-cap line (spec §3.8, S1 and S15): what a new Free account made
-// over the day's sign-up cap is told about when its Sandbox opens. Client-safe:
-// the sign-in page and the Sandbox card both show it.
+// over the day's sign-up cap is told about when its Sandbox opens. Client-safe,
+// for the Sandbox and Fleet key cards (built in the home-fleet PR, which also
+// keeps the Sandbox closed until then).
 
 /** "7:00 PM" on the clock in `tz` ('' = the runtime's zone). */
 function clock(ms: number, tz: string): string {

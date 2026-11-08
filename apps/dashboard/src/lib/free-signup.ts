@@ -57,9 +57,11 @@ export function clientIp(forwardedFor: string | null | undefined): string {
   return parts.length >= 2 ? parts[parts.length - 2] : parts[0];
 }
 
-/** A keyed hash of the address, so the address itself is never stored. */
-export function ipHash(ip: string): string {
-  return createHmac('sha256', process.env.AUTH_SECRET || 'wr-free-signup').update(`wr-free-signup-ip|${ip}`).digest('hex');
+/** A keyed hash of the address, so the address itself is never stored; null without a key (nothing is stored then). */
+export function ipHash(ip: string): string | null {
+  const secret = process.env.AUTH_SECRET;
+  if (!secret) return null;
+  return createHmac('sha256', secret).update(`wr-free-signup-ip|${ip}`).digest('hex');
 }
 
 /**
