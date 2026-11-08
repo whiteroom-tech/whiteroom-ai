@@ -5,9 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { BrandLink, FONT_DISPLAY } from '@whiteroom/ui';
 import { DEFAULT_DESTINATION, defaultDestinationForHost, safeCallbackUrl } from '@/lib/callback-url';
 import { ThemedShell } from '@/components/ThemedShell';
-import { useViewerZone } from '@/hooks/useViewerZone';
 import { safeGet, safeRemove, safeSet } from '@/lib/safe-storage';
-import { sandboxOpensLine } from '@/lib/sandbox-opens-line';
 
 type Method = 'google' | 'email';
 
@@ -29,18 +27,18 @@ const LAST_EMAIL_KEY = 'wr_last_email';
  * Read at the moment of the click rather than held in state, so it cannot be
  * stale and cannot be missing because an effect had not run yet.
  *
- * Almost always /fleet-key; for a sign-up that will be Free, / instead, which
- * sends a Free account to Sandbox and anyone else where they'd land today
- * (app/page.tsx). Exceptions: admin.* → / (the staff dashboard),
+ * Almost always /fleet-key; with FREE_PLAN on, / instead, which sends a Free
+ * account to Sandbox and anyone else where they'd land today (app/page.tsx).
+ * Exceptions: admin.* → / (the staff dashboard),
  * console.* → /organization (those hosts 404 Citadel routes). The host gate
  * may also send ?callbackUrl=…; safeCallbackUrl() keeps that from being an
  * open redirect. Dedicated hosts get an absolute URL so Auth.js, which
  * finishes on the app host, sends the user back to the host they started on.
  */
-function destination(freeSignUp: boolean): string {
+export function destination(landOnRoot: boolean): string {
   const raw = new URLSearchParams(window.location.search).get('callbackUrl');
   const fallback = defaultDestinationForHost(window.location.hostname);
-  let path = safeCallbackUrl(raw, freeSignUp && fallback === DEFAULT_DESTINATION ? '/' : fallback);
+  let path = safeCallbackUrl(raw, landOnRoot && fallback === DEFAULT_DESTINATION ? '/' : fallback);
   const host = window.location.hostname.toLowerCase().replace(/:\d+$/, '');
   const dedicated = host === 'admin' || host.startsWith('admin.') || host === 'console' || host.startsWith('console.');
   if (!dedicated) return path;
@@ -78,11 +76,11 @@ const OUTCOMES: Record<string, string> = {
 export interface SignInViewProps {
   /** This sign-up would start on Free (FREE_PLAN=public, or invite with a valid invite cookie). */
   freeSignUp?: boolean;
-  /** ISO time a signed-in Free account's Sandbox opens, when it was made over the day's cap. */
-  opensAt?: string | null;
+  /** Land on / rather than Fleet key when nothing else is asked for (FREE_PLAN on). */
+  landOnRoot?: boolean;
 }
 
-export function SignInView({ freeSignUp = false, opensAt = null }: SignInViewProps) {
+export function SignInView({ freeSignUp = false, landOnRoot = false }: SignInViewProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState('');
@@ -172,7 +170,7 @@ export function SignInView({ freeSignUp = false, opensAt = null }: SignInViewPro
     // The effect above is what reinterprets this value if it does.
     safeSet(LAST_METHOD_KEY, 'google');
     try {
-      await signIn('google', { callbackUrl: destination(freeSignUp) });
+      await signIn('google', { callbackUrl: destination(landOnRoot) });
     } catch {
       setError('Could not start sign-in. Please try again.');
       setLoading(false);
@@ -189,7 +187,7 @@ export function SignInView({ freeSignUp = false, opensAt = null }: SignInViewPro
     // bouncing through Auth.js's default verify-request page.
     const res = await signIn('resend', {
       email: email.trim(),
-      callbackUrl: destination(freeSignUp),
+      callbackUrl: destination(landOnRoot),
       redirect: false,
     });
     setEmailLoading(false);
@@ -214,10 +212,6 @@ export function SignInView({ freeSignUp = false, opensAt = null }: SignInViewPro
       : freeSignUp
         ? 'New here? Signing in creates your Free account and opens your Sandbox.'
         : 'New here? Signing in creates your account and provisions your fleet.';
-  // In the viewer's zone, so only once it's known (null while server-rendering).
-  const zone = useViewerZone();
-  const opensMs = opensAt ? Date.parse(opensAt) : NaN;
-  const opensLine = zone !== null && Number.isFinite(opensMs) ? sandboxOpensLine(opensMs, Date.now(), zone) : null;
 
   return (
     <ThemedShell className="min-h-screen font-sans flex flex-col">
@@ -321,17 +315,6 @@ export function SignInView({ freeSignUp = false, opensAt = null }: SignInViewPro
             )}
 
             {error && <p className="text-xs font-mono" style={{ color: 'var(--bad)' }}>{error}</p>}
-
-            {/* A new Free account made over the day's cap: not an error, the
-                account exists and its Sandbox opens at the next 00:00 UTC. */}
-            {opensLine && (
-              <p
-                className="rounded-lg px-4 py-3 text-xs text-left"
-                style={{ background: 'var(--brand-dim)', border: '1px solid var(--line)', color: 'var(--tx)' }}
-              >
-                {opensLine}
-              </p>
-            )}
           </div>
 
           {/* The one thing a returning passwordless user can actually get

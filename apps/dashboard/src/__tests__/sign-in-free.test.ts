@@ -2,19 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-const mocks = vi.hoisted(() => ({ cookie: null as string | null, auth: vi.fn(), opensAt: vi.fn(), cookiesRead: 0 }));
+const mocks = vi.hoisted(() => ({ cookie: null as string | null, cookiesRead: 0 }));
 vi.mock('next/headers', () => ({
   cookies: async () => {
     mocks.cookiesRead++;
     return { get: (name: string) => (name === 'wr_free_invite' && mocks.cookie ? { value: mocks.cookie } : undefined) };
   },
 }));
-vi.mock('@/auth', () => ({ auth: mocks.auth }));
-vi.mock('@/lib/sandbox-opens-at', () => ({ sandboxOpensAt: mocks.opensAt }));
 vi.mock('next-auth/react', () => ({ signIn: vi.fn() }));
 
 const { default: SignInPage } = await import('@/app/sign-in/page');
-const { SignInView } = await import('@/app/sign-in/sign-in-view');
+const { SignInView, destination } = await import('@/app/sign-in/sign-in-view');
 const { signInviteCookie } = await import('@/lib/free-invite');
 
 const TODAY = 'New here? Signing in creates your account and provisions your fleet.';
@@ -25,12 +23,10 @@ const html = async () => renderToStaticMarkup(await SignInPage());
 beforeEach(() => {
   mocks.cookie = null;
   mocks.cookiesRead = 0;
-  mocks.auth.mockReset().mockResolvedValue(null);
-  mocks.opensAt.mockReset().mockResolvedValue(null);
   vi.stubEnv('AUTH_SECRET', 'test-secret');
   vi.stubEnv('FREE_INVITE_CODE', 'open-sesame');
 });
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
 describe('sign-in subtitle (§6)', () => {
   it('FREE_PLAN off: today\'s page, byte for byte, reading nothing', async () => {
@@ -40,7 +36,7 @@ describe('sign-in subtitle (§6)', () => {
     expect(page).toContain(TODAY);
     expect(page).not.toContain('Free');
     expect(mocks.cookiesRead).toBe(0);
-    expect(mocks.auth).not.toHaveBeenCalled();
+    expect((await SignInPage()).props).toEqual({});
   });
 
   it('invite: the Free line only with a valid invite cookie', async () => {
@@ -57,13 +53,32 @@ describe('sign-in subtitle (§6)', () => {
     expect(await html()).toContain(FREE);
   });
 
-  it('passes a signed-in over-cap account\'s opening time to the page', async () => {
-    vi.stubEnv('FREE_PLAN', 'public');
-    const at = new Date('2026-11-09T00:00:00Z');
-    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
-    mocks.opensAt.mockResolvedValue(at);
-    const el = await SignInPage();
-    expect(el.props).toEqual({ freeSignUp: true, opensAt: at.toISOString() });
-    expect(mocks.opensAt).toHaveBeenCalledWith('u1');
+  it('lands every sign-in on / once FREE_PLAN is on, Free sign-up or not', async () => {
+    vi.stubEnv('FREE_PLAN', 'invite');
+    expect((await SignInPage()).props).toEqual({ freeSignUp: false, landOnRoot: true });
+  });
+});
+
+describe('where a sign-in lands', () => {
+  const at = (host: string, search = '') => vi.stubGlobal('window', {
+    location: { hostname: host, host, search, origin: `http://${host}` },
+  });
+
+  it('Fleet key today; / with FREE_PLAN on', () => {
+    at('app.whiteroom.tech');
+    expect(destination(false)).toBe('/fleet-key');
+    expect(destination(true)).toBe('/');
+  });
+
+  it('an explicit callbackUrl still wins', () => {
+    at('app.whiteroom.tech', '?callbackUrl=%2Fcontrols');
+    expect(destination(true)).toBe('/controls');
+  });
+
+  it('the console and admin hosts keep their own landing', () => {
+    at('console.whiteroom.tech');
+    expect(destination(true)).toBe('https://console.whiteroom.tech/organization');
+    at('admin.whiteroom.tech');
+    expect(destination(true)).toBe('https://admin.whiteroom.tech/');
   });
 });

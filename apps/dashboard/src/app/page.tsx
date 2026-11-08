@@ -4,24 +4,25 @@ import { auth } from '@/auth';
 import { db } from '@/lib/db';
 import { resolvePlan } from '@/lib/entitlements';
 import { getFleetAuthCookie } from '@/lib/fleet-session';
-import { freePlanMode } from '@/lib/plans';
 import { ROUTES } from '@/lib/routes';
-import { sandboxOpensAt } from '@/lib/sandbox-opens-at';
 
 /**
  * Where a Free account lands (spec §3.1 row 3), or null for every other
  * account (and when the read fails): today's landing.
  *
- * - Made over the day's sign-up cap, Sandbox not open yet: the sign-in page,
- *   which says when it opens (S1). Only while FREE_PLAN is on, since the
- *   sign-in page shows that line only then.
  * - A pending invitation to an organization: /organization.
- * - Otherwise: Sandbox.
+ * - Otherwise: Sandbox, including an account made over the day's sign-up
+ *   cap: Sandbox says when it opens, in place of Connect.
+ *
+ * One light read first: only an account whose free period hasn't started
+ * (users.trial_state 'not_started') can be Free, so every other account
+ * reads nothing more.
  */
 async function freeLanding(userId: string): Promise<string | null> {
   try {
+    const { rows: [u] } = await db().query(`SELECT trial_state FROM users WHERE id = $1`, [userId]);
+    if (u?.trial_state !== 'not_started') return null;
     if ((await resolvePlan(userId)).plan !== 'free') return null;
-    if (freePlanMode() !== 'off' && (await sandboxOpensAt(userId))) return '/sign-in';
     const { rows } = await db().query(
       `SELECT 1 FROM organization_members WHERE user_id = $1 AND status = 'invited' LIMIT 1`,
       [userId],

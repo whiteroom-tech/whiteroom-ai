@@ -45,6 +45,11 @@ function utcDayStart(now: Date): Date {
  * Google's load balancer, which appends "<client>, <load balancer>" to
  * whatever the client sent, so the client is the second entry from the end;
  * a lone entry is the client itself. '' when there's no header (local dev).
+ *
+ * This holds only for requests through the load balancer: a request sent
+ * straight to the service's run.app URL can name any address here. The limit
+ * it feeds only delays a Sandbox by a day, so that's accepted; restricting
+ * the service's ingress to the load balancer closes it.
  */
 export function clientIp(forwardedFor: string | null | undefined): string {
   const parts = (forwardedFor ?? '').split(',').map((p) => p.trim()).filter(Boolean);
@@ -81,13 +86,14 @@ async function requestIp(): Promise<string> {
   }
 }
 
-export interface FreeSignupCounts { today: number; fromIp: number; sameIdentity: number }
+/** fromIp is null when the client's address is unknown (no per-address check then). */
+export interface FreeSignupCounts { today: number; fromIp: number | null; sameIdentity: number }
 
 /** Why a new Free account's Sandbox waits until tomorrow, if it does. */
 export function deferReasons(c: FreeSignupCounts): string[] {
   const reasons: string[] = [];
   if (c.today >= FREE_SIGNUPS_PER_UTC_DAY) reasons.push(`over the day's cap of ${FREE_SIGNUPS_PER_UTC_DAY} Free sign-ups`);
-  if (c.fromIp >= FREE_SIGNUPS_PER_IP_PER_DAY) reasons.push(`over ${FREE_SIGNUPS_PER_IP_PER_DAY} Free sign-ups from one address today`);
+  if (c.fromIp !== null && c.fromIp >= FREE_SIGNUPS_PER_IP_PER_DAY) reasons.push(`over ${FREE_SIGNUPS_PER_IP_PER_DAY} Free sign-ups from one address today`);
   if (c.sameIdentity > 0) reasons.push('a plus-address of an existing Free account');
   return reasons;
 }
@@ -100,7 +106,9 @@ export function deferReasons(c: FreeSignupCounts): string[] {
  * column default.
  */
 export async function createFreeUser(user: Omit<AdapterUser, 'id'>, now: Date = new Date()): Promise<AdapterUser> {
-  const ip = ipHash(await requestIp());
+  // An unknown address isn't counted: every such sign-up would share one bucket.
+  const address = await requestIp();
+  const ip = address ? ipHash(address) : null;
   const key = emailKey(user.email ?? '');
   const client = await db().connect();
   let reasons: string[] = [];
@@ -112,12 +120,12 @@ export async function createFreeUser(user: Omit<AdapterUser, 'id'>, now: Date = 
     await client.query(`SELECT pg_advisory_xact_lock(hashtext('wr_free_signups'))`);
     const { rows: [c] } = await client.query(
       `SELECT count(*)::int AS today,
-              count(*) FILTER (WHERE ip_hash = $2)::int AS from_ip,
+              count(*) FILTER (WHERE $2::text IS NOT NULL AND ip_hash = $2)::int AS from_ip,
               (SELECT count(*)::int FROM free_signups WHERE email_key = $3) AS same_identity
          FROM free_signups WHERE created_at >= $1`,
       [utcDayStart(now), ip, key],
     );
-    reasons = deferReasons({ today: c?.today ?? 0, fromIp: c?.from_ip ?? 0, sameIdentity: c?.same_identity ?? 0 });
+    reasons = deferReasons({ today: c?.today ?? 0, fromIp: ip ? (c?.from_ip ?? 0) : null, sameIdentity: c?.same_identity ?? 0 });
     opensAt = reasons.length > 0 ? nextUtcMidnight(now) : null;
     const { rows } = await client.query(
       `INSERT INTO users (name, email, "emailVerified", image, trial_state, trial_ends_at, sandbox_opens_at)
@@ -135,6 +143,13 @@ export async function createFreeUser(user: Omit<AdapterUser, 'id'>, now: Date = 
     throw new Error('Could not create the account. Try again.');
   } finally {
     client.release();
+  }
+  // The invite gets one Free account per click: clear its cookie (sent with
+  // Auth.js's callback response).
+  try {
+    (await cookies()).delete(FREE_INVITE_COOKIE);
+  } catch {
+    // Not in a request that can set cookies; the cookie expires on its own.
   }
   if (opensAt) {
     // No address or email in the log: the reasons and the user id are enough to look into it.

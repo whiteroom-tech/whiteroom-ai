@@ -77,8 +77,15 @@ describe('/sign-in?free=<code> in the proxy', () => {
     expect(res.cookies.get(FREE_INVITE_COOKIE)).toBeUndefined();
   });
 
-  it('does nothing with FREE_PLAN off or public', () => {
-    for (const mode of ['', 'off', 'public']) {
+  it('with FREE_PLAN public drops the code but sets no cookie', () => {
+    vi.stubEnv('FREE_PLAN', 'public');
+    const res = proxy(req('?free=open-sesame'));
+    expect(new URL(res.headers.get('location')!).search).toBe('');
+    expect(res.cookies.get(FREE_INVITE_COOKIE)).toBeUndefined();
+  });
+
+  it('does nothing with FREE_PLAN off', () => {
+    for (const mode of ['', 'off']) {
       vi.stubEnv('FREE_PLAN', mode);
       const res = proxy(req('?free=open-sesame'));
       expect(res.headers.get('location')).toBeNull();

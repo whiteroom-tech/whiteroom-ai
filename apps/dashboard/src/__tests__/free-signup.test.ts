@@ -5,11 +5,12 @@ const mocks = vi.hoisted(() => ({
   client: { query: vi.fn(), release: vi.fn() },
   counts: { today: 0, from_ip: 0, same_identity: 0 },
   forwardedFor: '203.0.113.7, 198.51.100.1' as string | null,
+  deleted: [] as string[],
 }));
 
 vi.mock('@/lib/db', () => ({ db: () => ({ query: vi.fn(), connect: async () => mocks.client }) }));
 vi.mock('next/headers', () => ({
-  cookies: async () => ({ get: () => undefined }),
+  cookies: async () => ({ get: () => undefined, delete: (name: string) => { mocks.deleted.push(name); } }),
   headers: async () => ({ get: (name: string) => (name === 'x-forwarded-for' ? mocks.forwardedFor : null) }),
 }));
 
@@ -29,6 +30,7 @@ beforeEach(() => {
   vi.stubEnv('AUTH_SECRET', 'test-secret');
   mocks.counts = { today: 0, from_ip: 0, same_identity: 0 };
   mocks.forwardedFor = '203.0.113.7, 198.51.100.1';
+  mocks.deleted = [];
   mocks.client.query.mockImplementation(async (sql: string) => {
     if (sql.includes('count(*)')) return { rows: [mocks.counts] };
     if (sql.startsWith('INSERT INTO users')) return { rows: [{ id: 'u-free', email: USER.email }] };
@@ -63,6 +65,15 @@ describe('client address', () => {
     expect(clientIp('6.6.6.6, 203.0.113.7, 198.51.100.1')).toBe('203.0.113.7');
     expect(clientIp('203.0.113.7')).toBe('203.0.113.7');
     expect(clientIp(null)).toBe('');
+  });
+
+  it('isn\'t counted when unknown, so headerless sign-ups don\'t share one bucket', async () => {
+    mocks.forwardedFor = null;
+    mocks.counts.from_ip = 99;
+    await createFreeUser(USER, NOW);
+    expect(call('INSERT INTO users')![1][4]).toBeNull();
+    expect(call('SELECT count(*)')![1][1]).toBeNull();
+    expect(call('INSERT INTO free_signups')![1][1]).toBeNull();
   });
 
   it('is stored only as a keyed hash', async () => {
@@ -126,6 +137,13 @@ describe('limits never turn anyone away', () => {
     const sql = mocks.client.query.mock.calls.map((c) => String(c[0]));
     expect(sql.findIndex((s) => s.includes('pg_advisory_xact_lock'))).toBeLessThan(sql.findIndex((s) => s.includes('count(*)')));
     expect((call('SELECT count(*)')![1][0] as Date).toISOString()).toBe('2026-11-08T00:00:00.000Z');
+  });
+});
+
+describe('the invite cookie', () => {
+  it('is cleared once it has made a Free account', async () => {
+    await createFreeUser(USER, NOW);
+    expect(mocks.deleted).toEqual(['wr_free_invite']);
   });
 });
 

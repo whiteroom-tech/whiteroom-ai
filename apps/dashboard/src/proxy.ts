@@ -84,17 +84,17 @@ function movedPermanently(url: URL) {
 }
 
 /**
- * The Free invite link, /sign-in?free=<code> (FREE_PLAN=invite only). A
+ * The Free invite link, /sign-in?free=<code>. With FREE_PLAN=invite a
  * matching code gets a short-lived signed cookie that the auth adapter checks
- * again when the account is made; any code is then dropped from the URL, so
- * it doesn't linger in history or get shared on. A wrong code just lands on
- * the ordinary sign-in.
+ * again when the account is made. With invite or public the code is then
+ * dropped from the URL, so it doesn't linger in history or get shared on. A
+ * wrong code just lands on the ordinary sign-in.
  */
-function freeInvite(request: NextRequest) {
+function freeInvite(request: NextRequest, mode: 'invite' | 'public') {
   const url = request.nextUrl.clone();
   url.searchParams.delete('free');
   const response = NextResponse.redirect(url);
-  const value = inviteCodeMatches(request.nextUrl.searchParams.get('free')) ? signInviteCookie() : null;
+  const value = mode === 'invite' && inviteCodeMatches(request.nextUrl.searchParams.get('free')) ? signInviteCookie() : null;
   if (value) {
     const https = request.nextUrl.protocol === 'https:' || request.headers.get('x-forwarded-proto') === 'https';
     response.cookies.set(FREE_INVITE_COOKIE, value, {
@@ -151,8 +151,9 @@ export function proxy(request: NextRequest) {
     // and dual-run is fine until sales wants console-only for managers.
   }
 
-  if (pathname === '/sign-in' && searchParams.has('free') && freePlanMode() === 'invite') {
-    return freeInvite(request);
+  const freeMode = freePlanMode();
+  if (pathname === '/sign-in' && searchParams.has('free') && freeMode !== 'off') {
+    return freeInvite(request, freeMode);
   }
 
   if (pathname === '/fleet') {

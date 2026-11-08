@@ -2,11 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(), cookie: vi.fn(), host: null as string | null,
-  plan: vi.fn(), opensAt: vi.fn(), query: vi.fn(),
+  plan: vi.fn(), query: vi.fn(), trialState: null as string | null, invited: false,
 }));
 vi.mock('@/auth', () => ({ auth: mocks.auth }));
 vi.mock('@/lib/entitlements', () => ({ resolvePlan: mocks.plan }));
-vi.mock('@/lib/sandbox-opens-at', () => ({ sandboxOpensAt: mocks.opensAt }));
 vi.mock('@/lib/db', () => ({ db: () => ({ query: mocks.query }) }));
 vi.mock('@/lib/fleet-session', () => ({ getFleetAuthCookie: mocks.cookie }));
 vi.mock('next/headers', () => ({
@@ -24,8 +23,11 @@ describe('root redirect', () => {
     mocks.host = null;
     vi.unstubAllEnvs();
     mocks.plan.mockReset().mockResolvedValue({ plan: 'starter' });
-    mocks.opensAt.mockReset().mockResolvedValue(null);
-    mocks.query.mockReset().mockResolvedValue({ rows: [] });
+    mocks.trialState = null;
+    mocks.invited = false;
+    mocks.query.mockReset().mockImplementation(async (sql: string) => (
+      sql.includes('trial_state') ? { rows: [{ trial_state: mocks.trialState }] } : { rows: mocks.invited ? [{ x: 1 }] : [] }
+    ));
   });
 
   it('sends the enterprise console to the organization, not the fleet app', async () => {
@@ -54,6 +56,7 @@ describe('root redirect', () => {
   describe('a Free account', () => {
     const signedIn = () => {
       mocks.auth.mockResolvedValue({ user: { id: 'u1', email: 'a@b.c' } });
+      mocks.trialState = 'not_started';
       mocks.plan.mockResolvedValue({ plan: 'free' });
     };
 
@@ -65,40 +68,45 @@ describe('root redirect', () => {
 
     it('with a pending organization invite lands on /organization', async () => {
       signedIn();
-      mocks.query.mockResolvedValue({ rows: [{ '?column?': 1 }] });
+      mocks.invited = true;
       await expect(Root()).rejects.toThrow('redirect:/organization');
     });
 
-    it('made over the day\'s cap lands on sign-in, which says when its Sandbox opens', async () => {
-      vi.stubEnv('FREE_PLAN', 'invite');
-      signedIn();
-      mocks.opensAt.mockResolvedValue(new Date(Date.now() + 3_600_000));
-      await expect(Root()).rejects.toThrow('redirect:/sign-in');
-    });
-
-    it('made over the cap goes to Sandbox once FREE_PLAN is off again', async () => {
-      signedIn();
-      mocks.opensAt.mockResolvedValue(new Date(Date.now() + 3_600_000));
-      await expect(Root()).rejects.toThrow('redirect:/sandbox');
+    it('lands on Sandbox whatever FREE_PLAN says', async () => {
+      for (const mode of ['off', 'invite', 'public']) {
+        vi.stubEnv('FREE_PLAN', mode);
+        signedIn();
+        await expect(Root()).rejects.toThrow('redirect:/sandbox');
+      }
     });
   });
 
-  it('keeps today\'s landing for every other plan, and reads nothing more', async () => {
+  it('keeps today\'s landing for every account whose free period has started, with one light read', async () => {
     mocks.auth.mockResolvedValue({ user: { id: 'u1', email: 'a@b.c' } });
     mocks.cookie.mockResolvedValue(null);
-    for (const plan of ['starter', 'pro', 'enterprise', 'suspended']) {
-      mocks.plan.mockResolvedValue({ plan });
+    for (const state of [null, 'active', 'ended']) {
+      mocks.trialState = state;
       await expect(Root()).rejects.toThrow('redirect:/fleet-key');
     }
-    expect(mocks.opensAt).not.toHaveBeenCalled();
-    expect(mocks.query).not.toHaveBeenCalled();
+    expect(mocks.plan).not.toHaveBeenCalled();
+    expect(mocks.query).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps today\'s landing for a not-started account that is paid or comped', async () => {
+    mocks.auth.mockResolvedValue({ user: { id: 'u1', email: 'a@b.c' } });
+    mocks.cookie.mockResolvedValue('tok');
+    mocks.trialState = 'not_started';
+    for (const plan of ['starter', 'pro', 'enterprise']) {
+      mocks.plan.mockResolvedValue({ plan });
+      await expect(Root()).rejects.toThrow('redirect:/home');
+    }
   });
 
   it('keeps today\'s landing when the plan can\'t be read', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     mocks.auth.mockResolvedValue({ user: { id: 'u1', email: 'a@b.c' } });
     mocks.cookie.mockResolvedValue('tok');
-    mocks.plan.mockRejectedValue(new Error('down'));
+    mocks.query.mockRejectedValue(new Error('down'));
     await expect(Root()).rejects.toThrow('redirect:/home');
   });
 });
