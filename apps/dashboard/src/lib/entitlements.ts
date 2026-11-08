@@ -19,10 +19,10 @@ import { fetchFleetUsage } from '@/lib/fleet-usage';
 import { PROXY_URL } from '@/lib/whiteroom/client';
 import { fleetOwners } from '@/lib/control-auth';
 import { effectivePlan, limitsFor, PLANS, TRIAL_DAYS, trialStatus, type PlanId, type PlanLimits, type TrialStatus } from '@/lib/plans';
-import { getClosing, lapsedPaidPlan, markClosed, reconcileLapse } from '@/lib/account-closing';
+import { lapsedPaidPlan, markClosed, reconcileLapse } from '@/lib/account-closing';
 import {
   buildSnapshot, entitlementsV2Enabled, outcomeFor, snapshotHash, v2Body,
-  type FleetTransfer, type PrincipalSnapshot, type V2Outcome,
+  type FleetTransfer, type PrincipalSnapshot, type V2Result,
 } from '@/lib/entitlement-snapshot';
 import { isClosingOpen, type Closing } from '@/lib/closing-shared';
 
@@ -198,13 +198,14 @@ async function fleetIdsFor(userId: string, q: Queryable = db()): Promise<string[
  * applied, and with no owner left it drops to starter limits. Called only
  * when the account that let go was the owner; anyone else letting go
  * changes nothing.
+ *
+ * Unversioned pushes only: with ENTITLEMENTS_V2=on the caller (users.ts)
+ * doesn't call this, and the old owner's own snapshot releases the fleet.
  */
 export async function releaseFleet(fleetId: string): Promise<void> {
   const owner = (await fleetOwners([fleetId])).get(fleetId);
   if (owner) await syncEntitlementsToEngine(owner);
-  // With ENTITLEMENTS_V2=on a fleet nobody owns is released by the previous
-  // owner's own snapshot leaving it out (recordFleetTransfer), never a direct post.
-  else if (!entitlementsV2Enabled()) await revokeFleetEntitlement(fleetId);
+  else await revokeFleetEntitlement(fleetId);
 }
 
 /**
@@ -216,7 +217,16 @@ export async function enqueueEntitlementSync(
   client: Pick<ReturnType<typeof db>, 'query'>,
   userId: string,
   reason: string,
+  /** ENTITLEMENTS_V2=on only: fleets moving to this account, sent with its next snapshot. */
+  transfers?: FleetTransfer[],
 ): Promise<void> {
+  if (transfers?.length) {
+    await client.query(
+      `INSERT INTO entitlement_outbox (user_id, reason, transfers) VALUES ($1, $2, $3::jsonb)`,
+      [userId, reason, JSON.stringify(transfers)],
+    );
+    return;
+  }
   await client.query(
     `INSERT INTO entitlement_outbox (user_id, reason) VALUES ($1, $2)`,
     [userId, reason],
@@ -496,12 +506,6 @@ async function pushEntitlements(userId: string, held: { lost: boolean }): Promis
 export async function revokeFleetEntitlement(fleetId: string): Promise<void> {
   const secret = process.env.WR_ENTITLEMENT_SYNC_SECRET;
   if (!secret) return;
-  // Revisioned pushes release a fleet through its previous owner's snapshot
-  // (recordFleetTransfer); an unversioned post here would bypass them.
-  if (entitlementsV2Enabled()) {
-    console.error('[entitlements] revokeFleetEntitlement called with ENTITLEMENTS_V2=on; not sent');
-    return;
-  }
 
   const starter = limitsFor('starter');
   try {
@@ -529,24 +533,27 @@ export async function revokeFleetEntitlement(fleetId: string): Promise<void> {
 }
 
 
+
 // ---------------------------------------------------------------------------
 // Revisioned entitlements (ENTITLEMENTS_V2=on). Off by default: with the flag
 // unset or anything but `on`, nothing below runs and every push is the one above.
 //
-// Each push carries one account's complete snapshot and a revision from the
-// entitlement_revision sequence, taken before the snapshot is read. The
-// snapshot, its hash and the revision are frozen into an outbox row, so a
-// resend is the same push. The engine answers per account:
-// - applied / duplicate: delivered;
-// - stale: it already has a newer revision; the row is dropped (delivered);
-// - conflict / rejected: logged as an error and left pending; the next push
-//   (a newer revision) supersedes it.
-// Because a late older push is answered stale, the delayed re-push
-// (not_before) isn't needed on this path.
+// Each push builds the account's current snapshot and compares it (by hash,
+// revision left out) with the account's newest frozen outbox row:
+// - same, and delivered: nothing to send (no revision, no row);
+// - same, not delivered: that row is resent as it is (byte for byte);
+// - different: a new revision from entitlement_revision, frozen into a new
+//   row with its hash and snapshot; every older undelivered revisioned row
+//   of the account is marked delivered, since a full snapshot replaces it.
+// Only the newest row is ever sent, one request per push. The engine's
+// answer: applied / duplicate delivered, stale dropped; conflict, rejected,
+// a 4xx or a reply without this account's result is logged as an ALERT and
+// left undelivered until the next change replaces it. Because a late older
+// push is answered stale, the delayed re-push (not_before) isn't used here.
 // ---------------------------------------------------------------------------
 
-/** The account's snapshot inputs, read through `q` (a transaction's client sees its own writes). One query at a time. */
-async function readSnapshot(userId: string, q: Queryable, revision: number, closing: Closing | null, transfers: FleetTransfer[] = []): Promise<PrincipalSnapshot> {
+/** The account's snapshot, read through `q`. One query at a time. */
+async function readSnapshot(userId: string, q: Queryable, revision: number, closing: Closing | null, transfers: FleetTransfer[]): Promise<PrincipalSnapshot> {
   const { plan, sub } = await resolvePlan(userId, q);
   const fleetIds = await fleetIdsFor(userId, q);
   // As the unversioned push: a lapsed paid plan keeps its plan while its window runs.
@@ -557,27 +564,12 @@ async function readSnapshot(userId: string, q: Queryable, revision: number, clos
   return buildSnapshot({ principal: userId, revision, plan: applied, onTrial, fleetIds, transfers, closing });
 }
 
-async function nextRevision(q: Queryable): Promise<number> {
-  const { rows } = await q.query(`SELECT nextval('entitlement_revision')::text AS r`);
-  return Number(rows[0].r);
-}
-
-/** Writes a frozen push into the outbox; returns its row id. */
-async function freezeRow(q: Queryable, snapshot: PrincipalSnapshot, reason: string): Promise<string> {
-  const { rows } = await q.query(
-    `INSERT INTO entitlement_outbox (user_id, reason, revision, payload_hash, snapshot)
-     VALUES ($1, $2, $3, $4, $5::jsonb) RETURNING id`,
-    [snapshot.principal, reason, snapshot.revision, snapshotHash(snapshot), JSON.stringify(snapshot)],
-  );
-  return String(rows[0].id);
-}
-
 type Sent =
-  | { kind: 'answered'; outcome: V2Outcome; reason?: string; closed: unknown[] | null }
-  /** Not sent, no answer, a 5xx, or a 2xx without this account's result: not delivered. */
+  | { kind: 'answered'; result: V2Result; closed: unknown[] | null }
+  /** No answer or a 5xx: may still land, so the same row is resent next time. */
   | { kind: 'failed' }
-  /** A 4xx: the engine refused the request outright (an engine without revisions answers 400). */
-  | { kind: 'refused'; status: number };
+  /** A 4xx, or a 2xx without this account's result. */
+  | { kind: 'refused'; why: string };
 
 async function sendSnapshot(snapshot: PrincipalSnapshot, secret: string): Promise<Sent> {
   try {
@@ -588,79 +580,39 @@ async function sendSnapshot(snapshot: PrincipalSnapshot, secret: string): Promis
       headers: { 'Content-Type': 'application/json', 'x-wr-sync-secret': secret },
       body: v2Body(snapshot),
     });
-    if (!res.ok) {
-      console.error(`[entitlements] engine sync failed: HTTP ${res.status}`);
-      return res.status >= 500 ? { kind: 'failed' } : { kind: 'refused', status: res.status };
-    }
+    if (res.status >= 500) { console.error(`[entitlements] engine sync failed: HTTP ${res.status}`); return { kind: 'failed' }; }
+    if (!res.ok) return { kind: 'refused', why: `HTTP ${res.status}` };
     const body = await res.json().catch(() => null);
-    const found = outcomeFor(body, snapshot.principal, snapshot.revision);
-    if (!found) {
-      console.error(`[entitlements] engine answered without a result for revision ${snapshot.revision}; leaving pending`);
-      return { kind: 'failed' };
-    }
+    const result = outcomeFor(body, snapshot.principal, snapshot.revision);
+    if (!result) return { kind: 'refused', why: 'no result for this account' };
     const closed = Array.isArray((body as { closed?: unknown })?.closed) ? (body as { closed: unknown[] }).closed : null;
-    return { kind: 'answered', ...found, closed };
+    return { kind: 'answered', result, closed };
   } catch {
     console.error('[entitlements] engine sync failed');
     return { kind: 'failed' };
   }
 }
 
-/** Logs a refused snapshot loudly: it needs a person (monitoring alerts on [entitlements] errors). */
-function alertRefused(userId: string, revision: number, outcome: V2Outcome, reason?: string): void {
-  console.error(`[entitlements] ALERT: engine answered ${outcome} for user ${userId} revision ${revision}${reason ? `: ${reason}` : ''}; left pending`);
-}
-
-const resolved = (o: V2Outcome) => o === 'applied' || o === 'duplicate' || o === 'stale';
-
-async function markRowDelivered(id: string): Promise<void> {
-  await db().query(`UPDATE entitlement_outbox SET delivered_at = now() WHERE id = $1 AND delivered_at IS NULL`, [id]);
+/** Logs a push the engine didn't take: it needs a person (monitoring alerts on [entitlements] errors). */
+function alert(userId: string, revision: number, what: string): void {
+  console.error(`[entitlements] ALERT: engine answered ${what} for user ${userId} revision ${revision}; left undelivered until the next change`);
 }
 
 /**
  * The revisioned push, under the user's entitlement lock (see pushEntitlements).
- *
- * 1. Resends this user's frozen, undelivered rows in revision order (a push
- *    that was never acknowledged, or one written by an ownership change).
- *    No answer stops here: not delivered.
- * 2. Then, unless those rows were all there was, builds a fresh snapshot at
- *    a new revision, freezes it and sends it. Once acknowledged, every row
- *    it reflects is delivered: rows that only recorded a change and were
- *    pending before it was read, and frozen rows at a lower revision (the
- *    engine would answer them stale).
+ * Returns whether the engine now has the account's current snapshot.
  */
 async function pushEntitlementsV2(userId: string, held: { lost: boolean }, secret: string): Promise<boolean> {
-  // Read before the snapshot, so every row up to here is reflected in it.
-  const { rows: [pending] } = await db().query(
-    `SELECT max(id) FILTER (WHERE revision IS NULL AND (not_before IS NULL OR not_before <= now()))::text AS bound
-       FROM entitlement_outbox WHERE user_id = $1 AND delivered_at IS NULL`,
+  // The change rows this push answers for, read before the account is: each
+  // was committed before the read, so the snapshot reflects it.
+  const { rows: changes } = await db().query(
+    `SELECT id::text, transfers FROM entitlement_outbox
+      WHERE user_id = $1 AND delivered_at IS NULL AND revision IS NULL
+        AND (not_before IS NULL OR not_before <= now())`,
     [userId],
   );
-  const bound: string | null = pending?.bound ?? null;
-  const { rows: frozen } = await db().query(
-    `SELECT id::text, revision::text, snapshot FROM entitlement_outbox
-      WHERE user_id = $1 AND delivered_at IS NULL AND revision IS NOT NULL
-      ORDER BY revision`,
-    [userId],
-  );
-
-  let unresolved = false;
-  const carried: FleetTransfer[] = [];
-  for (const row of frozen as Array<{ id: string; revision: string; snapshot: PrincipalSnapshot }>) {
-    if (held.lost) { console.error('[entitlements] lock lost before the push; not sent'); return false; }
-    const sent = await sendSnapshot(row.snapshot, secret);
-    if (sent.kind !== 'answered') return false;
-    if (resolved(sent.outcome)) {
-      await markRowDelivered(row.id);
-    } else {
-      alertRefused(userId, row.snapshot.revision, sent.outcome, sent.reason);
-      unresolved = true;
-      // A newer snapshot still names any transfer this one carried.
-      carried.push(...(row.snapshot.transfers ?? []));
-    }
-  }
-  // Only frozen rows, all delivered: nothing newer to send.
-  if (frozen.length > 0 && bound === null && !unresolved) return true;
+  const changeIds = (changes as Array<{ id: string }>).map((r) => r.id);
+  const transfers = (changes as Array<{ transfers: FleetTransfer[] | null }>).flatMap((r) => r.transfers ?? []);
 
   // As the unversioned push: a lapse window is kept in step on every push.
   let closing: Closing | null;
@@ -672,70 +624,69 @@ async function pushEntitlementsV2(userId: string, held: { lost: boolean }, secre
     return false;
   }
 
-  // The revision first, then the reads: a change committed after this
-  // snapshot was read writes its own row and gets a later revision.
-  const revision = await nextRevision(db());
-  const snapshot = await readSnapshot(userId, db(), revision, closing, carried);
-  const rowId = await freezeRow(db(), snapshot, 'push');
-
-  if (held.lost) { console.error('[entitlements] lock lost before the push; not sent'); return false; }
-  const sent = await sendSnapshot(snapshot, secret);
-  // Lost while in flight: the frozen row is resent under a fresh lock (the
-  // engine answers duplicate if this one landed).
-  if (held.lost) { console.error('[entitlements] lock lost during the push'); return false; }
-  if (sent.kind !== 'answered') return false;
-  if (!resolved(sent.outcome)) { alertRefused(userId, revision, sent.outcome, sent.reason); return false; }
-  if (sent.outcome === 'stale') console.warn(`[entitlements] engine already has a newer revision than ${revision} for user ${userId}`);
-
-  await db().query(
-    `UPDATE entitlement_outbox SET delivered_at = now()
-      WHERE user_id = $1 AND delivered_at IS NULL
-        AND (id = $2
-             OR (revision IS NOT NULL AND revision <= $3)
-             OR (revision IS NULL AND $4::bigint IS NOT NULL AND id <= $4::bigint
-                 AND (not_before IS NULL OR not_before <= now())))`,
-    [userId, rowId, revision, bound],
+  const current = await readSnapshot(userId, db(), 0, closing, transfers);
+  const hash = snapshotHash(current);
+  const { rows: [newest] } = await db().query(
+    `SELECT id::text, payload_hash, snapshot, delivered_at IS NOT NULL AS delivered FROM entitlement_outbox
+      WHERE user_id = $1 AND revision IS NOT NULL ORDER BY revision DESC LIMIT 1`,
+    [userId],
   );
+  const markChanges = () => changeIds.length
+    ? db().query(`UPDATE entitlement_outbox SET delivered_at = now() WHERE id = ANY($1::bigint[]) AND delivered_at IS NULL`, [changeIds])
+    : Promise.resolve();
+
+  let row: { id: string; snapshot: PrincipalSnapshot };
+  if (newest && newest.payload_hash === hash) {
+    // The engine already has it: nothing to send.
+    if (newest.delivered) { await markChanges(); return true; }
+    row = newest;
+  } else {
+    const { rows: [r] } = await db().query(`SELECT nextval('entitlement_revision')::text AS r`);
+    const snapshot = { ...current, revision: Number(r.r) };
+    const { rows: [ins] } = await db().query(
+      `INSERT INTO entitlement_outbox (user_id, reason, revision, payload_hash, snapshot)
+       VALUES ($1, 'push', $2, $3, $4::jsonb) RETURNING id::text`,
+      [userId, snapshot.revision, hash, JSON.stringify(snapshot)],
+    );
+    // Replaced: a full snapshot supersedes every older one.
+    await db().query(
+      `UPDATE entitlement_outbox SET delivered_at = now()
+        WHERE user_id = $1 AND delivered_at IS NULL AND revision IS NOT NULL AND revision < $2`,
+      [userId, snapshot.revision],
+    );
+    row = { id: ins.id, snapshot };
+  }
+
+  const { revision } = row.snapshot;
+  if (held.lost) { console.error('[entitlements] lock lost before the push; not sent'); return false; }
+  const sent = await sendSnapshot(row.snapshot, secret);
+  // Lost while in flight: not delivered; the same row is resent under a fresh
+  // lock, and answered duplicate if this one landed.
+  if (held.lost) { console.error('[entitlements] lock lost during the push'); return false; }
+  if (sent.kind === 'failed') return false;
+  if (sent.kind === 'refused') { alert(userId, revision, sent.why); return false; }
+  const { outcome } = sent.result;
+  if (outcome === 'conflict' || outcome === 'rejected') {
+    alert(userId, revision, `${outcome}${sent.result.reason ? `: ${sent.result.reason}` : ''}`);
+    return false;
+  }
+  // As the unversioned push: a deletion's closing time must be confirmed
+  // stored, or a deleted account could be removed with its fleets open.
+  if (row.snapshot.closing && outcome !== 'stale' && sent.result.closing !== 'stored') {
+    alert(userId, revision, `${outcome} without closing: "stored"`);
+    return false;
+  }
+  if (outcome === 'stale') console.warn(`[entitlements] engine already has a newer revision than ${revision} for user ${userId}; dropped`);
+
+  await db().query(`UPDATE entitlement_outbox SET delivered_at = now() WHERE id = $1 AND delivered_at IS NULL`, [row.id]);
+  await markChanges();
 
   // As the unversioned push: the engine has the final say on closing.
-  const fleetIds = snapshot.fleets.map((f) => f.id);
+  const fleetIds = row.snapshot.fleets.map((f) => f.id);
   if (sent.closed?.some((id) => fleetIds.includes(id as string)) && (!closing || isClosingOpen(closing))) {
     if (await markClosed(userId)) console.warn(`[entitlements] user ${userId}: the engine reports the fleet closed; recorded`);
   }
   return true;
-}
-
-/**
- * Takes the entitlement locks of these accounts inside the caller's
- * transaction (released at COMMIT / ROLLBACK). The same lock
- * withUserEntitlementLock holds, so no push for them runs meanwhile. In id
- * order, so two transactions taking the same pair can't deadlock.
- */
-export async function lockEntitlementsInTx(client: Queryable, userIds: string[]): Promise<void> {
-  for (const id of [...new Set(userIds)].sort()) {
-    await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`entitlements:${id}`]);
-  }
-}
-
-/**
- * A fleet's owner changed (ENTITLEMENTS_V2=on), inside the transaction that
- * changed it, which holds the fleet's provision-fleet lock and both accounts'
- * entitlement locks (lockEntitlementsInTx). Takes the old owner's revision,
- * then the new owner's, and freezes both snapshots into the outbox, read
- * through `client` so they see the change:
- * - the old owner's leaves the fleet out, which releases it;
- * - the new owner's (when there is one) names it, with the transfer.
- * So the new owner's grant always has the higher revision. With no new owner,
- * the old owner's snapshot alone releases the fleet.
- */
-export async function recordFleetTransfer(client: Queryable, t: { fleetId: string; from: string; to: string | null }): Promise<void> {
-  const fromRevision = await nextRevision(client);
-  await freezeRow(client, await readSnapshot(t.from, client, fromRevision, await getClosing(t.from, client)), 'fleet_released');
-  if (t.to && t.to !== t.from) {
-    const toRevision = await nextRevision(client);
-    const transfer: FleetTransfer = { fleet: t.fleetId, from: t.from, to: t.to };
-    await freezeRow(client, await readSnapshot(t.to, client, toRevision, await getClosing(t.to, client), [transfer]), 'fleet_transferred');
-  }
 }
 
 /** This account's trial state (users.trial_state, read as plans.ts trialStatus says). Null when the row is gone. */
@@ -747,12 +698,16 @@ export async function getTrialStatus(userId: string, q: Queryable = db()): Promi
 
 /**
  * Starts a Free account's 30 days, once: when it first goes live (or starts
- * checkout), before the fleet-limit check. Only an account in `not_started`
- * moves, so repeats and concurrent calls are no-ops. The outbox row commits
- * with it. Returns the new end of the free period, or null when nothing changed.
+ * checkout), before the fleet-limit check. Only a row in `not_started` moves,
+ * and only new Free sign-ups get that state (D2), so this can never extend or
+ * restart an existing trial (a NULL, active or ended row is untouched).
+ * Repeats and concurrent calls are no-ops. The outbox row commits with it;
+ * the push follows the commit, like the other writers. Returns the new end of
+ * the free period, or null when nothing changed.
  */
 export async function activateTrial(userId: string): Promise<string | null> {
   const client = await db().connect();
+  let endsAt: string | null = null;
   try {
     await client.query('BEGIN');
     const { rows } = await client.query(
@@ -764,11 +719,13 @@ export async function activateTrial(userId: string): Promise<string | null> {
     );
     if (rows[0]) await enqueueEntitlementSync(client, userId, 'trial_activated');
     await client.query('COMMIT');
-    return rows[0]?.trial_ends_at ?? null;
+    endsAt = rows[0]?.trial_ends_at ?? null;
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     throw err;
   } finally {
     client.release();
   }
+  if (endsAt) await syncEntitlementsToEngine(userId);
+  return endsAt;
 }

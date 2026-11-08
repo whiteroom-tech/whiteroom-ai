@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // ENTITLEMENTS_V2 off (unset or anything but "on"): every push is exactly
 // today's, byte for byte, and nothing touches revisions. On: every push is
 // revisioned, and nothing posts the unversioned body.
-const mocks = vi.hoisted(() => ({ sql: [] as string[], owner: 'u1' as string | null, fleets: ['fleet-1'] as string[] }));
+const mocks = vi.hoisted(() => ({ sql: [] as string[], owner: 'u1' as string | null, fleets: ['fleet-1'] as string[], closing: null as Record<string, unknown> | null }));
 
 vi.mock('@/auth', () => ({ auth: async () => null }));
 vi.mock('@/lib/db', () => ({
@@ -15,6 +15,7 @@ vi.mock('@/lib/db', () => ({
       mocks.sql.push(sql);
       if (sql.includes('AS provisioned')) return { rows: mocks.owner ? mocks.fleets.map((fleetId) => ({ fleetId, userId: mocks.owner, provisioned: true, since: 1 })) : [] };
       if (sql.includes('FROM subscriptions')) return { rows: [] };
+      if (sql.includes('closes_at, close_reason, delete_after FROM users')) return { rows: mocks.closing ? [mocks.closing] : [] };
       if (sql.includes("nextval('entitlement_revision')")) return { rows: [{ r: '41' }] };
       if (sql.includes('INSERT INTO entitlement_outbox') && sql.includes('RETURNING id')) return { rows: [{ id: '9' }] };
       if (sql.includes('trial_ends_at')) return { rows: [{ trial_ends_at: new Date(Date.now() + 86_400_000).toISOString() }] };
@@ -26,14 +27,14 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/lib/fleet-usage', () => ({ fetchFleetUsage: vi.fn() }));
 vi.mock('@/lib/whiteroom/client', () => ({ PROXY_URL: 'http://engine.test' }));
 
-const { releaseFleet, revokeFleetEntitlement, syncEntitlementsToEngine } = await import('@/lib/entitlements');
+const { releaseFleet, syncEntitlementsToEngine } = await import('@/lib/entitlements');
 
 const fetchMock = vi.fn();
 const bodies = () => fetchMock.mock.calls.map((c) => String(c[1].body));
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.sql.length = 0; mocks.owner = 'u1'; mocks.fleets = ['fleet-1'];
+  mocks.sql.length = 0; mocks.owner = 'u1'; mocks.fleets = ['fleet-1']; mocks.closing = null;
   process.env.WR_ENTITLEMENT_SYNC_SECRET = 'secret';
   vi.stubGlobal('fetch', fetchMock);
 });
@@ -84,21 +85,27 @@ describe.each([undefined, '', 'off', 'OFF', 'true', 'yes', 'on '])('ENTITLEMENTS
 });
 
 describe('ENTITLEMENTS_V2=on', () => {
+  const answer = (result: Record<string, unknown>) => fetchMock.mockResolvedValue(Response.json({ results: [{ principal: 'u1', revision: 41, ...result }] }));
+  const alerts = () => vi.mocked(console.error).mock.calls.map((c) => String(c[0])).filter((m) => m.includes('ALERT'));
   beforeEach(() => {
     process.env.ENTITLEMENTS_V2 = 'on';
-    fetchMock.mockResolvedValue(Response.json({ results: [{ principal: 'u1', revision: 41, outcome: 'applied' }] }));
+    answer({ outcome: 'applied' });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
   });
+  afterEach(() => vi.mocked(console.error).mockRestore());
 
-  it('sends a version 2 snapshot, revision taken before the account is read', async () => {
+  it('sends a version 2 snapshot, frozen into the outbox before it is sent', async () => {
     expect(await syncEntitlementsToEngine('u1')).toBe(true);
     const sent = JSON.parse(bodies()[0]);
     expect(sent.version).toBe(2);
     expect(sent).not.toHaveProperty('fleets');
     expect(sent.principals).toEqual([expect.objectContaining({ principal: 'u1', revision: 41, plan: 'trial', fleets: [{ id: 'fleet-1', role: 'production' }] })]);
-    const at = (needle: string) => mocks.sql.findIndex((s) => s.includes(needle));
-    expect(at("nextval('entitlement_revision')")).toBeLessThan(at('SELECT fleet_id FROM users'));
-    // Frozen into the outbox before it's sent.
-    expect(at('INSERT INTO entitlement_outbox (user_id, reason, revision, payload_hash, snapshot)')).toBeGreaterThan(at("nextval('entitlement_revision')"));
+    expect(mocks.sql.some((s) => s.includes('INSERT INTO entitlement_outbox (user_id, reason, revision, payload_hash, snapshot)'))).toBe(true);
+  });
+
+  it('runs the lapse check on every push', async () => {
+    await syncEntitlementsToEngine('u1');
+    expect(mocks.sql.some((s) => s.includes('closes_at, close_reason, delete_after FROM users'))).toBe(true);
   });
 
   it('a zero-fleet account gets its snapshot too', async () => {
@@ -113,61 +120,57 @@ describe('ENTITLEMENTS_V2=on', () => {
     expect(mocks.sql.some((s) => s.includes('not_before') && s.includes('INSERT INTO entitlement_outbox'))).toBe(false);
   });
 
-  it('an engine that answers 400 (no revisions yet) is not delivered', async () => {
+  it('a 4xx (an engine without revisions answers 400) is an alert, not delivered', async () => {
     fetchMock.mockResolvedValue(Response.json({ error: 'fleets must be an array.' }, { status: 400 }));
     expect(await syncEntitlementsToEngine('u1')).toBe(false);
+    expect(alerts()).toEqual([expect.stringContaining('HTTP 400')]);
   });
 
-  it.each(['conflict', 'rejected'])('%s is logged as an alert and not delivered', async (outcome) => {
-    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-    fetchMock.mockResolvedValue(Response.json({ results: [{ principal: 'u1', revision: 41, outcome }] }));
+  it.each(['conflict', 'rejected'])('%s is an alert, not delivered', async (outcome) => {
+    answer({ outcome });
     expect(await syncEntitlementsToEngine('u1')).toBe(false);
-    expect(err.mock.calls.some((c) => String(c[0]).includes('ALERT') && String(c[0]).includes(outcome))).toBe(true);
-    err.mockRestore();
+    expect(alerts()).toEqual([expect.stringContaining(outcome)]);
+  });
+
+  it('a 200 without this revision’s result is an alert, not delivered', async () => {
+    fetchMock.mockResolvedValue(Response.json({ results: [{ principal: 'u1', revision: 40, outcome: 'applied' }] }));
+    expect(await syncEntitlementsToEngine('u1')).toBe(false);
+    expect(alerts()).toEqual([expect.stringContaining('no result')]);
   });
 
   it.each(['applied', 'duplicate', 'stale'])('%s is delivered', async (outcome) => {
-    fetchMock.mockResolvedValue(Response.json({ results: [{ principal: 'u1', revision: 41, outcome }] }));
+    answer({ outcome });
     expect(await syncEntitlementsToEngine('u1')).toBe(true);
     expect(mocks.sql.some((s) => s.includes('UPDATE entitlement_outbox SET delivered_at'))).toBe(true);
   });
 
-  it('a 200 without this revision’s result is not delivered', async () => {
-    fetchMock.mockResolvedValue(Response.json({ results: [{ principal: 'u1', revision: 40, outcome: 'applied' }] }));
-    expect(await syncEntitlementsToEngine('u1')).toBe(false);
-  });
+  describe('a deletion’s closing time', () => {
+    beforeEach(() => { mocks.closing = { closes_at: new Date(Date.now() + 5 * 86_400_000).toISOString(), close_reason: 'deleted', delete_after: null }; });
 
-  it('no direct unversioned post: a fleet nobody owns is not revoked by releaseFleet', async () => {
-    mocks.owner = null;
-    await releaseFleet('fleet-1');
-    await revokeFleetEntitlement('fleet-1');
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
+    it('is delivered only when the engine confirms it stored it (closing: "stored")', async () => {
+      answer({ outcome: 'applied', closing: 'stored' });
+      expect(await syncEntitlementsToEngine('u1')).toBe(true);
+      expect(JSON.parse(bodies()[0]).principals[0].closing).toMatchObject({ reason: 'deleted' });
+    });
 
-  it('every body sent is version 2', async () => {
-    await syncEntitlementsToEngine('u1');
-    mocks.owner = null;
-    await releaseFleet('fleet-1');
-    expect(bodies().length).toBeGreaterThan(0);
-    for (const b of bodies()) expect(JSON.parse(b).version).toBe(2);
+    it.each([{}, { closing: 'ignored' }])('anything else is an alert, not delivered: %j', async (extra) => {
+      answer({ outcome: 'applied', ...extra });
+      expect(await syncEntitlementsToEngine('u1')).toBe(false);
+      expect(alerts()).toEqual([expect.stringContaining('closing: "stored"')]);
+    });
   });
 });
 
 // The grep half of "no direct v1 post remains on the v2 path": the revisioned
-// code builds no unversioned body, and the one function that does is guarded.
+// code builds no unversioned body.
 describe('source', () => {
   const src = readFileSync(fileURLToPath(new URL('../lib/entitlements.ts', import.meta.url)), 'utf8');
   it('the revisioned section posts only v2Body', () => {
     const v2 = src.slice(src.indexOf('// Revisioned entitlements (ENTITLEMENTS_V2=on)'));
     expect(v2.length).toBeGreaterThan(1000);
     // The unversioned body's fields (fleets: [...], maxAgents, closeReason).
-    expect(v2).not.toMatch(/fleets:\s*\[|maxAgents:|closeReason:|JSON\.stringify\(payload\)/);
+    expect(v2).not.toMatch(/fleets:\s*\[|maxAgents:|closeReason:|JSON\.stringify\(payload\)|revokeFleetEntitlement\(|releaseFleet\(/);
     expect(v2.match(/body: /g)).toEqual(['body: ']);
     expect(v2).toContain('body: v2Body(snapshot)');
-  });
-  it('revokeFleetEntitlement returns before posting when the flag is on', () => {
-    const fn = src.slice(src.indexOf('export async function revokeFleetEntitlement'));
-    expect(fn.indexOf('if (entitlementsV2Enabled())')).toBeGreaterThan(-1);
-    expect(fn.indexOf('if (entitlementsV2Enabled())')).toBeLessThan(fn.indexOf('await fetch('));
   });
 });

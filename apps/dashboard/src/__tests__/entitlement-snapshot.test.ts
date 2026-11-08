@@ -81,6 +81,11 @@ describe('canonical bytes', () => {
     expect(v2Body(reordered)).toBe(v2Body(s));
   });
 
+  it('the hash leaves out the revision: the same state at two revisions is unchanged', () => {
+    const a = buildSnapshot({ ...base, plan: 'pro', onTrial: false });
+    expect(snapshotHash({ ...a, revision: 99 })).toBe(snapshotHash(a));
+  });
+
   it('a different snapshot is a different hash', () => {
     const a = buildSnapshot({ ...base, plan: 'pro', onTrial: false });
     const b = buildSnapshot({ ...base, plan: 'starter', onTrial: false });
@@ -97,6 +102,9 @@ describe('outcomeFor', () => {
   it('finds this account and revision', () => {
     const body = { results: [{ principal: 'u2', revision: 7, outcome: 'applied' }, { principal: 'u1', revision: 7, outcome: 'stale' }] };
     expect(outcomeFor(body, 'u1', 7)).toEqual({ outcome: 'stale' });
+  });
+  it('keeps the closing confirmation', () => {
+    expect(outcomeFor({ results: [{ principal: 'u1', revision: 7, outcome: 'applied', closing: 'stored' }] }, 'u1', 7)).toEqual({ outcome: 'applied', closing: 'stored' });
   });
   it('keeps a rejection reason', () => {
     expect(outcomeFor({ results: [{ principal: 'u1', revision: 7, outcome: 'rejected', reason: 'bad' }] }, 'u1', 7)).toEqual({ outcome: 'rejected', reason: 'bad' });

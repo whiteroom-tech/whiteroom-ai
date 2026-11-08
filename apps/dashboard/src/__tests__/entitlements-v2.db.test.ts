@@ -70,7 +70,11 @@ const engine = {
   /** Apply, then answer 503 (a lost acknowledgement). */
   loseAck: 0,
   down: false,
-  reset() { this.principals.clear(); this.bindings.clear(); this.bodies = []; this.loseAck = 0; this.down = false; },
+  /** Answer every v2 push with this outcome (or this HTTP status) without applying it. */
+  refuse: null as string | number | null,
+  /** Leave the closing confirmation out of the result. */
+  dropClosing: false,
+  reset() { this.principals.clear(); this.bindings.clear(); this.bodies = []; this.loseAck = 0; this.down = false; this.refuse = null; this.dropClosing = false; },
   apply(entry: { principal: string; revision: number; fleets: Array<{ id: string }>; transfers?: Array<{ fleet: string; from: string; to: string }> }, raw: string): string {
     const hash = createHash('sha256').update(raw).digest('hex');
     const stored = this.principals.get(entry.principal);
@@ -100,7 +104,13 @@ async function engineFetch(_url: string, init: { body: string }): Promise<Respon
   if (body.version !== 2) return Response.json({ applied: (body.fleets ?? []).map((f: { fleetId: string }) => f.fleetId), unknown: [], closed: [] });
   // The entry's own bytes, as the sender canonicalised them.
   const raw = init.body.slice(init.body.indexOf('[') + 1, init.body.lastIndexOf(']'));
-  const results = body.principals.map((p: Parameters<typeof engine.apply>[0]) => ({ principal: p.principal, revision: p.revision, outcome: engine.apply(p, raw) }));
+  if (typeof engine.refuse === 'number') return Response.json({ error: 'refused' }, { status: engine.refuse });
+  type Entry = Parameters<typeof engine.apply>[0] & { closing: unknown };
+  const results = body.principals.map((p: Entry) => {
+    const outcome = engine.refuse ?? engine.apply(p, raw);
+    const stored = p.closing && !engine.dropClosing && (outcome === 'applied' || outcome === 'duplicate');
+    return { principal: p.principal, revision: p.revision, outcome, ...(stored ? { closing: 'stored' } : {}) };
+  });
   if (engine.loseAck > 0) { engine.loseAck--; return new Response('', { status: 503 }); }
   return Response.json({ results });
 }
@@ -186,6 +196,8 @@ suite('entitlements v2 against Postgres', () => {
     });
   });
 
+  const frozenRows = async (userId: string) => q(`SELECT revision::int AS revision, delivered_at IS NOT NULL AS delivered FROM entitlement_outbox WHERE user_id = $1 AND revision IS NOT NULL ORDER BY revision`, [userId]);
+
   describe('the revisioned sender', () => {
     it('sends a zero-fleet account through the sweep and delivers its rows', async () => {
       await addUser('user-z');
@@ -202,61 +214,72 @@ suite('entitlements v2 against Postgres', () => {
       expect(row.payload_hash).toMatch(/^[0-9a-f]{64}$/);
     });
 
-    it('a lost acknowledgement: the frozen push is resent byte for byte, answered duplicate, then delivered', async () => {
+    it('an unchanged, delivered account is not pushed again: no revision, no row, no request', async () => {
+      await addUser('user-a', { fleet: 'fleet-a' });
+      await ent.syncEntitlementsToEngine('user-a');
+      for (let i = 0; i < 3; i++) { await enqueue('user-a'); await runSweep(); }
+      expect(engine.bodies).toHaveLength(1);
+      expect(await frozenRows('user-a')).toHaveLength(1);
+      expect(await pending('user-a')).toEqual([]);
+    });
+
+    it('a lost acknowledgement: the same row is resent byte for byte, answered duplicate, delivered', async () => {
       await addUser('user-a', { fleet: 'fleet-a' });
       await enqueue('user-a');
       engine.loseAck = 1;
       await runSweep();
       expect((await pending('user-a')).map((r) => r.reason)).toEqual(['test', 'push']);
-      const first = engine.bodies[0];
       await runSweep();
-      expect(engine.bodies[1]).toBe(first);
-      // Then the change that was still pending gets a newer revision.
-      const revisions = engine.bodies.map((b) => JSON.parse(b).principals[0].revision);
-      expect(revisions[2]).toBeGreaterThan(revisions[0]);
+      expect(engine.bodies).toHaveLength(2);
+      expect(engine.bodies[1]).toBe(engine.bodies[0]);
+      expect(await frozenRows('user-a')).toEqual([expect.objectContaining({ delivered: true })]);
       expect(await pending('user-a')).toEqual([]);
       expect(engine.bindings.get('fleet-a')).toMatchObject({ principal: 'user-a', state: 'bound' });
     });
 
-    it('an engine that is down: nothing delivered, nothing lost', async () => {
+    it('an engine that is down: nothing delivered, nothing lost, no extra rows', async () => {
       await addUser('user-a', { fleet: 'fleet-a' });
       await enqueue('user-a');
       engine.down = true;
       await runSweep();
-      expect((await pending('user-a')).length).toBe(2);
+      await runSweep();
+      expect(await frozenRows('user-a')).toHaveLength(1);
       engine.down = false;
       await runSweep();
       expect(await pending('user-a')).toEqual([]);
     });
 
-    it('a stale frozen push is dropped', async () => {
-      await addUser('user-a', { fleet: 'fleet-a' });
-      expect(await ent.syncEntitlementsToEngine('user-a')).toBe(true);
-      const [{ snapshot }] = await q(`SELECT snapshot FROM entitlement_outbox WHERE user_id = 'user-a' AND revision IS NOT NULL`);
-      // An older push left over (revision below what the engine has).
-      const old = { ...snapshot, revision: snapshot.revision - 1 };
-      await q(`INSERT INTO entitlement_outbox (user_id, reason, revision, payload_hash, snapshot) VALUES ('user-a', 'old', $1, 'x', $2)`, [old.revision, JSON.stringify(old)]);
-      expect(await ent.syncEntitlementsToEngine('user-a')).toBe(true);
-      expect(await pending('user-a')).toEqual([]);
-      // Only frozen rows were pending, all resolved: no new revision taken.
-      expect(engine.bodies.length).toBe(2);
-    });
-
-    it('a conflict is an alert, and the next revision supersedes it', async () => {
+    it.each(['conflict', 'rejected', 400])('repeated %s: an alert each time, one row, no growth; the next change supersedes it', async (refuse) => {
       const err = vi.spyOn(console, 'error').mockImplementation(() => {});
       await addUser('user-a', { fleet: 'fleet-a' });
-      await ent.syncEntitlementsToEngine('user-a');
-      const [{ snapshot }] = await q(`SELECT snapshot FROM entitlement_outbox WHERE user_id = 'user-a' AND revision IS NOT NULL`);
-      // The same revision with different contents.
-      const other = { ...snapshot, plan: 'pro' };
-      await q(`INSERT INTO entitlement_outbox (user_id, reason, revision, payload_hash, snapshot) VALUES ('user-a', 'odd', $1, 'x', $2)`, [other.revision, JSON.stringify(other)]);
-      expect(await ent.syncEntitlementsToEngine('user-a')).toBe(true);
-      expect(err.mock.calls.some((c) => /ALERT: engine answered conflict/.test(String(c[0])))).toBe(true);
+      engine.refuse = refuse;
+      for (let i = 0; i < 4; i++) { await enqueue('user-a'); await runSweep(); }
+      expect(await frozenRows('user-a')).toEqual([{ revision: expect.any(Number), delivered: false }]);
+      expect(err.mock.calls.filter((c) => String(c[0]).includes('ALERT')).length).toBe(4);
+      // One request per push: only the newest row is ever sent.
+      expect(engine.bodies).toHaveLength(4);
+      expect(new Set(engine.bodies).size).toBe(1);
+
+      // A change: a new revision; the refused row is replaced (delivered).
+      engine.refuse = null;
+      await q(`INSERT INTO subscriptions (user_id, plan, status) VALUES ('user-a', 'pro', 'active')`);
+      await enqueue('user-a', 'subscription_active');
+      await runSweep();
+      const rows = await frozenRows('user-a');
+      expect(rows).toHaveLength(2);
+      expect(rows.every((r) => r.delivered)).toBe(true);
+      expect(JSON.parse(engine.bodies.at(-1)!).principals[0]).toMatchObject({ plan: 'pro', revision: rows[1].revision });
       expect(await pending('user-a')).toEqual([]);
-      expect(engine.principals.get('user-a')!.revision).toBeGreaterThan(snapshot.revision);
     });
 
-    it('each push takes a new revision, in commit order', async () => {
+    it('a stale answer is dropped', async () => {
+      await addUser('user-a', { fleet: 'fleet-a' });
+      engine.refuse = 'stale';
+      expect(await ent.syncEntitlementsToEngine('user-a')).toBe(true);
+      expect(await pending('user-a')).toEqual([]);
+    });
+
+    it('each change takes a new, higher revision', async () => {
       await addUser('user-a', { fleet: 'fleet-a' });
       await ent.syncEntitlementsToEngine('user-a');
       await q(`INSERT INTO subscriptions (user_id, plan, status) VALUES ('user-a', 'pro', 'active')`);
@@ -267,92 +290,143 @@ suite('entitlements v2 against Postgres', () => {
       expect(sent[1].revision).toBeGreaterThan(sent[0].revision);
       expect(sent[1].production).toMatchObject({ maxFleets: 10, retentionDays: 365 });
     });
+
+    it('a deletion is delivered only once the engine confirms the closing time was stored', async () => {
+      const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+      await addUser('user-a', { fleet: 'fleet-a' });
+      await q(`UPDATE users SET closes_at = now() + interval '14 days', close_reason = 'deleted', delete_after = now() + interval '14 days' WHERE id = 'user-a'`);
+      await enqueue('user-a', 'account_closing');
+      engine.dropClosing = true;
+      await runSweep();
+      expect(JSON.parse(engine.bodies[0]).principals[0].closing).toMatchObject({ reason: 'deleted' });
+      expect(err.mock.calls.some((c) => String(c[0]).includes('closing: "stored"'))).toBe(true);
+      expect((await pending('user-a')).length).toBe(2);
+      engine.dropClosing = false;
+      await runSweep();
+      expect(await pending('user-a')).toEqual([]);
+    });
+
+    it('runs the lapse check on every push: a lapsed paid plan starts its window', async () => {
+      await addUser('user-a', { fleet: 'fleet-a', trialEndsAt: '2026-01-01T00:00:00Z' });
+      await ent.syncEntitlementsToEngine('user-a');
+      await q(`INSERT INTO subscriptions (user_id, plan, status, lapsed_at) VALUES ('user-a', 'pro', 'canceled', now())`);
+      await ent.syncEntitlementsToEngine('user-a');
+      expect(await q(`SELECT close_reason, closes_at > now() AS future FROM users WHERE id = 'user-a'`)).toEqual([{ close_reason: 'lapsed', future: true }]);
+      // A lapse is never sent as closing; the plan runs on during the window.
+      expect(JSON.parse(engine.bodies.at(-1)!).principals[0]).toMatchObject({ plan: 'pro', closing: null });
+      // Nothing changed since: the check still runs, nothing is sent.
+      await ent.syncEntitlementsToEngine('user-a');
+      expect(engine.bodies).toHaveLength(2);
+    });
   });
 
   describe('ownership transfer', () => {
-    it('provisioning a new fleet hands the old one to the next holder: old owner’s revision first, the grant carries the transfer', async () => {
+    const provision = (id: string, fleetId: string) => { actor.id = id; return users.upsertUserProvisioning({ apiKey: 'sk-wr-placeholder0000000000', fleetId, fleetToken: 'wr_placeholder_token' }); };
+
+    it('provisioning a new fleet hands the old one to the next holder: old owner pushed first, the grant names the transfer', async () => {
       await addUser('user-a', { fleet: 'fleet-old', since: '2026-01-01' });
       await addUser('user-b');
       await q(`INSERT INTO user_fleets (user_id, fleet_id, label, created_at) VALUES ('user-b', 'fleet-old', 'shared', '2026-02-01')`);
       await ent.syncEntitlementsToEngine('user-a');
       expect(engine.bindings.get('fleet-old')).toMatchObject({ principal: 'user-a' });
 
-      actor.id = 'user-a';
-      expect(await users.upsertUserProvisioning({ apiKey: 'sk-wr-placeholder0000000000', fleetId: 'fleet-new', fleetToken: 'wr_placeholder_token' })).toEqual({ ok: true });
+      expect(await provision('user-a', 'fleet-new')).toEqual({ ok: true });
 
-      const frozen = await q(`SELECT user_id, reason, revision::int AS revision, snapshot FROM entitlement_outbox WHERE reason IN ('fleet_released', 'fleet_transferred') ORDER BY revision`);
-      expect(frozen.map((r) => [r.user_id, r.reason])).toEqual([['user-a', 'fleet_released'], ['user-b', 'fleet_transferred']]);
-      expect(frozen[0].snapshot.fleets).toEqual([{ id: 'fleet-new', role: 'production' }]);
-      expect(frozen[1].snapshot.fleets).toEqual([{ id: 'fleet-old', role: 'production' }]);
-      expect(frozen[1].snapshot.transfers).toEqual([{ fleet: 'fleet-old', from: 'user-a', to: 'user-b' }]);
-
+      const sent = engine.bodies.slice(1).map((b) => JSON.parse(b).principals[0]);
+      expect(sent.map((p) => p.principal)).toEqual(['user-a', 'user-b']);
+      expect(sent[1].revision).toBeGreaterThan(sent[0].revision);
+      expect(sent[0].fleets).toEqual([{ id: 'fleet-new', role: 'production' }]);
+      expect(sent[1]).toMatchObject({ fleets: [{ id: 'fleet-old', role: 'production' }], transfers: [{ fleet: 'fleet-old', from: 'user-a', to: 'user-b' }] });
       expect(engine.bindings.get('fleet-old')).toMatchObject({ principal: 'user-b', state: 'bound' });
       expect(engine.bindings.get('fleet-new')).toMatchObject({ principal: 'user-a', state: 'bound' });
-      await runSweep();
       expect(await q(`SELECT count(*)::int AS n FROM entitlement_outbox WHERE delivered_at IS NULL`)).toEqual([{ n: 0 }]);
       for (const b of engine.bodies) expect(JSON.parse(b).version).toBe(2);
     });
 
-    it('either delivery order ends with the new owner; a late push from the old owner can’t take it back', async () => {
+    it('if the old owner’s push fails, the new owner still gets the fleet (the transfer), and the old owner’s later push doesn’t take it back', async () => {
       await addUser('user-a', { fleet: 'fleet-old', since: '2026-01-01' });
       await addUser('user-b');
       await q(`INSERT INTO user_fleets (user_id, fleet_id, label, created_at) VALUES ('user-b', 'fleet-old', 'shared', '2026-02-01')`);
       await ent.syncEntitlementsToEngine('user-a');
-      const [{ snapshot: late }] = await q(`SELECT snapshot FROM entitlement_outbox WHERE user_id = 'user-a' AND revision IS NOT NULL`);
+      const late = JSON.parse(engine.bodies[0]).principals[0];
 
-      const client = await db().connect();
-      try {
-        await client.query('BEGIN');
-        await ent.lockEntitlementsInTx(client, ['user-a', 'user-b']);
-        await client.query(`UPDATE users SET fleet_id = 'fleet-new', fleet_provisioned_at = now() WHERE id = 'user-a'`);
-        await ent.recordFleetTransfer(client, { fleetId: 'fleet-old', from: 'user-a', to: 'user-b' });
-        await client.query('COMMIT');
-      } finally { client.release(); }
-
-      // The new owner's grant lands first.
+      engine.down = true;
+      await provision('user-a', 'fleet-new');
+      engine.down = false;
+      // The new owner first this time.
       await ent.syncEntitlementsToEngine('user-b');
       expect(engine.bindings.get('fleet-old')).toMatchObject({ principal: 'user-b' });
       await ent.syncEntitlementsToEngine('user-a');
       expect(engine.bindings.get('fleet-old')).toMatchObject({ principal: 'user-b', state: 'bound' });
-      // The old owner's original push, delivered late, is stale.
       expect(engine.apply(late, JSON.stringify(late))).toBe('stale');
-      expect(engine.bindings.get('fleet-old')).toMatchObject({ principal: 'user-b' });
+      expect(await q(`SELECT count(*)::int AS n FROM entitlement_outbox WHERE delivered_at IS NULL`)).toEqual([{ n: 0 }]);
     });
+
+    it('two crossing transfers at once don’t deadlock', async () => {
+      // a provisioned fleet-a, b provisioned fleet-b; each also linked the other's.
+      await addUser('user-a', { fleet: 'fleet-a', since: '2026-01-01' });
+      await addUser('user-b', { fleet: 'fleet-b', since: '2026-01-01' });
+      await q(`INSERT INTO user_fleets (user_id, fleet_id, label, created_at) VALUES ('user-b', 'fleet-a', 'x', '2026-02-01'), ('user-a', 'fleet-b', 'x', '2026-02-01')`);
+      // Each provisions a new fleet at the same moment, handing its old one to the other.
+      const both = (async () => {
+        const one = provision('user-a', 'fleet-a2');
+        const two = provision('user-b', 'fleet-b2');
+        return Promise.all([one, two]);
+      })();
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('deadlocked')), 10_000));
+      expect(await Promise.race([both, timeout])).toEqual([{ ok: true }, { ok: true }]);
+      await runSweep();
+      expect(engine.bindings.get('fleet-a')).toMatchObject({ principal: 'user-b', state: 'bound' });
+      expect(engine.bindings.get('fleet-b')).toMatchObject({ principal: 'user-a', state: 'bound' });
+      expect(await q(`SELECT count(*)::int AS n FROM entitlement_outbox WHERE delivered_at IS NULL`)).toEqual([{ n: 0 }]);
+    }, 20_000);
 
     it('a fleet nobody else holds is released by the old owner’s snapshot, with no unversioned post', async () => {
       await addUser('user-a', { fleet: 'fleet-old' });
       await ent.syncEntitlementsToEngine('user-a');
-      actor.id = 'user-a';
-      await users.upsertUserProvisioning({ apiKey: 'sk-wr-placeholder0000000000', fleetId: 'fleet-new', fleetToken: 'wr_placeholder_token' });
+      await provision('user-a', 'fleet-new');
       expect(engine.bindings.get('fleet-old')).toMatchObject({ principal: null, state: 'revoked' });
       expect(engine.bindings.get('fleet-new')).toMatchObject({ principal: 'user-a', state: 'bound' });
       for (const b of engine.bodies) expect(JSON.parse(b)).not.toHaveProperty('fleets');
     });
+
+    it('the account is pushed right after any fleet change, even one it still holds by a link', async () => {
+      await addUser('user-a', { fleet: 'fleet-old' });
+      await q(`INSERT INTO user_fleets (user_id, fleet_id, label) VALUES ('user-a', 'fleet-old', 'mine')`);
+      await provision('user-a', 'fleet-new');
+      expect(engine.bodies).toHaveLength(1);
+      expect(JSON.parse(engine.bodies[0]).principals[0].fleets.map((f: { id: string }) => f.id)).toEqual(['fleet-new', 'fleet-old']);
+    });
   });
 
   describe('trial activation', () => {
-    it('only a not_started account activates, once, however many try at once; the outbox row commits with it', async () => {
+    it('only a not_started account activates, once, however many try at once; outbox row with it, pushed after', async () => {
       await addUser('u-free', { trialState: 'not_started', trialEndsAt: '2026-11-01T00:00:00Z' });
       const results = await Promise.all(Array.from({ length: 8 }, () => ent.activateTrial('u-free')));
       expect(results.filter(Boolean)).toHaveLength(1);
       const [row] = await q(`SELECT trial_state, trial_started_at IS NOT NULL AS started, extract(epoch FROM trial_ends_at - now())::int AS left FROM users WHERE id = 'u-free'`);
       expect(row).toMatchObject({ trial_state: 'active', started: true });
       expect(Math.abs(row.left - 30 * 86_400)).toBeLessThan(120);
-      expect(await pending('u-free')).toEqual([expect.objectContaining({ reason: 'trial_activated' })]);
+      expect(await q(`SELECT reason FROM entitlement_outbox WHERE user_id = 'u-free' AND revision IS NULL`)).toEqual([{ reason: 'trial_activated' }]);
+      // Pushed after the commit: delivered, as a trial.
+      expect(await pending('u-free')).toEqual([]);
+      expect(JSON.parse(engine.bodies.at(-1)!).principals[0]).toMatchObject({ principal: 'u-free', plan: 'trial' });
       expect(await ent.getTrialStatus('u-free')).toBe('active');
       expect(await ent.activateTrial('u-free')).toBeNull();
     });
 
-    it('a legacy account (no state) or one already active or ended is left alone', async () => {
-      await addUser('u-legacy', { trialEndsAt: '2026-01-01T00:00:00Z' });
+    it('never extends or restarts an existing trial: NULL, active or ended rows are untouched', async () => {
+      await addUser('u-legacy-past', { trialEndsAt: '2026-01-01T00:00:00Z' });
+      await addUser('u-legacy-future', { trialEndsAt: '2026-11-20T00:00:00Z' });
+      await addUser('u-active', { trialState: 'active', trialEndsAt: '2026-11-20T00:00:00Z' });
       await addUser('u-ended', { trialState: 'ended', trialEndsAt: '2026-01-01T00:00:00Z' });
-      for (const id of ['u-legacy', 'u-ended']) expect(await ent.activateTrial(id)).toBeNull();
-      expect(await q(`SELECT id, trial_state, (trial_ends_at AT TIME ZONE 'UTC')::date::text AS ends FROM users ORDER BY id`)).toEqual([
-        { id: 'u-ended', trial_state: 'ended', ends: '2026-01-01' },
-        { id: 'u-legacy', trial_state: null, ends: '2026-01-01' },
-      ]);
+      const before = await q(`SELECT id, trial_state, trial_ends_at, trial_started_at FROM users ORDER BY id`);
+      for (const r of before) expect(await ent.activateTrial(r.id)).toBeNull();
+      expect(await q(`SELECT id, trial_state, trial_ends_at, trial_started_at FROM users ORDER BY id`)).toEqual(before);
       expect(await q(`SELECT count(*)::int AS n FROM entitlement_outbox`)).toEqual([{ n: 0 }]);
-      expect(await ent.getTrialStatus('u-legacy')).toBe('ended');
+      expect(engine.bodies).toEqual([]);
+      expect(await ent.getTrialStatus('u-legacy-past')).toBe('ended');
+      expect(await ent.getTrialStatus('u-legacy-future')).toBe('active');
     });
   });
 

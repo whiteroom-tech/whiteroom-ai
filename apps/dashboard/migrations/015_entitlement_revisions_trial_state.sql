@@ -27,6 +27,9 @@ CREATE SEQUENCE IF NOT EXISTS entitlement_revision AS bigint;
 ALTER TABLE entitlement_outbox ADD COLUMN IF NOT EXISTS revision bigint;
 ALTER TABLE entitlement_outbox ADD COLUMN IF NOT EXISTS payload_hash text;
 ALTER TABLE entitlement_outbox ADD COLUMN IF NOT EXISTS snapshot jsonb;
+-- Fleets moving to this account (an ownership change), named in its next
+-- snapshot. NULL on every other row.
+ALTER TABLE entitlement_outbox ADD COLUMN IF NOT EXISTS transfers jsonb;
 
 -- The free period's state: 'not_started' (a Free account that hasn't gone
 -- live), 'active' or 'ended'. NULL = written by code from before this, read

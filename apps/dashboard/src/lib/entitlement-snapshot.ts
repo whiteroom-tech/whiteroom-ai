@@ -101,8 +101,13 @@ export function canonicalJson(value: unknown): string {
   return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(',')}}`;
 }
 
-export function snapshotHash(snapshot: PrincipalSnapshot): string {
-  return createHash('sha256').update(canonicalJson(snapshot)).digest('hex');
+/**
+ * The hash of what a snapshot grants, leaving out its revision: two pushes of
+ * the same state hash the same, so an unchanged account isn't pushed again.
+ */
+export function snapshotHash(snapshot: Omit<PrincipalSnapshot, 'revision'> & { revision?: number }): string {
+  const { revision: _revision, ...content } = snapshot;
+  return createHash('sha256').update(canonicalJson(content)).digest('hex');
 }
 
 /** The request body for one account's snapshot. */
@@ -113,13 +118,24 @@ export function v2Body(snapshot: PrincipalSnapshot): string {
 export type V2Outcome = 'applied' | 'duplicate' | 'conflict' | 'stale' | 'rejected';
 const OUTCOMES: ReadonlySet<string> = new Set(['applied', 'duplicate', 'conflict', 'stale', 'rejected']);
 
+export interface V2Result {
+  outcome: V2Outcome;
+  reason?: string;
+  /** `stored` when the engine stored the snapshot's closing time. */
+  closing?: string;
+}
+
 /** The engine's answer for this account and revision, or null when the reply doesn't carry one. */
-export function outcomeFor(body: unknown, principal: string, revision: number): { outcome: V2Outcome; reason?: string } | null {
+export function outcomeFor(body: unknown, principal: string, revision: number): V2Result | null {
   const results = (body as { results?: unknown } | null)?.results;
   if (!Array.isArray(results)) return null;
   for (const r of results as Array<Record<string, unknown>>) {
     if (r?.principal === principal && Number(r?.revision) === revision && typeof r?.outcome === 'string' && OUTCOMES.has(r.outcome)) {
-      return { outcome: r.outcome as V2Outcome, ...(typeof r.reason === 'string' && { reason: r.reason }) };
+      return {
+        outcome: r.outcome as V2Outcome,
+        ...(typeof r.reason === 'string' && { reason: r.reason }),
+        ...(typeof r.closing === 'string' && { closing: r.closing }),
+      };
     }
   }
   return null;
