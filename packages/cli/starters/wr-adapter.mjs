@@ -51,11 +51,14 @@ async function model(base_url, headers, body) {
     const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json", ...headers, ...auth },
       body: JSON.stringify(body), redirect: "error", signal: AbortSignal.timeout(180_000) });
     if (res.ok) return res.json();
-    const wr = (await res.json().catch(() => null))?.whiteroom;
-    if (wr?.reason === "free_paused") throw new Error("Sandbox isn't taking new runs right now. Nothing you set up is lost. Try again later.");
+    const reply = await res.json().catch(() => null);
+    const wr = reply?.whiteroom;
+    // WhiteRoom's own words when it sends them (without characters a terminal would act on), else the same words from here.
+    const words = typeof reply?.error === "string" ? reply.error.replace(/[^\P{C}\n]|[\u2028\u2029]/gu, "").trim() : "";
+    if (wr?.reason === "free_paused") throw new Error(words || "Sandbox isn't taking new runs right now. Nothing you set up is lost. Try again later.");
     if (wr?.reason === "sandbox_daily_limit") {
       const at = Number.isFinite(Date.parse(wr.resetAt)) ? new Date(wr.resetAt).toISOString().slice(11, 16) : "00:00";
-      throw new Error(`Your Sandbox hit today's limit of 1,000 calls. It takes calls again at ${at} UTC.`);
+      throw new Error(words || `Your Sandbox hit today's call limit. It takes calls again at ${at} UTC.`);
     }
     const wait = res.status === 503 && BUSY.includes(wr?.reason) ? ["WhiteRoom is busy right now. Waiting, then trying again.", Number(res.headers.get("retry-after") || 1)]
       : res.status === 503 && wr ? ["WhiteRoom is switching servers. Waiting, then trying again.", Number(res.headers.get("retry-after") || 1)]

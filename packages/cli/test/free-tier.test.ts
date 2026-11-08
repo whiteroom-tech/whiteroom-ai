@@ -44,6 +44,8 @@ const WORDS = {
   controlBusy: "WhiteRoom is busy. Try again in a moment.",
   db_unavailable: "Sandbox can't take calls right now. Try again in a moment.",
   callsToday: "Your Sandbox hit today's limit of 1,000 calls. It takes calls again at 00:00 UTC.",
+  /** The CLI's and starters' own text for it: without WhiteRoom's words the cap isn't known. */
+  callsTodayOwn: "Your Sandbox hit today's call limit. It takes calls again at 00:00 UTC.",
   sampleRunsToday: "You've used today's sample runs. More at 00:00 UTC, or use your own key now.",
   practiceRunsToday: "You've used today's practice runs. You can start more at 00:00 UTC.",
   sample_budget_exhausted: "Our sample agent is done for today. You can still use your own key.",
@@ -71,12 +73,12 @@ describe("Free tier messages: the CLI's own text, one per code", () => {
   });
 
   it("the day's limits: Sandbox calls (402), sample runs and practice runs (429), with the reset time in UTC", () => {
-    assert.equal(freeTierMessage({ status: 402, body: DAILY }), WORDS.callsToday);
-    assert.equal(freeTierMessage({ status: 402, body: busy("sandbox_daily_limit") }), WORDS.callsToday);
+    assert.equal(freeTierMessage({ status: 402, body: DAILY }), WORDS.callsTodayOwn);
+    assert.equal(freeTierMessage({ status: 402, body: busy("sandbox_daily_limit") }), WORDS.callsTodayOwn);
     assert.equal(freeTierMessage({ status: 429, body: { reason: "limit_fleet", code: "sandbox_daily_limit", resetAt: "2026-11-09T00:00:00.000Z" } }), WORDS.sampleRunsToday);
     assert.equal(freeTierMessage({ status: 429, body: { reason: "starts_today" } }), WORDS.practiceRunsToday);
     assert.equal(freeTierMessage({ status: 429, body: { reason: "limit_global", code: "sample_budget_exhausted" } }), WORDS.sample_budget_exhausted);
-    assert.equal(freeTierMessage({ status: 402, body: { whiteroom: { reason: "sandbox_daily_limit", resetAt: "2026-11-09T01:30:00.000+01:00" } } }), "Your Sandbox hit today's limit of 1,000 calls. It takes calls again at 00:30 UTC.");
+    assert.equal(freeTierMessage({ status: 402, body: { whiteroom: { reason: "sandbox_daily_limit", resetAt: "2026-11-09T01:30:00.000+01:00" } } }), "Your Sandbox hit today's call limit. It takes calls again at 00:30 UTC.");
   });
 
   it("older answers still map: the sample start's 429 reasons without a code", () => {
@@ -421,7 +423,8 @@ describe("practice run: Free tier answers end to end", () => {
     it(`${who}: paused or out of daily calls, it stops with plain words instead of waiting`, async () => {
       for (const [status, body, said] of [
         [503, PAUSED, /Sandbox isn't taking new runs right now\. Nothing you set up is lost\. Try again later\./],
-        [402, DAILY, /Your Sandbox hit today's limit of 1,000 calls\. It takes calls again at 00:00 UTC\./],
+        [402, DAILY, /Your Sandbox hit today's call limit\. It takes calls again at 00:00 UTC\./],
+        [402, { ...DAILY, error: `${WORDS.callsToday}\u001b[2J` }, /Your Sandbox hit today's limit of 1,000 calls\. It takes calls again at 00:00 UTC\.(?!\u001b)/],
       ] as const) {
         const s = await stub({ route: (p) => (p === "/v1/messages" ? [status, body, { "retry-after": "60" }] : undefined) });
         const r = await practice(s, ["--adapter", adapter]);
@@ -479,7 +482,7 @@ describe("the starters match the CLI's Free tier answers (one source: src/respon
   for (const [who, adapter] of [["JS starter", "node starters/wr-adapter.mjs"], ["Python starter", "python3 starters/wr_adapter.py"]] as const) {
     it(`${who}: the same daily-limit message and UTC reset time`, async () => {
       const want = freeTierMessage({ status: 402, body: OFFSET })!;
-      assert.equal(want, "Your Sandbox hit today's limit of 1,000 calls. It takes calls again at 00:30 UTC.");
+      assert.equal(want, "Your Sandbox hit today's call limit. It takes calls again at 00:30 UTC.");
       const s = await stub({ route: (p) => (p === "/v1/messages" ? [402, OFFSET] : undefined) });
       const r = await practice(s, ["--adapter", adapter]);
       assert.ok(r.stderr.includes(want), r.stderr);

@@ -4,7 +4,7 @@
 # {"type":"tool_call",...} lines (each gets a {"type":"tool_result",...} line
 # back) and finish with one {"type":"final","output":"..."} line. Print your
 # own logs to stderr: stdout is only for these JSON lines.
-import json, os, sys, time, urllib.error, urllib.request
+import json, os, sys, time, unicodedata, urllib.error, urllib.request
 from datetime import datetime, timezone
 
 # The CLI sets only the variable of the provider the practice test uses.
@@ -73,18 +73,23 @@ def model(base_url, headers, body):
                 return json.load(res)
         except urllib.error.HTTPError as err:
             try:
-                wr = json.load(err).get("whiteroom")
+                reply = json.load(err)
             except Exception:
-                wr = None
+                reply = None
+            reply = reply if isinstance(reply, dict) else {}
+            wr = reply.get("whiteroom")
             reason = wr.get("reason") if isinstance(wr, dict) else None
+            # WhiteRoom's own words when it sends them (without characters a terminal would act on), else the same words from here.
+            words = reply.get("error") if isinstance(reply.get("error"), str) else ""
+            words = "".join(ch for ch in words if ch == "\n" or (unicodedata.category(ch)[0] != "C" and ch not in "\u2028\u2029")).strip()
             if reason == "free_paused":
-                raise RuntimeError("Sandbox isn't taking new runs right now. Nothing you set up is lost. Try again later.") from None
+                raise RuntimeError(words or "Sandbox isn't taking new runs right now. Nothing you set up is lost. Try again later.") from None
             if reason == "sandbox_daily_limit":
                 try:
                     at = datetime.fromisoformat(str(wr.get("resetAt")).replace("Z", "+00:00")).astimezone(timezone.utc).strftime("%H:%M")
                 except ValueError:
                     at = "00:00"
-                raise RuntimeError(f"Your Sandbox hit today's limit of 1,000 calls. It takes calls again at {at} UTC.") from None
+                raise RuntimeError(words or f"Your Sandbox hit today's call limit. It takes calls again at {at} UTC.") from None
             if err.code == 503 and reason in BUSY:
                 wait = ("WhiteRoom is busy right now. Waiting, then trying again.", float(err.headers.get("retry-after") or 1))
             elif err.code == 503 and wr:

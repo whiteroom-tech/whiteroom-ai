@@ -31,7 +31,8 @@ export const responseCopy = {
   sandboxBusy: (wait: string) => `Sandbox is busy. Try again in ${wait}.`,
   controlBusy: (wait: string) => `WhiteRoom is busy. Try again in ${wait}.`,
   dbUnavailable: (wait: string) => `Sandbox can't take calls right now. Try again in ${wait}.`,
-  callsToday: (at: string) => `Your Sandbox hit today's limit of 1,000 calls. It takes calls again at ${at} UTC.`,
+  /** Without WhiteRoom's words the cap isn't known, so no number. */
+  callsToday: (at: string) => `Your Sandbox hit today's call limit. It takes calls again at ${at} UTC.`,
   sampleRunsToday: (at: string) => `You've used today's sample runs. More at ${at} UTC, or use your own key now.`,
   practiceRunsToday: (at: string) => `You've used today's practice runs. You can start more at ${at} UTC.`,
   sampleBudgetExhausted: "Our sample agent is done for today. You can still use your own key.",
