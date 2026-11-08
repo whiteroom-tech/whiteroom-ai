@@ -46,6 +46,8 @@ describe("sandbox run", () => {
     assert.deepEqual(seen, { ANTHROPIC_BASE_URL: SANDBOX_URL });
     assert.deepEqual(args, ["3", "two words", "--verbose"]);
     assert.match(r.stdout, /Running your agent with ANTHROPIC_BASE_URL set to your Sandbox URL/);
+    // A URL from WHITEROOM_SANDBOX_URL wasn't hidden at a prompt: no "Got your Sandbox URL" line.
+    assert.ok(!r.stdout.includes("Got your Sandbox URL"));
     // The key is never printed by the CLI itself.
     assert.ok(!r.stderr.includes(SANDBOX_KEY));
   });
