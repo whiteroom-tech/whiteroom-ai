@@ -1,5 +1,7 @@
 # @whiteroom-ai/cli
 
+Before you start: sign up at app.whiteroom.tech and open Sandbox.
+
 The `whiteroom` command: practice tests for your agent, plus fleet commands.
 
 ## Practice tests

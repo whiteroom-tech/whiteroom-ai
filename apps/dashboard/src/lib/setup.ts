@@ -1,12 +1,22 @@
-// The setup lines, shown on Home with no agents and on Fleet key.
+// The setup lines, shown on Home with no agents, on Fleet key and in Sandbox.
 // One copy, so the pages can't drift if the proxy URL or header changes.
 // NEXT_PUBLIC_PROXY_URL is baked in at build time: staging and the EU
 // deployment build with their own engine's address.
 export const PROXY_ORIGIN = process.env.NEXT_PUBLIC_PROXY_URL || 'https://proxy.whiteroom.tech';
 
+/** Stands in for the customer's proxy key wherever the real one isn't known. */
+export const PROXY_KEY_PLACEHOLDER = '<your-proxy-key>';
+
+/**
+ * The connect lines: the proxy URL with a proxy key in its path, the form the
+ * Fleet key page issues, so calls reach the account's own fleet. Never the
+ * bare origin. The full key is shown only when it's issued (Fleet key's
+ * Provider keys, a rotation, Sandbox), so these carry the placeholder.
+ */
+export const PROXY_KEY_URL = `${PROXY_ORIGIN}/${PROXY_KEY_PLACEHOLDER}`;
 export const SETUP_LINES = {
-  anthropic: `export ANTHROPIC_BASE_URL=${PROXY_ORIGIN}`,
-  openai: `export OPENAI_BASE_URL=${PROXY_ORIGIN}/v1`,
+  anthropic: `export ANTHROPIC_BASE_URL=${PROXY_KEY_URL}`,
+  openai: `export OPENAI_BASE_URL=${PROXY_KEY_URL}/v1`,
 } as const;
 
 /** The header that names an agent, and the placeholder the recipes use. */
@@ -47,7 +57,7 @@ export const AGENT_PY_HEADERS = PY_HEADERS;
  * the region the key was connected with. Mantle model ids are anthropic. plus
  * the model name, with no region prefix or version suffix.
  */
-const BEDROCK_PROXY = `${PROXY_ORIGIN}/<your-proxy-key>`;
+const BEDROCK_PROXY = PROXY_KEY_URL;
 /** AWS's standard variable for a Bedrock API key; Sandbox's Bedrock recipe reads the same one. */
 export const BEDROCK_KEY_ENV = 'AWS_BEARER_TOKEN_BEDROCK';
 const BEDROCK_MODEL = 'anthropic.claude-haiku-4-5';

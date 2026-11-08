@@ -14,17 +14,17 @@ https://whiteroom.tech
 ## How to use it
 
 ### 1. Add one line to your environment variable
-Point your agent at WhiteRoom by setting a base-URL environment variable —
-in your .env file, your shell, or wherever you configure env vars. Your
-existing API key and code stay exactly the same.
+Sign up at https://app.whiteroom.tech, then copy your line from the Fleet
+key page into your .env file, your shell, or wherever you configure env
+vars. Your existing API key and code stay exactly the same.
 
 If you use Anthropic (Claude):
 
-    ANTHROPIC_BASE_URL=https://proxy.whiteroom.tech
+    ANTHROPIC_BASE_URL=https://proxy.whiteroom.tech/<your-proxy-key>
 
 If you use OpenAI (GPT):
 
-    OPENAI_BASE_URL=https://proxy.whiteroom.tech/v1
+    OPENAI_BASE_URL=https://proxy.whiteroom.tech/<your-proxy-key>/v1
 
 ### 2. Run your agent
 Run your agent exactly as before. WhiteRoom auto-registers and starts

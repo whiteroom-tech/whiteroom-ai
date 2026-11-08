@@ -9,7 +9,7 @@ import { analytics } from '@/lib/analytics';
 import { PROXY_URL } from '@/lib/whiteroom/client';
 import { announceProxyKeyRotation, type PastTest, claimSandboxChoices, clearSandboxToken, createRun, forgetProxyKey, forgetSandboxChoices, PROVIDER_STORAGE, getStatus, destroyRun, loadProxyKey, newProxyKey, proxyKeyAfterStorageEvent, saveProxyKey, type ShownProxyKey, SandboxRequestError, withRunMode, type RunStatusResult } from '@/lib/sandbox/api';
 import { type CloudProvider, cloudRecipe, detectKey, cloudStart, type CloudEndpoints, type DirectProvider, headersLiteral, isCloudProvider, isSandboxProvider, KEY_HELP, noCodeSetup, offersNoCode, PROVIDER_UNSUPPORTED, providerSummary, proxyKeyBase, restorableProvider, saveEndpoints, savedEndpoints, type SandboxProvider, withEndpoint, withUnsupported } from '@/lib/sandbox/providers';
-import { SETUP_LINES } from '@/lib/setup';
+import { PROXY_KEY_URL, SETUP_LINES } from '@/lib/setup';
 import { callCount, failedCallNotice, failedCallReason, failedCallsCheckDetail, failedCallsOf } from '@/lib/sandbox/failed-calls';
 import { CloudEndpointField, CloudGoLive, CloudTroubleshooting, ProviderChoices, ProxyKeyNotice } from './CloudProviderParts';
 import { buildTestReport, checkLabel, memoryCheckDetail, reportSource, SANDBOX_CHECKS, saveReportFile } from '@/lib/sandbox/report';
@@ -146,15 +146,24 @@ export function KeyField({ credential, showKey, provider, onChange, onToggleShow
   );
 }
 
-export function connectionRecipe(provider: DirectProvider, fleetId: string, agentId: string, language: Language) {
-  const base = PROXY_URL.replace(/\/$/, '') + (provider === 'openai' ? '/v1' : '');
-  const headers = { 'x-whiteroom-fleet': fleetId, 'x-whiteroom-agent': agentId };
+/** A client set up to call through WhiteRoom at `origin` with these headers. */
+function clientRecipe(provider: DirectProvider, origin: string, headers: Record<string, string>, language: Language) {
+  const base = origin.replace(/\/$/, '') + (provider === 'openai' ? '/v1' : '');
   if (language === 'Python') return provider === 'openai'
     ? `from openai import OpenAI\n\nclient = OpenAI(\n    base_url=${JSON.stringify(base)},\n    default_headers=${headersLiteral(headers, 4)}\n)\n# Uses OPENAI_API_KEY from your environment.\n# Use this client for your agent's chat.completions calls.`
     : `import anthropic\n\nclient = anthropic.Anthropic(\n    base_url=${JSON.stringify(base)},\n    default_headers=${headersLiteral(headers, 4)}\n)\n# Uses ANTHROPIC_API_KEY from your environment.\n# Use this client for your agent's messages calls.`;
   return provider === 'openai'
     ? `import OpenAI from 'openai';\n\nconst client = new OpenAI({\n  baseURL: ${JSON.stringify(base)},\n  defaultHeaders: ${headersLiteral(headers, 2)}\n});\n// Uses OPENAI_API_KEY from your environment.\n// Use this client for your agent's chat.completions calls.`
     : `import Anthropic from '@anthropic-ai/sdk';\n\nconst client = new Anthropic({\n  baseURL: ${JSON.stringify(base)},\n  defaultHeaders: ${headersLiteral(headers, 2)}\n});\n// Uses ANTHROPIC_API_KEY from your environment.\n// Use this client for your agent's messages calls.`;
+}
+
+export function connectionRecipe(provider: DirectProvider, fleetId: string, agentId: string, language: Language) {
+  return clientRecipe(provider, PROXY_URL, { 'x-whiteroom-fleet': fleetId, 'x-whiteroom-agent': agentId }, language);
+}
+
+/** The same client for the live fleet: the proxy key in the URL names the fleet, so only the agent's name goes in a header. */
+export function liveRecipe(provider: DirectProvider, agentId: string, language: Language) {
+  return clientRecipe(provider, PROXY_KEY_URL, { 'x-whiteroom-agent': agentId }, language);
 }
 
 /** The agent name Connect's code starts with, until the agent's own name is seen. */
@@ -562,7 +571,6 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
   const [pollTick, setPollTick] = useState(0);
   const [displaySeconds, setDisplaySeconds] = useState<number | null>(null);
   const [activityExpanded, setActivityExpanded] = useState(false);
-  const [prodFleetId, setProdFleetId] = useState<string | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   // The workspace's results heading (the summary line), focused when a live test finishes.
   const summaryHeading = useRef<HTMLHeadingElement>(null);
@@ -638,16 +646,6 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
   }, [run?.sandboxId]);
-
-  // Once every check passes, fill the production snippet with the user's own
-  // fleet instead of a placeholder.
-  useEffect(() => {
-    if (!allPassed || prodFleetId) return;
-    fetch('/api/fleet/session', { credentials: 'same-origin', cache: 'no-store' })
-      .then(r => (r.ok ? r.json() : null))
-      .then((d: { fleetId?: string } | null) => { if (d?.fleetId) setProdFleetId(d.fleetId); })
-      .catch(() => {});
-  }, [allPassed, prodFleetId]);
 
   // Once per page: someone opened the Sandbox.
   const opened = useRef(false);
@@ -1141,16 +1139,14 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
             <div className={s.prod}>
               <div className={s.prodTitle} style={{ fontFamily: FONT_DISPLAY }}>Ready to go live</div>
               {liveCloud ? <CloudGoLive provider={liveCloud} /> : language === 'env' ? <>
-              <p>On your live fleet, agents with a system prompt need no code change. Set this and run your agent as before.</p>
+              <p>On your live fleet, agents with a system prompt need no code change. Set this, with your proxy key from <Link className={s.linkBtn} href={ROUTES.fleetKey}>Fleet key</Link>, and run your agent as before.</p>
               <pre className={s.recipe} style={{ fontFamily: FONT_MONO }}>{SETUP_LINES[directProvider]}</pre>
               </> : <>
-              <p>{prodFleetId
-                ? <>To run this agent on your live fleet, use this instead. Your fleet (<code>{prodFleetId}</code>) and agent name are already filled in.</>
-                : <>To run this agent for real, use this and put in your live fleet ID.</>}</p>
-              <pre className={s.recipe} style={{ fontFamily: FONT_MONO }}>{connectionRecipe(directProvider, prodFleetId ?? 'YOUR_FLEET_ID', agentId, codeLanguage)}</pre>
+              <p>To run this agent on your live fleet, use this instead, with your proxy key from <Link className={s.linkBtn} href={ROUTES.fleetKey}>Fleet key</Link>. Its name is already filled in.</p>
+              <pre className={s.recipe} style={{ fontFamily: FONT_MONO }}>{liveRecipe(directProvider, agentId, codeLanguage)}</pre>
               </>}
               <div className={s.btnRow} style={{ marginTop: 8 }}>
-                {!liveCloud && <CopyButton text={language === 'env' ? SETUP_LINES[directProvider] : connectionRecipe(directProvider, prodFleetId ?? 'YOUR_FLEET_ID', agentId, codeLanguage)} />}
+                {!liveCloud && <CopyButton text={language === 'env' ? SETUP_LINES[directProvider] : liveRecipe(directProvider, agentId, codeLanguage)} />}
                 <button className={`${s.btn} ${s.btnSecondary}`} onClick={() => { void downloadReport(); }} disabled={busy} style={{ fontSize: 'var(--fs-sm)' }}>Download report</button>
               </div>
               {practice.rows && <p style={{ marginTop: 10 }}>Want more confidence before going live? <Link className={s.linkBtn} href={ROUTES.practiceTest}>Run a practice test</Link>: {PRACTICE_SUMMARY}.</p>}

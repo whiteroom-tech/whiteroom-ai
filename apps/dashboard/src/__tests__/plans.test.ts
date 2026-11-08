@@ -334,10 +334,11 @@ describe('Free and Suspended', () => {
   it('Suspended keeps the limits an ended free period had; Free has no production', () => {
     expect(limitsFor('suspended')).toEqual({ maxFleets: 1, maxAgentsPerFleet: 0, includedAgents: null, retentionDays: 30 });
     expect(limitsFor('free')).toEqual({ maxFleets: 0, maxAgentsPerFleet: 0, includedAgents: null, retentionDays: 7 });
-    for (const p of ['free', 'suspended'] as const) {
-      expect(hasProductionAccess(p)).toBe(false);
-      expect(SANDBOX_LIMITS[p]).toEqual({ enabled: true, sampleRunsPerDay: 3, practiceRunsPerDay: 5, inflight: 4, rpm: 60, retentionDays: 7 });
-    }
+    for (const p of ['free', 'suspended'] as const) expect(hasProductionAccess(p)).toBe(false);
+    expect(SANDBOX_LIMITS.free).toEqual({ enabled: true, sampleRunsPerDay: 3, practiceRunsPerDay: 5, inflight: 4, rpm: 60, retentionDays: 7 });
+    // Suspended is Free's Sandbox, but keeps 10 practice runs a day (as a trial does).
+    expect(SANDBOX_LIMITS.suspended).toEqual({ ...SANDBOX_LIMITS.free, practiceRunsPerDay: 10 });
+    expect(SANDBOX_LIMITS.trial.practiceRunsPerDay).toBe(10);
     for (const p of ['starter', 'pro', 'enterprise'] as const) expect(hasProductionAccess(p)).toBe(true);
   });
 
