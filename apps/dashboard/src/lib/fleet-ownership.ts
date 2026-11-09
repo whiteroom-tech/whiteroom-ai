@@ -24,15 +24,17 @@ export async function verifyFleetOwnership(token: unknown, fleetId: unknown): Pr
   }
   let response: Response;
   try {
-    // token_login only reads, so a brief engine gap is asked about once more.
+    // token_login only reads, so a brief engine gap is asked about again, within one 10 s timeout.
+    const signal = AbortSignal.timeout(10_000);
+    const deadline = Date.now() + 10_000;
     response = await withEngineReadRetry(() => fetch(`${PROXY_URL}/api/white-room`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'token_login', fleet_token: token }),
       cache: 'no-store',
       redirect: 'error',
-      signal: AbortSignal.timeout(10_000),
-    }));
+      signal,
+    }), { deadline });
   } catch (e) {
     // Upstream exceptions may contain credentials. Never expose them.
     // A refused redirect is a setup problem, not a gap: a refusal like any other.

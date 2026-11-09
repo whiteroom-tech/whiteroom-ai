@@ -160,11 +160,33 @@ async function postRaw(
   key?: string,
   opts?: PostOptions,
 ): Promise<Response> {
-  if (typeof body.action !== 'string' || !READ_ACTIONS.has(body.action)) return postHandoff(body, key, opts);
+  // One timeout for the whole call, retries included, so a retry never stretches it.
+  // The BFF's own upstream timeout is 15s; give it headroom so its 502 arrives
+  // instead of racing it with our own abort.
+  const timeoutMs = viaBff(key, opts) ? 20_000 : 15_000;
+  const time: CallTime = { signal: AbortSignal.timeout(timeoutMs), deadline: Date.now() + timeoutMs };
+  if (typeof body.action !== 'string' || !READ_ACTIONS.has(body.action)) return postHandoff(body, key, opts, time);
   // One retry round in all: a read already sent again below isn't asked a second round.
   let retried = false;
-  const send = () => postHandoff(body, key, opts, () => { retried = true; });
-  return withEngineReadRetry(send, { handoffRetried: true, retried: () => retried });
+  const send = () => postHandoff(body, key, opts, time, () => { retried = true; });
+  return withEngineReadRetry(send, { handoffRetried: true, retried: () => retried, deadline: time.deadline });
+}
+
+interface CallTime {
+  signal: AbortSignal;
+  /** Epoch ms the signal fires at: no retry wait starts that would end past it. */
+  deadline: number;
+}
+
+/**
+ * Browser + no explicit key = the caller has no credential to send: the
+ * fleet token lives server-side in the httpOnly `wr_fleet_auth` cookie.
+ * Those calls go through the same-origin BFF, which attaches the token on the
+ * server. Explicit-key calls (a typed API key during onboarding or login) and
+ * server-side calls go straight to the engine.
+ */
+function viaBff(key?: string, opts?: PostOptions): boolean {
+  return typeof window !== 'undefined' && !key && !opts?.direct;
 }
 
 /**
@@ -179,12 +201,13 @@ async function postRaw(
  */
 async function postHandoff(
   body: Record<string, unknown>,
-  key?: string,
-  opts?: PostOptions,
+  key: string | undefined,
+  opts: PostOptions | undefined,
+  time: CallTime,
   onRetry?: () => void,
 ): Promise<Response> {
   for (let handoffs = 0, waited = 0; ;) {
-    const res = await postOnce(body, key, opts);
+    const res = await postOnce(body, key, opts, time.signal);
     let delay: number | null = null;
     if (res.status === 503 && handoffs < 2) {
       const reason = await res.clone().json().then((b) => b?.whiteroom?.reason, () => null);
@@ -194,7 +217,7 @@ async function postHandoff(
         delay = Number.isFinite(after) && after > 0 ? Math.min(after * 1000, 1000) : 250;
       }
     } else {
-      delay = await platform429Delay(res, waited);
+      delay = await platform429Delay(res, waited, time.deadline);
       if (delay !== null) waited += delay;
     }
     if (delay === null) return res;
@@ -207,22 +230,16 @@ async function postHandoff(
 
 async function postOnce(
   body: Record<string, unknown>,
-  key?: string,
-  opts?: PostOptions,
+  key: string | undefined,
+  opts: PostOptions | undefined,
+  /** The whole call's timeout (postRaw), shared by its retries. */
+  signal: AbortSignal,
 ): Promise<Response> {
-  // Browser + no explicit key = the caller has no credential to send: the
-  // fleet token lives server-side in the httpOnly `wr_fleet_auth` cookie.
-  // Route those calls through the same-origin BFF, which attaches the token
-  // on the server. Explicit-key calls (a typed API key during onboarding or
-  // login) and server-side calls go straight to the engine as before.
-  const viaBff = typeof window !== 'undefined' && !key && !opts?.direct;
   try {
-    if (viaBff) {
+    if (viaBff(key, opts)) {
       return await fetch('/api/fleet/engine', {
         method: 'POST',
-        // The BFF's own upstream timeout is 15s; give it headroom so its 502
-        // arrives instead of racing it with our own abort.
-        signal: AbortSignal.timeout(20_000),
+        signal,
         redirect: 'error',
         cache: 'no-store',
         credentials: 'same-origin',
@@ -232,7 +249,7 @@ async function postOnce(
     }
     return await fetch(`${PROXY_URL}/api/white-room`, {
       method: 'POST',
-      signal: AbortSignal.timeout(15_000),
+      signal,
       redirect: 'error',
       cache: 'no-store',
       headers: { ...engineAuthHeaders(key), ...opts?.headers },

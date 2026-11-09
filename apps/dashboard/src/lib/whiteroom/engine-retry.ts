@@ -43,25 +43,32 @@ export async function isPlatform429(res: Response): Promise<boolean> {
   return !(body && typeof body === 'object' && (typeof body.error === 'string' || typeof body.reason === 'string'));
 }
 
+/** Whether a wait of `delay` ms still ends before the caller's `deadline` (epoch ms), if it set one. */
+const fits = (delay: number, deadline?: number) => deadline === undefined || Date.now() + delay < deadline;
+
 /**
- * The next wait for a platform 429, or null when it isn't one or the budget
- * (`waited` so far) is spent. For callers with a retry loop of their own (client.ts).
+ * The next wait for a platform 429, or null when it isn't one, the budget
+ * (`waited` so far) is spent, or the wait would pass `deadline`. For callers
+ * with a retry loop of their own (client.ts).
  */
-export async function platform429Delay(res: Response, waited: number): Promise<number | null> {
+export async function platform429Delay(res: Response, waited: number, deadline?: number): Promise<number | null> {
   if (!(await isPlatform429(res))) return null;
   const delay = PLATFORM_429_DELAY_MS + Math.floor(Math.random() * PLATFORM_429_JITTER_MS);
-  return waited + delay <= PLATFORM_429_BUDGET_MS ? delay : null;
+  return waited + delay <= PLATFORM_429_BUDGET_MS && fits(delay, deadline) ? delay : null;
 }
 
 /**
  * Runs `request` and sends it again while the platform answers 429 (it never
- * reached the engine), for up to ~5 s. Safe for any call. `onRetry` is told
- * each time, so a caller can skip its own retry on top.
+ * reached the engine), for up to ~5 s and never past `deadline`. Safe for any
+ * call. `onRetry` is told each time, so a caller can skip its own retry on top.
  */
-export async function retryPlatform429(request: () => Promise<Response>, onRetry?: () => void): Promise<Response> {
+export async function retryPlatform429(
+  request: () => Promise<Response>,
+  { onRetry, deadline }: { onRetry?: () => void; deadline?: number } = {},
+): Promise<Response> {
   for (let waited = 0; ;) {
     const res = await request();
-    const delay = await platform429Delay(res, waited);
+    const delay = await platform429Delay(res, waited, deadline);
     if (delay === null) return res;
     await res.body?.cancel().catch(() => {});
     onRetry?.();
@@ -75,6 +82,11 @@ export interface RetryOptions {
   handoffRetried?: boolean;
   /** True once the caller has already retried this request its own way: then it isn't asked again here. */
   retried?: () => boolean;
+  /**
+   * The caller's own time limit (epoch ms), shared by every attempt: no wait
+   * starts that would end past it, so retries never stretch a bounded call.
+   */
+  deadline?: number;
 }
 
 /**
@@ -126,20 +138,22 @@ function retryDelay(): number {
  */
 export async function withEngineReadRetry(request: () => Promise<Response>, opts: RetryOptions = {}): Promise<Response> {
   let platformRetried = false;
-  const send = opts.retried ? request : () => retryPlatform429(request, () => { platformRetried = true; });
+  const send = opts.retried ? request : () => retryPlatform429(request, { onRetry: () => { platformRetried = true; }, deadline: opts.deadline });
   const retried = () => platformRetried || !!opts.retried?.();
   const started = Date.now();
   let first: Response;
   try {
     first = await send();
   } catch (e) {
-    if (timedOut(e) || isRedirectError(e) || Date.now() - started > ENGINE_RETRY_FAST_FAIL_MS || retried()) throw e;
-    await sleep(retryDelay());
+    const delay = retryDelay();
+    if (timedOut(e) || isRedirectError(e) || Date.now() - started > ENGINE_RETRY_FAST_FAIL_MS || retried() || !fits(delay, opts.deadline)) throw e;
+    await sleep(delay);
     return send();
   }
-  if (Date.now() - started > ENGINE_RETRY_FAST_FAIL_MS || retried() || !(await isTransientEngineAnswer(first, opts))) return first;
+  const delay = retryDelay();
+  if (Date.now() - started > ENGINE_RETRY_FAST_FAIL_MS || retried() || !fits(delay, opts.deadline) || !(await isTransientEngineAnswer(first, opts))) return first;
   // The first answer is dropped; free its body.
   await first.body?.cancel().catch(() => {});
-  await sleep(retryDelay());
+  await sleep(delay);
   return send();
 }

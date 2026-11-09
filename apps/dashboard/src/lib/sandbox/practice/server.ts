@@ -53,6 +53,9 @@ export async function practiceEngine(method: 'GET' | 'POST', path: string, body:
   if (!secret) return unavailable(503);
   let res: Response;
   try {
+    // One timeout for the call, retries included.
+    const signal = AbortSignal.timeout(15_000);
+    const deadline = Date.now() + 15_000;
     const send = () => fetch(`${PROXY_URL}/api/readiness/${path}`, {
       method,
       // The user too, so the engine's rate limit counts the polling per user, not per dashboard IP.
@@ -60,11 +63,11 @@ export async function practiceEngine(method: 'GET' | 'POST', path: string, body:
       body: body ? JSON.stringify(body) : undefined,
       cache: 'no-store',
       redirect: 'error',
-      signal: AbortSignal.timeout(15_000),
+      signal,
     });
     // A GET only reads: a brief engine gap is asked about once more. A POST starts a test, so it is
     // sent again only on the platform's own 429, which never reached the engine.
-    res = method === 'GET' ? await withEngineReadRetry(send) : await retryPlatform429(send);
+    res = method === 'GET' ? await withEngineReadRetry(send, { deadline }) : await retryPlatform429(send, { deadline });
   } catch {
     return json(502, 'Couldn’t reach WhiteRoom. Check your connection and try again.');
   }

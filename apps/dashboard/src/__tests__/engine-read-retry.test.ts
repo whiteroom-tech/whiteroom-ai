@@ -89,6 +89,17 @@ describe('with the engine’s handoff retry', () => {
   });
 });
 
+describe('one timeout per call', () => {
+  it('a read’s retries share the call’s signal', async () => {
+    fetchMock.mockResolvedValueOnce(platform(503)).mockResolvedValueOnce(json({ fleetId: 'f1' }));
+    const read = getDiagnosis('f1', 'test-key');
+    await vi.advanceTimersByTimeAsync(2_000);
+    await read;
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0][1].signal).toBe(fetchMock.mock.calls[1][1].signal);
+  });
+});
+
 describe('the wait', () => {
   it('is at least 1.5 s and at most 2 s', async () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.999);
@@ -206,6 +217,30 @@ describe('which answers count as a brief gap', () => {
 });
 
 describe('fleet usage', () => {
+  it('retries never stretch the caller’s timeout', async () => {
+    vi.stubEnv('WR_ENTITLEMENT_SYNC_SECRET', 'test-sync-secret');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    fetchMock.mockImplementation(async () => platform(429));
+    const started = Date.now();
+    let done = 0;
+    const usage = fetchFleetUsage(['f1'], { timeoutMs: 2_500 }).then((r) => { done = Date.now(); return r; });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect((await usage).windowDays).toBeNull();
+    expect(done - started).toBeLessThan(2_500);
+    // 0.8-1.2 s apart: no more than three sends fit in 2.5 s.
+    expect(fetchMock.mock.calls.length).toBeLessThanOrEqual(3);
+  });
+
+  it('every attempt shares one timeout signal', async () => {
+    vi.stubEnv('WR_ENTITLEMENT_SYNC_SECRET', 'test-sync-secret');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    fetchMock.mockResolvedValueOnce(platform(429)).mockResolvedValueOnce(json({ windowDays: 7, fleets: [] }));
+    const usage = fetchFleetUsage(['f1']);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await usage;
+    expect(fetchMock.mock.calls[0][1].signal).toBe(fetchMock.mock.calls[1][1].signal);
+  });
+
   it('waits out a longer platform gap (~4 s of 429s)', async () => {
     vi.stubEnv('WR_ENTITLEMENT_SYNC_SECRET', 'test-sync-secret');
     vi.spyOn(console, 'error').mockImplementation(() => {});
