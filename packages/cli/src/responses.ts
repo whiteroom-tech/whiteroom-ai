@@ -6,18 +6,11 @@
 // WhiteRoom's reply already says it in words: those are printed as sent. The
 // texts below are the same words, for a reply that carries none.
 
-const US_DASHBOARD = "https://app.whiteroom.tech";
-const EU_DASHBOARD = "https://eu.app.whiteroom.tech";
+const DASHBOARD = "https://app.whiteroom.tech";
 
-/** The dashboard for the WhiteRoom address the CLI was pointed at: EU for eu.proxy.whiteroom.tech, else the US one. */
-export function dashboardFor(engineUrl?: string | null): string {
-  let host = "";
-  try {
-    host = new URL(engineUrl ?? "").hostname.toLowerCase();
-  } catch {
-    // Not a URL: the US dashboard.
-  }
-  return host.startsWith("eu.proxy.") && host.endsWith(".whiteroom.tech") ? EU_DASHBOARD : US_DASHBOARD;
+/** The dashboard to link to, whatever WhiteRoom address the CLI was pointed at. EU gets its own once an EU dashboard exists. */
+export function dashboardFor(_engineUrl?: string | null): string {
+  return DASHBOARD;
 }
 
 /** 503 answers that mean "try again in a moment": WhiteRoom refused before doing anything, so the same request can be sent again. */

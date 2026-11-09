@@ -1,6 +1,6 @@
 {
   "name": "@whiteroom-ai/cli",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "CLI for WhiteRoom — manage AI agent fleets from the terminal",
   "type": "module",
   "bin": {

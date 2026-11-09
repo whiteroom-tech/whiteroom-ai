@@ -33,7 +33,6 @@ const busy = (reason: string) => ({ whiteroom: { reason, forwarded: false } });
 const gate = (reason: string) => ({ error: { type: "quota_exceeded" }, whiteroom: { reason, forwarded: false } });
 const DAILY = { whiteroom: { reason: "sandbox_daily_limit", forwarded: false, resetAt: "2026-11-09T00:00:00.000Z" } };
 const US = "https://app.whiteroom.tech";
-const EU = "https://eu.app.whiteroom.tech";
 const EU_PROXY = "https://eu.proxy.whiteroom.tech";
 
 // The canonical words (spec §3.10), one per code, as WhiteRoom sends them.
@@ -100,14 +99,12 @@ describe("Free tier messages: the CLI's own text, one per code", () => {
     assert.equal(freeTierMessage({ status: 402, body: gate("plan_free") }, "https://proxy.whiteroom.tech"), WORDS.plan_free(US));
   });
 
-  it("pointed at the EU proxy, links go to the EU dashboard", () => {
+  it("pointed at the EU proxy, links still go to app.whiteroom.tech (no EU dashboard yet)", () => {
     for (const r of ["plan_free", "suspended", "unclaimed", "revoked"] as const) {
-      assert.equal(freeTierMessage({ status: 402, body: gate(r) }, EU_PROXY), WORDS[r](EU));
+      assert.equal(freeTierMessage({ status: 402, body: gate(r) }, EU_PROXY), WORDS[r](US));
     }
-    assert.equal(freeTierMessage({ status: 402, body: gate("not_available") }, `${EU_PROXY}/`), WORDS.unclaimed(EU));
-    assert.equal(dashboardFor(EU_PROXY), EU);
-    assert.equal(dashboardFor("https://EU.PROXY.whiteroom.tech:443/x"), EU);
-    for (const u of ["https://proxy.whiteroom.tech", "http://127.0.0.1:3000", "https://eu.proxy.example.com", "https://proxy.eu.whiteroom.tech", "not a url", undefined, null]) {
+    assert.equal(freeTierMessage({ status: 402, body: gate("not_available") }, `${EU_PROXY}/`), WORDS.unclaimed(US));
+    for (const u of [EU_PROXY, "https://EU.PROXY.whiteroom.tech:443/x", "https://proxy.whiteroom.tech", "http://127.0.0.1:3000", "not a url", undefined, null]) {
       assert.equal(dashboardFor(u), US, String(u));
     }
   });
@@ -151,13 +148,13 @@ describe("Free tier messages: WhiteRoom's own words come first", () => {
     assert.equal(freeTierMessage({ status: 503, body: minute, retryAfter: "60" }), WORDS.busyMinute);
     const cap = { error: "Your Sandbox hit today's limit of 500 calls. It takes calls again at 00:00 UTC.", whiteroom: { reason: "sandbox_daily_limit", forwarded: false } };
     assert.equal(freeTierMessage({ status: 402, body: cap }), cap.error);
-    const eu = { error: { type: "quota_exceeded", message: WORDS.suspended(EU) }, whiteroom: { reason: "suspended", forwarded: false } };
-    assert.equal(freeTierMessage({ status: 402, body: eu }, EU_PROXY), WORDS.suspended(EU));
+    const eu = { error: { type: "quota_exceeded", message: WORDS.suspended(US) }, whiteroom: { reason: "suspended", forwarded: false } };
+    assert.equal(freeTierMessage({ status: 402, body: eu }, EU_PROXY), WORDS.suspended(US));
     const older = { error: "You can start more tomorrow (00:00 UTC).", reason: "starts_today" };
     assert.equal(freeTierMessage({ status: 429, body: older }), older.error);
   });
 
-  it("production refusals (402) always use the CLI's text, so an older reply without a link still gets the region's link", () => {
+  it("production refusals (402) always use the CLI's text, so an older reply without a link still gets the dashboard link", () => {
     for (const [reason, older] of [
       ["plan_free", "Start a trial or choose a plan in the WhiteRoom dashboard."],
       ["suspended", "Choose a plan in the WhiteRoom dashboard to resume."],
@@ -167,12 +164,12 @@ describe("Free tier messages: WhiteRoom's own words come first", () => {
     ] as const) {
       const body = { error: { type: "quota_exceeded", message: older }, whiteroom: { reason, forwarded: false } };
       const want = reason === "not_available" ? WORDS.unclaimed : WORDS[reason];
-      assert.equal(freeTierMessage({ status: 402, body }, EU_PROXY), want(EU));
+      assert.equal(freeTierMessage({ status: 402, body }, EU_PROXY), want(US));
       assert.equal(freeTierMessage({ status: 402, body }), want(US));
     }
   });
 
-  it("every command passes the address it talks to, so its links follow the region", () => {
+  it("every command passes the address it talks to, so its links can follow the region once an EU dashboard exists", () => {
     for (const [file, arg] of [["src/index.ts", "baseUrl"], ["src/practice/run.ts", "(?:origin|engineOrigin)"], ["src/sandbox/listen.ts", "origin"]] as const) {
       const src = readFileSync(join(PKG, file), "utf8");
       const calls = [...src.matchAll(/freeTierMessage\(([^;]*?)\)(?: \?\?|;)/g)].map((m) => m[1]);
