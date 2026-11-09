@@ -21,6 +21,8 @@ export const ENGINE_RETRY_FAST_FAIL_MS = 5_000;
 export interface RetryOptions {
   /** The caller has its own retry for the engine's handoff 503 (see isTransientEngineAnswer). */
   handoffRetried?: boolean;
+  /** True once the caller has already retried this request its own way: then it isn't asked again here. */
+  retried?: () => boolean;
 }
 
 /**
@@ -68,11 +70,11 @@ export async function withEngineReadRetry(request: () => Promise<Response>, opts
   try {
     first = await request();
   } catch (e) {
-    if (timedOut(e) || Date.now() - started > ENGINE_RETRY_FAST_FAIL_MS) throw e;
+    if (timedOut(e) || Date.now() - started > ENGINE_RETRY_FAST_FAIL_MS || opts.retried?.()) throw e;
     await new Promise((r) => setTimeout(r, retryDelay()));
     return request();
   }
-  if (Date.now() - started > ENGINE_RETRY_FAST_FAIL_MS || !(await isTransientEngineAnswer(first, opts))) return first;
+  if (Date.now() - started > ENGINE_RETRY_FAST_FAIL_MS || opts.retried?.() || !(await isTransientEngineAnswer(first, opts))) return first;
   // The first answer is dropped; free its body.
   await first.body?.cancel().catch(() => {});
   await new Promise((r) => setTimeout(r, retryDelay()));

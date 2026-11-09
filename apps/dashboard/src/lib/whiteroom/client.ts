@@ -160,8 +160,11 @@ async function postRaw(
   key?: string,
   opts?: PostOptions,
 ): Promise<Response> {
-  const send = () => postHandoff(body, key, opts);
-  return typeof body.action === 'string' && READ_ACTIONS.has(body.action) ? withEngineReadRetry(send, { handoffRetried: true }) : send();
+  if (typeof body.action !== 'string' || !READ_ACTIONS.has(body.action)) return postHandoff(body, key, opts);
+  // One retry in all: a read that already waited out a handoff isn't asked a second round.
+  let handedOff = false;
+  const send = () => postHandoff(body, key, opts, () => { handedOff = true; });
+  return withEngineReadRetry(send, { handoffRetried: true, retried: () => handedOff });
 }
 
 /**
@@ -173,12 +176,14 @@ async function postHandoff(
   body: Record<string, unknown>,
   key?: string,
   opts?: PostOptions,
+  onHandoff?: () => void,
 ): Promise<Response> {
   for (let attempt = 0; ; attempt++) {
     const res = await postOnce(body, key, opts);
     if (res.status !== 503 || attempt >= 2) return res;
     const reason = await res.clone().json().then((b) => b?.whiteroom?.reason, () => null);
     if (reason !== 'whiteroom_handoff') return res;
+    onHandoff?.();
     const after = Number(res.headers.get('Retry-After'));
     await new Promise((r) => setTimeout(r, Number.isFinite(after) && after > 0 ? Math.min(after * 1000, 1000) : 250));
   }

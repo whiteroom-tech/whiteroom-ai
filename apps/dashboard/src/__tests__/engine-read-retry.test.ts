@@ -7,9 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFleet, getDiagnosis, pauseAgent, tokenLogin } from '@/lib/whiteroom/client';
 import { fetchFleetUsage } from '@/lib/fleet-usage';
 import { verifyFleetOwnership } from '@/lib/fleet-ownership';
+import { practiceEngine } from '@/lib/sandbox/practice/server';
 import { isTransientEngineAnswer, withEngineReadRetry } from '@/lib/whiteroom/engine-retry';
 
 vi.mock('server-only', () => ({}));
+vi.mock('@/auth', () => ({ auth: async () => null }));
+vi.mock('@/lib/fleet-session', () => ({ getFleetAuthCookie: async () => null, tokenFromUserFleets: async () => null }));
 
 const fetchMock = vi.fn();
 const platform = (status: number) => new Response('<html>Rate exceeded.</html>', { status, headers: { 'Content-Type': 'text/html' } });
@@ -70,6 +73,18 @@ describe('a read during a brief engine gap', () => {
     await vi.advanceTimersByTimeAsync(6_000);
     await failed;
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('with the engine’s handoff retry', () => {
+  const handoff = () => new Response(JSON.stringify({ whiteroom: { reason: 'whiteroom_handoff' } }), { status: 503, headers: { 'Retry-After': '0' } });
+
+  it('a read that already waited out a handoff is not asked a second round', async () => {
+    fetchMock.mockResolvedValueOnce(handoff()).mockImplementation(async () => platform(502));
+    const failed = expect(getDiagnosis('f1', 'test-key')).rejects.toThrow('HTTP 502');
+    await vi.advanceTimersByTimeAsync(5_000);
+    await failed;
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -148,5 +163,26 @@ describe('fleet usage', () => {
     expect(result.byFleet.get('f1')).toMatchObject({ exists: true });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(console.error).not.toHaveBeenCalled();
+  });
+});
+
+describe('practice tests', () => {
+  beforeEach(() => vi.stubEnv('WR_DASHBOARD_SERVICE_SECRET', 'test-dash-secret'));
+
+  it('a GET (a poll) is asked once more after a 503', async () => {
+    fetchMock.mockResolvedValueOnce(platform(503)).mockResolvedValueOnce(json({ status: 'running' }));
+    const polled = practiceEngine('GET', 'runs/r1', undefined, 'u1');
+    await vi.advanceTimersByTimeAsync(2_000);
+    const res = await polled;
+    expect(res.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('a POST (starts a test) is sent exactly once', async () => {
+    fetchMock.mockImplementation(async () => platform(503));
+    const started = practiceEngine('POST', 'start', { fleet: 'f1' }, 'u1');
+    await vi.advanceTimersByTimeAsync(2_000);
+    await started;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
