@@ -69,6 +69,8 @@ export async function saveProvisioning(
       } catch { /* report the original refusal */ }
     }
   }
+  // The engine was briefly unavailable: nothing failed for good, so say just that (the page offers Retry).
+  if (saved.code === 'unavailable') return { error: saved.error };
   return { error: provisioningError(saved.error) };
 }
 
