@@ -1,7 +1,8 @@
 // When the engine restarts it is briefly unavailable and the platform answers
-// for it (429 with its own body, or 502/503/504). Reads are asked once more
-// after a short wait; the engine's own 429s and anything that changes
-// something are never asked again.
+// for it (429 with its own body, or 502/503/504). The platform's 429 never
+// reached the engine, so any call is sent again for up to ~5 s. On a 502/503/504
+// or network error only reads are asked once more. The engine's own 429s are
+// never retried.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFleet, getDiagnosis, pauseAgent, tokenLogin } from '@/lib/whiteroom/client';
@@ -108,10 +109,54 @@ describe('a change is never retried', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('create_fleet on a platform 429', async () => {
-    fetchMock.mockImplementation(async () => platform(429));
+  it('create_fleet on the engine’s own 429', async () => {
+    fetchMock.mockImplementation(async () => json({ error: 'Too many new fleets today.', reason: 'new_fleet_limit' }, 429));
     await expect(createFleet('f1', 'test-key')).resolves.toMatchObject({ status: 429 });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('create_fleet on a 502', async () => {
+    fetchMock.mockImplementation(async () => platform(502));
+    await expect(createFleet('f1', 'test-key')).resolves.toMatchObject({ status: 502 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the platform’s 429 (the request never reached the engine)', () => {
+  it('a change is sent again, and goes through once the engine is back', async () => {
+    fetchMock
+      .mockResolvedValueOnce(platform(429)).mockResolvedValueOnce(platform(429)).mockResolvedValueOnce(platform(429))
+      .mockResolvedValueOnce(json({ success: true }));
+    const paused = pauseAgent('f1', 'a1', 'test-key');
+    await vi.advanceTimersByTimeAsync(4_000);
+    await expect(paused).resolves.toMatchObject({ success: true });
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it('is asked about every second, for at most ~5.5 s of waiting, then the existing error', async () => {
+    const started = Date.now();
+    fetchMock.mockImplementation(async () => platform(429));
+    const failed = expect(createFleet('f1', 'test-key')).resolves.toMatchObject({ status: 429 });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await failed;
+    const calls = fetchMock.mock.calls.length;
+    // 0.8-1.2 s apart: 5 to 7 sends within the 5.5 s budget.
+    expect(calls).toBeGreaterThanOrEqual(5);
+    expect(calls).toBeLessThanOrEqual(7);
+    expect(Date.now() - started).toBeLessThanOrEqual(10_000);
+  });
+
+  it('the total wait stays within the budget, even at the longest jitter', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.999);
+    let last = 0;
+    fetchMock.mockImplementation(async () => { last = Date.now(); return platform(429); });
+    const started = Date.now();
+    const failed = expect(tokenLogin('test-token')).rejects.toThrow('HTTP 429');
+    await vi.advanceTimersByTimeAsync(10_000);
+    await failed;
+    expect(last - started).toBeLessThanOrEqual(5_500);
+    // A read that already waited out the platform isn't asked a further round.
+    expect(fetchMock).toHaveBeenCalledTimes(5);
   });
 });
 
@@ -152,6 +197,18 @@ describe('which answers count as a brief gap', () => {
 });
 
 describe('fleet usage', () => {
+  it('waits out a longer platform gap (~4 s of 429s)', async () => {
+    vi.stubEnv('WR_ENTITLEMENT_SYNC_SECRET', 'test-sync-secret');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    for (let i = 0; i < 4; i++) fetchMock.mockResolvedValueOnce(platform(429));
+    fetchMock.mockResolvedValueOnce(json({ windowDays: 7, fleets: [{ fleetId: 'f1', exists: true }] }));
+    const usage = fetchFleetUsage(['f1']);
+    await vi.advanceTimersByTimeAsync(6_000);
+    expect((await usage).windowDays).toBe(7);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
   it('a platform 429 then 200 shows usage', async () => {
     vi.stubEnv('WR_ENTITLEMENT_SYNC_SECRET', 'test-sync-secret');
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -178,7 +235,15 @@ describe('practice tests', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it('a POST (starts a test) is sent exactly once', async () => {
+  it('a POST is sent again on the platform’s 429, which never reached the engine', async () => {
+    fetchMock.mockResolvedValueOnce(platform(429)).mockResolvedValueOnce(json({ runId: 'r1' }));
+    const started = practiceEngine('POST', 'start', { fleet: 'f1' }, 'u1');
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect((await started).status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('a POST (starts a test) is sent exactly once on a 503', async () => {
     fetchMock.mockImplementation(async () => platform(503));
     const started = practiceEngine('POST', 'start', { fleet: 'f1' }, 'u1');
     await vi.advanceTimersByTimeAsync(2_000);

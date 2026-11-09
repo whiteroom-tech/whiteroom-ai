@@ -56,7 +56,7 @@ import type {
 } from './types';
 import { viewerTimeZone } from '@/lib/runs';
 import { activeHold, activeHolds } from '@/lib/holds';
-import { withEngineReadRetry } from './engine-retry';
+import { platform429Delay, withEngineReadRetry } from './engine-retry';
 
 export const PROXY_URL = process.env.NEXT_PUBLIC_PROXY_URL || 'https://proxy.whiteroom.tech';
 
@@ -161,31 +161,45 @@ async function postRaw(
   opts?: PostOptions,
 ): Promise<Response> {
   if (typeof body.action !== 'string' || !READ_ACTIONS.has(body.action)) return postHandoff(body, key, opts);
-  // One retry in all: a read that already waited out a handoff isn't asked a second round.
-  let handedOff = false;
-  const send = () => postHandoff(body, key, opts, () => { handedOff = true; });
-  return withEngineReadRetry(send, { handoffRetried: true, retried: () => handedOff });
+  // One retry round in all: a read already sent again below isn't asked a second round.
+  let retried = false;
+  const send = () => postHandoff(body, key, opts, () => { retried = true; });
+  return withEngineReadRetry(send, { handoffRetried: true, retried: () => retried });
 }
 
 /**
- * A 503 whiteroom_handoff means the engine is switching instances and did
- * nothing with the request (spec section 0), so it is retried, twice at most,
- * after its Retry-After (capped at 1 s). A deploy never shows as an error.
+ * Sends the request again, for any action, when the engine never saw it:
+ * - a 503 whiteroom_handoff means the engine is switching instances and did
+ *   nothing with the request (spec section 0): retried twice at most, after
+ *   its Retry-After (capped at 1 s);
+ * - the platform's own 429 (no WhiteRoom JSON body) means the engine was
+ *   briefly unavailable and the request never reached it: retried about every
+ *   second for up to ~5 s (engine-retry.ts). The engine's own 429 stands.
+ * A deploy or restart never shows as an error.
  */
 async function postHandoff(
   body: Record<string, unknown>,
   key?: string,
   opts?: PostOptions,
-  onHandoff?: () => void,
+  onRetry?: () => void,
 ): Promise<Response> {
-  for (let attempt = 0; ; attempt++) {
+  for (let handoffs = 0, waited = 0; ;) {
     const res = await postOnce(body, key, opts);
-    if (res.status !== 503 || attempt >= 2) return res;
-    const reason = await res.clone().json().then((b) => b?.whiteroom?.reason, () => null);
-    if (reason !== 'whiteroom_handoff') return res;
-    onHandoff?.();
-    const after = Number(res.headers.get('Retry-After'));
-    await new Promise((r) => setTimeout(r, Number.isFinite(after) && after > 0 ? Math.min(after * 1000, 1000) : 250));
+    let delay: number | null = null;
+    if (res.status === 503 && handoffs < 2) {
+      const reason = await res.clone().json().then((b) => b?.whiteroom?.reason, () => null);
+      if (reason === 'whiteroom_handoff') {
+        handoffs++;
+        const after = Number(res.headers.get('Retry-After'));
+        delay = Number.isFinite(after) && after > 0 ? Math.min(after * 1000, 1000) : 250;
+      }
+    } else {
+      delay = await platform429Delay(res, waited);
+      if (delay !== null) waited += delay;
+    }
+    if (delay === null) return res;
+    onRetry?.();
+    await new Promise((r) => setTimeout(r, delay));
   }
 }
 

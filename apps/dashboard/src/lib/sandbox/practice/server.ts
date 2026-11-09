@@ -3,7 +3,7 @@ import { auth } from '@/auth';
 import { controlAccessError, CONTROL_SECRET_HEADER, CONTROL_USER_HEADER } from '@/lib/control-auth';
 import { getFleetAuthCookie, tokenFromUserFleets } from '@/lib/fleet-session';
 import { PROXY_URL } from '@/lib/whiteroom/client';
-import { withEngineReadRetry } from '@/lib/whiteroom/engine-retry';
+import { retryPlatform429, withEngineReadRetry } from '@/lib/whiteroom/engine-retry';
 import { PRACTICE_UNAVAILABLE } from './model';
 
 // The BFF side of practice tests (spec §4 Start, §9.1). The engine's
@@ -62,8 +62,9 @@ export async function practiceEngine(method: 'GET' | 'POST', path: string, body:
       redirect: 'error',
       signal: AbortSignal.timeout(15_000),
     });
-    // A GET only reads: a brief engine gap is asked about once more. A POST starts a test, so never.
-    res = method === 'GET' ? await withEngineReadRetry(send) : await send();
+    // A GET only reads: a brief engine gap is asked about once more. A POST starts a test, so it is
+    // sent again only on the platform's own 429, which never reached the engine.
+    res = method === 'GET' ? await withEngineReadRetry(send) : await retryPlatform429(send);
   } catch {
     return json(502, 'Couldn’t reach WhiteRoom. Check your connection and try again.');
   }
