@@ -100,6 +100,17 @@ describe('one timeout per call', () => {
   });
 });
 
+describe('a handoff near the end of the call’s time', () => {
+  it('returns the handoff 503 rather than waiting past the timeout', async () => {
+    // A handoff that answers 14.5 s into a 15 s call, asking for a 1 s wait.
+    fetchMock.mockImplementation(() => new Promise((r) => setTimeout(() => r(new Response(JSON.stringify({ whiteroom: { reason: 'whiteroom_handoff' } }), { status: 503, headers: { 'Retry-After': '1' } })), 14_500)));
+    const failed = expect(getDiagnosis('f1', 'test-key')).rejects.toThrow('HTTP 503');
+    await vi.advanceTimersByTimeAsync(16_000);
+    await failed;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('the wait', () => {
   it('is at least 1.5 s and at most 2 s', async () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.999);

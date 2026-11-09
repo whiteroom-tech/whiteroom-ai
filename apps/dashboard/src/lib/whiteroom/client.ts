@@ -220,7 +220,8 @@ async function postHandoff(
       delay = await platform429Delay(res, waited, time.deadline);
       if (delay !== null) waited += delay;
     }
-    if (delay === null) return res;
+    // No wait that would end past the call's timeout: the answer in hand is returned instead.
+    if (delay === null || Date.now() + delay >= time.deadline) return res;
     // This answer is dropped; free its body.
     await res.body?.cancel().catch(() => {});
     onRetry?.();
