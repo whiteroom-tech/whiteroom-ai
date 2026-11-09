@@ -11,7 +11,7 @@ import { CATALOG } from "../practice/catalog.js";
 import { Engine, OFFLINE_MS, REDIRECTED, Stopped, Unreachable, type Reply } from "../practice/engine.js";
 import { adapterProblem, chatCompletions, firstLineOfStdin, hiddenPrompt, Interrupted, isProvider, nodeTooOld, targetOrigin } from "../practice/preflight.js";
 import { clean, hideSecret, say, warn } from "../practice/text.js";
-import { freeTierMessage, rerunWontFix } from "../responses.js";
+import { dashboardFor, freeTierMessage, rerunWontFix } from "../responses.js";
 
 export const HELPER_CODE = /^wrhc_[A-Za-z0-9_-]{43}$/;
 /** A Sandbox URL as the Sandbox page shows it: WhiteRoom's address, then the Sandbox key. */
@@ -26,7 +26,7 @@ const testMs = (name: string, fallback: number) => {
   return Number.isInteger(v) && v > 0 ? v : fallback;
 };
 const SUMMARY_MAX = 2000;
-const SANDBOX_PAGE = "https://app.whiteroom.tech/sandbox";
+const SANDBOX_PAGE = `${dashboardFor()}/sandbox`;
 const NEW_CODE = `In the Sandbox page (${SANDBOX_PAGE}), click Run agent to get a new code, then start the helper again.`;
 
 export const sandboxCopy = {

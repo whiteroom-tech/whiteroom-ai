@@ -3,9 +3,10 @@
 // names the dashboard and the button to click there. Task, status, provider
 // and refusal words are the engine's catalog's.
 
+import { dashboardFor } from "../responses.js";
 import { CATALOG } from "./catalog.js";
 
-export const DASHBOARD = "https://app.whiteroom.tech/sandbox";
+export const DASHBOARD = `${dashboardFor()}/sandbox`;
 const KEY_VARS = Object.values(CATALOG.providers).map((p) => p.keyVar);
 
 /** Control, C1 and bidi characters, which could rewrite what the terminal shows. Tabs and newlines stay. */
