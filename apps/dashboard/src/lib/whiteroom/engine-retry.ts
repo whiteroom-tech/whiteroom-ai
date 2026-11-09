@@ -18,15 +18,24 @@ export const ENGINE_RETRY_JITTER_MS = 500;
  */
 export const ENGINE_RETRY_FAST_FAIL_MS = 5_000;
 
+export interface RetryOptions {
+  /** The caller has its own retry for the engine's handoff 503 (see isTransientEngineAnswer). */
+  handoffRetried?: boolean;
+}
+
 /**
  * Whether a response is the platform answering for an engine that was
  * briefly unavailable. The engine's own 429 (a plan or rate limit) is JSON
  * with an `error` or `reason` and stands: asking again gives the same answer.
- * A 503 that the engine marked as a handoff is retried by its caller already.
+ *
+ * `handoffRetried`: the caller already retries a 503 the engine marked as a
+ * handoff (client.ts), so that one isn't counted again. Other callers leave it
+ * unset and get the one retry for it like any other 503.
  */
-export async function isTransientEngineAnswer(res: Response): Promise<boolean> {
+export async function isTransientEngineAnswer(res: Response, { handoffRetried = false }: RetryOptions = {}): Promise<boolean> {
   if (res.status === 502 || res.status === 504) return true;
   if (res.status !== 429 && res.status !== 503) return false;
+  if (res.status === 503 && !handoffRetried) return true;
   const body = await res.clone().json().catch(() => null) as Record<string, unknown> | null;
   if (res.status === 503) {
     const nested = body?.whiteroom as Record<string, unknown> | undefined;
@@ -53,7 +62,7 @@ function retryDelay(): number {
  * fast with a network error or a transient answer. The second outcome is
  * returned (or thrown) as it is, so callers keep their own error paths.
  */
-export async function withEngineReadRetry(request: () => Promise<Response>): Promise<Response> {
+export async function withEngineReadRetry(request: () => Promise<Response>, opts: RetryOptions = {}): Promise<Response> {
   const started = Date.now();
   let first: Response;
   try {
@@ -63,7 +72,7 @@ export async function withEngineReadRetry(request: () => Promise<Response>): Pro
     await new Promise((r) => setTimeout(r, retryDelay()));
     return request();
   }
-  if (Date.now() - started > ENGINE_RETRY_FAST_FAIL_MS || !(await isTransientEngineAnswer(first))) return first;
+  if (Date.now() - started > ENGINE_RETRY_FAST_FAIL_MS || !(await isTransientEngineAnswer(first, opts))) return first;
   // The first answer is dropped; free its body.
   await first.body?.cancel().catch(() => {});
   await new Promise((r) => setTimeout(r, retryDelay()));

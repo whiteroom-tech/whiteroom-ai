@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFleet, getDiagnosis, pauseAgent, tokenLogin } from '@/lib/whiteroom/client';
 import { fetchFleetUsage } from '@/lib/fleet-usage';
+import { verifyFleetOwnership } from '@/lib/fleet-ownership';
 import { isTransientEngineAnswer, withEngineReadRetry } from '@/lib/whiteroom/engine-retry';
 
 vi.mock('server-only', () => ({}));
@@ -110,12 +111,28 @@ describe('which answers count as a brief gap', () => {
     [json({ error: 'engine_unreachable', retryable: true }, 502), true],
     [platform(503), true],
     [platform(504), true],
-    [json({ whiteroom: { reason: 'whiteroom_handoff' } }, 503), false],
+    [json({ whiteroom: { reason: 'whiteroom_handoff' } }, 503), true],
     [json({ error: 'nope' }, 500), false],
     [json({ error: 'invalid_token' }, 401), false],
     [json({ ok: true }), false],
   ])('%#', async (res, transient) => {
     expect(await isTransientEngineAnswer(res)).toBe(transient);
+  });
+
+  it('a handoff 503 is left to a caller that retries handoffs itself', async () => {
+    const handoff = () => json({ whiteroom: { reason: 'whiteroom_handoff' } }, 503);
+    expect(await isTransientEngineAnswer(handoff(), { handoffRetried: true })).toBe(false);
+    expect(await isTransientEngineAnswer(platform(503), { handoffRetried: true })).toBe(true);
+  });
+
+  it('the ownership check asks again after a handoff 503', async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ whiteroom: { reason: 'whiteroom_handoff' } }), { status: 503, headers: { 'Retry-After': '0' } }))
+      .mockResolvedValueOnce(json({ success: true, fleetId: 'f1' }));
+    const verified = verifyFleetOwnership('test-token', 'f1');
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(verified).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
 

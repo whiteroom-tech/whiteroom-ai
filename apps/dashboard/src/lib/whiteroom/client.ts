@@ -161,7 +161,7 @@ async function postRaw(
   opts?: PostOptions,
 ): Promise<Response> {
   const send = () => postHandoff(body, key, opts);
-  return typeof body.action === 'string' && READ_ACTIONS.has(body.action) ? withEngineReadRetry(send) : send();
+  return typeof body.action === 'string' && READ_ACTIONS.has(body.action) ? withEngineReadRetry(send, { handoffRetried: true }) : send();
 }
 
 /**
