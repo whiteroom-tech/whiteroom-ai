@@ -1,6 +1,6 @@
 import 'server-only';
 import { PROXY_URL } from '@/lib/whiteroom/client';
-import { isTransientEngineAnswer, withEngineReadRetry } from '@/lib/whiteroom/engine-retry';
+import { isRedirectError, isTransientEngineAnswer, withEngineReadRetry } from '@/lib/whiteroom/engine-retry';
 
 const DENIED = 'Could not verify fleet ownership.';
 
@@ -33,11 +33,13 @@ export async function verifyFleetOwnership(token: unknown, fleetId: unknown): Pr
       redirect: 'error',
       signal: AbortSignal.timeout(10_000),
     }));
-  } catch {
+  } catch (e) {
     // Upstream exceptions may contain credentials. Never expose them.
-    throw new FleetOwnershipUnavailableError();
+    // A refused redirect is a setup problem, not a gap: a refusal like any other.
+    throw isRedirectError(e) ? new Error(DENIED) : new FleetOwnershipUnavailableError();
   }
-  if (response.status >= 500 || (await isTransientEngineAnswer(response))) throw new FleetOwnershipUnavailableError();
+  // Only a gap counts as unknown; any other failure (a 500 included) is still a refusal.
+  if (await isTransientEngineAnswer(response)) throw new FleetOwnershipUnavailableError();
   try {
     if (!response.ok) throw new Error(DENIED);
     const data = await response.json();

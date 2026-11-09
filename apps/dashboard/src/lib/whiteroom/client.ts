@@ -198,6 +198,8 @@ async function postHandoff(
       if (delay !== null) waited += delay;
     }
     if (delay === null) return res;
+    // This answer is dropped; free its body.
+    await res.body?.cancel().catch(() => {});
     onRetry?.();
     await new Promise((r) => setTimeout(r, delay));
   }

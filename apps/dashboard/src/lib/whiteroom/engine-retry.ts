@@ -30,9 +30,15 @@ export const ENGINE_RETRY_FAST_FAIL_MS = 5_000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** A 429 from the platform rather than the engine: no WhiteRoom JSON body (`error` or `reason`). */
+/**
+ * A 429 from the platform rather than the engine: a text page (the platform
+ * answers in text/html or text/plain), never WhiteRoom JSON with an `error`
+ * or `reason`. Anything else, a body without a content type included, is
+ * taken as the engine's own answer and stands.
+ */
 export async function isPlatform429(res: Response): Promise<boolean> {
   if (res.status !== 429) return false;
+  if (!/^text\//i.test(res.headers.get('content-type') ?? '')) return false;
   const body = await res.clone().json().catch(() => null) as Record<string, unknown> | null;
   return !(body && typeof body === 'object' && (typeof body.error === 'string' || typeof body.reason === 'string'));
 }
@@ -96,6 +102,17 @@ function timedOut(e: unknown): boolean {
   return false;
 }
 
+/**
+ * A redirect refused by `redirect: 'error'`: the engine's address is wrong
+ * (a setup problem), not a gap, so it is neither retried nor shown as one.
+ */
+export function isRedirectError(e: unknown): boolean {
+  for (let err = e; err instanceof Error; err = (err as { cause?: unknown }).cause) {
+    if (/redirect/i.test(err.message)) return true;
+  }
+  return false;
+}
+
 function retryDelay(): number {
   return ENGINE_RETRY_DELAY_MS + Math.floor(Math.random() * ENGINE_RETRY_JITTER_MS);
 }
@@ -116,7 +133,7 @@ export async function withEngineReadRetry(request: () => Promise<Response>, opts
   try {
     first = await send();
   } catch (e) {
-    if (timedOut(e) || Date.now() - started > ENGINE_RETRY_FAST_FAIL_MS || retried()) throw e;
+    if (timedOut(e) || isRedirectError(e) || Date.now() - started > ENGINE_RETRY_FAST_FAIL_MS || retried()) throw e;
     await sleep(retryDelay());
     return send();
   }

@@ -115,6 +115,12 @@ describe('a change is never retried', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('create_fleet on a 429 without a platform text body (taken as the engine’s)', async () => {
+    fetchMock.mockImplementation(async () => new Response(null, { status: 429, headers: { 'Retry-After': '5' } }));
+    await expect(createFleet('f1', 'test-key')).resolves.toMatchObject({ status: 429 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('create_fleet on a 502', async () => {
     fetchMock.mockImplementation(async () => platform(502));
     await expect(createFleet('f1', 'test-key')).resolves.toMatchObject({ status: 502 });
@@ -163,7 +169,10 @@ describe('the platform’s 429 (the request never reached the engine)', () => {
 describe('which answers count as a brief gap', () => {
   it.each([
     [platform(429), true],
-    [new Response('', { status: 429 }), true],
+    [new Response('Rate exceeded.', { status: 429, headers: { 'Content-Type': 'text/plain' } }), true],
+    [new Response(null, { status: 429 }), false],
+    [new Response('', { status: 429, headers: { 'Content-Type': 'application/json' } }), false],
+    [new Response('{"error":"Agent is resting."}', { status: 429, headers: { 'Content-Type': 'text/plain' } }), false],
     [json({ error: 'You’ve used today’s sample runs.', reason: 'limit_fleet' }, 429), false],
     [json({ error: 'Slow down.' }, 429), false],
     [json({ reason: 'starts_today' }, 429), false],

@@ -79,6 +79,20 @@ describe('server-side fleet ownership', () => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 
+    it('a refused redirect (a wrong engine address) is a refusal, not a gap, and is not retried', async () => {
+      fetchMock.mockRejectedValue(new TypeError('fetch failed', { cause: new Error('unexpected redirect') }));
+      const failed = verifyFleetOwnership('test-token', 'owned');
+      await expect(failed).rejects.toThrow(/^Could not verify fleet ownership\.$/);
+      await expect(failed).rejects.not.toBeInstanceOf(FleetOwnershipUnavailableError);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('a 500 from the engine is still a refusal, not a gap', async () => {
+      fetchMock.mockResolvedValue(Response.json({ error: 'internal' }, { status: 500 }));
+      await expect(verifyFleetOwnership('test-token', 'owned')).rejects.not.toBeInstanceOf(FleetOwnershipUnavailableError);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
     it('a refused token is not asked again', async () => {
       fetchMock.mockResolvedValue(Response.json({ error: 'invalid_token' }, { status: 401 }));
       await expect(verifyFleetOwnership('test-token', 'owned')).rejects.not.toBeInstanceOf(FleetOwnershipUnavailableError);
