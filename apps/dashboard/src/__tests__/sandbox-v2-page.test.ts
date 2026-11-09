@@ -6,6 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement as h } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { CLI_VERSION } from '@/lib/sandbox/practice/model';
+// The Sandbox's server actions (plan, Take it live): today's page, nothing on the server.
+vi.mock('@/lib/sandbox/sandbox-plan', () => ({ getSandboxPlan: async () => ({ plan: 'other', canBuy: false, invite: null }) }));
+vi.mock('@/lib/user-fleets', () => ({ takeItLive: async () => ({ ok: false }) }));
+// The plan banner's event name only (the banner itself reads the server).
+vi.mock('@/components/AccountPlanBanner', () => ({ PLAN_CHANGED: 'wr:plan-changed' }));
 
 const capture = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/analytics', () => ({ analytics: { capture } }));

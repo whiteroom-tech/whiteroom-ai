@@ -8,6 +8,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement as h } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+// The Sandbox's server actions (plan, Take it live): today's page, nothing on the server.
+vi.mock('@/lib/sandbox/sandbox-plan', () => ({ getSandboxPlan: async () => ({ plan: 'other', canBuy: false, invite: null }) }));
+vi.mock('@/lib/user-fleets', () => ({ takeItLive: async () => ({ ok: false }) }));
+// The plan banner's event name only (the banner itself reads the server).
+vi.mock('@/components/AccountPlanBanner', () => ({ PLAN_CHANGED: 'wr:plan-changed' }));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const capture = vi.hoisted(() => vi.fn());
@@ -88,8 +93,9 @@ describe('the line to paste', () => {
     expect(shellQuote(`node a.mjs --name 'x'; rm -rf /`)).toBe(`'node a.mjs --name '\\''x'\\''; rm -rf /'`);
   });
 
-  it('refusals use the engine’s own words, as on the practice page; a changed key offers a new code; an open test offers itself', () => {
-    expect(practiceRefusal(new PracticeError('You can start more tomorrow (00:00 UTC).', 429, 'starts_today')).message).toBe('You can start more tomorrow (00:00 UTC).');
+  it('refusals use the engine’s own words, as on the practice page (the daily limit in §3.10’s); a changed key offers a new code; an open test offers itself', () => {
+    expect(practiceRefusal(new PracticeError('You can start more tomorrow (00:00 UTC).', 429, 'starts_today')).message)
+      .toMatch(/^You’ve used today’s practice runs\. You can start more (tomorrow )?at \d{1,2}:\d{2} [AP]M your time\.$/);
     expect(practiceRefusal(new PracticeError('x', 409, 'sandbox_changed'))).toEqual({ message: 'Your Sandbox key changed since this code was made.', newCode: true });
     expect(practiceRefusal(new PracticeError('You already have a practice test open.', 429, 'owner_busy', { run: { id: RUN, lifecycle: 'active' } })))
       .toEqual({ message: 'You already have a practice test open.', openRun: { id: RUN, lifecycle: 'active' } });

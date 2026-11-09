@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement as h } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+vi.mock('@/components/AccountPlanBanner', () => ({ PLAN_CHANGED: 'wr:plan-changed' }));
 
 const capture = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/analytics', () => ({ analytics: { capture } }));
@@ -65,7 +66,8 @@ describe('Sandbox sample agent: the page', () => {
     expect(text()).toContain('No key handy?');
     expect(text()).toContain(SAMPLE_OFFER);
     await click('Try a sample agent');
-    expect(calls().find((c) => c.url.endsWith('/fleet/sample'))?.body).toEqual({ fleet: 'prod-eu' });
+    // One idempotency key per press, so a repeat of the same start is charged once.
+    expect(calls().find((c) => c.url.endsWith('/fleet/sample'))?.body).toEqual({ fleet: 'prod-eu', idempotencyKey: expect.stringMatching(/^[0-9a-f-]{36}$/) });
     expect(capture).toHaveBeenCalledWith('sandbox_v2_sample_started');
     expect(document.querySelector('[aria-current="step"]')?.textContent).toBe('2Run your agent');
     expect(document.querySelector('#sandbox-step h2')?.textContent).toBe('Our sample agent is running');
@@ -93,13 +95,14 @@ describe('Sandbox sample agent: the page', () => {
     expect(text()).not.toContain('No key handy?');
   });
 
-  it('a refusal for the day’s limit replaces the button with the engine’s line, and is counted by reason only', async () => {
+  it('a refusal for the day’s limit replaces the button with §3.10’s line (reset in the viewer’s zone), and is counted by reason only', async () => {
     bff.mockImplementation(async (url: string) => url.endsWith('/fleet/sample')
       ? Response.json({ error: 'You’ve used today’s sample runs. Try again tomorrow, or use your own key.', reason: 'limit_fleet' }, { status: 429 })
       : Response.json({ success: true, exists: false, sampleAvailable: true }));
     await render({ fleet: 'prod-eu' });
     await click('Try a sample agent');
-    expect(text()).toContain('You’ve used today’s sample runs. Try again tomorrow, or use your own key.');
+    expect(text()).toMatch(/You’ve used today’s sample runs\. More (tomorrow )?at \d{1,2}:\d{2} [AP]M your time, or use your own key now\./);
+    expect(text()).not.toContain('00:00 UTC');
     expect(button('Try a sample agent')).toBeUndefined();
     expect(capture).toHaveBeenCalledWith('sandbox_v2_sample_refused', { reason: 'limit_fleet' });
   });

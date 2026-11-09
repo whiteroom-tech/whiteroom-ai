@@ -10,6 +10,7 @@
 
 import { timeAgo } from '@/lib/format';
 import { issuedEnvHint } from '@/lib/provider-key-form';
+import { isBusy, retryBusyRead } from './refusals';
 import { cloudStart, isCloudProvider, isSandboxProvider, SANDBOX_PROVIDER_LABELS, type SandboxProvider } from './providers';
 
 export const SANDBOX_FLEET_ACTIONS = ['status', 'connect', 'rotate', 'reset', 'sample'] as const;
@@ -51,6 +52,8 @@ export type SandboxFleetStatus =
     /** Calls in the last day that came outside a check (spec §8.3): a forgotten agent. */
     callsOutsideWindow24h?: number;
     lastCallOutsideWindowAt?: string | null;
+    /** When its history was last cleared by the automatic 7-day reset (Free): the page's one line. */
+    autoResetAt?: string;
   });
 
 /** A Sandbox key handed out by connect or rotate. Shown once; never stored. */
@@ -65,8 +68,12 @@ export interface IssuedSandboxKey {
 export const SANDBOX_FLEET_UNAVAILABLE = 'sandbox_fleet_unavailable';
 
 export class SandboxFleetError extends Error {
-  /** `retryAfter`: seconds to wait, from a 429. */
-  constructor(message: string, readonly status: number, readonly reason?: string, readonly retryAfter?: number) {
+  /**
+   * `retryAfter`: seconds to wait, from a 429 or 503. `code`: the Sandbox's
+   * refusal code (sandbox_daily_limit, free_paused, sandbox_busy…) and
+   * `resetAt`: when a daily limit resets (refusals.ts words them).
+   */
+  constructor(message: string, readonly status: number, readonly reason?: string, readonly retryAfter?: number, readonly code?: string, readonly resetAt?: string) {
     super(message);
     this.name = 'SandboxFleetError';
   }
@@ -124,6 +131,7 @@ export function statusOf(data: unknown): SandboxFleetStatus | null {
     }),
     ...(d.sample === true && { sample: true }),
     ...(d.sampleAvailable === true && { sampleAvailable: true }),
+    ...(str(d.autoResetAt, 64) && Number.isFinite(Date.parse(d.autoResetAt)) && { autoResetAt: d.autoResetAt }),
   };
 }
 
@@ -217,7 +225,8 @@ export async function sandboxPost(path: string, body: Record<string, unknown>): 
   if (!res.ok || !data) {
     const message = data && typeof data.error === 'string' ? data.error : 'That didn’t work. Try again.';
     const wait = data && typeof data.retryAfter === 'number' ? data.retryAfter : undefined;
-    throw new SandboxFleetError(message, res.status, data && typeof data.reason === 'string' ? data.reason : undefined, wait);
+    const text = (k: string) => (data && typeof data[k] === 'string' ? data[k] as string : undefined);
+    throw new SandboxFleetError(message, res.status, text('reason'), wait, text('code'), text('resetAt'));
   }
   return data;
 }
@@ -231,8 +240,13 @@ function mustStatus(data: unknown): SandboxFleetStatus {
   return status;
 }
 
-export async function getSandboxFleetStatus(fleet: string): Promise<SandboxFleetStatus> {
-  return mustStatus(await call('status', { fleet }));
+/** A busy refusal, with its wait, for retryBusyRead; null for anything else. */
+export const busyRefusal = (e: unknown): { retryAfter?: number } | null =>
+  e instanceof SandboxFleetError && isBusy(e) ? { retryAfter: e.retryAfter } : null;
+
+/** The Sandbox's status: a read, so a busy answer is retried quietly (Part 2 §10.6) until `signal` aborts. */
+export async function getSandboxFleetStatus(fleet: string, signal?: AbortSignal): Promise<SandboxFleetStatus> {
+  return mustStatus(await retryBusyRead(() => call('status', { fleet }), busyRefusal, { signal }));
 }
 
 export async function connectSandboxFleet(fleet: string, request: { api_key: string; provider: SandboxProvider; endpoint?: string }): Promise<{ status: SandboxFleetStatus; issued: IssuedSandboxKey }> {
@@ -249,13 +263,34 @@ export async function rotateSandboxFleetKey(fleet: string, sandboxFleetId?: stri
   return { status: mustStatus(data), issued };
 }
 
-/** Why the engine refused the sample (its `reason`), for the page's line and the refusal event. */
-export type SampleRefusal = 'off' | 'connected' | 'busy' | 'limit_fleet' | 'limit_global' | 'sandbox';
-export const SAMPLE_REFUSALS: readonly SampleRefusal[] = ['off', 'connected', 'busy', 'limit_fleet', 'limit_global', 'sandbox'];
+/**
+ * Why the engine refused the sample (its `reason`, or the code it sends with
+ * one), for the page's line and the refusal event. limit_fleet / limit_global
+ * are today's 429s; sandbox_daily_limit / sample_budget_exhausted the same
+ * limits as the 402 / 503 that replace them.
+ */
+export type SampleRefusal = 'off' | 'connected' | 'busy' | 'limit_fleet' | 'limit_global' | 'sandbox' | 'free_paused' | 'sandbox_daily_limit' | 'sample_budget_exhausted';
+export const SAMPLE_REFUSALS: readonly SampleRefusal[] = ['off', 'connected', 'busy', 'limit_fleet', 'limit_global', 'sandbox', 'free_paused', 'sandbox_daily_limit', 'sample_budget_exhausted'];
 
-/** Starts the sample agent: WhiteRoom runs it through this Sandbox, and a check opens. */
-export async function startSandboxSample(fleet: string): Promise<SandboxFleetStatus> {
-  return mustStatus(await call('sample', { fleet }));
+/** Today's sample runs, or every run, are used up: the button gives way to a line saying so. */
+export function isSampleLimit(reason: string | undefined): boolean {
+  return reason === 'limit_fleet' || reason === 'limit_global' || reason === 'sandbox_daily_limit' || reason === 'sample_budget_exhausted';
+}
+
+/** The sample's refusal reason for the page and its event: the spec's code when it came with one, else today's reason. */
+export function sampleRefusalOf(e: SandboxFleetError): SampleRefusal | null {
+  const code = e.code && (SAMPLE_REFUSALS as readonly string[]).includes(e.code) ? e.code : null;
+  const reason = code ?? e.reason;
+  return reason && (SAMPLE_REFUSALS as readonly string[]).includes(reason) ? reason as SampleRefusal : null;
+}
+
+/**
+ * Starts the sample agent: WhiteRoom runs it through this Sandbox, and a
+ * check opens. `idempotencyKey`: one per press, so the engine charges a
+ * repeat of the same start once. Never retried here (a mutation).
+ */
+export async function startSandboxSample(fleet: string, idempotencyKey?: string): Promise<SandboxFleetStatus> {
+  return mustStatus(await call('sample', { fleet, ...(idempotencyKey && { idempotencyKey }) }));
 }
 
 export async function resetSandboxFleet(fleet: string, sandboxFleetId?: string): Promise<SandboxFleetStatus> {

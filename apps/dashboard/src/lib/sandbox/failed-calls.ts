@@ -17,6 +17,9 @@ const GENERIC_MESSAGE = /^The provider returned HTTP (\d{3})\.$/;
 /** The run's failed calls, or null when there are none, the run is a demo, or the field is missing or malformed. */
 export function failedCallsOf(run: RunStatusResult | null | undefined): FailedCalls | null {
   const f = run?.mode === 'demo' ? undefined : run?.failedCalls;
+  // WhiteRoom's own refusal for the Sandbox's daily calls (R7), not the provider's: never worded as a
+  // provider failure. The checks card says it, with when it takes calls again.
+  if ((f?.last as { reason?: unknown } | undefined)?.reason === 'sandbox_daily_limit') return null;
   const count = typeof f?.count === 'number' ? Math.floor(f.count) : 0;
   if (!f || !(count >= 1) || !f.last || typeof f.last !== 'object' || typeof f.last.status !== 'number' || !(f.last.status > 0)) return null;
   const { reason } = f.last;

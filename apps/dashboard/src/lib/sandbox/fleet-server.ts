@@ -3,6 +3,7 @@ import { auth } from '@/auth';
 import { controlAccessError, CONTROL_SECRET_HEADER, CONTROL_USER_HEADER } from '@/lib/control-auth';
 import { getFleetAuthCookie, tokenFromUserFleets } from '@/lib/fleet-session';
 import { engineAuthHeaders, PROXY_URL } from '@/lib/whiteroom/client';
+import { refusalWords, SANDBOX_CODES } from './refusals';
 import { connectCheck, isPinMismatch, issuedOf, SANDBOX_CHANGED, SANDBOX_FLEET_UNAVAILABLE, statusOf, type SandboxFleetAction } from './fleet';
 
 // The BFF side of Sandbox v2 (spec §7 S1–S3). The engine's sandbox_fleet_*
@@ -20,6 +21,9 @@ import { connectCheck, isPinMismatch, issuedOf, SANDBOX_CHANGED, SANDBOX_FLEET_U
 const FLEET_RE = /^[A-Za-z0-9._:-]{1,128}$/;
 const SANDBOX_ID_RE = /^sandbox-[A-Za-z0-9-]{1,120}$/;
 const REASON_RE = /^[a-z][a-z_]{0,63}$/;
+const IDEMPOTENCY_RE = /^[A-Za-z0-9-]{1,128}$/;
+/** An ISO time, as the engine sends `resetAt`. */
+const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
 
 export const json = (status: number, body: Record<string, unknown>, headers: Record<string, string> = {}) =>
   Response.json(body, { status, headers: { 'Cache-Control': 'no-store', ...headers } });
@@ -52,8 +56,13 @@ export async function sandboxFleetOwner(fleet: unknown): Promise<SandboxFleetOwn
  * page's Sandbox isn't the fleet's current one.
  */
 export function engineBody(action: SandboxFleetAction, fleet: string, body: Record<string, unknown>): Record<string, unknown> | { error: Response } {
-  // The sample's run takes nothing but the fleet: its key and prompts are the engine's own.
-  if (action === 'sample') return { action: 'sandbox_sample_start', fleet_id: fleet };
+  // The sample's run takes nothing but the fleet (its key and prompts are the engine's own), and the
+  // press's idempotency key, so a repeat of the same start is charged once.
+  if (action === 'sample') {
+    const idem = body.idempotencyKey;
+    if (idem !== undefined && (typeof idem !== 'string' || !IDEMPOTENCY_RE.test(idem))) return { error: fail(400, 'Invalid request.') };
+    return { action: 'sandbox_sample_start', fleet_id: fleet, ...(idem !== undefined && { idempotency_key: idem }) };
+  }
   const base = { action: `sandbox_fleet_${action}`, fleet_id: fleet };
   if (action === 'status') return base;
   if (action === 'connect') {
@@ -122,22 +131,42 @@ export async function postEngine(owner: SandboxFleetOwner, body: Record<string, 
   }
   const data: unknown = await res.json().catch(() => null);
   if (unknownAction(res.status, data)) return { error: unavailable() };
-  if (!res.ok) {
-    const error = data && typeof data === 'object' ? (data as { error?: unknown }).error : null;
-    if (res.status >= 500 || typeof error !== 'string' || !error) {
-      return { error: fail(res.status >= 500 ? res.status : 502, 'The Sandbox couldn’t do that right now. Try again in a moment.') };
-    }
-    // The engine's own words: short refusals that never carry a key. Its
-    // machine reason (no_helper, tasks_per_hour…) and a 429's wait go along.
-    const raw = (data as { reason?: unknown }).reason;
-    // The pin refusal has no reason of its own: named here so the page can tell it from a state conflict.
-    const reason = typeof raw === 'string' && REASON_RE.test(raw) ? raw : isPinMismatch(res.status, error) ? SANDBOX_CHANGED : undefined;
-    const refused = fail(res.status, error.slice(0, 300), reason);
-    const wait = Number(res.headers.get('retry-after'));
-    if (res.status !== 429 || !Number.isInteger(wait) || wait <= 0 || wait > 86_400) return { error: refused };
-    return { error: json(429, { ...(await refused.json()), retryAfter: wait }, { 'Retry-After': String(wait) }) };
-  }
+  if (!res.ok) return { error: refusalResponse(res.status, data, res.headers.get('retry-after')) };
   return { data };
+}
+
+/**
+ * An engine refusal as the page may see it. The engine's own words for a
+ * 4xx (short refusals that never carry a key), with its machine reason
+ * (no_helper, tasks_per_hour…), the Sandbox's refusal code and resetAt, and
+ * a 429's or 503's wait. A 5xx is the dashboard's own line: §3.10's for the
+ * Sandbox's codes (free_paused, sandbox_busy…), else a generic one.
+ */
+export function refusalResponse(status: number, data: unknown, retryAfter: string | null): Response {
+  const d = data && typeof data === 'object' ? data as Record<string, unknown> : {};
+  const name = (v: unknown) => (typeof v === 'string' && REASON_RE.test(v) ? v : undefined);
+  const nested = d.whiteroom && typeof d.whiteroom === 'object' ? d.whiteroom as Record<string, unknown> : {};
+  // The code may come as `code`, the proxy's `whiteroom.reason`, or the refusal's own `reason`.
+  const code = [name(d.code), name(nested.reason), name(d.reason)].find((c) => c && SANDBOX_CODES.includes(c));
+  const rawReset = typeof d.resetAt === 'string' ? d.resetAt : nested.resetAt;
+  const resetAt = typeof rawReset === 'string' && ISO_RE.test(rawReset) ? rawReset : undefined;
+  const wait = Number(retryAfter);
+  const waitOk = (status === 429 || status === 503) && Number.isInteger(wait) && wait > 0 && wait <= 86_400;
+  const error = typeof d.error === 'string' ? d.error : '';
+  let body: Record<string, unknown>;
+  if (status >= 500 || !error) {
+    const words = code ? refusalWords({ status, code }, 'other', Date.now()) : null;
+    // Only a Sandbox code keeps its status (503: busy or paused); anything else is the generic 502/5xx.
+    if (!words) return fail(status >= 500 ? status : 502, 'The Sandbox couldn’t do that right now. Try again in a moment.');
+    body = { error: words, reason: name(d.reason) ?? code, code };
+  } else {
+    // The pin refusal has no reason of its own: named here so the page can tell it from a state conflict.
+    const reason = name(d.reason) ?? (isPinMismatch(status, error) ? SANDBOX_CHANGED : undefined);
+    body = { error: error.slice(0, 300), ...(reason && { reason }), ...(code && { code }) };
+  }
+  if (resetAt && code === 'sandbox_daily_limit') body.resetAt = resetAt;
+  if (!waitOk) return json(status, body);
+  return json(status, { ...body, retryAfter: wait }, { 'Retry-After': String(wait) });
 }
 
 /** One sandbox_fleet_* call, its answer cut down to what the page may see. */

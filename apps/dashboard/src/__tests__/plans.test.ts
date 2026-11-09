@@ -194,8 +194,8 @@ describe('published pricing', () => {
   it('matches the website', () => {
     expect(PLANS.starter.pricing).toEqual({ sharePercent: 20, shareUnitAmountDecimal: '0.2', feeCents: 1000, feeUnit: 'user' });
     expect(PLANS.pro.pricing).toEqual({ sharePercent: 10, shareUnitAmountDecimal: '0.1', feeCents: 30000, feeUnit: 'organization' });
-    expect(PLANS.starter.priceLine).toBe('20% of what WhiteRoom saves you. Free for your first 30 days; $10 a month per user from day 61.');
-    expect(PLANS.pro.priceLine).toBe('10% of what WhiteRoom saves you. Free for your first 30 days; $300 a month per organization from day 61.');
+    expect(PLANS.starter.priceLine).toBe('20% of what WhiteRoom saves you. 30 days free once you go live; $10 a month per user from your 61st day live.');
+    expect(PLANS.pro.priceLine).toBe('10% of what WhiteRoom saves you. 30 days free once you go live; $300 a month per organization from your 61st day live.');
     expect(limitsFor('starter').includedAgents).toBe(3);
     expect(limitsFor('pro').includedAgents).toBe(7);
     expect(limitsFor('pro').retentionDays).toBe(365);
