@@ -8,7 +8,10 @@
 
 const DASHBOARD = "https://app.whiteroom.tech";
 
-/** The dashboard to link to, whatever WhiteRoom address the CLI was pointed at. EU gets its own once an EU dashboard exists. */
+/**
+ * The dashboard to link to, whatever WhiteRoom address the CLI was pointed at. EU gets its own once an EU dashboard exists;
+ * then the Sandbox links in practice/text.ts and sandbox/listen.ts, built once with no address, must take the address too.
+ */
 export function dashboardFor(_engineUrl?: string | null): string {
   return DASHBOARD;
 }
