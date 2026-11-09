@@ -298,6 +298,14 @@ describe('the engine BFF', () => {
     expect(sentHeaders()['x-wr-dashboard-secret']).toBeUndefined();
   });
 
+  it('passes the platform’s 429 through as it is, so the page’s client can tell it from the engine’s own', async () => {
+    fetchMock.mockResolvedValue(new Response('<html>Rate exceeded.</html>', { status: 429, headers: { 'content-type': 'text/html' } }));
+    const res = await call({ action: 'fleet_report', fleet_id: 'f1' });
+    expect(res.status).toBe(429);
+    expect(await res.text()).toBe('<html>Rate exceeded.</html>');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('refuses a control action from a fleet-key-only session, before reaching the engine', async () => {
     mocks.auth.mockResolvedValue(null);
     const res = await call({ action: 'pause_agent', fleet_id: 'f1', agent_id: 'a' });

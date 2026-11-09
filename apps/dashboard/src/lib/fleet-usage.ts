@@ -5,6 +5,7 @@
 import 'server-only';
 
 import { PROXY_URL } from '@/lib/whiteroom/client';
+import { withEngineReadRetry } from '@/lib/whiteroom/engine-retry';
 
 export interface FleetUsage {
   fleetId: string;
@@ -79,14 +80,16 @@ async function fetchBatch(
   secret: string,
   timeoutMs: number,
 ): Promise<{ windowDays: number; fleets: Array<Omit<FleetUsage, 'label'>> } | null> {
-  const res = await fetch(`${PROXY_URL}/internal/fleet-usage`, {
+  // A read: a brief engine gap is asked about again, all within the caller's one timeout.
+  const signal = AbortSignal.timeout(timeoutMs);
+  const res = await withEngineReadRetry(() => fetch(`${PROXY_URL}/internal/fleet-usage`, {
     method: 'POST',
-    signal: AbortSignal.timeout(timeoutMs),
+    signal,
     redirect: 'error',
     headers: { 'Content-Type': 'application/json', 'x-wr-sync-secret': secret },
     body: JSON.stringify({ fleetIds, sinceDays: 7 }),
     cache: 'no-store',
-  });
+  }), { deadline: Date.now() + timeoutMs });
   if (!res.ok) {
     console.error(`[fleet-usage] HTTP ${res.status}`);
     return null;

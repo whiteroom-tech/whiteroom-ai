@@ -56,6 +56,7 @@ import type {
 } from './types';
 import { viewerTimeZone } from '@/lib/runs';
 import { activeHold, activeHolds } from '@/lib/holds';
+import { platform429Delay, withEngineReadRetry } from './engine-retry';
 
 export const PROXY_URL = process.env.NEXT_PUBLIC_PROXY_URL || 'https://proxy.whiteroom.tech';
 
@@ -140,43 +141,106 @@ interface PostOptions {
 }
 
 /**
- * A 503 whiteroom_handoff means the engine is switching instances and did
- * nothing with the request (spec section 0), so it is retried, twice at most,
- * after its Retry-After (capped at 1 s). A deploy never shows as an error.
+ * Actions that only read, so asking again can't change anything. When the
+ * engine was briefly unavailable they are asked once more (engine-retry.ts).
+ * Anything that changes something is never retried here, so don't add one.
  */
+const READ_ACTIONS: ReadonlySet<string> = new Set([
+  'token_login', 'list_fleets', 'fleet_report', 'check_watch', 'audit_log', 'list_keys', 'bedrock_role_status',
+  'performance_index', 'performance_agent', 'performance_evidence', 'performance_fleet_hourly',
+  'performance_agent_scores', 'performance_recommendations_list', 'performance_recommendations_get',
+  'performance_live_feed', 'performance_recommendations_export', 'performance_cost_forecast',
+  'agent_budgets_get', 'governance_list', 'get_diagnosis', 'audit_integrity', 'verify_audit', 'audit_summary',
+  'rule_would_act', 'list_runs', 'rule_actions', 'run_days', 'get_run_events', 'alerts_get',
+  'fleet_data_settings_get', 'compression_preview',
+]);
+
 async function postRaw(
   body: Record<string, unknown>,
   key?: string,
   opts?: PostOptions,
 ): Promise<Response> {
-  for (let attempt = 0; ; attempt++) {
-    const res = await postOnce(body, key, opts);
-    if (res.status !== 503 || attempt >= 2) return res;
-    const reason = await res.clone().json().then((b) => b?.whiteroom?.reason, () => null);
-    if (reason !== 'whiteroom_handoff') return res;
-    const after = Number(res.headers.get('Retry-After'));
-    await new Promise((r) => setTimeout(r, Number.isFinite(after) && after > 0 ? Math.min(after * 1000, 1000) : 250));
+  // One timeout for the whole call, retries included, so a retry never stretches it.
+  // The BFF's own upstream timeout is 15s; give it headroom so its 502 arrives
+  // instead of racing it with our own abort.
+  const timeoutMs = viaBff(key, opts) ? 20_000 : 15_000;
+  const time: CallTime = { signal: AbortSignal.timeout(timeoutMs), deadline: Date.now() + timeoutMs };
+  if (typeof body.action !== 'string' || !READ_ACTIONS.has(body.action)) return postHandoff(body, key, opts, time);
+  // One retry round in all: a read already sent again below isn't asked a second round.
+  let retried = false;
+  const send = () => postHandoff(body, key, opts, time, () => { retried = true; });
+  return withEngineReadRetry(send, { handoffRetried: true, retried: () => retried, deadline: time.deadline });
+}
+
+interface CallTime {
+  signal: AbortSignal;
+  /** Epoch ms the signal fires at: no retry wait starts that would end past it. */
+  deadline: number;
+}
+
+/**
+ * Browser + no explicit key = the caller has no credential to send: the
+ * fleet token lives server-side in the httpOnly `wr_fleet_auth` cookie.
+ * Those calls go through the same-origin BFF, which attaches the token on the
+ * server. Explicit-key calls (a typed API key during onboarding or login) and
+ * server-side calls go straight to the engine.
+ */
+function viaBff(key?: string, opts?: PostOptions): boolean {
+  return typeof window !== 'undefined' && !key && !opts?.direct;
+}
+
+/**
+ * Sends the request again, for any action, when the engine never saw it:
+ * - a 503 whiteroom_handoff means the engine is switching instances and did
+ *   nothing with the request (spec section 0): retried twice at most, after
+ *   its Retry-After (capped at 1 s);
+ * - the platform's own 429 (no WhiteRoom JSON body) means the engine was
+ *   briefly unavailable and the request never reached it: retried about every
+ *   second for up to ~5 s (engine-retry.ts). The engine's own 429 stands.
+ * A deploy or restart never shows as an error.
+ */
+async function postHandoff(
+  body: Record<string, unknown>,
+  key: string | undefined,
+  opts: PostOptions | undefined,
+  time: CallTime,
+  onRetry?: () => void,
+): Promise<Response> {
+  for (let handoffs = 0, waited = 0; ;) {
+    const res = await postOnce(body, key, opts, time.signal);
+    let delay: number | null = null;
+    if (res.status === 503 && handoffs < 2) {
+      const reason = await res.clone().json().then((b) => b?.whiteroom?.reason, () => null);
+      if (reason === 'whiteroom_handoff') {
+        handoffs++;
+        const after = Number(res.headers.get('Retry-After'));
+        delay = Number.isFinite(after) && after > 0 ? Math.min(after * 1000, 1000) : 250;
+      }
+    } else {
+      delay = await platform429Delay(res, waited, time.deadline);
+      if (delay !== null) waited += delay;
+    }
+    // No wait that would end past the call's timeout: the answer in hand is returned instead.
+    if (delay === null || Date.now() + delay >= time.deadline) return res;
+    // This answer is dropped; free its body.
+    await res.body?.cancel().catch(() => {});
+    onRetry?.();
+    await new Promise((r) => setTimeout(r, delay));
   }
 }
 
 async function postOnce(
   body: Record<string, unknown>,
-  key?: string,
-  opts?: PostOptions,
+  key: string | undefined,
+  opts: PostOptions | undefined,
+  /** The whole call's timeout (postRaw), shared by its retries. */
+  signal: AbortSignal,
 ): Promise<Response> {
-  // Browser + no explicit key = the caller has no credential to send: the
-  // fleet token lives server-side in the httpOnly `wr_fleet_auth` cookie.
-  // Route those calls through the same-origin BFF, which attaches the token
-  // on the server. Explicit-key calls (a typed API key during onboarding or
-  // login) and server-side calls go straight to the engine as before.
-  const viaBff = typeof window !== 'undefined' && !key && !opts?.direct;
   try {
-    if (viaBff) {
+    if (viaBff(key, opts)) {
       return await fetch('/api/fleet/engine', {
         method: 'POST',
-        // The BFF's own upstream timeout is 15s; give it headroom so its 502
-        // arrives instead of racing it with our own abort.
-        signal: AbortSignal.timeout(20_000),
+        signal,
         redirect: 'error',
         cache: 'no-store',
         credentials: 'same-origin',
@@ -186,7 +250,7 @@ async function postOnce(
     }
     return await fetch(`${PROXY_URL}/api/white-room`, {
       method: 'POST',
-      signal: AbortSignal.timeout(15_000),
+      signal,
       redirect: 'error',
       cache: 'no-store',
       headers: { ...engineAuthHeaders(key), ...opts?.headers },
@@ -194,7 +258,9 @@ async function postOnce(
     });
   } catch (e) {
     // Network failure, timeout, or unexpected redirect: no response, no status.
-    throw new WhiteRoomApiError(e instanceof Error ? e.message : 'Network error');
+    // The cause stays attached so the read retry can tell a timeout from a quick failure.
+    const err = new WhiteRoomApiError(e instanceof Error ? e.message : 'Network error');
+    throw Object.assign(err, { cause: e });
   }
 }
 

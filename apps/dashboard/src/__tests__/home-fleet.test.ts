@@ -76,6 +76,14 @@ describe('ensureHomeFleetFor', () => {
     expect(deps.adoptSession).toHaveBeenCalledWith('wr_token_home-000000000000000000000001', null);
   });
 
+  it('a brief engine gap during the save is a failed open (the page offers Retry), never a ready fleet', async () => {
+    const { row, deps } = world();
+    deps.save.mockResolvedValueOnce({ ok: false, code: 'unavailable', error: 'WhiteRoom was briefly unavailable. Try again in a moment.' });
+    expect(await ensureHomeFleetFor('u1', deps)).toEqual({ kind: 'failed' });
+    expect(row.fleetId).toBeNull();
+    expect(deps.adoptSession).not.toHaveBeenCalled();
+  });
+
   it('keeps an existing key when the account has one', async () => {
     const { deps } = world({ stored: { apiKey: 'sk-wr-y' } });
     await ensureHomeFleetFor('u1', deps);

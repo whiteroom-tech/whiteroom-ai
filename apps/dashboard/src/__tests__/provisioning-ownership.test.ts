@@ -130,6 +130,13 @@ describe('saveProvisioning (fleet-key page)', () => {
     expect(a.upsertUserProvisioning).toHaveBeenLastCalledWith({ apiKey: input.apiKey, ...saved });
   });
 
+  it('a brief engine gap says try again, without "provisioning failed" and without a fallback fleet', async () => {
+    const a = actions();
+    a.upsertUserProvisioning.mockResolvedValue({ ok: false, code: 'unavailable', error: 'WhiteRoom was briefly unavailable. Try again in a moment.' });
+    expect(await saveProvisioning(input, true, a)).toEqual({ error: 'WhiteRoom was briefly unavailable. Try again in a moment.' });
+    expect(a.createFleet).not.toHaveBeenCalled();
+  });
+
   it('keeps an existing account on its fleet and reports the refusal', async () => {
     const a = actions();
     a.upsertUserProvisioning.mockResolvedValue(TAKEN);
