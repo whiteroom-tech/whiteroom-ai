@@ -17,7 +17,7 @@ vi.mock('@/lib/entitlements', () => ({
 }));
 import { randomBytes } from 'node:crypto';
 import { openCred, sealCred } from '@/lib/cred-seal';
-import { verifyFleetOwnership } from '@/lib/fleet-ownership';
+import { FleetOwnershipUnavailableError, verifyFleetOwnership } from '@/lib/fleet-ownership';
 import { addUserFleet } from '@/lib/user-fleets';
 import { upsertUserProvisioning } from '@/lib/users';
 
@@ -47,8 +47,59 @@ describe('server-side fleet ownership', () => {
   });
 
   it('fails closed without exposing upstream errors', async () => {
-    fetchMock.mockRejectedValue(new Error('secret-upstream-value'));
-    await expect(verifyFleetOwnership('test-token', 'owned')).rejects.toThrow(/^Could not verify fleet ownership\.$/);
+    vi.useFakeTimers();
+    try {
+      fetchMock.mockRejectedValue(new Error('secret-upstream-value'));
+      const failed = expect(verifyFleetOwnership('test-token', 'owned')).rejects.toThrow(/^Could not verify fleet ownership\.$/);
+      await vi.advanceTimersByTimeAsync(2_000);
+      await failed;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  describe('when the engine is briefly unavailable', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+    const platform = (status: number) => new Response('<html>unavailable</html>', { status, headers: { 'Content-Type': 'text/html' } });
+
+    it('asks once more and verifies', async () => {
+      fetchMock.mockResolvedValueOnce(platform(429)).mockResolvedValueOnce(Response.json({ success: true, fleetId: 'owned' }));
+      const verified = verifyFleetOwnership('test-token', 'owned');
+      await vi.advanceTimersByTimeAsync(2_000);
+      await expect(verified).resolves.toBeUndefined();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('says so, instead of refusing, when the retry fails too', async () => {
+      fetchMock.mockImplementation(async () => platform(503));
+      const failed = expect(verifyFleetOwnership('test-token', 'owned')).rejects.toBeInstanceOf(FleetOwnershipUnavailableError);
+      await vi.advanceTimersByTimeAsync(2_000);
+      await failed;
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('a refused token is not asked again', async () => {
+      fetchMock.mockResolvedValue(Response.json({ error: 'invalid_token' }, { status: 401 }));
+      await expect(verifyFleetOwnership('test-token', 'owned')).rejects.not.toBeInstanceOf(FleetOwnershipUnavailableError);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('provisioning answers try-again (no thrown 500) and saves nothing', async () => {
+      fetchMock.mockImplementation(async () => platform(503));
+      const saved = upsertUserProvisioning({ apiKey: 'sk-wr-' + 'a'.repeat(40), fleetToken: 'test-token', fleetId: 'owned' });
+      await vi.advanceTimersByTimeAsync(2_000);
+      await expect(saved).resolves.toEqual({ ok: false, code: 'unavailable', error: 'WhiteRoom was briefly unavailable. Try again in a moment.' });
+      expect(mocks.query).not.toHaveBeenCalled();
+    });
+
+    it('linking a fleet says try again', async () => {
+      fetchMock.mockImplementation(async () => platform(502));
+      const linked = addUserFleet('test-token', 'owned', 'Fleet');
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(await linked).toEqual({ ok: false, error: 'WhiteRoom was briefly unavailable. Try again in a moment.' });
+      expect(mocks.query).not.toHaveBeenCalled();
+    });
   });
 
   it('rejects absent credentials without contacting the engine', async () => {

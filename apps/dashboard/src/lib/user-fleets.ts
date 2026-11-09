@@ -5,7 +5,7 @@ import { lockFleetHolders } from '@/lib/control-auth';
 import { plainUnlessSealed, readCred, sealCred } from '@/lib/cred-seal';
 import { db } from '@/lib/db';
 import { activateTrial, enqueueEntitlementSync, getSubscriptionRow, syncEntitlementsToEngine } from '@/lib/entitlements';
-import { verifyFleetOwnership } from '@/lib/fleet-ownership';
+import { FleetOwnershipUnavailableError, verifyFleetOwnership } from '@/lib/fleet-ownership';
 import { effectivePlan, hasLiveSubscription, isTrialActive, limitsFor, PLANS, trialStatus } from '@/lib/plans';
 import { plural } from '@/lib/format';
 import { getClosing } from '@/lib/account-closing';
@@ -50,7 +50,8 @@ export async function addUserFleet(
   }
   try {
     await verifyFleetOwnership(fleetToken, fleetId);
-  } catch {
+  } catch (e) {
+    if (e instanceof FleetOwnershipUnavailableError) return { ok: false, error: 'WhiteRoom was briefly unavailable. Try again in a moment.' };
     return { ok: false, error: 'Could not verify fleet ownership.' };
   }
 

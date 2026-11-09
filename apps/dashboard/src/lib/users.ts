@@ -6,7 +6,7 @@ import { plainUnlessSealed, readCred, sealCred } from '@/lib/cred-seal';
 import { db } from '@/lib/db';
 import { entitlementsV2Enabled } from '@/lib/entitlement-snapshot';
 import { enqueueEntitlementSync, releaseFleet, syncEntitlementsToEngine } from '@/lib/entitlements';
-import { verifyFleetOwnership } from '@/lib/fleet-ownership';
+import { FleetOwnershipUnavailableError, verifyFleetOwnership } from '@/lib/fleet-ownership';
 import { newTrialEndsAt } from '@/lib/plans';
 
 export interface UserProvisioning {
@@ -22,7 +22,11 @@ export interface UserProvisioning {
 export type ProvisioningResult =
   | { ok: true }
   | { ok: false; code: 'fleet_taken'; error: string }
-  | { ok: false; code: 'changed'; error: string };
+  | { ok: false; code: 'changed'; error: string }
+  /** The engine was briefly unavailable, so ownership couldn't be checked. Nothing was saved; try again. */
+  | { ok: false; code: 'unavailable'; error: string };
+
+const ENGINE_UNAVAILABLE = 'WhiteRoom was briefly unavailable. Try again in a moment.';
 
 async function requireUserId(): Promise<string> {
   const session = await auth();
@@ -59,7 +63,13 @@ export async function upsertUserProvisioning(input: {
   fleetToken: string | null;
 }, opts: { expectFleetId?: string | null } = {}): Promise<ProvisioningResult> {
   const userId = await requireUserId();
-  await verifyFleetOwnership(input?.fleetToken, input?.fleetId);
+  try {
+    await verifyFleetOwnership(input?.fleetToken, input?.fleetId);
+  } catch (e) {
+    // A brief engine gap is a try-again answer, not a failed request.
+    if (e instanceof FleetOwnershipUnavailableError) return { ok: false, code: 'unavailable', error: ENGINE_UNAVAILABLE };
+    throw e;
+  }
   if (typeof input.apiKey !== 'string' || !/^sk-wr-[a-zA-Z0-9_-]{16,128}$/.test(input.apiKey)) {
     throw new Error('Invalid dashboard credential.');
   }

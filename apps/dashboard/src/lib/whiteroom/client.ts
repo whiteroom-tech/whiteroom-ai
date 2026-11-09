@@ -56,6 +56,7 @@ import type {
 } from './types';
 import { viewerTimeZone } from '@/lib/runs';
 import { activeHold, activeHolds } from '@/lib/holds';
+import { withEngineReadRetry } from './engine-retry';
 
 export const PROXY_URL = process.env.NEXT_PUBLIC_PROXY_URL || 'https://proxy.whiteroom.tech';
 
@@ -140,11 +141,35 @@ interface PostOptions {
 }
 
 /**
+ * Actions that only read, so asking again can't change anything. When the
+ * engine was briefly unavailable they are asked once more (engine-retry.ts).
+ * Anything that changes something is never retried here, so don't add one.
+ */
+const READ_ACTIONS: ReadonlySet<string> = new Set([
+  'token_login', 'list_fleets', 'fleet_report', 'check_watch', 'audit_log', 'list_keys', 'bedrock_role_status',
+  'performance_index', 'performance_agent', 'performance_evidence', 'performance_fleet_hourly',
+  'performance_agent_scores', 'performance_recommendations_list', 'performance_recommendations_get',
+  'performance_live_feed', 'performance_recommendations_export', 'performance_cost_forecast',
+  'agent_budgets_get', 'governance_list', 'get_diagnosis', 'audit_integrity', 'verify_audit', 'audit_summary',
+  'rule_would_act', 'list_runs', 'rule_actions', 'run_days', 'get_run_events', 'alerts_get',
+  'fleet_data_settings_get', 'compression_preview',
+]);
+
+async function postRaw(
+  body: Record<string, unknown>,
+  key?: string,
+  opts?: PostOptions,
+): Promise<Response> {
+  const send = () => postHandoff(body, key, opts);
+  return typeof body.action === 'string' && READ_ACTIONS.has(body.action) ? withEngineReadRetry(send) : send();
+}
+
+/**
  * A 503 whiteroom_handoff means the engine is switching instances and did
  * nothing with the request (spec section 0), so it is retried, twice at most,
  * after its Retry-After (capped at 1 s). A deploy never shows as an error.
  */
-async function postRaw(
+async function postHandoff(
   body: Record<string, unknown>,
   key?: string,
   opts?: PostOptions,
@@ -194,7 +219,9 @@ async function postOnce(
     });
   } catch (e) {
     // Network failure, timeout, or unexpected redirect: no response, no status.
-    throw new WhiteRoomApiError(e instanceof Error ? e.message : 'Network error');
+    // The cause stays attached so the read retry can tell a timeout from a quick failure.
+    const err = new WhiteRoomApiError(e instanceof Error ? e.message : 'Network error');
+    throw Object.assign(err, { cause: e });
   }
 }
 

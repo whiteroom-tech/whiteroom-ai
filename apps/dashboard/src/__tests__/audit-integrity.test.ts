@@ -41,15 +41,22 @@ describe('a request that meets an engine handoff', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it('gives up after two retries, and never retries any other 503', async () => {
+  it('gives up after two retries; any other 503 gets only the one read retry (engine-retry)', async () => {
     const fetchMock = vi.fn().mockImplementation(async () => handoff());
     vi.stubGlobal('fetch', fetchMock);
     await expect(auditIntegrity('f1', 'key')).rejects.toThrow('HTTP 503');
     expect(fetchMock).toHaveBeenCalledTimes(3);
 
-    const other = vi.fn().mockResolvedValue(new Response('{}', { status: 503 }));
-    vi.stubGlobal('fetch', other);
-    await expect(auditIntegrity('f1', 'key')).rejects.toThrow('HTTP 503');
-    expect(other).toHaveBeenCalledTimes(1);
+    vi.useFakeTimers();
+    try {
+      const other = vi.fn().mockImplementation(async () => new Response('{}', { status: 503 }));
+      vi.stubGlobal('fetch', other);
+      const failed = expect(auditIntegrity('f1', 'key')).rejects.toThrow('HTTP 503');
+      await vi.advanceTimersByTimeAsync(2_000);
+      await failed;
+      expect(other).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
