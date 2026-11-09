@@ -10,7 +10,8 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { after, describe, it } from "node:test";
 import { Engine } from "../src/practice/engine.js";
-import { copy, reportOf, results, type Report } from "../src/practice/text.js";
+import { copy, DASHBOARD, reportOf, results, type Report } from "../src/practice/text.js";
+import { sandboxCopy } from "../src/sandbox/listen.js";
 import { BUSY, dashboardFor, freeTierCode, freeTierMessage, replyWords, rerunWontFix, responseCopy, retryAfterSeconds, waitWords } from "../src/responses.js";
 import { cli, fixture, KEY, PKG, startStub, testEnv, type Stub } from "./stub.js";
 
@@ -107,6 +108,11 @@ describe("Free tier messages: the CLI's own text, one per code", () => {
     for (const u of [EU_PROXY, "https://EU.PROXY.whiteroom.tech:443/x", "https://proxy.whiteroom.tech", "http://127.0.0.1:3000", "not a url", undefined, null]) {
       assert.equal(dashboardFor(u), US, String(u));
     }
+  });
+
+  it("the practice and helper Sandbox links go to app.whiteroom.tech/sandbox", () => {
+    assert.equal(DASHBOARD, `${US}/sandbox`);
+    assert.ok(sandboxCopy.codeUsed.includes(`(${US}/sandbox)`), sandboxCopy.codeUsed);
   });
 
   it("anything else isn't a Free tier answer", () => {
