@@ -6,7 +6,7 @@ import { auth, signOut } from '@/auth';
 import { db } from '@/lib/db';
 import { forgetSessionCheck } from '@/lib/session-check';
 import { sendEmail } from '@/lib/email';
-import { emailChangeEmail } from '@/lib/magic-link-email';
+import { emailChangedNotice, emailChangeEmail, emailChangeRequestedNotice } from '@/lib/magic-link-email';
 import {
   cancelClosing,
   endedToDeletion,
@@ -270,8 +270,20 @@ export async function requestEmailChange(newEmailRaw: string): Promise<ActionRes
     await db().query(`DELETE FROM email_change_requests WHERE user_id = $1 AND token_hash = $2`, [userId, hashToken(token)]);
     return { ok: false, error: 'Could not send the confirmation email.' };
   }
+  // The current address hears about it too, so a borrowed session can't move
+  // the account quietly. A failed notice never blocks the change.
+  if (currentEmail) await noticeOldAddress(currentEmail, emailChangeRequestedNotice(newEmail, `${appOrigin()}/settings`));
 
   return { ok: true };
+}
+
+/** Mails the account's previous or current address; a failure is logged, never thrown. */
+async function noticeOldAddress(to: string, mail: { subject: string; html: string; text: string }): Promise<void> {
+  try {
+    await sendEmail({ to, ...mail });
+  } catch (err) {
+    console.error('[account] email change notice not sent:', err instanceof Error ? err.name : 'error');
+  }
 }
 
 export async function cancelEmailChange(): Promise<ActionResult> {
@@ -329,6 +341,9 @@ export async function confirmEmailChange(token: string): Promise<
       return { ok: false, error: 'That email was claimed by another account before you confirmed.' };
     }
 
+    const { rows: [before] } = await client.query(`SELECT email FROM users WHERE id = $1`, [req.user_id]);
+    const oldEmail: string | null = before?.email ?? null;
+
     // emailVerified is set from this confirmation — the address just proved
     // itself by receiving the link. sessions_valid_after is bumped because
     // the identity behind every live token has changed: anyone still signed
@@ -342,6 +357,9 @@ export async function confirmEmailChange(token: string): Promise<
     await client.query(`DELETE FROM email_change_requests WHERE id = $1`, [req.id]);
     await client.query('COMMIT');
     forgetSessionCheck(req.user_id);
+    if (oldEmail && oldEmail.toLowerCase() !== String(req.new_email).toLowerCase()) {
+      await noticeOldAddress(oldEmail, emailChangedNotice(req.new_email, `${appOrigin()}/settings`));
+    }
 
     return { ok: true, newEmail: req.new_email };
   } catch (err) {

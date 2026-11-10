@@ -1,4 +1,4 @@
-import { blockedMessage, type CloseReason } from '@/lib/closing-shared';
+import { blockedMessage, SUPPORT_EMAIL, type CloseReason } from '@/lib/closing-shared';
 import { AUDIT_KEPT } from '@/lib/plans';
 
 // Table-based and fully inline-styled on purpose: the major email clients drop
@@ -87,6 +87,37 @@ export function emailChangeEmail(url: string, currentEmail: string): { html: str
     url,
     footer: "If you didn't request this, you can ignore this email — nothing will change.",
   });
+}
+
+/**
+ * To the current address when someone asks to move the account to another
+ * one: a borrowed session could otherwise move it without the owner hearing.
+ */
+export function emailChangeRequestedNotice(newEmail: string, settingsUrl: string): { subject: string; html: string; text: string } {
+  return {
+    subject: 'A change to your WhiteRoom sign-in email',
+    ...transactionalEmail({
+      heading: 'Someone asked to change your sign-in email',
+      body: `A request was made to move your WhiteRoom account to ${newEmail}. Nothing changes unless that address confirms it.`,
+      cta: 'Open Settings',
+      url: settingsUrl,
+      footer: "If this wasn't you, cancel the change in Settings and sign out everywhere.",
+    }),
+  };
+}
+
+/** To the old address once the change is confirmed. */
+export function emailChangedNotice(newEmail: string, settingsUrl: string): { subject: string; html: string; text: string } {
+  return {
+    subject: 'Your WhiteRoom sign-in email changed',
+    ...transactionalEmail({
+      heading: 'Your sign-in email changed',
+      body: `Your WhiteRoom account now signs in with ${newEmail}, and every device was signed out.`,
+      cta: 'Open Settings',
+      url: settingsUrl,
+      footer: `If this wasn't you, email ${SUPPORT_EMAIL} right away.`,
+    }),
+  };
 }
 
 /**
