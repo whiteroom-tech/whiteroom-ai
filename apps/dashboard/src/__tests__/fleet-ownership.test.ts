@@ -17,10 +17,12 @@ vi.mock('@/lib/entitlements', () => ({
 }));
 import { randomBytes } from 'node:crypto';
 import { openCred, sealCred } from '@/lib/cred-seal';
-import { FleetOwnershipUnavailableError, verifyFleetOwnership } from '@/lib/fleet-ownership';
+import { FleetOwnershipUnavailableError, verifyFleetKey, verifyFleetOwnership } from '@/lib/fleet-ownership';
 import { addUserFleet } from '@/lib/user-fleets';
 import { upsertUserProvisioning } from '@/lib/users';
 
+// Built up, not a literal, so the secret scan sees no key-shaped string.
+const PLACEHOLDER_KEY = 'sk-wr-' + 'p'.repeat(26);
 const fetchMock = vi.fn();
 beforeEach(() => {
   vi.clearAllMocks();
@@ -33,7 +35,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe('server-side fleet ownership', () => {
   it('accepts only the fleet resolved by the engine', async () => {
-    fetchMock.mockResolvedValue(Response.json({ success: true, fleetId: 'owned' }));
+    fetchMock.mockImplementation(async () => Response.json({ success: true, fleetId: 'owned', fleetToken: 'test-token' }));
     await expect(verifyFleetOwnership('test-token', 'owned')).resolves.toBeUndefined();
   });
 
@@ -44,6 +46,17 @@ describe('server-side fleet ownership', () => {
   ])('rejects a mismatched or invalid proof: %j', async (payload) => {
     fetchMock.mockResolvedValue(Response.json(payload));
     await expect(verifyFleetOwnership('test-token', 'owned')).rejects.toThrow('Could not verify');
+  });
+
+  it('proves a fleet key with find_fleet, matching both the fleet and its current token', async () => {
+    fetchMock.mockImplementation(async () => Response.json({ success: true, fleetId: 'owned', fleetToken: 'test-token' }));
+    await expect(verifyFleetKey(PLACEHOLDER_KEY, 'owned', 'test-token')).resolves.toBeUndefined();
+    const sent = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+    expect(sent).toEqual({ action: 'find_fleet', api_key: PLACEHOLDER_KEY, fleet_id: 'owned' });
+    await expect(verifyFleetKey(PLACEHOLDER_KEY, 'owned', 'an-old-token')).rejects.toThrow('Could not verify');
+    fetchMock.mockImplementation(async () => Response.json({ error: 'Unauthorized.' }, { status: 401 }));
+    await expect(verifyFleetKey(PLACEHOLDER_KEY, 'owned', 'test-token')).rejects.toThrow('Could not verify');
+    await expect(verifyFleetKey('', 'owned', 'test-token')).rejects.toThrow('Could not verify');
   });
 
   it('fails closed without exposing upstream errors', async () => {
@@ -64,7 +77,7 @@ describe('server-side fleet ownership', () => {
     const platform = (status: number) => new Response('<html>unavailable</html>', { status, headers: { 'Content-Type': 'text/html' } });
 
     it('asks once more and verifies', async () => {
-      fetchMock.mockResolvedValueOnce(platform(429)).mockResolvedValueOnce(Response.json({ success: true, fleetId: 'owned' }));
+      fetchMock.mockResolvedValueOnce(platform(429)).mockResolvedValueOnce(Response.json({ success: true, fleetId: 'owned', fleetToken: 'test-token' }));
       const verified = verifyFleetOwnership('test-token', 'owned');
       await vi.advanceTimersByTimeAsync(2_000);
       await expect(verified).resolves.toBeUndefined();
@@ -77,6 +90,26 @@ describe('server-side fleet ownership', () => {
       await vi.advanceTimersByTimeAsync(2_000);
       await failed;
       expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('the key proof asks once more and verifies', async () => {
+      fetchMock.mockResolvedValueOnce(platform(429)).mockResolvedValueOnce(Response.json({ success: true, fleetId: 'owned', fleetToken: 'test-token' }));
+      const verified = verifyFleetKey(PLACEHOLDER_KEY, 'owned', 'test-token');
+      await vi.advanceTimersByTimeAsync(2_000);
+      await expect(verified).resolves.toBeUndefined();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('the key proof says try again, instead of refusing, when the engine stays unavailable or unreachable', async () => {
+      fetchMock.mockImplementation(async () => platform(502));
+      const gap = expect(verifyFleetKey(PLACEHOLDER_KEY, 'owned', 'test-token')).rejects.toBeInstanceOf(FleetOwnershipUnavailableError);
+      await vi.advanceTimersByTimeAsync(2_000);
+      await gap;
+      fetchMock.mockReset();
+      fetchMock.mockRejectedValue(new Error('network down'));
+      const unreachable = expect(verifyFleetKey(PLACEHOLDER_KEY, 'owned', 'test-token')).rejects.toBeInstanceOf(FleetOwnershipUnavailableError);
+      await vi.advanceTimersByTimeAsync(2_000);
+      await unreachable;
     });
 
     it('a refused redirect (a wrong engine address) is a refusal, not a gap, and is not retried', async () => {
@@ -109,7 +142,7 @@ describe('server-side fleet ownership', () => {
 
     it('linking a fleet says try again', async () => {
       fetchMock.mockImplementation(async () => platform(502));
-      const linked = addUserFleet('test-token', 'owned', 'Fleet');
+      const linked = addUserFleet('test-token', 'owned', 'Fleet', PLACEHOLDER_KEY);
       await vi.advanceTimersByTimeAsync(2_000);
       expect(await linked).toEqual({ ok: false, error: 'WhiteRoom was briefly unavailable. Try again in a moment.' });
       expect(mocks.query).not.toHaveBeenCalled();
@@ -123,23 +156,23 @@ describe('server-side fleet ownership', () => {
   });
 
   it('does not persist or entitle an arbitrary fleet through linking', async () => {
-    fetchMock.mockResolvedValue(Response.json({ success: true, fleetId: 'owned' }));
-    expect(await addUserFleet('test-token', 'victim', 'Fleet')).toEqual({ ok: false, error: 'Could not verify fleet ownership.' });
+    fetchMock.mockImplementation(async () => Response.json({ success: true, fleetId: 'owned', fleetToken: 'test-token' }));
+    expect(await addUserFleet('test-token', 'victim', 'Fleet', PLACEHOLDER_KEY)).toEqual({ ok: false, error: 'Could not verify fleet ownership.' });
     expect(mocks.query).not.toHaveBeenCalled();
     expect(mocks.sync).not.toHaveBeenCalled();
   });
 
   it('does not persist or entitle an arbitrary fleet through provisioning', async () => {
-    fetchMock.mockResolvedValue(Response.json({ success: true, fleetId: 'owned' }));
+    fetchMock.mockImplementation(async () => Response.json({ success: true, fleetId: 'owned', fleetToken: 'test-token' }));
     await expect(upsertUserProvisioning({ apiKey: 'sk-wr-' + 'a'.repeat(40), fleetToken: 'test-token', fleetId: 'victim' })).rejects.toThrow();
     expect(mocks.query).not.toHaveBeenCalled();
     expect(mocks.sync).not.toHaveBeenCalled();
   });
 
   it('keeps verified linking working and enqueues sync via the outbox', async () => {
-    fetchMock.mockResolvedValue(Response.json({ success: true, fleetId: 'owned' }));
+    fetchMock.mockImplementation(async () => Response.json({ success: true, fleetId: 'owned', fleetToken: 'test-token' }));
     mocks.query.mockResolvedValue({ rows: [] });
-    expect(await addUserFleet('test-token', 'owned', 'Fleet')).toEqual({ ok: true });
+    expect(await addUserFleet('test-token', 'owned', 'Fleet', PLACEHOLDER_KEY)).toEqual({ ok: true });
     const insertCall = mocks.query.mock.calls.find(
       (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('INSERT INTO user_fleets'),
     );
@@ -150,9 +183,9 @@ describe('server-side fleet ownership', () => {
 
   it('saves an encrypted copy of the linked token when a key is set', async () => {
     vi.stubEnv('WR_CRED_ENCRYPTION_KEY', randomBytes(32).toString('base64'));
-    fetchMock.mockResolvedValue(Response.json({ success: true, fleetId: 'owned' }));
+    fetchMock.mockImplementation(async () => Response.json({ success: true, fleetId: 'owned', fleetToken: 'test-token' }));
     mocks.query.mockResolvedValue({ rows: [] });
-    expect(await addUserFleet('test-token', 'owned', 'Fleet')).toEqual({ ok: true });
+    expect(await addUserFleet('test-token', 'owned', 'Fleet', PLACEHOLDER_KEY)).toEqual({ ok: true });
     const insertCall = mocks.query.mock.calls.find(
       (c: unknown[]) => typeof c[0] === 'string' && c[0].includes('INSERT INTO user_fleets'),
     );
@@ -163,28 +196,34 @@ describe('server-side fleet ownership', () => {
 
   it('refuses a token the account already linked, comparing encrypted copies', async () => {
     vi.stubEnv('WR_CRED_ENCRYPTION_KEY', randomBytes(32).toString('base64'));
-    fetchMock.mockImplementation(async () => Response.json({ success: true, fleetId: 'owned' }));
+    // token_login names the token; find_fleet answers with the token the fleet holds.
+    let lastToken = '';
+    fetchMock.mockImplementation(async (_url: string, init: RequestInit) => {
+      const sent = JSON.parse(String(init.body)) as { fleet_token?: string };
+      if (sent.fleet_token) lastToken = sent.fleet_token;
+      return Response.json({ success: true, fleetId: 'owned', fleetToken: lastToken });
+    });
     mocks.query.mockImplementation(async (sql: string) => {
       if (sql.includes('FROM user_fleets WHERE user_id')) {
         return { rows: [{ fleet_token: null, fleet_token_enc: sealCred('user_fleets.fleet_token', 'user-1', 'test-token') }] };
       }
       return { rows: [] };
     });
-    expect(await addUserFleet('test-token', 'owned', 'Fleet')).toEqual({ ok: false, error: 'Fleet already linked' });
+    expect(await addUserFleet('test-token', 'owned', 'Fleet', PLACEHOLDER_KEY)).toEqual({ ok: false, error: 'Fleet already linked' });
     expect(mocks.query.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO user_fleets'))).toBe(false);
-    expect(await addUserFleet('other-token', 'owned', 'Fleet')).toEqual({ ok: true });
+    expect(await addUserFleet('other-token', 'owned', 'Fleet', PLACEHOLDER_KEY)).toEqual({ ok: true });
     vi.unstubAllEnvs();
   });
 
   it('rejects a provider API key at the provisioning storage boundary', async () => {
-    fetchMock.mockResolvedValue(Response.json({ success: true, fleetId: 'owned' }));
+    fetchMock.mockImplementation(async () => Response.json({ success: true, fleetId: 'owned', fleetToken: 'test-token' }));
     await expect(upsertUserProvisioning({ apiKey: 'sk-ant-test-provider-key', fleetToken: 'test-token', fleetId: 'owned' })).rejects.toThrow('Invalid dashboard');
     expect(mocks.query).not.toHaveBeenCalled();
   });
 
   it('rejects unauthenticated callers before contacting the engine', async () => {
     mocks.auth.mockResolvedValue(null);
-    expect((await addUserFleet('test-token', 'owned', 'Fleet')).ok).toBe(false);
+    expect((await addUserFleet('test-token', 'owned', 'Fleet', PLACEHOLDER_KEY)).ok).toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(mocks.query).not.toHaveBeenCalled();
   });
@@ -192,7 +231,7 @@ describe('server-side fleet ownership', () => {
   describe('fleet limit', () => {
     /** Answers addUserFleet's queries by SQL: the locked user row, the subscription, the fleet count. */
     function account({ trialEndsAt, fleets, sub = null, trialState = null }: { trialEndsAt: string; fleets: number; sub?: Record<string, unknown> | null; trialState?: string | null }) {
-      fetchMock.mockResolvedValue(Response.json({ success: true, fleetId: 'owned' }));
+      fetchMock.mockImplementation(async () => Response.json({ success: true, fleetId: 'owned', fleetToken: 'test-token' }));
       mocks.query.mockImplementation(async (sql: string) => {
         if (sql.includes('trial_ends_at') && sql.includes('FOR UPDATE')) return { rows: [{ trial_ends_at: trialEndsAt, trial_state: trialState }] };
         if (sql.includes('FROM subscriptions')) return { rows: sub ? [sub] : [] };
@@ -205,13 +244,13 @@ describe('server-side fleet ownership', () => {
 
     it('holds a trial account to the Starter limit, by name', async () => {
       account({ trialEndsAt: future(), fleets: 1 });
-      const res = await addUserFleet('test-token', 'owned', 'Fleet');
+      const res = await addUserFleet('test-token', 'owned', 'Fleet', PLACEHOLDER_KEY);
       expect(res).toEqual({ ok: false, error: expect.stringContaining('Starter plan includes 1 fleet') });
     });
 
     it('tells a Suspended account to pick a plan, not that it has a plan called "Suspended"', async () => {
       account({ trialEndsAt: past(), fleets: 1 });
-      const res = await addUserFleet('test-token', 'owned', 'Fleet');
+      const res = await addUserFleet('test-token', 'owned', 'Fleet', PLACEHOLDER_KEY);
       expect(res).toEqual({ ok: false, error: 'Your plan has ended. Pick a plan in Settings to link more fleets.' });
     });
 
@@ -219,13 +258,13 @@ describe('server-side fleet ownership', () => {
       const lapsedAt = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
       // Off (as today): the lapse window keeps the fleets running, but a new link is held to Suspended.
       account({ trialEndsAt: past(), fleets: 1, sub: { plan: 'pro', status: 'canceled', plan_override: null, lapsed_at: lapsedAt(3) } });
-      expect((await addUserFleet('test-token', 'owned', 'Fleet')).ok).toBe(false);
+      expect((await addUserFleet('test-token', 'owned', 'Fleet', PLACEHOLDER_KEY)).ok).toBe(false);
       process.env.LAPSE_SUSPEND = 'on';
       onTestFinished(() => { delete process.env.LAPSE_SUSPEND; });
       account({ trialEndsAt: past(), fleets: 1, sub: { plan: 'pro', status: 'canceled', plan_override: null, lapsed_at: lapsedAt(3) } });
-      expect(await addUserFleet('test-token', 'owned', 'Fleet')).toEqual({ ok: true });
+      expect(await addUserFleet('test-token', 'owned', 'Fleet', PLACEHOLDER_KEY)).toEqual({ ok: true });
       account({ trialEndsAt: past(), fleets: 1, sub: { plan: 'pro', status: 'canceled', plan_override: null, lapsed_at: lapsedAt(15) } });
-      expect(await addUserFleet('test-token', 'owned', 'Fleet')).toEqual({ ok: false, error: 'Your plan has ended. Pick a plan in Settings to link more fleets.' });
+      expect(await addUserFleet('test-token', 'owned', 'Fleet', PLACEHOLDER_KEY)).toEqual({ ok: false, error: 'Your plan has ended. Pick a plan in Settings to link more fleets.' });
     });
 
     // Linking a fleet is going live: a Free account's 30 days start in the
@@ -233,7 +272,7 @@ describe('server-side fleet ownership', () => {
     it('starts a Free account\'s free period inside the link, before the limit check', async () => {
       account({ trialEndsAt: past(), fleets: 0, trialState: 'not_started' });
       mocks.activate.mockResolvedValue(future());
-      expect(await addUserFleet('test-token', 'owned', 'Fleet')).toEqual({ ok: true });
+      expect(await addUserFleet('test-token', 'owned', 'Fleet', PLACEHOLDER_KEY)).toEqual({ ok: true });
       expect(mocks.activate).toHaveBeenCalledWith(expect.anything(), 'user-1');
       const sqls = mocks.query.mock.calls.map((c) => String(c[0]));
       const order = mocks.query.mock.invocationCallOrder;
@@ -245,7 +284,7 @@ describe('server-side fleet ownership', () => {
     it('a link refused at the limit rolls the activation back with it', async () => {
       account({ trialEndsAt: past(), fleets: 1, trialState: 'not_started' });
       mocks.activate.mockResolvedValue(future());
-      expect((await addUserFleet('test-token', 'owned', 'Fleet')).ok).toBe(false);
+      expect((await addUserFleet('test-token', 'owned', 'Fleet', PLACEHOLDER_KEY)).ok).toBe(false);
       const sqls = mocks.query.mock.calls.map((c) => String(c[0]));
       expect(sqls).toContain('ROLLBACK');
       expect(sqls).not.toContain('COMMIT');
@@ -253,27 +292,27 @@ describe('server-side fleet ownership', () => {
 
     it('never tries to activate an account whose free period already started or ended', async () => {
       account({ trialEndsAt: past(), fleets: 0 });
-      await addUserFleet('test-token', 'owned', 'Fleet');
+      await addUserFleet('test-token', 'owned', 'Fleet', PLACEHOLDER_KEY);
       account({ trialEndsAt: future(), fleets: 0, trialState: 'active' });
-      await addUserFleet('test-token', 'owned', 'Fleet');
+      await addUserFleet('test-token', 'owned', 'Fleet', PLACEHOLDER_KEY);
       expect(mocks.activate).not.toHaveBeenCalled();
     });
 
     it('a Free account that somehow has no free period to start is told Starter is where fleets begin', async () => {
       account({ trialEndsAt: past(), fleets: 0, trialState: 'not_started' });
-      expect(await addUserFleet('test-token', 'owned', 'Fleet')).toEqual({ ok: false, error: 'Production fleets start on Starter. Pick a plan in Settings to link one.' });
+      expect(await addUserFleet('test-token', 'owned', 'Fleet', PLACEHOLDER_KEY)).toEqual({ ok: false, error: 'Production fleets start on Starter. Pick a plan in Settings to link one.' });
     });
 
     it('lets a paying Pro account past the Starter limit, trial or not', async () => {
       account({ trialEndsAt: past(), fleets: 1, sub: { plan: 'pro', status: 'active', plan_override: null } });
-      expect(await addUserFleet('test-token', 'owned', 'Fleet')).toEqual({ ok: true });
+      expect(await addUserFleet('test-token', 'owned', 'Fleet', PLACEHOLDER_KEY)).toEqual({ ok: true });
     });
 
     // The trial date is read under the same lock as the quota check, so two
     // concurrent links can't both see room for one more fleet.
     it('reads the trial date under the user-row lock', async () => {
       account({ trialEndsAt: future(), fleets: 0 });
-      await addUserFleet('test-token', 'owned', 'Fleet');
+      await addUserFleet('test-token', 'owned', 'Fleet', PLACEHOLDER_KEY);
       const lock = mocks.query.mock.calls.find((c) => String(c[0]).includes('FOR UPDATE'));
       expect(String(lock?.[0])).toContain('trial_ends_at');
     });

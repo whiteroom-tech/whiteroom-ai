@@ -51,3 +51,42 @@ export async function verifyFleetOwnership(token: unknown, fleetId: unknown): Pr
     throw new Error(DENIED);
   }
 }
+
+/**
+ * The engine confirms `apiKey` is the fleet's CURRENT key and `fleetToken` its
+ * current token (find_fleet answers only for the holder of the key). Taking on
+ * a fleet needs this, not just the token: every agent in the fleet holds the
+ * token. Throws like verifyFleetOwnership.
+ */
+export async function verifyFleetKey(apiKey: unknown, fleetId: unknown, fleetToken: unknown): Promise<void> {
+  if (typeof apiKey !== 'string' || apiKey.length === 0 || apiKey.length > 512 ||
+      typeof fleetId !== 'string' || fleetId.length === 0 || fleetId.length > 256 ||
+      typeof fleetToken !== 'string' || fleetToken.length === 0) {
+    throw new Error(DENIED);
+  }
+  let response: Response;
+  try {
+    // find_fleet only reads, so a brief engine gap is asked about again, within one 10 s timeout.
+    const signal = AbortSignal.timeout(10_000);
+    const deadline = Date.now() + 10_000;
+    response = await withEngineReadRetry(() => fetch(`${PROXY_URL}/api/white-room`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'find_fleet', api_key: apiKey, fleet_id: fleetId }),
+      cache: 'no-store',
+      redirect: 'error',
+      signal,
+    }), { deadline });
+  } catch (e) {
+    throw isRedirectError(e) ? new Error(DENIED) : new FleetOwnershipUnavailableError();
+  }
+  if (await isTransientEngineAnswer(response)) throw new FleetOwnershipUnavailableError();
+  try {
+    if (!response.ok) throw new Error(DENIED);
+    const data = await response.json();
+    if (data?.success !== true || data.fleetId !== fleetId || data.fleetToken !== fleetToken) throw new Error(DENIED);
+  } catch {
+    // Upstream responses carry the fleet token. Never expose them.
+    throw new Error(DENIED);
+  }
+}

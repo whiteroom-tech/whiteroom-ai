@@ -8,13 +8,20 @@ type Row = { table: 'users' | 'user_fleets'; userId: string; provisioned: boolea
 const mocks = vi.hoisted(() => ({
   userId: 'u1',
   oldFleet: null as string | null,
+  /** Answers for the account's fleet read before the transaction, ahead of oldFleet (the locked read). */
+  preReads: [] as Array<string | null>,
   holders: [] as unknown[],
   sql: [] as string[],
   releaseFleet: vi.fn(),
+  verifyFleetKey: vi.fn(async () => {}),
 }));
 
 vi.mock('@/auth', () => ({ auth: async () => ({ user: { id: mocks.userId, email: `${mocks.userId}@example.com` } }) }));
-vi.mock('@/lib/fleet-ownership', () => ({ verifyFleetOwnership: async () => {} }));
+vi.mock('@/lib/fleet-ownership', () => ({
+  verifyFleetOwnership: async () => {},
+  verifyFleetKey: mocks.verifyFleetKey,
+  FleetOwnershipUnavailableError: class FleetOwnershipUnavailableError extends Error {},
+}));
 vi.mock('@/lib/entitlements', () => ({ enqueueEntitlementSync: vi.fn(), releaseFleet: mocks.releaseFleet, activateTrial: vi.fn(async () => null) }));
 vi.mock('@/lib/whiteroom/client', () => ({
   tokenLogin: vi.fn(),
@@ -25,7 +32,7 @@ vi.mock('@/lib/whiteroom/client', () => ({
 vi.mock('@/lib/db', () => {
   const query = async (sql: string) => {
     mocks.sql.push(sql);
-    if (sql.startsWith('SELECT fleet_id FROM users')) return { rows: [{ fleet_id: mocks.oldFleet }] };
+    if (sql.startsWith('SELECT fleet_id FROM users')) return { rows: [{ fleet_id: mocks.preReads.length ? mocks.preReads.shift()! : mocks.oldFleet }] };
     if (sql.includes('extract(epoch')) return { rows: mocks.holders };
     if (sql.startsWith('SELECT count(*)')) return { rows: [{ n: 0 }] };
     if (sql.includes('FROM users WHERE id = $1 FOR UPDATE')) return { rows: [{ trial_ends_at: '2999-01-01' }] };
@@ -51,6 +58,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.userId = 'u1';
   mocks.oldFleet = null;
+  mocks.preReads = [];
   mocks.holders = [];
   mocks.sql = [];
 });
@@ -115,6 +123,58 @@ describe('upsertUserProvisioning fleet ownership', () => {
     expect(mocks.sql.some((s) => s.includes('extract(epoch'))).toBe(false);
     expect(committed()).toBe(true);
     expect(mocks.releaseFleet).not.toHaveBeenCalled();
+  });
+});
+
+// Security fixes S3: the fleet's token isn't enough to take it on, since
+// every agent holds it; the fleet's current key must be proved too.
+describe('upsertUserProvisioning key proof', () => {
+  it('proves the key when taking on a different fleet', async () => {
+    expect(await upsertUserProvisioning(input)).toEqual({ ok: true });
+    expect(mocks.verifyFleetKey).toHaveBeenCalledWith(input.apiKey, input.fleetId, input.fleetToken);
+  });
+
+  it('refuses a key that does not open the fleet like a taken fleet, saving nothing', async () => {
+    mocks.verifyFleetKey.mockRejectedValueOnce(new Error('Could not verify fleet ownership.'));
+    expect(await upsertUserProvisioning(input)).toEqual({ ok: false, code: 'fleet_taken', error: expect.stringContaining('doesn’t open that fleet') });
+    expect(inserted()).toBe(false);
+    expect(mocks.sql).not.toContain('BEGIN');
+  });
+
+  it('answers try-again when the engine is briefly unavailable', async () => {
+    const { FleetOwnershipUnavailableError } = await import('@/lib/fleet-ownership');
+    mocks.verifyFleetKey.mockRejectedValueOnce(new FleetOwnershipUnavailableError());
+    expect(await upsertUserProvisioning(input)).toMatchObject({ ok: false, code: 'unavailable' });
+    expect(inserted()).toBe(false);
+  });
+
+  it('skips the proof when re-saving the fleet already provisioned (key rotation, token resync)', async () => {
+    mocks.oldFleet = 'f1';
+    expect(await upsertUserProvisioning(input)).toEqual({ ok: true });
+    expect(mocks.verifyFleetKey).not.toHaveBeenCalled();
+  });
+
+  it('answers changed, saving nothing, when the account’s fleet moved after the proof was skipped', async () => {
+    // Before the transaction the account already held f1 (no proof needed);
+    // under the lock it holds another fleet, so f1 would be taken on unproved.
+    mocks.preReads = ['f1'];
+    mocks.oldFleet = 'f-other';
+    expect(await upsertUserProvisioning(input)).toEqual({ ok: false, code: 'changed', error: expect.any(String) });
+    expect(mocks.verifyFleetKey).not.toHaveBeenCalled();
+    expect(inserted()).toBe(false);
+    expect(mocks.sql).toContain('ROLLBACK');
+  });
+
+  it('no longer rewrites the stored email or name from the session', async () => {
+    await upsertUserProvisioning(input);
+    const insert = mocks.sql.find((s) => s.includes('INSERT INTO users'))!;
+    expect(insert).not.toMatch(/email = EXCLUDED\.email|name = EXCLUDED\.name/);
+  });
+
+  it('linking a fleet needs the key too', async () => {
+    mocks.verifyFleetKey.mockRejectedValueOnce(new Error('Could not verify fleet ownership.'));
+    expect(await addUserFleet(input.fleetToken, 'f1', 'Fleet', input.apiKey)).toEqual({ ok: false, error: 'Could not verify fleet ownership.' });
+    expect(mocks.sql.some((s) => s.includes('INSERT INTO user_fleets'))).toBe(false);
   });
 });
 
@@ -261,7 +321,7 @@ describe('finishSignIn (fleet-key page sign-in)', () => {
 
 describe('addUserFleet', () => {
   it('takes the same per-fleet lock after BEGIN and before linking', async () => {
-    expect(await addUserFleet(input.fleetToken, 'f1', 'Fleet')).toEqual({ ok: true });
+    expect(await addUserFleet(input.fleetToken, 'f1', 'Fleet', input.apiKey)).toEqual({ ok: true });
     const begin = mocks.sql.indexOf('BEGIN');
     const lock = mocks.sql.findIndex((s) => s.includes('pg_advisory_xact_lock'));
     const insert = mocks.sql.findIndex((s) => s.includes('INSERT INTO user_fleets'));
@@ -271,7 +331,7 @@ describe('addUserFleet', () => {
   });
 
   it('takes no lock for a link without a fleet id', async () => {
-    expect(await addUserFleet(input.fleetToken, null, 'Fleet')).toEqual({ ok: true });
+    expect(await addUserFleet(input.fleetToken, null, 'Fleet', input.apiKey)).toEqual({ ok: true });
     expect(mocks.sql.some((s) => s.includes('pg_advisory_xact_lock'))).toBe(false);
     expect(mocks.sql.some((s) => s.includes('INSERT INTO user_fleets'))).toBe(true);
   });
