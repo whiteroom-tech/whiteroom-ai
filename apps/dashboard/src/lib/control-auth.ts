@@ -17,8 +17,7 @@ import { isAuthError, tokenLogin } from '@/lib/whiteroom/client';
 export const DASHBOARD_ONLY_ACTIONS: ReadonlySet<string> = new Set([
   'governance_create_rule', 'governance_update_rule', 'governance_delete_rule',
   'pause_agent', 'resume_agent', 'stop_agent',
-  // Removing an agent is an owner's call too. The engine doesn't require the
-  // secret for it yet, so this gates only the dashboard path.
+  // Removing an agent is an owner's call too.
   'deregister_agent',
   'alerts_get', 'alerts_set_slack', 'alerts_set_teams', 'alerts_test',
   'fleet_data_settings_get', 'fleet_data_settings_set',
@@ -31,6 +30,8 @@ export const DASHBOARD_ONLY_ACTIONS: ReadonlySet<string> = new Set([
   'agent_budget_set',
   // A sandbox test's tool policy: the agent under test mustn't switch it off.
   'create_policy', 'set_policy_mode',
+  // Purge zeroes every agent's spend, loop and rate counters (security fixes S6).
+  'purge_fleet',
 ]);
 
 /**
