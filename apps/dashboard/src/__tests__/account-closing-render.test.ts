@@ -223,9 +223,10 @@ describe('Settings › Delete account', () => {
   });
 
   it('while a deletion runs: the date and Cancel deletion', async () => {
-    const closing = { reason: 'deleted' as const, closesAt: '2026-11-10T12:00:00Z' };
+    // Far enough ahead that the deletion is still to come whenever this runs.
+    const closing = { reason: 'deleted' as const, closesAt: '2099-11-10T12:00:00Z' };
     const m = await mount(h(DangerSection, { account: ACCOUNT, closing, pending: false }));
-    expect(m.text()).toContain('Your account will be deleted on November 10, 2026');
+    expect(m.text()).toContain('Your account will be deleted on November 10, 2099');
     expect(m.link('download your data')?.getAttribute('href')).toBe('#audit-integrity');
     expect(m.button('Delete my account')).toBeUndefined();
     await m.click(m.button('Cancel deletion')!);

@@ -6,7 +6,7 @@ import { plainUnlessSealed, readCred, sealCred } from '@/lib/cred-seal';
 import { db } from '@/lib/db';
 import { entitlementsV2Enabled } from '@/lib/entitlement-snapshot';
 import { enqueueEntitlementSync, releaseFleet, syncEntitlementsToEngine } from '@/lib/entitlements';
-import { FleetOwnershipUnavailableError, verifyFleetOwnership } from '@/lib/fleet-ownership';
+import { FleetOwnershipUnavailableError, verifyFleetKey, verifyFleetOwnership } from '@/lib/fleet-ownership';
 import { newTrialEndsAt } from '@/lib/plans';
 
 export interface UserProvisioning {
@@ -27,6 +27,7 @@ export type ProvisioningResult =
   | { ok: false; code: 'unavailable'; error: string };
 
 const ENGINE_UNAVAILABLE = 'WhiteRoom was briefly unavailable. Try again in a moment.';
+const KEY_REFUSED = 'This key doesn’t open that fleet. Use the key the fleet was set up with.';
 
 async function requireUserId(): Promise<string> {
   const session = await auth();
@@ -73,6 +74,21 @@ export async function upsertUserProvisioning(input: {
   if (typeof input.apiKey !== 'string' || !/^sk-wr-[a-zA-Z0-9_-]{16,128}$/.test(input.apiKey)) {
     throw new Error('Invalid dashboard credential.');
   }
+  // Taking on a different fleet needs its current key too, not just its
+  // token: every agent holds the token. A refusal answers like a fleet that's
+  // taken, so a new account falls back to a fleet of its own. Asked before the
+  // transaction, so no lock is held across the engine call; checked again
+  // inside in case the account's fleet moved meanwhile.
+  const { rows: [before] } = await db().query('SELECT fleet_id FROM users WHERE id = $1', [userId]);
+  const needsKeyProof = (before?.fleet_id ?? null) !== input.fleetId;
+  if (needsKeyProof) {
+    try {
+      await verifyFleetKey(input.apiKey, input.fleetId, input.fleetToken);
+    } catch (e) {
+      if (e instanceof FleetOwnershipUnavailableError) return { ok: false, code: 'unavailable', error: ENGINE_UNAVAILABLE };
+      return { ok: false, code: 'fleet_taken', error: KEY_REFUSED };
+    }
+  }
   const session = await auth();
 
   let oldFleetId: string | null = null;
@@ -113,6 +129,11 @@ export async function upsertUserProvisioning(input: {
         return { ok: false, code: 'changed', error: 'This account’s fleet changed meanwhile.' };
       }
       const fleetChanged = oldFleetId !== input.fleetId;
+      // The fleet moved after the proof was judged unneeded: start over rather than take it on unproved.
+      if (fleetChanged && !needsKeyProof) {
+        await client.query('ROLLBACK');
+        return { ok: false, code: 'changed', error: 'This account’s fleet changed meanwhile.' };
+      }
 
       // An account may take on a fleet only when it doesn't already belong to
       // another account: a new fleet, or one whose owner (fleetOwner) is this
@@ -151,8 +172,6 @@ export async function upsertUserProvisioning(input: {
          ON CONFLICT (id) DO UPDATE SET
            fleet_provisioned_at = CASE WHEN users.fleet_id IS DISTINCT FROM EXCLUDED.fleet_id
                                        THEN now() ELSE users.fleet_provisioned_at END,
-           email = EXCLUDED.email,
-           name = EXCLUDED.name,
            api_key = EXCLUDED.api_key,
            fleet_id = EXCLUDED.fleet_id,
            fleet_token = EXCLUDED.fleet_token,
