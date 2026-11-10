@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@/auth', () => ({ auth: async () => ({ user: { id: 'u1', email: 'u1@example.com' } }) }));
-vi.mock('@/lib/fleet-ownership', () => ({ verifyFleetOwnership: async () => {} }));
+vi.mock('@/lib/fleet-ownership', () => ({ verifyFleetOwnership: async () => {}, verifyFleetKey: async () => {} }));
 vi.mock('@/lib/entitlements', () => ({
   enqueueEntitlementSync: async (c: { query: (s: string) => unknown }, user: string, reason: string, transfers?: unknown) => {
     mocks.enqueued.push({ user, reason, ...(transfers ? { transfers } : {}) });

@@ -33,7 +33,7 @@ vi.mock('@/lib/entitlements', () => ({
   enqueueEntitlementSync: vi.fn(),
 }));
 vi.mock('@/lib/account-closing', () => ({ getClosing: async () => m.closing }));
-vi.mock('@/lib/fleet-ownership', () => ({ verifyFleetOwnership: vi.fn() }));
+vi.mock('@/lib/fleet-ownership', () => ({ verifyFleetOwnership: vi.fn(), verifyFleetKey: vi.fn() }));
 vi.mock('@/lib/control-auth', () => ({ lockFleetHolders: vi.fn() }));
 
 const { takeItLive } = await import('@/lib/user-fleets');

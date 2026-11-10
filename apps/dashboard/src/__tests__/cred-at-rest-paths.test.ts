@@ -83,7 +83,7 @@ describe('tokenFromUserFleets', () => {
 
 describe('upsertUserProvisioning', () => {
   it('saves only encrypted copies of the API key and fleet token', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ success: true, fleetId: 'f1' })));
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ success: true, fleetId: 'f1', fleetToken: 'tok' })));
     mocks.query.mockResolvedValue({ rows: [] });
     const apiKey = 'sk-wr-' + 'a'.repeat(40);
     await upsertUserProvisioning({ apiKey, fleetId: 'f1', fleetToken: 'tok' });
@@ -96,7 +96,7 @@ describe('upsertUserProvisioning', () => {
 
   it('keeps the plain values without a key (local dev)', async () => {
     vi.stubEnv('WR_CRED_ENCRYPTION_KEY', '');
-    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ success: true, fleetId: 'f1' })));
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ success: true, fleetId: 'f1', fleetToken: 'tok' })));
     mocks.query.mockResolvedValue({ rows: [] });
     const apiKey = 'sk-wr-' + 'b'.repeat(40);
     await upsertUserProvisioning({ apiKey, fleetId: 'f1', fleetToken: 'tok' });

@@ -5,7 +5,7 @@ import { lockFleetHolders } from '@/lib/control-auth';
 import { plainUnlessSealed, readCred, sealCred } from '@/lib/cred-seal';
 import { db } from '@/lib/db';
 import { activateTrial, enqueueEntitlementSync, getSubscriptionRow, syncEntitlementsToEngine } from '@/lib/entitlements';
-import { FleetOwnershipUnavailableError, verifyFleetOwnership } from '@/lib/fleet-ownership';
+import { FleetOwnershipUnavailableError, verifyFleetKey, verifyFleetOwnership } from '@/lib/fleet-ownership';
 import { effectivePlan, hasLiveSubscription, isTrialActive, limitsFor, PLANS, trialStatus } from '@/lib/plans';
 import { plural } from '@/lib/format';
 import { getClosing } from '@/lib/account-closing';
@@ -36,10 +36,16 @@ export async function getUserFleets(): Promise<UserFleet[]> {
   });
 }
 
+/**
+ * Links a fleet to the signed-in account. Needs the fleet's current key as
+ * well as its token: every agent holds the token, and a link can make the
+ * account the fleet's owner.
+ */
 export async function addUserFleet(
   fleetToken: string,
   fleetId: string | null,
-  label: string
+  label: string,
+  apiKey: string,
 ): Promise<{ ok: boolean; error?: string }> {
   const session = await auth();
   const userId = session?.user?.id;
@@ -50,6 +56,7 @@ export async function addUserFleet(
   }
   try {
     await verifyFleetOwnership(fleetToken, fleetId);
+    await verifyFleetKey(apiKey, fleetId, fleetToken);
   } catch (e) {
     if (e instanceof FleetOwnershipUnavailableError) return { ok: false, error: 'WhiteRoom was briefly unavailable. Try again in a moment.' };
     return { ok: false, error: 'Could not verify fleet ownership.' };
