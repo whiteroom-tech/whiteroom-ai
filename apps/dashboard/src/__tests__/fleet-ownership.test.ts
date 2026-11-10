@@ -92,6 +92,26 @@ describe('server-side fleet ownership', () => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 
+    it('the key proof asks once more and verifies', async () => {
+      fetchMock.mockResolvedValueOnce(platform(429)).mockResolvedValueOnce(Response.json({ success: true, fleetId: 'owned', fleetToken: 'test-token' }));
+      const verified = verifyFleetKey(PLACEHOLDER_KEY, 'owned', 'test-token');
+      await vi.advanceTimersByTimeAsync(2_000);
+      await expect(verified).resolves.toBeUndefined();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('the key proof says try again, instead of refusing, when the engine stays unavailable or unreachable', async () => {
+      fetchMock.mockImplementation(async () => platform(502));
+      const gap = expect(verifyFleetKey(PLACEHOLDER_KEY, 'owned', 'test-token')).rejects.toBeInstanceOf(FleetOwnershipUnavailableError);
+      await vi.advanceTimersByTimeAsync(2_000);
+      await gap;
+      fetchMock.mockReset();
+      fetchMock.mockRejectedValue(new Error('network down'));
+      const unreachable = expect(verifyFleetKey(PLACEHOLDER_KEY, 'owned', 'test-token')).rejects.toBeInstanceOf(FleetOwnershipUnavailableError);
+      await vi.advanceTimersByTimeAsync(2_000);
+      await unreachable;
+    });
+
     it('a refused redirect (a wrong engine address) is a refusal, not a gap, and is not retried', async () => {
       fetchMock.mockRejectedValue(new TypeError('fetch failed', { cause: new Error('unexpected redirect') }));
       const failed = verifyFleetOwnership('test-token', 'owned');
