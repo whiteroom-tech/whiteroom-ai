@@ -20,7 +20,7 @@ const HOST = process.env.DB_HOST || '127.0.0.1';
 const PORT = process.env.DB_PORT || '5433';
 
 vi.mock('@/auth', () => ({ auth: async () => ({ user: { id: actor.id, email: `${actor.id}@example.com` } }) }));
-vi.mock('@/lib/fleet-ownership', () => ({ verifyFleetOwnership: async () => {} }));
+vi.mock('@/lib/fleet-ownership', () => ({ verifyFleetOwnership: async () => {}, verifyFleetKey: async () => {} }));
 vi.mock('@/lib/email', () => ({ sendEmail: async () => {} }));
 vi.mock('@/lib/whiteroom/client', () => ({ PROXY_URL: 'http://engine.test', tokenLogin: async () => ({}), isAuthError: () => false }));
 const actor = vi.hoisted(() => ({ id: 'user-a' }));

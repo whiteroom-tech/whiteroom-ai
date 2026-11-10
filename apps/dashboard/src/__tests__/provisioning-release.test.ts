@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ query: vi.fn(), releaseFleet: vi.fn(), oldFleet: 'fleet-old' as string | null, inserts: [] as Array<{ sql: string; params: unknown[] }> }));
 
 vi.mock('@/auth', () => ({ auth: async () => ({ user: { id: 'u1', email: 'u1@example.com' } }) }));
-vi.mock('@/lib/fleet-ownership', () => ({ verifyFleetOwnership: async () => {} }));
+vi.mock('@/lib/fleet-ownership', () => ({ verifyFleetOwnership: async () => {}, verifyFleetKey: async () => {} }));
 vi.mock('@/lib/entitlements', () => ({ enqueueEntitlementSync: vi.fn(), releaseFleet: mocks.releaseFleet }));
 vi.mock('@/lib/db', () => ({
   db: () => ({
@@ -16,7 +16,9 @@ vi.mock('@/lib/db', () => ({
       },
       release: () => {},
     }),
-    query: mocks.query,
+    // The account's current fleet is read once outside the transaction too.
+    query: async (sql: string, params: unknown[] = []) =>
+      (await mocks.query(sql, params)) ?? (sql.startsWith('SELECT fleet_id') ? { rows: [{ fleet_id: mocks.oldFleet }] } : { rows: [] }),
   }),
 }));
 
