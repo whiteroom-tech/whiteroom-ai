@@ -17,6 +17,9 @@ export const EVENT_LABEL: Record<HealthHistoryEvent['event'], string> = {
   alert_sent: 'Alert sent',
 };
 
+/** A finding's status in the report's words. */
+const FINDING_STATUS: Record<string, string> = { open: 'Problem', snoozed: 'Snoozed', dismissed: 'Dismissed', reported_implemented: 'Marked fixed', resolved: 'Stopped happening' };
+
 /** Days of history the report covers. */
 export const REPORT_DAYS = 90;
 /** Pages read for one report at most (the engine sends 200 events a page). */
@@ -66,7 +69,7 @@ export function healthReportSheets(
 ): Sheet[] {
   const now: (string | number)[][] = [];
   for (const r of diagnosis?.reports ?? []) {
-    for (const f of r.findings) now.push([r.agentId, checkName(f.detector), f.status === 'open' ? 'Problem' : f.status.replace(/_/g, ' ')]);
+    for (const f of r.findings) now.push([r.agentId, checkName(f.detector), FINDING_STATUS[f.status] ?? f.status.replace(/_/g, ' ')]);
     for (const c of r.clear) now.push([r.agentId, checkName(c.detector), 'Passed']);
     for (const n of r.notMeasured) now.push([r.agentId, checkName(n.detector), 'Needs more data']);
   }

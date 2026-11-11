@@ -40,7 +40,30 @@ describe('Agent detail › Health history', () => {
     expect(api.history).toHaveBeenCalledWith('f', expect.objectContaining({ agentId: 'a' }), undefined);
     expect(m.el.querySelectorAll('li')).toHaveLength(10);
     expect(m.text()).toContain('Repeating the same call: Snoozed by a teammate');
-    expect(m.text()).toContain('2 more in the report on Performance.');
+    expect(m.text()).toContain('2 more in the health report: Download report on Performance.');
+    m.root.unmount();
+  });
+
+  it('with more pages than one, says there is more without a count', async () => {
+    api.history.mockResolvedValue({ events: Array.from({ length: 12 }, (_, i) => ev(i)), cursor: 'next' });
+    const m = await mount(h(HealthHistory, { fleetId: 'f', agentId: 'a' }));
+    expect(m.text()).toContain('More in the health report');
+    expect(m.text()).not.toMatch(/\d+ more in/);
+    m.root.unmount();
+  });
+
+  it('names the person who acted, looked up from the oldest event with one; no lookup when nobody acted', async () => {
+    api.actors.mockResolvedValueOnce([{ action: 'x', agentId: null, ruleId: null, userId: 'u1', by: 'R Haque', at: '2026-11-10T11:00:00Z' }]);
+    api.history.mockResolvedValue({ events: [ev(0, { event: 'dismissed', actor: 'user:u1' }), ev(5, { event: 'snoozed', actor: 'user:u1' }), ev(9)], cursor: null });
+    let m = await mount(h(HealthHistory, { fleetId: 'f', agentId: 'a' }));
+    await flush();
+    expect(api.actors).toHaveBeenCalledWith('f', ev(5).at);
+    expect(m.text()).toContain('Dismissed by R Haque');
+    m.root.unmount();
+    api.actors.mockClear();
+    api.history.mockResolvedValue({ events: [ev(0), ev(1, { event: 'resolved' })], cursor: null });
+    m = await mount(h(HealthHistory, { fleetId: 'f', agentId: 'a' }));
+    expect(api.actors).not.toHaveBeenCalled();
     m.root.unmount();
   });
 

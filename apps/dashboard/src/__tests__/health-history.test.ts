@@ -42,6 +42,8 @@ describe('health history', () => {
     const diagnosis = { reports: [{ agentId: 'a', findings: [{ detector: 'review_tool_loops', status: 'open' }], clear: [{ detector: 'review_bad_endings', note: null }], notMeasured: [{ detector: 'review_model_change', code: 'x', reason: 'x' }] }] } as unknown as FleetDiagnosis;
     const [today, history] = healthReportSheets(diagnosis, [ev({ event: 'snoozed', actor: 'user:u1' }), ev({ agentId: '=HYPERLINK("x")' })], actions, (iso) => iso.slice(0, 10));
     expect(today.rows).toEqual([['a', 'Repeating the same call', 'Problem'], ['a', 'Runs ending badly', 'Passed'], ['a', 'Model changed', 'Needs more data']]);
+    const statuses = (status: string) => healthReportSheets({ reports: [{ agentId: 'a', findings: [{ detector: 'review_tool_loops', status }], clear: [], notMeasured: [] }] } as unknown as FleetDiagnosis, [], [], (x) => x)[0].rows[0][2];
+    expect(['snoozed', 'dismissed', 'reported_implemented', 'resolved', 'some_new_state'].map(statuses)).toEqual(['Snoozed', 'Dismissed', 'Marked fixed', 'Stopped happening', 'some new state']);
     expect(history.header).toEqual(['When', 'Agent', 'Check', 'What happened', 'By']);
     expect(history.rows[0]).toEqual(['2026-11-04', 'a', 'Repeating the same call', 'Snoozed', 'R Haque']);
     // An agent id that looks like a formula stays text: the workbook writes text cells as text.

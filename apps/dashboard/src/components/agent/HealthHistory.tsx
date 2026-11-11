@@ -19,6 +19,8 @@ const SHOWN = 10;
  */
 export function HealthHistory({ fleetId, agentId, authKey, preview }: { fleetId: string; agentId: string; authKey?: string; preview?: HealthHistoryEvent[] }) {
   const [events, setEvents] = useState<HealthHistoryEvent[] | null>(preview ?? null);
+  // More than one page in the window: the list says there's more without a count.
+  const [more, setMore] = useState(false);
   const [actions, setActions] = useState<ControlActor[]>([]);
 
   useEffect(() => {
@@ -26,7 +28,7 @@ export function HealthHistory({ fleetId, agentId, authKey, preview }: { fleetId:
     let live = true;
     setEvents(null);
     healthHistory(fleetId, { ...historyDays(DAYS), agentId }, authKey).then(
-      (page) => { if (live) setEvents(page?.events ?? []); },
+      (page) => { if (live) { setEvents(page?.events ?? []); setMore(!!page?.cursor); } },
       () => { if (live) setEvents([]); },
     );
     return () => { live = false; };
@@ -51,7 +53,11 @@ export function HealthHistory({ fleetId, agentId, authKey, preview }: { fleetId:
           </li>
         ))}
       </ul>
-      {events.length > SHOWN && <p className="wr-agent-cap" style={{ margin: '8px 0 0' }}>{events.length - SHOWN} more in the report on Performance.</p>}
+      {(events.length > SHOWN || more) && (
+        <p className="wr-agent-cap" style={{ margin: '8px 0 0' }}>
+          {more ? 'More' : `${events.length - SHOWN} more`} in the health report: Download report on Performance.
+        </p>
+      )}
     </Panel>
   );
 }
