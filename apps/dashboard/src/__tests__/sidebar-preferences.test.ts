@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // The sidebar shows theme, text size and sign out in the open (no ⋯ menu),
-// and every Text size control on the page follows a change made in another.
+// and any other Text size control on the page follows a change.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement as h } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -44,15 +44,15 @@ describe('sidebar preferences', () => {
     expect(el.textContent).toContain('2 invites');
   });
 
-  it('applies a text size at once, and the Settings control follows it', async () => {
-    const side = await mount(h(TextSizeControl, { compact: true }));
-    const settings = await mount(h(TextSizeControl));
-    expect(checked(radio(settings, 'Text size'))).toBe('Default');
+  it('applies a text size at once, and another copy follows it', async () => {
+    const side = await mount(h(TextSizeControl));
+    const other = await mount(h(TextSizeControl));
+    expect(checked(radio(other, 'Text size'))).toBe('A');
     const larger = [...radio(side, 'Text size')!.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((b) => b.textContent === 'A++')!;
     await act(async () => { larger.click(); });
     expect(document.documentElement.getAttribute('data-wr-text')).toBe('xl');
     expect(localStorage.getItem('wr_text')).toBe('xl');
-    expect(checked(radio(settings, 'Text size'))).toBe('Larger');
+    expect(checked(radio(other, 'Text size'))).toBe('A++');
     expect(checked(radio(side, 'Text size'))).toBe('A++');
   });
 });
@@ -61,13 +61,13 @@ describe('text size without browser storage', () => {
   it('keeps showing the size that was applied when storage refuses to save it', async () => {
     const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked'); });
     const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked'); });
-    const side = await mount(h(TextSizeControl, { compact: true }));
-    const settings = await mount(h(TextSizeControl));
+    const side = await mount(h(TextSizeControl));
+    const other = await mount(h(TextSizeControl));
     const large = [...radio(side, 'Text size')!.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((b) => b.textContent === 'A+')!;
     await act(async () => { large.click(); });
     expect(document.documentElement.getAttribute('data-wr-text')).toBe('lg');
     expect(checked(radio(side, 'Text size'))).toBe('A+');
-    expect(checked(radio(settings, 'Text size'))).toBe('Large');
+    expect(checked(radio(other, 'Text size'))).toBe('A+');
     set.mockRestore();
     get.mockRestore();
   });

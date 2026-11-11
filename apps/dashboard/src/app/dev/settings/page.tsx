@@ -9,7 +9,7 @@ export const metadata = { title: 'Settings preview' };
 
 const DAY = 86_400_000;
 
-/** ?plan=free | grace | past-due (Free-tier mockups S7, S7b, S11), ?golive=busy | refused (S21). */
+/** ?plan=free | grace | past-due (Free-tier mockups S7, S7b, S11) | paying (settled: plan cards folded), ?golive=busy | refused (S21). */
 function samplePlan(plan: unknown): Entitlement {
   const sub = (status: string, lapsedAt: string | null = null) => ({
     plan: 'starter', status, planOverride: null, stripeCustomerId: 'cus_preview', stripeSubscriptionId: 'sub_preview',
@@ -22,6 +22,7 @@ function samplePlan(plan: unknown): Entitlement {
   if (plan === 'free') return paid('free', { planName: 'Free', trialEndsAt: new Date(Date.now() - 60_000).toISOString(), usage: { fleets: 1, agents: 0 } });
   if (plan === 'grace') return paid('starter', { planName: 'Starter', subscription: sub('canceled', new Date(Date.now() - 3 * DAY).toISOString()), graceEndsAt: new Date(Date.now() + 11 * DAY).toISOString() });
   if (plan === 'past-due') return paid('starter', { planName: 'Starter', subscription: sub('past_due') });
+  if (plan === 'paying') return paid('starter', { planName: 'Starter', subscription: sub('active'), usage: { fleets: 1, agents: 7 } });
   return {
     plan: 'starter', planName: 'Starter', limits: limitsFor('starter'), subscription: null,
     trialEndsAt: new Date(Date.now() + 20 * 86_400_000).toISOString(), onTrial: true,

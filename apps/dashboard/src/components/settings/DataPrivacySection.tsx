@@ -81,7 +81,7 @@ export function DataPrivacySection({ preview }: { preview?: DataSettings } = {})
     if (!loadFailed) return null;
     const fleet = fleetId;
     return (
-      <SettingsCard id="data-privacy" title="Data and privacy">
+      <SettingsCard id="data-privacy" anchor title="Data and privacy">
         <LoadFailed what="data and privacy settings" busy={reloading} onRetry={() => { setReloading(true); void load(fleet).finally(() => setReloading(false)); }} />
       </SettingsCard>
     );
@@ -127,7 +127,7 @@ export function DataPrivacySection({ preview }: { preview?: DataSettings } = {})
   };
 
   return (
-    <SettingsCard id="data-privacy" title="Data and privacy" sub="What WhiteRoom keeps for this fleet, and for how long. Credentials are always removed first.">
+    <SettingsCard id="data-privacy" anchor title="Data and privacy" sub="What WhiteRoom keeps for this fleet, and for how long. Credentials are always removed first.">
       <Row
         title="Save agents’ progress"
         text={settings.handover_persistence

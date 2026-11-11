@@ -10,7 +10,10 @@ describe('agents against the plan (M16, soft limit)', () => {
   it('counts against the included agents, and only notes going over', () => {
     expect(agentsIncluded('starter', 2)).toEqual({ value: '2 of 3 included', over: false });
     expect(agentsIncluded('starter', 3)).toEqual({ value: '3 of 3 included', over: false });
-    expect(agentsIncluded('pro', 9)).toEqual({ value: '9 of 7 included', over: true });
+    // Over: the count alone, and a note that nothing stops.
+    expect(agentsIncluded('pro', 9)).toEqual({ value: '9', over: true, note: '7 included in Pro. All 9 keep running.' });
+    expect(agentsIncluded('starter', 7)?.note).toBe('3 included in Starter. All 7 keep running.');
+    expect(agentsIncluded('starter', null)).toEqual({ value: 'Unavailable', over: false });
   });
 
   it('has no included count on Enterprise or an ended free period', () => {

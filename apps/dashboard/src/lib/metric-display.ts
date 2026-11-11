@@ -5,15 +5,17 @@ import { PLANS, shareCents, type PlanId } from './plans';
 
 /**
  * The Settings Agents line (M16): the live count against the plan's included
- * agents. Soft: going over stops nothing, so `over` only adds the
- * talk-to-us note. Null on a plan that includes no number (Enterprise, and
+ * agents. Soft: going over stops nothing, so over the count shows alone
+ * with a note saying so, and the talk-to-us link. Null on a plan that includes no number (Enterprise, and
  * an ended free period, which keeps its hard zero).
  */
-export function agentsIncluded(plan: PlanId, agents: number | null): { value: string; over: boolean } | null {
+export function agentsIncluded(plan: PlanId, agents: number | null): { value: string; over: boolean; note?: string } | null {
   const included = PLANS[plan].limits.includedAgents;
   if (included === null) return null;
   if (agents === null) return { value: 'Unavailable', over: false };
-  return { value: `${agents} of ${included} included`, over: agents > included };
+  // Over: the count alone, and a note that says nothing stops ("3 included in Starter. All 7 keep running.").
+  if (agents > included) return { value: String(agents), over: true, note: `${included} included in ${PLANS[plan].name}. All ${agents} keep running.` };
+  return { value: `${agents} of ${included} included`, over: false };
 }
 
 /** "$12.34". */

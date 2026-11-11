@@ -13,7 +13,8 @@ vi.mock('@/auth', () => ({ auth: async () => null, signIn: vi.fn(), signOut: vi.
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null }) }));
 vi.mock('@/lib/billing', () => ({ openBillingPortal: vi.fn(), startCheckout: vi.fn() }));
 vi.mock('@/lib/plan-savings', () => ({ getMonthSavings: vi.fn(async () => null) }));
-vi.mock('@/hooks/useFleetAuth', () => ({ FleetAuthProvider: ({ children }: { children: React.ReactNode }) => children, useFleetAuth: () => ({ status: 'authenticated', fleetId: null }) }));
+vi.mock('@/hooks/useFleetAuth', () => ({ FleetAuthProvider: ({ children }: { children: React.ReactNode }) => children, useFleetAuth: () => ({ status: 'authenticated', fleetId: fleet }) }));
+let fleet: string | null = null;
 // The viewer's zone as after hydration; null is the server render.
 let zone: string | null = 'UTC';
 vi.mock('@/hooks/useViewerZone', () => ({ useViewerZone: () => zone, useSavedViewerZone: () => null }));
@@ -25,12 +26,13 @@ const { limitsFor } = await import('@/lib/plans');
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 type ViewOpts = { plan?: 'starter' | 'pro' | 'suspended' | 'enterprise'; onTrial?: boolean; purchasable?: Array<'starter' | 'pro'>; comped?: boolean; graceEndsAt?: string | null };
 const comp = { plan: 'none', status: 'active', planOverride: 'pro', stripeCustomerId: 'pending_u', stripeSubscriptionId: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, lapsedAt: null };
-const view = (agents: number, { plan = 'starter', onTrial = true, purchasable = ['starter', 'pro'], comped = false, freeDays = 30, graceEndsAt = null }: ViewOpts & { freeDays?: number } = {}) => text(renderToStaticMarkup(h(SettingsView, {
+const markup = (agents: number, { plan = 'starter', onTrial = true, purchasable = ['starter', 'pro'], comped = false, freeDays = 30, graceEndsAt = null, noSamples = false }: ViewOpts & { freeDays?: number; noSamples?: boolean } = {}) => renderToStaticMarkup(h(SettingsView, {
   closing: null, billingResult: null, purchasablePlans: purchasable,
   account: { id: 'u', email: 'a@example.test', name: 'A', image: null, timezone: null, emailVerified: true, methods: [], pendingEmailChange: null, fleetCount: 1 },
   entitlement: { plan, planName: plan, limits: limitsFor(plan), subscription: comped ? comp : null, trialEndsAt: new Date(Date.now() + (onTrial ? freeDays : -30) * 86_400_000).toISOString(), onTrial, graceEndsAt, usage: { fleets: 1, agents } },
-  samples: { audit: { fleetId: 'f', mode: 'sequenced', headSeq: 2045, verifiedThroughSeq: 939, verifiedAt: new Date().toISOString(), prunedBeforeTracking: false, legacyEvents: 0, gaps: { count: 0, recent: [] }, anchoring: { enabled: false } } },
-})));
+  samples: noSamples ? undefined : { audit: { fleetId: 'f', mode: 'sequenced', headSeq: 2045, verifiedThroughSeq: 939, verifiedAt: new Date().toISOString(), prunedBeforeTracking: false, legacyEvents: 0, gaps: { count: 0, recent: [] }, anchoring: { enabled: false } } },
+}));
+const view = (agents: number, opts: ViewOpts & { freeDays?: number } = {}) => text(markup(agents, opts));
 
 describe('Settings as in the mockup', () => {
   it('has the lead line, the card sub-lines and the Audit trail card', () => {
@@ -54,9 +56,9 @@ describe('Settings as in the mockup', () => {
 describe('Settings plan: savings share and soft agent counts', () => {
   it('counts agents against what the plan includes, and nothing stops over it', () => {
     expect(view(2)).toContain('Agents 2 of 3 included');
-    expect(view(2)).not.toContain('Nothing stops');
+    expect(view(2)).not.toContain('keep running');
     const over = view(9, { plan: 'pro', onTrial: false });
-    expect(over).toContain('Agents 9 of 7 included Nothing stops · Talk to us about larger fleets');
+    expect(over).toContain('Agents 9 7 included in Pro. All 9 keep running. Talk to us about larger fleets');
     // Agents are never "at the limit".
     expect(over).not.toContain('At the limit');
     expect(over).not.toMatch(/over the Pro limit/);
@@ -253,5 +255,53 @@ describe('Settings plan: Free', () => {
 
   it('a paid plan gets no Go live', () => {
     expect(view(1, { plan: 'pro', onTrial: false })).not.toContain('Go live');
+  });
+});
+
+describe('Settings: jump links, Text size, and the plan cards folding', () => {
+  const jumps = (html: string) => [...html.matchAll(/<nav aria-label="Settings sections"[^]*?<\/nav>/g)][0][0].match(/href="#([^"]+)"/g)!.map((m) => m.slice(7, -1));
+  it('links every section when a fleet is signed in', () => {
+    fleet = 'f';
+    try {
+      expect(jumps(markup(1, { noSamples: true }))).toEqual(['settings-profile', 'plan', 'data-privacy', 'smaller-context', 'alerts', 'audit-integrity', 'settings-email-address', 'delete-account']);
+    } finally { fleet = null; }
+  });
+
+  it('with no fleet, links only the sections on the page, each to exactly one target', () => {
+    const html = markup(1, { noSamples: true });
+    const hrefs = jumps(html);
+    expect(hrefs).toEqual(['settings-profile', 'plan', 'settings-email-address', 'delete-account']);
+    expect(hrefs.map((id) => [id, (html.match(new RegExp(`id="${id}"`, 'g')) ?? []).length])).toEqual(hrefs.map((id) => [id, 1]));
+  });
+
+  it('has no Text size in Profile (it is in the sidebar)', () => {
+    expect(markup(1)).not.toContain('aria-label="Text size"');
+  });
+
+  const folded = (html: string) => /<details>\s*<summary[^>]*>Compare plans/.test(html);
+  const unfolded = (html: string) => /<details open="">\s*<summary[^>]*>Compare plans/.test(html);
+  it('folds the plan cards only for a settled account', () => {
+    // Settled: paying, comped, Enterprise.
+    expect(folded(markup(1, { plan: 'pro', onTrial: false }))).toBe(true);
+    expect(folded(markup(1, { plan: 'pro', onTrial: false, comped: true }))).toBe(true);
+    expect(folded(markup(1, { plan: 'enterprise', onTrial: false }))).toBe(true);
+    // Open where a card's button is the next step: trial, suspended, a lapsed plan in its grace.
+    expect(unfolded(markup(1))).toBe(true);
+    expect(unfolded(markup(1, { plan: 'suspended', onTrial: false }))).toBe(true);
+    expect(unfolded(markup(1, { plan: 'starter', onTrial: false, graceEndsAt: new Date(Date.now() + 5 * 86_400_000).toISOString() }))).toBe(true);
+    // Folded or not, the cards and their scroll target are on the page.
+    expect(markup(1, { plan: 'pro', onTrial: false })).toContain('id="settings-plan-choices"');
+  });
+
+  it('defines settled once: not Free, suspended, on trial, failed or cancelled', async () => {
+    const { planSettled } = await import('@/lib/plan-banner-shared');
+    const ok = { plan: 'pro', onTrial: false, cardFailed: false, cancelled: false };
+    expect(planSettled(ok)).toBe(true);
+    expect(planSettled({ ...ok, plan: 'enterprise' })).toBe(true);
+    expect(planSettled({ ...ok, plan: 'free' })).toBe(false);
+    expect(planSettled({ ...ok, plan: 'suspended' })).toBe(false);
+    expect(planSettled({ ...ok, onTrial: true })).toBe(false);
+    expect(planSettled({ ...ok, cardFailed: true })).toBe(false);
+    expect(planSettled({ ...ok, cancelled: true })).toBe(false);
   });
 });
