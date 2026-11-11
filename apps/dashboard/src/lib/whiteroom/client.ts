@@ -922,8 +922,15 @@ export function getRunEvents(
 
 // -- Alerts (P2.7) --
 
-/** Where rule alerts go. `teams` is absent from engines without Teams alerts (engine E5). */
-export interface AlertsStatus { slack: { ending: string } | null; teams?: { ending: string } | null }
+/** How often health check alerts arrive (Agent Health item 1). */
+export type HealthAlertFrequency = 'off' | 'weekly' | 'daily' | 'live';
+export interface HealthAlertSettings { frequency: HealthAlertFrequency; tz: string }
+
+/**
+ * Where rule alerts go. `teams` is absent from engines without Teams alerts
+ * (engine E5); `health` from engines without health check alerts.
+ */
+export interface AlertsStatus { slack: { ending: string } | null; teams?: { ending: string } | null; health?: HealthAlertSettings }
 export type AlertChannel = 'slack' | 'teams';
 
 /**
@@ -947,6 +954,8 @@ async function alertsAction<T>(body: Record<string, unknown>): Promise<T | null>
 export const alertsGet = (fleetId: string) => alertsAction<AlertsStatus>({ action: 'alerts_get', fleet_id: fleetId });
 export const alertsSetSlack = (fleetId: string, url: string | null) => alertsAction<AlertsStatus>({ action: 'alerts_set_slack', fleet_id: fleetId, slack_url: url });
 export const alertsSetTeams = (fleetId: string, url: string | null) => alertsAction<AlertsStatus>({ action: 'alerts_set_teams', fleet_id: fleetId, teams_url: url });
+/** `tz` is the zone a summary's morning is in: the browser's, when the owner saves. */
+export const alertsSetHealth = (fleetId: string, frequency: HealthAlertFrequency, tz: string) => alertsAction<AlertsStatus>({ action: 'alerts_set_health', fleet_id: fleetId, frequency, tz });
 export const alertsTest = (fleetId: string, channel: AlertChannel) => alertsAction<{ success: boolean }>({ action: 'alerts_test', fleet_id: fleetId, channel });
 
 /** What WhiteRoom keeps for a fleet (Settings › Data and privacy). */

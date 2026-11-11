@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button, FONT_MONO } from '@whiteroom/ui';
 import { SettingsCard } from '@/components/settings/SettingsCard';
 import { LoadFailed } from '@/components/citadel/States';
-import { alertsGet, alertsSetSlack, alertsSetTeams, alertsTest, type AlertChannel, type AlertsStatus } from '@/lib/whiteroom/client';
+import { alertsGet, alertsSetHealth, alertsSetSlack, alertsSetTeams, alertsTest, type AlertChannel, type AlertsStatus, type HealthAlertFrequency } from '@/lib/whiteroom/client';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 
 const CHANNELS: Record<AlertChannel, { name: string; short: string; label: string; placeholder: string; set: typeof alertsSetSlack }> = {
@@ -62,8 +62,60 @@ export function AlertsSection({ preview }: { preview?: AlertsStatus } = {}) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {/* Each row takes only its own channel from a reply, so a late Slack reply can't undo a newer Teams change. */}
         {channels.map((c) => <ChannelRow key={`${fleetId}:${c}`} fleetId={fleetId} channel={c} ending={status[c]?.ending ?? null} onStatus={(s) => setStatus((prev) => (prev ? { ...prev, [c]: s[c] } : s))} preview={!!preview} />)}
+        {status.health && <HealthRow key={fleetId} fleetId={fleetId} frequency={status.health.frequency} onStatus={(s) => setStatus((prev) => (prev ? { ...prev, health: s.health } : s))} preview={!!preview} />}
       </div>
     </SettingsCard>
+  );
+}
+
+export const HEALTH_FREQUENCY_OPTIONS: Array<{ value: HealthAlertFrequency; label: string }> = [
+  { value: 'daily', label: 'Once a day' },
+  { value: 'weekly', label: 'Once a week (Mondays)' },
+  { value: 'live', label: 'As they happen' },
+  { value: 'off', label: 'Off' },
+];
+
+/** The browser's time zone: daily and weekly messages arrive at 9am there. */
+const browserZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { return 'UTC'; } };
+
+/**
+ * Health check alerts (Agent Health item 1): how often new health check
+ * problems go to the channels above. Shown only on engines that have them.
+ * Saved as soon as it changes, with the browser's zone for the 9am message.
+ */
+function HealthRow({ fleetId, frequency, onStatus, preview = false }: { fleetId: string; frequency: HealthAlertFrequency; onStatus: (s: AlertsStatus) => void; preview?: boolean }) {
+  const [value, setValue] = useState(frequency);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const id = `health-alerts-${fleetId}`;
+
+  async function change(next: HealthAlertFrequency) {
+    const before = value;
+    setValue(next);
+    setNote(null);
+    if (preview) { setNote({ ok: true, text: 'Preview: nothing was saved.' }); return; }
+    setBusy(true);
+    try {
+      const s = await alertsSetHealth(fleetId, next, browserZone());
+      if (s) onStatus(s);
+      setNote({ ok: true, text: 'Saved.' });
+    } catch (e) {
+      setValue(before);
+      setNote({ ok: false, text: e instanceof Error ? e.message : 'That didn’t save. Try again.' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="wr-srow" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+      <label htmlFor={id} style={{ fontWeight: 600 }}>Health check alerts</label>
+      <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>New problems the health checks find, sent to the channels above. Daily and weekly messages arrive at 9am your time, and only when there is something new.</p>
+      <select id={id} className="wr-input" style={{ maxWidth: 320 }} value={value} disabled={busy} onChange={(e) => void change(e.target.value as HealthAlertFrequency)}>
+        {HEALTH_FREQUENCY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      {note && <p role="status" style={{ margin: 0, fontSize: 'var(--fs-sm)', color: note.ok ? 'var(--ok)' : 'var(--bad)' }}>{note.text}</p>}
+    </div>
   );
 }
 

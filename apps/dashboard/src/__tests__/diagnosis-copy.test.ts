@@ -13,6 +13,8 @@ const MEASURES: Record<DiagnosisDetectorId, DiagnosisMeasures> = {
   review_tool_errors: { toolName: 'fetch_page', toolErrors: 28, totalErrors: 28, totalResults: 100, errorRatePct: 28 },
   review_tool_silence: { toolName: 'persist_lead', baselineCallsPerDay: 11.4, recentCallsPerDay: 0, dropPct: 100, lastCalled: '2026-09-15', recentCalls: 412, silentTools: 2 },
   review_provider_failures: { totalRequests: 240, upstreamErrors: 31, failureRatePct: 13, model: 'claude-haiku-4-5', otherCohorts: 1 },
+  review_bad_endings: { badRuns: 4, finishedRuns: 12, badPct: 33, endedFailed: 3, endedBlocked: 1 },
+  review_model_change: { change: 'served', requestedModel: 'claude-sonnet-4-5', newModel: 'claude-sonnet-4-5-20261015', previousModel: 'claude-sonnet-4-5-20250929', since: '2026-11-04', recentCalls: 90, sharePct: 90 },
 };
 
 /** Every number in the text, normalised (thousands separators dropped). */
@@ -124,6 +126,24 @@ describe('cost, limitations, reasons, how-to', () => {
     expect(text('review_tool_silence', { ...MEASURES.review_tool_silence, recentCalls: 1 })).toContain('(1 call)');
     expect(text('review_provider_failures', { ...MEASURES.review_provider_failures, otherCohorts: 1 })).toContain('1 other model is also failing.');
     expect(text('review_provider_failures', { ...MEASURES.review_provider_failures, otherCohorts: 2 })).toContain('2 other models are also failing.');
+  });
+
+  it('bad endings name what ended the runs', () => {
+    const text = (m: DiagnosisMeasures) => sentenceText(findingSentence('review_bad_endings', m));
+    expect(text(MEASURES.review_bad_endings)).toBe('4 of 12 runs this week ended on a failed or blocked call, and the agent didn’t carry on after. The work in those runs may not have finished.');
+    expect(text({ ...MEASURES.review_bad_endings, endedBlocked: 0 })).toContain('ended on a failed call');
+    expect(text({ ...MEASURES.review_bad_endings, endedFailed: 0 })).toContain('ended on a blocked call');
+    expect(howtoParagraphs('bad_endings', {})).toHaveLength(2);
+  });
+
+  it('model changed says whether the provider or the agent changed it', () => {
+    expect(sentenceText(findingSentence('review_model_change', MEASURES.review_model_change)))
+      .toBe('claude-sonnet-4-5 is now answered by claude-sonnet-4-5-20261015 (was claude-sonnet-4-5-20250929) since 2026-11-04, for 90% of its calls this week. The provider changed the model behind the name, so its results may change.');
+    expect(sentenceText(findingSentence('review_model_change', { change: 'requested', requestedModel: 'opus', newModel: 'opus', previousModel: 'sonnet', sharePct: 80 })))
+      .toBe('Now asks for opus (was sonnet), for 80% of its calls this week. Its results may change with the model.');
+    expect(notMeasuredShort('model_unknown', 'x')).toBe('the provider doesn’t say which model answered');
+    expect(notMeasuredShort('few_baseline_calls', 'Needs 20 completed calls in days 8–28; has 4')).toBe('needs 16 more calls from before this week');
+    expect(howtoParagraphs('model_change', {})).toHaveLength(2);
   });
 
   it('the churn how-to only says work was done twice when it was', () => {

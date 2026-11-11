@@ -13,7 +13,7 @@ import { Disclosure } from '@/app/(citadel)/performance/_components/primitives';
 import { flaggedRunCount, UnusualDetails, type FlaggedRuns } from './UnusualBehaviour';
 
 // The two sources' own definitions, plus the one WhiteRoom word their detail uses.
-const HINT = `${HELP.unusualBehaviour} Streamed calls can’t be checked for repeats. Not tracked yet: ${untrackedSignals().join(', ').toLowerCase()}. ${HELP.agentHealthCheck} ${WATCH_DEFINITION}`;
+const HINT = `${HELP.unusualBehaviour} Not tracked yet: ${untrackedSignals().join(', ').toLowerCase()}. ${HELP.agentHealthCheck} ${WATCH_DEFINITION}`;
 
 const TONE: Record<HealthRow['tone'], string> = { ok: 'var(--tx)', warn: 'var(--warn-tx)', muted: 'var(--tx2)' };
 

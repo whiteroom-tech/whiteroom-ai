@@ -32,17 +32,18 @@ const FLAGGED = [
   flagged('lead-agent', 0, [{ signal: 'repeating_call', tool: 'fetch_page', calls: 6 }]),
   flagged('lead-agent', 2, [{ signal: 'error_streak', calls: 4 }]),
   flagged('lead-agent', 3, [{ signal: 'repeating_call', tool: 'search', calls: 5 }]),
-  flagged('scout-agent', 1, [{ signal: 'error_streak', calls: 3 }]),
+  flagged('scout-agent', 1, [{ signal: 'error_streak', calls: 3 }, { signal: 'ended_badly', how: 'failed' }]),
 ];
 
 // Health check results: one quiet agent, and one with an open finding.
 const report = (agentId: string, findings: DiagnosisFinding[]): FleetDiagnosis['reports'][number] => ({
   schema: 'diagnosis.v1', agentId, window: { from: '', to: '', days: 7, calls: 180, watches: 12 }, findings,
-  clear: [{ detector: 'review_handover_churn', note: null }, { detector: 'review_tool_loops', note: null }, { detector: 'review_tool_errors', note: null }].filter((c) => !findings.some((f) => f.detector === c.detector)) as FleetDiagnosis['reports'][number]['clear'],
+  clear: [{ detector: 'review_handover_churn', note: null }, { detector: 'review_tool_loops', note: null }, { detector: 'review_tool_errors', note: null }, { detector: 'review_bad_endings', note: null }].filter((c) => !findings.some((f) => f.detector === c.detector)) as FleetDiagnosis['reports'][number]['clear'],
   notMeasured: [
     { detector: 'review_provider_failures', code: 'few_requests', reason: 'Busiest model had 60 calls in 24 hours' },
     { detector: 'review_spend_outliers', code: 'short_history', reason: 'Needs 14 days of history; has 7' },
     { detector: 'review_tool_silence', code: 'short_history', reason: 'Needs 14 days of history; has 8' },
+    { detector: 'review_model_change', code: 'few_baseline_calls', reason: 'Needs 20 completed calls in days 8–28; has 4' },
   ],
 });
 const HANDOVER_FINDING = {

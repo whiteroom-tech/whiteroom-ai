@@ -15,6 +15,8 @@ export const DIAGNOSIS_DETECTORS: DiagnosisDetectorId[] = [
   'review_tool_errors',
   'review_tool_silence',
   'review_provider_failures',
+  'review_bad_endings',
+  'review_model_change',
 ];
 
 export function isDiagnosisDetector(detector: string): detector is DiagnosisDetectorId {
@@ -28,6 +30,8 @@ export const TITLES: Record<DiagnosisDetectorId, string> = {
   review_tool_errors: 'A tool keeps failing',
   review_tool_silence: 'Stopped using a key tool',
   review_provider_failures: 'Model provider errors',
+  review_bad_endings: 'Runs ending badly',
+  review_model_change: 'Model changed',
 };
 
 /** Days a Diagnosis snooze lasts. Sent with every snooze, so the copy and the engine agree. */
@@ -100,6 +104,16 @@ export function findingSentence(detector: DiagnosisDetectorId, m: DiagnosisMeasu
       }
       return parts;
     }
+    case 'review_bad_endings': {
+      const how = Number(m.endedBlocked) > 0 && Number(m.endedFailed) > 0 ? 'a failed or blocked call' : Number(m.endedBlocked) > 0 ? 'a blocked call' : 'a failed call';
+      return [v(m.badRuns), t(' of '), ...count(m.finishedRuns, 'run', 'runs'), t(` this week ended on ${how}, and the agent didn’t carry on after. The work in those runs may not have finished.`)];
+    }
+    case 'review_model_change': {
+      const since = has(m, 'since') ? [t(' since '), v(m.since)] : [];
+      return m.change === 'requested'
+        ? [t('Now asks for '), code(m.newModel), ...(has(m, 'previousModel') ? [t(' (was '), code(m.previousModel), t(')')] : []), ...since, t(', for '), v(m.sharePct), t('% of its calls this week. Its results may change with the model.')]
+        : [code(m.requestedModel), t(' is now answered by '), code(m.newModel), ...(has(m, 'previousModel') ? [t(' (was '), code(m.previousModel), t(')')] : []), ...since, t(', for '), v(m.sharePct), t('% of its calls this week. The provider changed the model behind the name, so its results may change.')];
+    }
   }
 }
 
@@ -146,6 +160,8 @@ export function notMeasuredShort(code: string, reason: string): string {
     case 'few_results': return left(/has (\d+)/, 20, (m) => `needs ${m} more tool ${plural(m, 'result')}`);
     case 'not_captured': return 'nothing recorded yet';
     case 'few_measured_calls': return left(/has (\d+)/, 50, (m) => `needs ${m} more fully recorded ${plural(m, 'call')} this week`);
+    case 'few_baseline_calls': return left(/has (\d+)/, 20, (m) => `needs ${m} more ${plural(m, 'call')} from before this week`);
+    case 'model_unknown': return 'the provider doesn\u2019t say which model answered';
     case 'few_requests': return left(/had (\d+)/, 100, (m) => `needs ${m} more ${plural(m, 'call')} to one model in a day`);
     case 'thin_evidence': return 'too few calls show it yet';
     case 'first_check_pending': return 'first check runs overnight';
@@ -176,6 +192,16 @@ export function howtoParagraphs(howtoId: string, m: DiagnosisMeasures): string[]
       ];
     case 'provider_failures':
       return ['Open the calls to see which errors came back. Usually the fix is to wait and try again, or switch to another model until the provider recovers.'];
+    case 'bad_endings':
+      return [
+        'Open the calls to see the last call of each run and what went wrong.',
+        'Common fixes: have the agent retry a failed call before it stops, and check whether a rule blocked work it needed to finish.',
+      ];
+    case 'model_change':
+      return [
+        'Check a few recent results from this agent against older ones.',
+        'To keep the same model, ask for a dated model name (for example one ending in a date) instead of a name that moves to newer versions.',
+      ];
     default:
       return [];
   }

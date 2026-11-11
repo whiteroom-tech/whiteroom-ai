@@ -241,9 +241,11 @@ export function ignoresRuleActivity(runs: Pick<RunSummary, 'wouldActCalls'>[]): 
   return runs.length > 0 && runs.every((r) => r.wouldActCalls === undefined);
 }
 
-/** One flag in words: "Repeating the same call: fetch_page ×6", "4 failed calls in a row". */
+/** One flag in words: "Repeating the same call: fetch_page ×6", "4 failed calls in a row", "Ended on a failed call". */
 export function flagText(f: RunFlag): string {
-  return f.signal === 'repeating_call' ? `Repeating the same call: ${f.tool} ×${f.calls}` : `${f.calls} failed calls in a row`;
+  if (f.signal === 'repeating_call') return `Repeating the same call: ${f.tool} ×${f.calls}`;
+  if (f.signal === 'ended_badly') return `Ended on a ${f.how} call`;
+  return `${f.calls} failed calls in a row`;
 }
 
 /**
@@ -690,10 +692,11 @@ export function exportDays(span: Exclude<ExportSpan, 'shown'>, now: number = Dat
 
 // ── Unusual behaviour (P2.5) ────────────────────────────────────────
 
-/** The five signals (README › Screen 4). Only the first two are measured today; the rest need call data the engine doesn't record yet. */
+/** The signals (README › Screen 4). The unmeasured ones need call data the engine doesn't record yet. */
 export const UNUSUAL_SIGNALS = [
   { key: 'repeating_call', label: 'Repeating the same call', measured: true },
   { key: 'error_streak', label: 'Failed calls in a row', measured: true },
+  { key: 'ended_badly', label: 'Ended on a failed or blocked call', measured: true },
   { key: 'new_tool', label: 'A tool it hasn’t used before', measured: false },
   { key: 'token_burst', label: 'A burst of tokens', measured: false },
   { key: 'workaround', label: 'A workaround after a block', measured: false },

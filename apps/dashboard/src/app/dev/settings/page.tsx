@@ -53,7 +53,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
       samples={{
         data: { handover_persistence: true, content_capture: true, personal_data: 'keep', handover_max_age_hours: 72, handover_carry_forward_effective: 'same_run' },
         smaller: { compression_mode: 'dry_run', days: 14, cleared: [], items: { C1: { observed: 681, wouldChange: 0 }, C2: { observed: 0, wouldChange: 0 } } },
-        alerts: { slack: { ending: 'x9Qa' }, teams: null },
+        alerts: { slack: { ending: 'x9Qa' }, teams: null, health: { frequency: 'daily', tz: 'UTC' } },
         goLive,
         audit: { fleetId: 'acme-claims-prod', mode: 'sequenced', headSeq: 2045, verifiedThroughSeq: 939, verifiedAt: new Date(Date.now() - 15 * 86_400_000).toISOString(), prunedBeforeTracking: true, legacyEvents: 0, gaps: { count: 0, recent: [] }, anchoring: { enabled: false } },
       }}
