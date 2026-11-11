@@ -155,9 +155,10 @@ export const LIVE_LANDING = `${ROUTES.fleetKey}?live=1#point`;
 
 /**
  * A settled account has nothing to buy next: paying, comped, contracted
- * (Enterprise or an override), or subscribed inside its free period. Not Free,
- * not suspended, not on trial, no failed card (grace or past due), not
- * cancelled. Settings folds the plan cards away only then.
+ * (Enterprise or an override), or subscribed inside its free period (Stripe
+ * carries the free days over, and `onTrial` is false there). Not Free, not
+ * suspended, not on trial without a subscription, no failed card (grace or
+ * past due), not cancelled. Settings folds the plan cards away only then.
  */
 export function planSettled(s: { plan: string; onTrial: boolean; cardFailed: boolean; cancelled: boolean }): boolean {
   return s.plan !== 'free' && s.plan !== 'suspended' && !s.onTrial && !s.cardFailed && !s.cancelled;

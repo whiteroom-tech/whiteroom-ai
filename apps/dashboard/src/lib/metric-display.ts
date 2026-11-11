@@ -6,8 +6,9 @@ import { PLANS, shareCents, type PlanId } from './plans';
 /**
  * The Settings Agents line (M16): the live count against the plan's included
  * agents. Soft: going over stops nothing, so over the count shows alone
- * with a note saying so, and the talk-to-us link. Null on a plan that includes no number (Enterprise, and
- * an ended free period, which keeps its hard zero).
+ * with a note saying so, and the talk-to-us link. Null on a plan that
+ * includes no number (Enterprise, and an ended free period, which keeps its
+ * hard zero).
  */
 export function agentsIncluded(plan: PlanId, agents: number | null): { value: string; over: boolean; note?: string } | null {
   const included = PLANS[plan].limits.includedAgents;
