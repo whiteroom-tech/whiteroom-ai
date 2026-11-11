@@ -12,7 +12,7 @@ const api = vi.hoisted(() => ({
   history: vi.fn(),
   download: vi.fn(),
   build: vi.fn((_s: unknown) => new Uint8Array([1])),
-  actors: vi.fn(async () => [] as unknown[]),
+  actors: vi.fn(async (_fleetId: string, _since?: string) => [] as unknown[]),
 }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({ ...(await orig<typeof import('@/lib/whiteroom/client')>()), healthHistory: api.history }));
 vi.mock('@/lib/xlsx', async (orig) => ({ ...(await orig<typeof import('@/lib/xlsx')>()), downloadWorkbook: api.download, buildWorkbook: api.build }));
