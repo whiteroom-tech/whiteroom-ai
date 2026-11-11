@@ -284,6 +284,18 @@ export function evidenceHeader(detector: string, calls: EvidenceCall[], measures
         rows: byTime.map((c) => [time(c), String(c.watchNumber ?? '—'), c.terminal == null ? '—' : callOutcomeLabel(String(c.terminal)) ?? String(c.terminal).replace(/_/g, ' ')]),
         note: 'Whether a job worked comes from your system, not from these calls.',
       };
+    case 'review_planted_instruction':
+      return {
+        kind: 'table', caption: 'Calls whose tool results looked like instructions, newest first', columns: ['Time', 'Run', 'Called'],
+        rows: byTime.map((c) => [time(c), String(c.watchNumber ?? '—'), list(c.requestedToolNames).join(', ') || '(none)']),
+        note: 'WhiteRoom doesn’t keep the text it read, only that it looked like an instruction.',
+      };
+    case 'review_done_after_failure':
+      return {
+        kind: 'table', caption: 'Final answers given right after a failed step, newest first', columns: ['Time', 'Run', 'Reported errors'],
+        rows: byTime.map((c) => [time(c), String(c.watchNumber ?? '—'), list(c.toolErrorNames).join(', ') || '—']),
+        note: 'WhiteRoom doesn’t keep the agent’s answer, only that it said the work was done.',
+      };
     case 'review_long_context':
       return {
         kind: 'table', caption: 'Calls with a failed or repeated step in long conversations', columns: ['Time', 'Run', 'Called', 'Reported errors'],

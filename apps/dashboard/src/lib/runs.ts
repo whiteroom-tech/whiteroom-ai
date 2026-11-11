@@ -246,6 +246,8 @@ export function flagText(f: RunFlag): string {
   if (f.signal === 'repeating_call') return `Repeating the same call: ${f.tool} ×${f.calls}`;
   if (f.signal === 'ended_badly') return `Ended on a ${f.how} call`;
   if (f.signal === 'workaround') return `Used a new tool after a block: ${f.tool}`;
+  if (f.signal === 'planted_instruction') return `Suspicious instruction in a result from ${f.tool}`;
+  if (f.signal === 'done_after_failure') return `Said done after ${f.tool} failed`;
   return `${f.calls} failed calls in a row`;
 }
 
@@ -704,6 +706,8 @@ export const UNUSUAL_SIGNALS = [
   { key: 'new_tool', label: 'A tool it hasn’t used before', measured: false },
   { key: 'token_burst', label: 'A burst of tokens', measured: false },
   { key: 'workaround', label: 'A workaround after a block', measured: true },
+  { key: 'planted_instruction', label: 'A suspicious instruction in a tool result', measured: true },
+  { key: 'done_after_failure', label: 'Said done after a failed step', measured: true },
 ] as const;
 
 /** Flagged runs that started on one of `days`, with that day's index: the one rule for "flagged this week". */

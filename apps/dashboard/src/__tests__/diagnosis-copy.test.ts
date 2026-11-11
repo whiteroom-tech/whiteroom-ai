@@ -18,6 +18,8 @@ const MEASURES: Record<DiagnosisDetectorId, DiagnosisMeasures> = {
   review_block_workaround: { workarounds: 2, blocksJudged: 3, toolName: 'post_webhook', ruleType: 'tool_list', tools: 1 },
   review_long_context: { longRatePct: 41, shortRatePct: 9, longFromTokens: 36000, longCalls: 60, shortCalls: 120 },
   review_job_failures: { failedJobs: 6, reportedJobs: 20, failurePct: 30 },
+  review_planted_instruction: { times: 2, toolName: 'read_email', tools: 1 },
+  review_done_after_failure: { times: 3, toolName: 'upload_file' },
 };
 
 /** Every number in the text, normalised (thousands separators dropped). */
@@ -40,6 +42,8 @@ describe('check names', () => {
       review_block_workaround: 'Tried another way after a block',
       review_long_context: 'More trouble on long tasks',
       review_job_failures: 'Jobs are failing',
+      review_planted_instruction: 'Suspicious instruction in a tool result',
+      review_done_after_failure: 'Said done after a failed step',
     });
   });
 });

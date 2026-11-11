@@ -20,6 +20,8 @@ export const DIAGNOSIS_DETECTORS: DiagnosisDetectorId[] = [
   'review_block_workaround',
   'review_long_context',
   'review_job_failures',
+  'review_planted_instruction',
+  'review_done_after_failure',
 ];
 
 export function isDiagnosisDetector(detector: string): detector is DiagnosisDetectorId {
@@ -38,6 +40,8 @@ export const TITLES: Record<DiagnosisDetectorId, string> = {
   review_block_workaround: 'Tried another way after a block',
   review_long_context: 'More trouble on long tasks',
   review_job_failures: 'Jobs are failing',
+  review_planted_instruction: 'Suspicious instruction in a tool result',
+  review_done_after_failure: 'Said done after a failed step',
 };
 
 /** Days a Diagnosis snooze lasts. Sent with every snooze, so the copy and the engine agree. */
@@ -134,6 +138,14 @@ export function findingSentence(detector: DiagnosisDetectorId, m: DiagnosisMeasu
       ];
     case 'review_job_failures':
       return [v(m.failedJobs), t(' of '), ...count(m.reportedJobs, 'job', 'jobs'), t(' failed this week ('), v(m.failurePct), t('%), as reported by your system.')];
+    case 'review_planted_instruction': {
+      const parts = [t('A result from '), code(m.toolName), t(' looked like it was giving the agent instructions.')];
+      if (Number(m.times) > 1) parts.push(t(' This happened '), ...count(m.times, 'time', 'times'), t(' this week.'));
+      parts.push(t(' Worth a look.'));
+      return parts;
+    }
+    case 'review_done_after_failure':
+      return [t('It reported success right after a step failed, '), ...count(m.times, 'time', 'times'), t(' this week. Worth a look.')];
   }
 }
 
@@ -182,6 +194,7 @@ export function notMeasuredShort(code: string, reason: string): string {
     case 'not_captured': return 'nothing recorded yet';
     case 'few_measured_calls': return left(/has (\d+)/, 50, (m) => `needs ${m} more fully recorded ${plural(m, 'call')} this week`);
     case 'few_outcomes': return left(/has (\d+)/, 10, (m) => `needs ${m} more reported job ${plural(m, 'outcome')} this week`);
+    case 'scan_off': return 'switched off on this engine';
     case 'few_prior_calls': return 'needs more calls before a block to compare';
     case 'few_baseline_calls': return left(/has (\d+)/, 20, (m) => `needs ${m} more ${plural(m, 'call')} from before this week`);
     case 'model_unknown': return 'the provider doesn\u2019t say which model answered';
@@ -224,6 +237,16 @@ export function howtoParagraphs(howtoId: string, m: DiagnosisMeasures): string[]
       return [
         'Open the runs your system marked as failed to see what the agent did in them.',
         'The outcome comes from your own check, so a change there (a stricter test) can raise this too.',
+      ];
+    case 'planted_instruction':
+      return [
+        `Open the calls to see what ${tool} returned and what the agent did next.`,
+        'If the text came from outside (a web page, an email, a file), keep the agent from acting on it: a Tool list rule can limit what it may do.',
+      ];
+    case 'done_after_failure':
+      return [
+        `Open the calls to see what failed in ${tool} and what the agent said after.`,
+        'Have the agent check a step worked before it reports the job done.',
       ];
     case 'block_workaround':
       return [
