@@ -41,6 +41,14 @@ describe('performance verdict', () => {
 describe('unusual behaviour quiet state', () => {
   it('lists the signals not tracked yet', () => {
     expect(untrackedSignals()).toEqual(UNUSUAL_SIGNALS.filter((s) => !s.measured).map((s) => s.label));
+    // Ended badly is measured now, so it isn't listed as not tracked.
+    expect(untrackedSignals()).not.toContain('Ended on a failed or blocked call');
+    expect(untrackedSignals()).toEqual(['A tool it hasn’t used before', 'A burst of tokens', 'A workaround after a block']);
+  });
+  it('names the ended-badly signal in an agent’s summary', () => {
+    const days = ['2026-10-21'];
+    const runs = [{ agentId: 'a', startedAt: '2026-10-21T12:00:00', flags: [{ signal: 'ended_badly', how: 'failed' }] }] as never;
+    expect(agentSignals(runs, days)).toEqual({ a: 'ended on a failed or blocked call' });
   });
   it('flagged runs are counted only inside the window, and unknown while loading', () => {
     const days = ['2026-10-15', '2026-10-16', '2026-10-17', '2026-10-18', '2026-10-19', '2026-10-20', '2026-10-21'];

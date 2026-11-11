@@ -267,6 +267,16 @@ export function evidenceHeader(detector: string, calls: EvidenceCall[], measures
         rows: [...calls].sort((a, b) => tokens(b) - tokens(a)).map((c) => [time(c), String(c.reportedModel ?? c.requestedModel ?? '—'), fmtCount(tokens(c))]),
       };
     }
+    case 'review_bad_endings':
+      return {
+        kind: 'table', caption: 'The last call of each run that ended badly, newest first', columns: ['Time', 'Run', 'Model', 'Result'],
+        rows: byTime.map((c) => [time(c), String(c.watchNumber ?? '—'), String(c.reportedModel ?? c.requestedModel ?? '—'), c.terminal == null ? '—' : callOutcomeLabel(String(c.terminal)) ?? String(c.terminal).replace(/_/g, ' ')]),
+      };
+    case 'review_model_change':
+      return {
+        kind: 'table', caption: 'Recent calls on the new model', columns: ['Time', 'Run', 'Asked for', 'Answered by'],
+        rows: byTime.map((c) => [time(c), String(c.watchNumber ?? '—'), String(c.requestedModel ?? '—'), String(c.reportedModel ?? '—')]),
+      };
     case 'review_provider_failures':
       return {
         kind: 'table', caption: 'Failed calls, newest first', columns: ['Time', 'Model', 'Result'],
