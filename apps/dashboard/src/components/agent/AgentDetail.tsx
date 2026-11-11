@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Banner, Button, Panel, TextInput, Toast, FONT_MONO } from '@whiteroom/ui';
-import { auditLog, checkWatch, controlFailure, getDiagnosis, isAuthError, listRuns, pauseAgent, removeAgent, resumeAgent, stopAgent, updateAgentTaskType } from '@/lib/whiteroom/client';
+import { auditLog, checkWatch, controlFailure, getDiagnosis, isAuthError, listRuns, pauseAgent, removeAgent, resumeAgent, stopAgent, updateAgentTaskType, type HealthHistoryEvent } from '@/lib/whiteroom/client';
 import type { AgentInfo, AuditEntry, FleetDiagnosis, GovernanceRule, RunSummary } from '@/lib/whiteroom/types';
 import type { AgentWeek } from '@/lib/home-agents';
 import { usePoll } from '@/hooks/usePoll';
@@ -18,6 +18,7 @@ import { StopNotes } from '@/components/citadel/StopNotes';
 import { ActivityRows } from '@/components/home/ActivityRows';
 import { RecentRuns, type RecentRunsState } from '@/components/agent/RecentRuns';
 import { AgentWeekCard } from '@/components/agent/AgentWeekCard';
+import { HealthHistory } from '@/components/agent/HealthHistory';
 import { RulesOnAgent } from '@/components/agent/RulesOnAgent';
 import { fetchControlActors, holdWho, type ControlActor } from '@/lib/control-actors';
 import { RefreshFailed } from '@/components/citadel/States';
@@ -49,7 +50,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   from: 'home' | 'runs';
   onAuthError?: (msg: string) => void;
   /** Sample data for /dev/agent: nothing is fetched and actions do nothing. */
-  preview?: { agent: AgentInfo; entries: AuditEntry[]; week?: AgentWeek; rules?: GovernanceRule[]; runs?: RunSummary[]; diagnosis?: FleetDiagnosis | null };
+  preview?: { agent: AgentInfo; entries: AuditEntry[]; week?: AgentWeek; rules?: GovernanceRule[]; runs?: RunSummary[]; diagnosis?: FleetDiagnosis | null; healthHistory?: HealthHistoryEvent[] };
 }) {
   const [agent, setAgent] = useState<AgentInfo | null>(preview?.agent ?? null);
   const [notFound, setNotFound] = useState(false);
@@ -446,6 +447,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
                 <Link href={`${ROUTES.performance}#agent-health-heading`} className="wr-link">Details on Performance &rarr;</Link>
               </p>
             )}
+            <HealthHistory fleetId={fleetId} agentId={agentId} authKey={authKey} preview={preview?.healthHistory} />
             <div className="wr-agent-grid">
               <div className="wr-agent-col">
                 <Panel title="Now" actions={<span className="wr-agent-cap">{card.status}</span>}>

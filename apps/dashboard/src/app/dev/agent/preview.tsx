@@ -58,6 +58,12 @@ const PROBLEM = report([{
   suggestedAction: { kind: 'rule', rule: 'loop_breaker', mode: 'watch', appliesTo: ['lead-agent'], params: { threshold: 20 } },
 }]);
 
+// Health history: a problem found, announced, snoozed by a person, then cleared.
+const HOUR = 3600_000;
+const HISTORY = (['resolved', 'snoozed', 'alert_sent', 'opened'] as const).map((event, i) => ({
+  agentId: 'lead-agent', detector: 'review_tool_loops', event, actor: event === 'snoozed' ? 'user:preview' : null, at: new Date(Date.now() - (2 + i * 8) * HOUR).toISOString(),
+}));
+
 export function AgentPreview() {
   const [which, setWhich] = useState('waiting');
   return (
@@ -71,7 +77,7 @@ export function AgentPreview() {
         fleetId="acme-claims-prod"
         agentId="lead-agent"
         from="home"
-        preview={{ agent: STATES[which], entries: which === 'idle' ? [] : ENTRIES, week: which === 'idle' ? {} : WEEK, rules: RULES, runs: which === 'idle' ? [] : RUNS, diagnosis: which === 'idle' ? null : which === 'working' ? PROBLEM : HEALTHY }}
+        preview={{ agent: STATES[which], entries: which === 'idle' ? [] : ENTRIES, week: which === 'idle' ? {} : WEEK, rules: RULES, runs: which === 'idle' ? [] : RUNS, diagnosis: which === 'idle' ? null : which === 'working' ? PROBLEM : HEALTHY, healthHistory: which === 'idle' ? [] : HISTORY }}
       />
     </AppShell>
   );

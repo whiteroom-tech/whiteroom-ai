@@ -272,6 +272,17 @@ export function evidenceHeader(detector: string, calls: EvidenceCall[], measures
         kind: 'table', caption: 'The last call of each run that ended badly, newest first', columns: ['Time', 'Run', 'Model', 'Result'],
         rows: byTime.map((c) => [time(c), String(c.watchNumber ?? '—'), String(c.reportedModel ?? c.requestedModel ?? '—'), c.terminal == null ? '—' : callOutcomeLabel(String(c.terminal)) ?? String(c.terminal).replace(/_/g, ' ')]),
       };
+    case 'review_block_workaround':
+      return {
+        kind: 'table', caption: 'The blocked call and what came straight after', columns: ['Time', 'Run', 'Called'],
+        rows: byTime.map((c) => [time(c), String(c.watchNumber ?? '—'), list(c.requestedToolNames).join(', ') || '(none)']),
+        note: 'WhiteRoom records which tools were called, never what they were asked to do.',
+      };
+    case 'review_long_context':
+      return {
+        kind: 'table', caption: 'Calls with a failed or repeated step in long conversations', columns: ['Time', 'Run', 'Called', 'Reported errors'],
+        rows: byTime.map((c) => [time(c), String(c.watchNumber ?? '—'), list(c.requestedToolNames).join(', ') || '(none)', list(c.toolErrorNames).join(', ') || '—']),
+      };
     case 'review_model_change':
       return {
         kind: 'table', caption: 'Recent calls on the new model', columns: ['Time', 'Run', 'Asked for', 'Answered by'],

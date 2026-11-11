@@ -20,6 +20,8 @@ export const DASHBOARD_ONLY_ACTIONS: ReadonlySet<string> = new Set([
   // Removing an agent is an owner's call too.
   'deregister_agent',
   'alerts_get', 'alerts_set_slack', 'alerts_set_teams', 'alerts_test', 'alerts_set_health',
+  // Health checks' snooze, dismiss and mark fixed, and their history: the owner's (Agent Health D6).
+  'performance_feedback', 'health_history',
   'fleet_data_settings_get', 'fleet_data_settings_set',
   'goal_get', 'goal_set_owner', 'agent_new_run',
   'compression_mode_set', 'compression_preview',

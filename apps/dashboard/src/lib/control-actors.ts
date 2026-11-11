@@ -34,7 +34,7 @@ function closest(rows: ControlActor[], at: string): ControlActor | undefined {
 const USER = 'user:';
 
 /** The name for an engine "user:<id>", from any row by that account; null when the record isn't one. */
-function userName(by: string, actions: ControlActor[]): string | null {
+export function userName(by: string, actions: ControlActor[]): string | null {
   if (!by.startsWith(USER)) return null;
   const id = by.slice(USER.length);
   return actions.find((a) => a.userId === id)?.by ?? 'a teammate';

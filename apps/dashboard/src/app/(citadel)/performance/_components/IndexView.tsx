@@ -1,5 +1,6 @@
 'use client';
 
+import { downloadHealthReport } from '@/components/performance/HealthReport';
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { performanceRecommendationsList } from '@/lib/whiteroom/client';
 import Link from 'next/link';
@@ -318,7 +319,7 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
             sub={speed ? <span style={{ color: speed.tone === 'ok' ? 'var(--ok)' : speed.tone === 'warn' ? 'var(--warn-tx)' : undefined }}>{speed.text}</span> : 'median time per call'} />
           <StatCard variant="card" label="Model calls" hint={HELP.modelCalls} value={fmtCount(s.totalCalls)} sub={callsTrend ?? rangeLabel} />
         </div>
-        <AgentHealth flagged={flagged} diagnosis={diagnosis.data} line={diagnosisLine} onCheck={() => void runCheck()} onReview={seeFindings} />
+        <AgentHealth flagged={flagged} diagnosis={diagnosis.data} line={diagnosisLine} onCheck={() => void runCheck()} onReview={seeFindings} onReport={() => downloadHealthReport(fleetId, diagnosis.data, authKey)} />
       </section>
 
       <hr className="wr-perf-rule" />

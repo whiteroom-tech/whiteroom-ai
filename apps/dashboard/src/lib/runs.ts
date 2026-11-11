@@ -245,6 +245,7 @@ export function ignoresRuleActivity(runs: Pick<RunSummary, 'wouldActCalls'>[]): 
 export function flagText(f: RunFlag): string {
   if (f.signal === 'repeating_call') return `Repeating the same call: ${f.tool} ×${f.calls}`;
   if (f.signal === 'ended_badly') return `Ended on a ${f.how} call`;
+  if (f.signal === 'workaround') return `Used a new tool after a block: ${f.tool}`;
   return `${f.calls} failed calls in a row`;
 }
 
@@ -699,7 +700,7 @@ export const UNUSUAL_SIGNALS = [
   { key: 'ended_badly', label: 'Ended on a failed or blocked call', measured: true },
   { key: 'new_tool', label: 'A tool it hasn’t used before', measured: false },
   { key: 'token_burst', label: 'A burst of tokens', measured: false },
-  { key: 'workaround', label: 'A workaround after a block', measured: false },
+  { key: 'workaround', label: 'A workaround after a block', measured: true },
 ] as const;
 
 /** Flagged runs that started on one of `days`, with that day's index: the one rule for "flagged this week". */

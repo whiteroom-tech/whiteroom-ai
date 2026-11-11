@@ -15,11 +15,32 @@ const MEASURES: Record<DiagnosisDetectorId, DiagnosisMeasures> = {
   review_provider_failures: { totalRequests: 240, upstreamErrors: 31, failureRatePct: 13, model: 'claude-haiku-4-5', otherCohorts: 1 },
   review_bad_endings: { badRuns: 4, finishedRuns: 12, badPct: 33, endedFailed: 3, endedBlocked: 1 },
   review_model_change: { change: 'served', requestedModel: 'claude-sonnet-4-5', newModel: 'claude-sonnet-4-5-20261015', previousModel: 'claude-sonnet-4-5-20250929', since: '2026-11-04', recentCalls: 90, sharePct: 90 },
+  review_block_workaround: { workarounds: 2, blocksJudged: 3, toolName: 'post_webhook', ruleType: 'tool_list', tools: 1 },
+  review_long_context: { longRatePct: 41, shortRatePct: 9, longFromTokens: 36000, longCalls: 60, shortCalls: 120 },
 };
 
 /** Every number in the text, normalised (thousands separators dropped). */
 const numbersIn = (s: string) => (s.match(/\d[\d,]*(\.\d+)?/g) ?? []).map((n) => n.replace(/,/g, ''));
 const measureValues = (m: DiagnosisMeasures) => new Set(Object.values(m).flatMap((v) => (typeof v === 'number' ? [String(v)] : numbersIn(v))));
+
+describe('check names', () => {
+  // The engine pins the same list (its DETECTOR_TITLES, used in Slack and
+  // Teams alerts): a rename has to change both, or they disagree.
+  it('match the names the engine puts in alerts', () => {
+    expect(TITLES).toEqual({
+      review_handover_churn: 'Starting over too often',
+      review_tool_loops: 'Repeating the same call',
+      review_spend_outliers: 'Unusually expensive days',
+      review_tool_errors: 'A tool keeps failing',
+      review_tool_silence: 'Stopped using a key tool',
+      review_provider_failures: 'Model provider errors',
+      review_bad_endings: 'Runs ending badly',
+      review_model_change: 'Model changed',
+      review_block_workaround: 'Tried another way after a block',
+      review_long_context: 'More trouble on long tasks',
+    });
+  });
+});
 
 describe('finding sentences', () => {
   for (const d of DIAGNOSIS_DETECTORS) {
@@ -134,6 +155,21 @@ describe('cost, limitations, reasons, how-to', () => {
     expect(text({ ...MEASURES.review_bad_endings, endedBlocked: 0 })).toContain('ended on a failed call');
     expect(text({ ...MEASURES.review_bad_endings, endedFailed: 0 })).toContain('ended on a blocked call');
     expect(howtoParagraphs('bad_endings', {})).toHaveLength(2);
+  });
+
+  it('a workaround names the rule and the tool, and says it is worth a look', () => {
+    const text = (m: DiagnosisMeasures) => sentenceText(findingSentence('review_block_workaround', m));
+    expect(text({ workarounds: 1, toolName: 'post_webhook', ruleType: 'tool_list' })).toBe('After a Tool list rule blocked a call, it used post_webhook, a tool it hadn’t used before this week. Worth a look: it may be getting around the rule.');
+    expect(text(MEASURES.review_block_workaround)).toContain('This happened 2 times.');
+    expect(text({ ...MEASURES.review_block_workaround, ruleType: 'keyword' })).toContain('After a Keywords rule blocked a call');
+    expect(notMeasuredShort('few_prior_calls', 'x')).toBe('needs more calls before a block to compare');
+    expect(howtoParagraphs('block_workaround', { toolName: 'post_webhook' })[0]).toContain('post_webhook');
+  });
+
+  it('long tasks compares the two rates and claims no cause', () => {
+    expect(sentenceText(findingSentence('review_long_context', MEASURES.review_long_context)))
+      .toBe('41% of its calls in long conversations had a failed or repeated step, against 9% in short ones. It has more trouble when its conversation is long.');
+    expect(howtoParagraphs('long_context', {})).toHaveLength(2);
   });
 
   it('model changed says whether the provider or the agent changed it', () => {

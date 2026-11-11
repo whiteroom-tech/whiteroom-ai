@@ -408,14 +408,16 @@ export type DiagnosisDetectorId =
   | 'review_tool_silence'
   | 'review_provider_failures'
   | 'review_bad_endings'
-  | 'review_model_change';
+  | 'review_model_change'
+  | 'review_block_workaround'
+  | 'review_long_context';
 
 export type DiagnosisMeasures = Record<string, number | string>;
 
 /** Suggested rules always start in Watch. */
 export type DiagnosisSuggestedAction =
   | { kind: 'rule'; rule: 'loop_breaker' | 'spend_cap'; mode: 'watch'; appliesTo: string[]; params: Record<string, number | string | string[]> }
-  | { kind: 'howto'; howtoId: 'handover_churn' | 'tool_errors' | 'tool_silence' | 'provider_failures' | 'bad_endings' | 'model_change' };
+  | { kind: 'howto'; howtoId: 'handover_churn' | 'tool_errors' | 'tool_silence' | 'provider_failures' | 'bad_endings' | 'model_change' | 'block_workaround' | 'long_context' };
 
 export interface DiagnosisFinding {
   recommendationId: string;
@@ -784,7 +786,9 @@ export type RunFlag =
   | { signal: 'repeating_call'; tool: string; calls: number }
   | { signal: 'error_streak'; calls: number }
   /** The run's last call failed or was blocked and the agent made no call for 30 minutes after (Agent Health item 7). */
-  | { signal: 'ended_badly'; how: 'failed' | 'blocked' };
+  | { signal: 'ended_badly'; how: 'failed' | 'blocked' }
+  /** After a rule blocked a call, the agent used a tool it hadn't used before (Agent Health item 5). */
+  | { signal: 'workaround'; tool: string };
 
 export interface RunDaysResult {
   fleetId: string;

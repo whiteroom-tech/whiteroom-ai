@@ -27,7 +27,7 @@ const WARN_ICON = <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="t
  * found, as one headline; the Unusual behaviour line; and the checks folded
  * below, one row per check across agents.
  */
-export function AgentHealth({ flagged, diagnosis, line, onCheck, onReview }: {
+export function AgentHealth({ flagged, diagnosis, line, onCheck, onReview, onReport }: {
   flagged: FlaggedRuns;
   diagnosis: FleetDiagnosis | null;
   /** The health check's status line (checked when, checking, failed); null when it's off. */
@@ -35,7 +35,10 @@ export function AgentHealth({ flagged, diagnosis, line, onCheck, onReview }: {
   onCheck: () => void;
   /** Jump to Recommendations, where each problem's fix is. */
   onReview: () => void;
+  /** Download the health report (Agent Health item 9); absent: no link. Resolves to an error message, or null. */
+  onReport?: () => Promise<string | null>;
 }) {
+  const [report, setReport] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
   const view = agentHealthView({ count: flaggedRunCount(flagged), truncated: flagged.truncated, failed: flagged.failed, loading: flagged.loading }, diagnosis, line);
   const [checksOpen, setChecksOpen] = useState<boolean | null>(null);
   const checksId = useId();
@@ -59,8 +62,15 @@ export function AgentHealth({ flagged, diagnosis, line, onCheck, onReview }: {
             {line.action && <button type="button" className="wr-btn wr-btn--secondary wr-btn--h28" onClick={onCheck}>{line.action.label}</button>}
           </span>
         )}
+        {onReport && (
+          <button
+            type="button" className="wr-link" disabled={report.busy}
+            onClick={() => { setReport({ busy: true, error: null }); void onReport().then((error) => setReport({ busy: false, error }), () => setReport({ busy: false, error: 'The report couldn’t be made. Try again.' })); }}
+          >{report.busy ? 'Preparing…' : 'Download report'}</button>
+        )}
       </div>
 
+      {report.error && <p role="alert" className="wr-cap" style={{ margin: '0 0 8px', color: 'var(--bad)' }}>{report.error}</p>}
       {title && (
         <div role="status" className="wr-health__summary">
           {warn ? WARN_ICON : OK_ICON}

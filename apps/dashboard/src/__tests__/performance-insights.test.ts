@@ -43,7 +43,7 @@ describe('unusual behaviour quiet state', () => {
     expect(untrackedSignals()).toEqual(UNUSUAL_SIGNALS.filter((s) => !s.measured).map((s) => s.label));
     // Ended badly is measured now, so it isn't listed as not tracked.
     expect(untrackedSignals()).not.toContain('Ended on a failed or blocked call');
-    expect(untrackedSignals()).toEqual(['A tool it hasn’t used before', 'A burst of tokens', 'A workaround after a block']);
+    expect(untrackedSignals()).toEqual(['A tool it hasn’t used before', 'A burst of tokens']);
   });
   it('names the ended-badly signal in an agent’s summary', () => {
     const days = ['2026-10-21'];
