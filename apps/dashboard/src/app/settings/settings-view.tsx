@@ -454,35 +454,35 @@ function PlanSection({
 
       {/* Folded for a settled account (nothing to buy next); open wherever a card's button is the next step. */}
       <details open={plansOpen}>
-      <summary style={{ cursor: 'pointer', fontWeight: 600, margin: '0 0 12px' }}>Compare plans</summary>
-      <div className="wr-settings-plans" id="settings-plan-choices">
-        {(['starter', 'pro', 'enterprise'] as const).map((p) => (
-          <div key={p} className="wr-settings-plan">
-            <h3 style={{ margin: 0, fontSize: 'var(--fs-card)', fontWeight: 600 }}>{PLANS[p].name}</h3>
-            <p style={{ fontSize: 'var(--fs-sm)', margin: '6px 0 0' }}>{PLANS[p].priceLine}</p>
-            <ul style={{ margin: '10px 0 16px', paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {PLANS[p].features.map((f) => <li key={f}>{f}</li>)}
-            </ul>
-            {p === 'enterprise' ? (
-              <a href={`mailto:${SUPPORT_EMAIL}`} className="wr-btn wr-btn--secondary wr-btn--h32">Talk to us</a>
-            ) : canBuy(p) && (
-              <Button
-                variant={p === 'starter' && entitlement.onTrial ? 'secondary' : 'primary'}
-                disabled={busy !== null || pending}
-                onClick={() => go(() => (subscribed || graceLive ? openBillingPortal() : startCheckout(p)), p)}
-              >
-                {busy === p
-                  ? 'Opening…'
-                  : p === 'starter' && entitlement.onTrial
-                    ? `Subscribe (free until ${trialEnd})`
-                    : p === plan && graceEnd
-                      ? `Subscribe to ${PLANS[p].name} again`
-                      : `Switch to ${PLANS[p].name}`}
-              </Button>
-            )}
-          </div>
-        ))}
-      </div>
+        <summary style={{ cursor: 'pointer', fontWeight: 600, margin: '0 0 12px' }}>Compare plans</summary>
+        <div className="wr-settings-plans" id="settings-plan-choices">
+          {(['starter', 'pro', 'enterprise'] as const).map((p) => (
+            <div key={p} className="wr-settings-plan">
+              <h3 style={{ margin: 0, fontSize: 'var(--fs-card)', fontWeight: 600 }}>{PLANS[p].name}</h3>
+              <p style={{ fontSize: 'var(--fs-sm)', margin: '6px 0 0' }}>{PLANS[p].priceLine}</p>
+              <ul style={{ margin: '10px 0 16px', paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {PLANS[p].features.map((f) => <li key={f}>{f}</li>)}
+              </ul>
+              {p === 'enterprise' ? (
+                <a href={`mailto:${SUPPORT_EMAIL}`} className="wr-btn wr-btn--secondary wr-btn--h32">Talk to us</a>
+              ) : canBuy(p) && (
+                <Button
+                  variant={p === 'starter' && entitlement.onTrial ? 'secondary' : 'primary'}
+                  disabled={busy !== null || pending}
+                  onClick={() => go(() => (subscribed || graceLive ? openBillingPortal() : startCheckout(p)), p)}
+                >
+                  {busy === p
+                    ? 'Opening…'
+                    : p === 'starter' && entitlement.onTrial
+                      ? `Subscribe (free until ${trialEnd})`
+                      : p === plan && graceEnd
+                        ? `Subscribe to ${PLANS[p].name} again`
+                        : `Switch to ${PLANS[p].name}`}
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
       </details>
     </Section>
   );
