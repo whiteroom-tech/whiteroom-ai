@@ -13,7 +13,8 @@ describe('health history', () => {
     expect(whoActed('user:u1', actions)).toBe('R Haque');
     expect(whoActed('user:u2', actions)).toBe('a teammate');
     expect(whoActed(null, actions)).toBe('WhiteRoom');
-    // Only a person is ever "a teammate".
+    // Only a person is ever "a teammate": a named one, or one the engine knows only came from the dashboard.
+    expect(whoActed('dashboard', actions)).toBe('a teammate');
     expect(whoActed('api', actions)).toBe('WhiteRoom');
   });
 

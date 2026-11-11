@@ -30,8 +30,13 @@ export const REPORT_MAX_PAGES = 10;
 
 export const checkName = (detector: string) => (isDiagnosisDetector(detector) ? TITLES[detector] : detector.replace(/^review_/, '').replace(/_/g, ' '));
 
-/** Who acted: a person's name, "a teammate" when that person's name isn't known, else "WhiteRoom". */
+/**
+ * Who acted: a person's name, "a teammate" when that person's name isn't
+ * known (or the engine only knows it was someone on the dashboard), else
+ * "WhiteRoom".
+ */
 export function whoActed(actor: string | null, actions: ControlActor[]): string {
+  if (actor === 'dashboard') return 'a teammate';
   // userName names any "user:" actor, as "a teammate" when the name isn't known.
   return (actor?.startsWith('user:') && userName(actor, actions)) || 'WhiteRoom';
 }
