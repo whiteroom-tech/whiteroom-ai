@@ -11,7 +11,6 @@ import { PageHeader, PageLead } from '@/components/citadel/PageChrome';
 import { SettingsCard } from '@/components/settings/SettingsCard';
 import { FleetAuthProvider, useFleetAuth } from '@/hooks/useFleetAuth';
 import { AppShell } from '@/components/AppShell';
-import { TextSizeControl } from '@/components/TextSizeControl';
 import { Banner, Button, FONT_MONO } from '@whiteroom/ui';
 import {
   cancelAccountDeletion,
@@ -37,12 +36,39 @@ import { fmtTime, plural } from '@/lib/format';
 import { browserZone as readBrowserZone, dayKey, daysBetween, setViewerZone } from '@/lib/zone-time';
 import { useSavedViewerZone, useViewerZone } from '@/hooks/useViewerZone';
 import { GOING_LIVE_LABEL, useGoLive, type GoLiveStatus } from '@/components/AccountPlanBanner';
-import { GRACE_LINE, graceFix, NO_CARD, PAST_DUE_LINE, planDay, subscriptionEnded } from '@/lib/plan-banner-shared';
+import { GRACE_LINE, graceFix, NO_CARD, PAST_DUE_LINE, planDay, planSettled, subscriptionEnded } from '@/lib/plan-banner-shared';
 
 const PROVIDER_LABELS: Record<string, string> = {
   google: 'Google',
   email: 'Email link',
 };
+
+/** Each section's place on the page; the ids are on the cards or their wrappers below. */
+const JUMPS: { id: string; label: string; fleet?: true }[] = [
+  { id: 'settings-profile', label: 'Profile' },
+  { id: 'plan', label: 'Plan' },
+  { id: 'data-privacy', label: 'Data and privacy', fleet: true },
+  { id: 'smaller-context', label: 'Smaller context', fleet: true },
+  { id: 'alerts', label: 'Alerts', fleet: true },
+  { id: 'audit-integrity', label: 'Audit trail', fleet: true },
+  { id: 'settings-email-address', label: 'Email and sign-in' },
+  { id: 'delete-account', label: 'Delete account' },
+];
+
+/**
+ * A row of links to each section. Plain #links: the browser scrolls and the
+ * address can be shared. Wraps on a phone. The fleet's sections show only with
+ * a fleet signed in (or /dev sample data), so no link points at nothing.
+ */
+function JumpLinks({ preview }: { preview: boolean }) {
+  const { fleetId } = useFleetAuth();
+  const fleet = preview || !!fleetId;
+  return (
+    <nav aria-label="Settings sections" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 16px', fontSize: 'var(--fs-sm)' }}>
+      {JUMPS.filter((j) => fleet || !j.fleet).map((j) => <a key={j.id} href={`#${j.id}`} className="wr-link">{j.label}</a>)}
+    </nav>
+  );
+}
 
 /** `support`: only support can resolve it, so the banner offers a way to reach them. */
 type Notice = { tone: 'ok' | 'bad'; text: string; support?: boolean } | null;
@@ -59,7 +85,7 @@ function Section({
   tone?: 'default' | 'danger';
 }) {
   const id = `settings-${title.toLowerCase().replace(/[^a-z]+/g, '-')}`;
-  return <SettingsCard id={id} title={tone === 'danger' ? <span style={{ color: 'var(--bad)' }}>{title}</span> : title} sub={description} tone={tone}>{children}</SettingsCard>;
+  return <SettingsCard id={id} anchor title={tone === 'danger' ? <span style={{ color: 'var(--bad)' }}>{title}</span> : title} sub={description} tone={tone}>{children}</SettingsCard>;
 }
 
 const labelStyle: React.CSSProperties = {
@@ -135,6 +161,7 @@ export function SettingsView({
       <main style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
         <div ref={sections} className="wr-settings-stack wr-setup-page">
           <PageLead>Profile, plan, data, alerts and sign-in.</PageLead>
+          <JumpLinks preview={!!samples} />
 
           {banner && (
             <Banner variant={banner.tone === 'ok' ? 'info' : 'error'} icon={banner.tone === 'ok' ? 'check' : undefined} actions={banner.support ? <SupportLink /> : undefined}>{banner.text}</Banner>
@@ -233,9 +260,6 @@ function ProfileSection({
       <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '10px 0 14px' }}>
         {inUse ? <>Dates and days use {inUse}.</> : <>Dates and days use your browser&apos;s time zone ({browserZone}).</>}
       </p>
-      {/* Applies at once and lives in this browser; Save profile doesn't change it. */}
-      <div style={labelStyle}>Text size</div>
-      <div style={{ marginBottom: 18 }}><TextSizeControl /></div>
       <Button
         disabled={pending || !dirty}
         onClick={() => run(() => saveProfile({ name, timezone: timezone || null }), 'Profile saved.')}
@@ -349,6 +373,8 @@ function PlanSection({
   // Counted in the viewer's zone, so only once it's known: the server's UTC
   // count can differ by a day and would mismatch hydration.
   const trialDaysLeft = zone !== null ? freeDaysLeft(entitlement.trialEndsAt) : null;
+  // Set to end (before or after it lapses): they're choosing whether to stay, so the cards stay open.
+  const plansOpen = !planSettled({ plan, onTrial: entitlement.onTrial, cardFailed: !!cardFailed, cancelled: cancelled || !!subscription?.cancelAtPeriodEnd });
 
   return (
     <Section title="Plan" description="Limits apply to every fleet on the account">
@@ -392,7 +418,7 @@ function PlanSection({
               {busy === 'portal' ? 'Opening…' : 'Update card'}
             </Button>
           ) : cardAction === 'buy' ? (
-            <Button variant="primary" disabled={busy !== null} onClick={() => document.getElementById('settings-plan-choices')?.scrollIntoView({ block: 'start' })}>Choose a plan</Button>
+            <Button variant="primary" disabled={busy !== null} onClick={() => { const el = document.getElementById('settings-plan-choices'); el?.closest('details')?.setAttribute('open', ''); el?.scrollIntoView({ block: 'start' }); }}>Choose a plan</Button>
           ) : (
             <Button variant="primary" disabled={busy !== null} onClick={() => { window.location.href = `mailto:${SUPPORT_EMAIL}`; }}>Talk to us</Button>
           )}
@@ -410,9 +436,9 @@ function PlanSection({
           <div className="wr-settings-stat" data-warn={agents.over ? '' : undefined}>
             <div className="wr-settings-stat__label">Agents</div>
             <div className="wr-settings-stat__num">{agents.value}</div>
-            {agents.over && (
+            {agents.note && (
               <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx2)' }}>
-                Nothing stops · <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'inherit' }}>Talk to us about larger fleets</a>
+                {agents.note} <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'inherit' }}>Talk to us about larger fleets</a>
               </div>
             )}
           </div>
@@ -427,34 +453,38 @@ function PlanSection({
         History means calls and runs. The audit trail is kept for {AUDIT_KEPT}.
       </p>
 
-      <div className="wr-settings-plans" id="settings-plan-choices">
-        {(['starter', 'pro', 'enterprise'] as const).map((p) => (
-          <div key={p} className="wr-settings-plan">
-            <h3 style={{ margin: 0, fontSize: 'var(--fs-card)', fontWeight: 600 }}>{PLANS[p].name}</h3>
-            <p style={{ fontSize: 'var(--fs-sm)', margin: '6px 0 0' }}>{PLANS[p].priceLine}</p>
-            <ul style={{ margin: '10px 0 16px', paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {PLANS[p].features.map((f) => <li key={f}>{f}</li>)}
-            </ul>
-            {p === 'enterprise' ? (
-              <a href={`mailto:${SUPPORT_EMAIL}`} className="wr-btn wr-btn--secondary wr-btn--h32">Talk to us</a>
-            ) : canBuy(p) && (
-              <Button
-                variant={p === 'starter' && entitlement.onTrial ? 'secondary' : 'primary'}
-                disabled={busy !== null || pending}
-                onClick={() => go(() => (subscribed || graceLive ? openBillingPortal() : startCheckout(p)), p)}
-              >
-                {busy === p
-                  ? 'Opening…'
-                  : p === 'starter' && entitlement.onTrial
-                    ? `Subscribe (free until ${trialEnd})`
-                    : p === plan && graceEnd
-                      ? `Subscribe to ${PLANS[p].name} again`
-                      : `Switch to ${PLANS[p].name}`}
-              </Button>
-            )}
-          </div>
-        ))}
-      </div>
+      {/* Folded for a settled account (nothing to buy next); open wherever a card's button is the next step. */}
+      <details open={plansOpen}>
+        <summary style={{ cursor: 'pointer', fontWeight: 600, margin: '0 0 12px' }}>Compare plans</summary>
+        <div className="wr-settings-plans" id="settings-plan-choices">
+          {(['starter', 'pro', 'enterprise'] as const).map((p) => (
+            <div key={p} className="wr-settings-plan">
+              <h3 style={{ margin: 0, fontSize: 'var(--fs-card)', fontWeight: 600 }}>{PLANS[p].name}</h3>
+              <p style={{ fontSize: 'var(--fs-sm)', margin: '6px 0 0' }}>{PLANS[p].priceLine}</p>
+              <ul style={{ margin: '10px 0 16px', paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {PLANS[p].features.map((f) => <li key={f}>{f}</li>)}
+              </ul>
+              {p === 'enterprise' ? (
+                <a href={`mailto:${SUPPORT_EMAIL}`} className="wr-btn wr-btn--secondary wr-btn--h32">Talk to us</a>
+              ) : canBuy(p) && (
+                <Button
+                  variant={p === 'starter' && entitlement.onTrial ? 'secondary' : 'primary'}
+                  disabled={busy !== null || pending}
+                  onClick={() => go(() => (subscribed || graceLive ? openBillingPortal() : startCheckout(p)), p)}
+                >
+                  {busy === p
+                    ? 'Opening…'
+                    : p === 'starter' && entitlement.onTrial
+                      ? `Subscribe (free until ${trialEnd})`
+                      : p === plan && graceEnd
+                        ? `Subscribe to ${PLANS[p].name} again`
+                        : `Switch to ${PLANS[p].name}`}
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      </details>
     </Section>
   );
 }

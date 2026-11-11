@@ -27,7 +27,7 @@ export function SidebarPreferences({ organization, invitations }: { organization
         options={[{ value: 'dark', label: 'Dark' }, { value: 'light', label: 'Light' }, { value: 'system', label: 'System' }]}
       />
       <div className="wr-sidebar__eyebrow" aria-hidden="true">Text size</div>
-      <TextSizeControl compact />
+      <TextSizeControl />
       <div className="wr-sidebar__links">
         {organization !== null && (
           <Link href={ROUTES.organization} className="wr-sidebar__link">

@@ -58,7 +58,7 @@ export function SmallerHandoversSection({ sample }: { sample?: CompressionPrevie
     if (!loadFailed) return null;
     const fleet = fleetId;
     return (
-      <SettingsCard id="smaller-context" title="Smaller context">
+      <SettingsCard id="smaller-context" anchor title="Smaller context">
         <LoadFailed what="smaller context settings" busy={reloading} onRetry={() => { setReloading(true); void load(fleet).finally(() => setReloading(false)); }} />
       </SettingsCard>
     );
@@ -82,7 +82,7 @@ export function SmallerHandoversSection({ sample }: { sample?: CompressionPrevie
   }
 
   return (
-    <SettingsCard id="smaller-context" title="Smaller context" sub="Changes that make each call cheaper, tried one at a time">
+    <SettingsCard id="smaller-context" anchor title="Smaller context" sub="Changes that make each call cheaper, tried one at a time">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <SegmentedControl label="Smaller context" value={preview.compression_mode} options={OPTIONS}
           onChange={(v) => {
