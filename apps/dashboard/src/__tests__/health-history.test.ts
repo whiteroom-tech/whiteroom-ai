@@ -13,6 +13,8 @@ describe('health history', () => {
     expect(whoActed('user:u1', actions)).toBe('R Haque');
     expect(whoActed('user:u2', actions)).toBe('a teammate');
     expect(whoActed(null, actions)).toBe('WhiteRoom');
+    // Only a person is ever "a teammate".
+    expect(whoActed('api', actions)).toBe('WhiteRoom');
   });
 
   it('names checks, including ones this dashboard doesn’t know yet', () => {
@@ -31,6 +33,9 @@ describe('health history', () => {
     expect(read).toHaveBeenLastCalledWith('c1');
     expect(await readAllHistory(async () => ({ events: [ev({})], cursor: 'more' }), 3)).toMatchObject({ truncated: true });
     expect(await readAllHistory(async () => null)).toBeNull();
+    // A later page that can't be read leaves the rest out: truncated, not complete.
+    let n = 0;
+    expect(await readAllHistory(async () => (n++ === 0 ? { events: [ev({})], cursor: 'c1' } : null))).toEqual({ events: [ev({})], truncated: true });
   });
 
   it('the report: each check today, then the history', () => {

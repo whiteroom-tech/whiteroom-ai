@@ -1,12 +1,12 @@
 'use client';
 
-import { downloadHealthReport } from '@/components/performance/HealthReport';
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { performanceRecommendationsList } from '@/lib/whiteroom/client';
 import Link from 'next/link';
 import { ROUTES } from '@/lib/routes';
 import { flaggedRunCount, useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
 import { AgentHealth } from '@/components/performance/AgentHealth';
+import { downloadHealthReport } from '@/components/performance/HealthReport';
 import { DEFAULT_REC_STATUS, showRecAgentFilter } from '@/lib/performance-insights';
 import { cacheFigures, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
 import { TokensCompare } from '@/components/performance/SavingsPanels';

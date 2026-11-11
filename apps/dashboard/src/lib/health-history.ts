@@ -24,9 +24,9 @@ export const REPORT_MAX_PAGES = 10;
 
 export const checkName = (detector: string) => (isDiagnosisDetector(detector) ? TITLES[detector] : detector.replace(/^review_/, '').replace(/_/g, ' '));
 
-/** Who acted: a person's name, "a teammate" when the name isn't known, or "WhiteRoom". */
+/** Who acted: a person's name, "a teammate" when that person's name isn't known, else "WhiteRoom". */
 export function whoActed(actor: string | null, actions: ControlActor[]): string {
-  return actor ? userName(actor, actions) ?? 'a teammate' : 'WhiteRoom';
+  return actor?.startsWith('user:') ? userName(actor, actions) ?? 'a teammate' : 'WhiteRoom';
 }
 
 /** The UTC days from `days` ago to today, as the engine reads them. */
@@ -35,7 +35,7 @@ export function historyDays(days: number, now = Date.now()): { fromDay: string; 
   return { fromDay: day(now - (days - 1) * 86_400_000), toDay: day(now) };
 }
 
-/** Reads every page, up to `maxPages`; `truncated` when more were left. */
+/** Reads every page, up to `maxPages`; `truncated` when more were left, or a later page couldn't be read. */
 export async function readAllHistory(
   read: (cursor: string | null) => Promise<{ events: HealthHistoryEvent[]; cursor: string | null } | null>,
   maxPages = REPORT_MAX_PAGES,
@@ -44,7 +44,8 @@ export async function readAllHistory(
   let cursor: string | null = null;
   for (let page = 0; page < maxPages; page++) {
     const got = await read(cursor);
-    if (!got) return page === 0 ? null : { events, truncated: false };
+    // Null on the first page: no history on this engine. Later, the rest is missing.
+    if (!got) return page === 0 ? null : { events, truncated: true };
     events.push(...got.events);
     cursor = got.cursor;
     if (!cursor) return { events, truncated: false };

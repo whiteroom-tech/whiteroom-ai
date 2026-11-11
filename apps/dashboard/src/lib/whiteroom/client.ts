@@ -604,7 +604,8 @@ export async function healthHistory(
       ...(opts.agentId && { agent_id: opts.agentId }), ...(opts.cursor && { cursor: opts.cursor }),
     }, key);
   } catch (e) {
-    if (e instanceof Error && /unknown action/i.test(e.message)) return null;
+    // An engine without health_history refuses it as an unknown action (400).
+    if (e instanceof WhiteRoomApiError && e.status === 400 && /unknown action/i.test(e.reason ?? '')) return null;
     throw e;
   }
 }

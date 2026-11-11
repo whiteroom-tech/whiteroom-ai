@@ -3,7 +3,7 @@
 // done. They must reject so the UI keeps the draft and shows the failure.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { alertsSetHealth, alertsSetTeams, alertsTest, ControlDeniedError, controlFailure, governanceUpdateRule, isAuthError, pauseAgent, resumeAgent, updateAgentTaskType } from '@/lib/whiteroom/client';
+import { alertsSetHealth, healthHistory, alertsSetTeams, alertsTest, ControlDeniedError, controlFailure, governanceUpdateRule, isAuthError, pauseAgent, resumeAgent, updateAgentTaskType } from '@/lib/whiteroom/client';
 
 const fetchMock = vi.fn();
 
@@ -118,6 +118,17 @@ describe('alerts actions', () => {
     fetchMock.mockResolvedValue(jsonResponse({ slack: null, health: { frequency: 'weekly', tz: 'Europe/London' } }));
     expect(await alertsSetHealth('f', 'weekly', 'Europe/London')).toEqual({ slack: null, health: { frequency: 'weekly', tz: 'Europe/London' } });
     expect(sent()).toEqual({ action: 'alerts_set_health', fleet_id: 'f', frequency: 'weekly', tz: 'Europe/London' });
+  });
+
+  it('health_history sends the range, agent and cursor, and is null on an engine without it', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ events: [], cursor: null }));
+    expect(await healthHistory('f', { fromDay: '2026-11-01', toDay: '2026-11-11', agentId: 'a', cursor: 'c1' })).toEqual({ events: [], cursor: null });
+    expect(sent()).toEqual({ action: 'health_history', fleet_id: 'f', from_day: '2026-11-01', to_day: '2026-11-11', agent_id: 'a', cursor: 'c1' });
+    fetchMock.mockResolvedValue(jsonResponse({ error: 'Unknown action.' }, 400));
+    expect(await healthHistory('f', { fromDay: '2026-11-01', toDay: '2026-11-11' })).toBeNull();
+    // Any other refusal is an error, not "no history".
+    fetchMock.mockResolvedValue(jsonResponse({ error: 'to_day must be on or after from_day.' }, 400));
+    await expect(healthHistory('f', { fromDay: '2026-11-11', toDay: '2026-11-01' })).rejects.toMatchObject({ status: 400 });
   });
 
   it('alerts_test names the channel', async () => {

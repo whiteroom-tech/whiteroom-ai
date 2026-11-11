@@ -401,6 +401,17 @@ describe('evidence headers', () => {
     ], {});
     expect(h && h.kind === 'table' && h.rows.map((r) => r.slice(1))).toEqual([['3', 'claude-sonnet-4-5', 'claude-sonnet-4-5-20261015'], ['—', '—', '—']]);
   });
+  it('workaround: what each call asked for, never what for', () => {
+    const h = evidenceHeader('review_block_workaround', [c({ watchNumber: 2, requestedToolNames: ['post_webhook'] }), c({})], {});
+    expect(h && h.kind === 'table' && h.columns).toEqual(['Time', 'Run', 'Called']);
+    expect(h && h.kind === 'table' && h.rows.map((r) => r.slice(1))).toEqual([['2', 'post_webhook'], ['—', '(none)']]);
+    expect(h && h.kind === 'table' && h.note).toContain('never what they were asked to do');
+  });
+  it('long tasks: the troubled calls, with their errors', () => {
+    const h = evidenceHeader('review_long_context', [c({ watchNumber: 9, requestedToolNames: ['fetch'], toolErrorNames: ['fetch'] }), c({})], {});
+    expect(h && h.kind === 'table' && h.columns).toEqual(['Time', 'Run', 'Called', 'Reported errors']);
+    expect(h && h.kind === 'table' && h.rows.map((r) => r.slice(1))).toEqual([['9', 'fetch', 'fetch'], ['—', '(none)', '—']]);
+  });
   it('silence: offered vs called', () => {
     const h = evidenceHeader('review_tool_silence', [c({ watchNumber: 50, toolNames: ['search', 'persist_lead'], requestedToolNames: ['search'] })], { toolName: 'persist_lead' });
     expect(h && h.kind === 'table' && h.rows[0].slice(1)).toEqual(['50', 'yes', 'search']);
