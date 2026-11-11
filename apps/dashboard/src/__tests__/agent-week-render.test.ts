@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { Window } from 'happy-dom';
 import type { GovernanceRule } from '@/lib/whiteroom/types';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {} }), useSearchParams: () => new URLSearchParams() }));
@@ -14,20 +15,37 @@ const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' '
 
 describe('Last 7 days on the agent page', () => {
   it('shows input without and with WhiteRoom, rule activity and the score with its parts', () => {
-    const t = text(renderToStaticMarkup(h(AgentWeekCard, { fleetId: 'f', agentId: 'a', preview: {
+    const html = renderToStaticMarkup(h(AgentWeekCard, { fleetId: 'f', agentId: 'a', preview: {
       input: 53_400, saved: 225_800, rules: { blocks: 2, wouldBlocks: 58 },
       score: { agentId: 'a', calls: 10, completeRate: 100, costDiligence: null, speedScore: 57, score: 8 },
-    } })));
+    } }));
+    const t = text(html);
     expect(t).toContain('Input without WhiteRoom, est. 279K');
     expect(t).toContain('With WhiteRoom 53.4K 226K less (81%)');
     expect(t).toContain('Rule activity 2 blocked · 58 would have acted');
-    expect(t).toContain('Score 8 out of 10');
+    // The ring shows the number and names it to screen readers; the words beside it don't repeat it.
+    expect(html).toContain('aria-label="Score 8 out of 10"');
+    expect(html).not.toMatch(/wr-score-ring"[^>]*aria-hidden/);
+    expect(t).toContain('Score out of 10');
+    expect(t).not.toContain('8 out of 10');
     expect(t).toContain('How is the score worked out? Clean calls 10 · Speed 5.7 · Cost not scored yet');
     expect(t).toContain('Clean calls 10 of 10');
     expect(t).toContain('Speed 5.7 of 10');
     expect(t).toContain('Cost not scored');
     expect(t).toContain('Needs a task type and a finished call.');
     expect(t).toContain('(10 + 5.7) ÷ 2 = 7.85 → 8');
+  });
+
+  it('links Rule activity to this agent’s runs with rule activity, only when there is some', () => {
+    const link = (rules?: { blocks: number; wouldBlocks: number }) => {
+      const el = new Window().document.createElement('div');
+      el.innerHTML = renderToStaticMarkup(h(AgentWeekCard, { fleetId: 'f', agentId: 'lead agent', preview: { rules } }));
+      return el.querySelector('a[href^="/runs"]');
+    };
+    expect(link({ blocks: 2, wouldBlocks: 58 })?.getAttribute('href')).toBe('/runs?agent=lead%20agent&show=rules');
+    expect(link({ blocks: 2, wouldBlocks: 58 })?.textContent).toBe('2 blocked · 58 would have acted');
+    expect(link({ blocks: 0, wouldBlocks: 0 })).toBeNull();
+    expect(link(undefined)).toBeNull();
   });
 
   it('shows — when a read failed, never 0, and no score breakdown without a score', () => {
@@ -108,6 +126,9 @@ describe('Rules on this agent', () => {
     expect(html).toContain('href="/controls?agent=a"');
     const t = text(html);
     expect(t).toContain('Enforce');
+    // Drawn with Controls' mode badge: Enforce filled, Watch as a ring.
+    expect(html).toMatch(/<span class="ctl-mtag is-block">Enforce/);
+    expect(html).toContain('<span class="ctl-mtag">Watch</span>');
     expect(t).toContain('Over 60 calls a minute');
     expect(t).toContain('Rules on this agent 2');
     expect(t).toContain('Also 1 rule is Off. 2 aren’t set up yet.');
@@ -133,11 +154,13 @@ describe('Rules on this agent', () => {
 
 describe('one score on the card', () => {
   it('shows the score worked out from the parts in the ring, the words and the sum, even if the engine rounded differently', () => {
-    const t = text(renderToStaticMarkup(h(AgentWeekCard, { fleetId: 'f', agentId: 'a', preview: {
+    const html = renderToStaticMarkup(h(AgentWeekCard, { fleetId: 'f', agentId: 'a', preview: {
       score: { agentId: 'a', calls: 10, completeRate: 100, costDiligence: null, speedScore: 57, score: 3 },
-    } })));
-    expect(t).toContain('Score 8 out of 10');
+    } }));
+    const t = text(html);
+    // The ring carries the worked-out score; the engine's 3 is shown nowhere.
+    expect(html).toContain('aria-label="Score 8 out of 10"');
     expect(t).toContain('= 7.85 → 8');
-    expect(t).not.toContain('3 out of 10');
+    expect(html).not.toContain('Score 3 out of 10');
   });
 });

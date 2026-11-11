@@ -126,6 +126,7 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
   return (
     <SettingsCard
       id="provider-keys"
+      anchor
       title="Provider keys"
       sub="Bring your own key. Each key gets its own proxy URL; WhiteRoom stores only a hash and the last 4 characters, never the key itself."
       right={keys && keys.length > 0 && !adding ? (
@@ -337,6 +338,7 @@ function BedrockRoleCard({ apiKey, fleetId, fleetToken }: { apiKey: string; flee
   return (
     <SettingsCard
       id="bedrock-role"
+      anchor
       title="Cross-account role"
       sub="No API key needed"
       right={role?.configured && !adding ? <Button size={28} onClick={() => setAdding(true)}>Replace role&hellip;</Button> : undefined}
@@ -522,7 +524,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, no
               {tab === 'direct' ? (
                 <>
                   <p style={{ margin: 0 }}>Change one URL so your agent&rsquo;s calls go through WhiteRoom. Agents with a system prompt need no code changes.</p>
-                  {!rotated && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Connect your Anthropic or OpenAI key under Provider keys below to get its proxy key. Each provider key gets its own. Your agent keeps sending its own key.</p>}
+                  {!rotated && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Connect your Anthropic or OpenAI key under <Below to="provider-keys">Provider keys below</Below> to get its proxy key. Each provider key gets its own. Your agent keeps sending its own key.</p>}
                   <CopyChip text={SETUP_LINES.anthropic} label="Copy the Anthropic setup line" />
                   <CopyChip text={SETUP_LINES.openai} label="Copy the OpenAI setup line" />
                   <AgentNaming />
@@ -530,12 +532,12 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, no
               ) : tab === 'aws' ? (
                 <>
                   <SegmentedControl<BedrockMode> label="Bedrock access" value={bedrockMode} onChange={setBedrockMode} options={BEDROCK_MODE_TABS} size={24} />
-                  {bedrockMode === 'api-key' ? <BedrockRecipe /> : <BedrockRoleRecipe />}
+                  {bedrockMode === 'api-key' ? <BedrockRecipe linked={!rotated} /> : <BedrockRoleRecipe linked={!rotated} />}
                 </>
               ) : (
                 <>
                   <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-                    Add your Azure OpenAI key and resource endpoint (Azure portal → your resource → Keys and Endpoint) under Provider keys below. You get back a proxy URL: point your agent at it instead of Azure, and keep your key, deployment names and api-version as they are.
+                    Add your Azure OpenAI key and resource endpoint (Azure portal → your resource → Keys and Endpoint) under <Below to="provider-keys" linked={!rotated}>Provider keys below</Below>. You get back a proxy URL: point your agent at it instead of Azure, and keep your key, deployment names and api-version as they are.
                   </p>
                   <RecipeStep label="Set your proxy URL (shown when you connect your key)" code={`export AZURE_OPENAI_ENDPOINT=${PROXY_KEY_URL}`} />
                   <RecipeStep label="Your Azure API key stays the same" code="export AZURE_OPENAI_API_KEY=<your-azure-api-key>" />
@@ -582,13 +584,18 @@ const LANGS: { value: Lang; label: string }[] = [
   { value: 'typescript', label: 'TypeScript' },
 ];
 
+/** "Provider keys below" as a link to its card; plain words after a rotation, when the cards are hidden until the reload. */
+function Below({ to, children, linked = true }: { to: string; children: React.ReactNode; linked?: boolean }) {
+  return linked ? <a href={`#${to}`} className="wr-link">{children}</a> : <>{children}</>;
+}
+
 /** Claude on AWS Bedrock: the Anthropic SDK, pointed at the proxy URL with the Bedrock API key. */
-function BedrockRecipe() {
+function BedrockRecipe({ linked }: { linked: boolean }) {
   const [lang, setLang] = useState<Lang>('python');
   return (
     <>
       <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-        Add your Bedrock API key and the region your Claude models run in under Provider keys below. You get back a proxy URL: point the Anthropic SDK at it instead of Bedrock and keep your Bedrock API key.
+        Add your Bedrock API key and the region your Claude models run in under <Below to="provider-keys" linked={linked}>Provider keys below</Below>. You get back a proxy URL: point the Anthropic SDK at it instead of Bedrock and keep your Bedrock API key.
       </p>
       <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 4, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
         <li>{BEDROCK_NOTES.key}</li>
@@ -613,11 +620,11 @@ function BedrockRecipe() {
  * sts:GetCallerIdentity, never a bearer key — there's nothing to paste into
  * the client beyond the SDK install below.
  */
-function BedrockRoleRecipe() {
+function BedrockRoleRecipe({ linked }: { linked: boolean }) {
   return (
     <>
       <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-        Create an IAM role in your AWS account that trusts WhiteRoom, then connect it under Cross-account role below. No API key — your agent authenticates with its own AWS credentials; WhiteRoom verifies the call and assumes this role to reach Bedrock on its behalf.
+        Create an IAM role in your AWS account that trusts WhiteRoom, then connect it under <Below to="bedrock-role" linked={linked}>Cross-account role below</Below>. No API key — your agent authenticates with its own AWS credentials; WhiteRoom verifies the call and assumes this role to reach Bedrock on its behalf.
       </p>
       <RecipeStep
         label="1. Create the role's trust policy, with the external ID you'll use below"

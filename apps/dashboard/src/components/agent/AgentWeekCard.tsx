@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useState } from 'react';
+import Link from 'next/link';
 import { Button, ScoreRing } from '@whiteroom/ui';
 import { usePoll } from '@/hooks/usePoll';
 import { agentWeekFrom, loadWeekReads, WEEK_POLL_MS, type AgentWeek } from '@/lib/home-agents';
@@ -8,6 +9,8 @@ import { fmtTokens } from '@/lib/format';
 import { RULE_ACTIVITY } from '@/lib/vocab';
 import { outOfTen, scoreParts, scoreSummary, scoreWorking } from '@/lib/agent-scores';
 import { weekRuleWords, weekTokens } from '@/lib/agent-detail';
+import { tallyTotal } from '@/lib/governance';
+import { ROUTES } from '@/lib/routes';
 
 const label = { fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--tx2)' } as const;
 const cap = { fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--tx2)' } as const;
@@ -66,12 +69,19 @@ export function AgentWeekCard({ fleetId, authKey, agentId, preview, hasTaskType 
         <span>
           <span style={label}>{RULE_ACTIVITY}</span><br />
           {ruleWords
-            ? ruleWords.map((w, i) => <span key={w.word}>{i > 0 && <span style={cap}> · </span>}<strong style={figure}>{w.count}</strong> <span style={cap}>{w.word}</span></span>)
+            ? (() => {
+              const words = ruleWords.map((w, i) => <span key={w.word}>{i > 0 && <span style={cap}> · </span>}<strong style={figure}>{w.count}</strong> <span style={cap}>{w.word}</span></span>);
+              // Some activity: the figure opens this agent's runs with rule activity. None or unknown: no link.
+              return rules && tallyTotal(rules) > 0
+                ? <Link prefetch={false} href={`${ROUTES.runs}?agent=${encodeURIComponent(agentId)}&show=rules`} className="wr-link">{words}</Link>
+                : words;
+            })()
             : <strong style={figure}>{dash}</strong>}
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {shown != null && <ScoreRing score={shown} size={52} decorative />}
-          <span><span style={label}>Score</span><br />{shown != null ? <span style={{ ...cap, color: 'var(--tx)' }}>{shown} out of 10</span> : <strong style={figure}>{dash}</strong>}</span>
+          {/* The ring shows the number (and names it to screen readers); the words beside it don't repeat it. */}
+          {shown != null && <ScoreRing score={shown} size={52} />}
+          <span><span style={label}>Score</span><br />{shown != null ? <span style={cap}>out of 10</span> : <strong style={figure}>{dash}</strong>}</span>
         </span>
       </div>
       {score && (
