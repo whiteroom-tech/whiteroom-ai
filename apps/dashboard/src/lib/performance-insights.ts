@@ -3,7 +3,6 @@
  * the one-line rows and their detail, and the Recommendations list's labels.
  * Pure, so the wording can be tested without rendering.
  */
-import { ControlDeniedError } from '@/lib/whiteroom/client';
 import { flaggedInWindow, UNUSUAL_SIGNALS } from '@/lib/runs';
 import { fmtCount, plural } from '@/lib/format';
 import type { RunSummary } from '@/lib/whiteroom/types';
@@ -182,11 +181,3 @@ export function agentSignals(runs: Pick<RunSummary, 'agentId' | 'startedAt' | 'f
 }
 
 
-/**
- * What a failed snooze, dismiss or mark fixed says. They are the fleet
- * owner's (Agent Health D6): a teammate is told so in the refusal's own
- * words, never asked to try again.
- */
-export function feedbackErrorText(e: unknown): string {
-  return e instanceof ControlDeniedError ? e.message : 'Failed to submit feedback. Try again.';
-}

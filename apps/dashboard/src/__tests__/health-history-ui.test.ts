@@ -111,10 +111,14 @@ describe('Agent health › Download report', () => {
 
   it('a failed name lookup still downloads, naming the person as a teammate', async () => {
     api.history.mockResolvedValue({ events: [ev(0, { event: 'snoozed', actor: 'user:u1' })], cursor: null });
-    api.actors.mockResolvedValueOnce([]);
+    // The real lookup, with its request failing.
+    const real = await vi.importActual<typeof import('@/lib/control-actors')>('@/lib/control-actors');
+    api.actors.mockImplementationOnce((fleetId: string, since?: string) => real.fetchControlActors(fleetId, since));
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('network down'); }));
     expect(await downloadHealthReport('f', null)).toBeNull();
     const sheets = api.build.mock.calls[0][0] as Array<{ rows: unknown[][] }>;
     expect(sheets[1].rows[0][4]).toBe('a teammate');
+    vi.unstubAllGlobals();
   });
 
   it('says so, and downloads nothing, on an engine without history', async () => {
