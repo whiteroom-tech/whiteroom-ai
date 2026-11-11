@@ -160,7 +160,7 @@ const READ_ACTIONS: ReadonlySet<string> = new Set([
   'performance_agent_scores', 'performance_recommendations_list', 'performance_recommendations_get',
   'performance_live_feed', 'performance_recommendations_export', 'performance_cost_forecast',
   'agent_budgets_get', 'governance_list', 'get_diagnosis', 'audit_integrity', 'verify_audit', 'audit_summary',
-  'rule_would_act', 'list_runs', 'rule_actions', 'run_days', 'get_run_events', 'alerts_get', 'health_history',
+  'rule_would_act', 'list_runs', 'rule_actions', 'run_days', 'get_run_events', 'alerts_get', 'health_history', 'job_outcomes',
   'fleet_data_settings_get', 'compression_preview',
 ]);
 
@@ -587,6 +587,17 @@ export function performanceAgent(fleetId: string, agentId: string, hoursBack?: n
 
 export function performanceEvidence(fleetId: string, findingId: string, key?: string): Promise<PerformanceEvidenceResult> {
   return apiCall<PerformanceEvidenceResult>({ action: 'performance_evidence', fleet_id: fleetId, finding_id: findingId }, key);
+}
+
+/** Successes and failures per agent in the last 7 days, as the customer's system reported (Agent Health item 3). Null from an engine without it. */
+export async function jobOutcomes(fleetId: string, agentId?: string, key?: string): Promise<Record<string, { success: number; failure: number }> | null> {
+  try {
+    const res = await apiCall<{ agents: Record<string, { success: number; failure: number }> }>({ action: 'job_outcomes', fleet_id: fleetId, ...(agentId && { agent_id: agentId }) }, key);
+    return res.agents ?? {};
+  } catch (e) {
+    if (e instanceof WhiteRoomApiError && e.status === 400 && /unknown action/i.test(e.reason ?? '')) return null;
+    throw e;
+  }
 }
 
 /** One Health history entry (Agent Health item 9). actor: "user:<id>" for a person's action, null for WhiteRoom's. */

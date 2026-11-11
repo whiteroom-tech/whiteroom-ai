@@ -17,6 +17,7 @@ const MEASURES: Record<DiagnosisDetectorId, DiagnosisMeasures> = {
   review_model_change: { change: 'served', requestedModel: 'claude-sonnet-4-5', newModel: 'claude-sonnet-4-5-20261015', previousModel: 'claude-sonnet-4-5-20250929', since: '2026-11-04', recentCalls: 90, sharePct: 90 },
   review_block_workaround: { workarounds: 2, blocksJudged: 3, toolName: 'post_webhook', ruleType: 'tool_list', tools: 1 },
   review_long_context: { longRatePct: 41, shortRatePct: 9, longFromTokens: 36000, longCalls: 60, shortCalls: 120 },
+  review_job_failures: { failedJobs: 6, reportedJobs: 20, failurePct: 30 },
 };
 
 /** Every number in the text, normalised (thousands separators dropped). */
@@ -38,6 +39,7 @@ describe('check names', () => {
       review_model_change: 'Model changed',
       review_block_workaround: 'Tried another way after a block',
       review_long_context: 'More trouble on long tasks',
+      review_job_failures: 'Jobs are failing',
     });
   });
 });
@@ -164,6 +166,15 @@ describe('cost, limitations, reasons, how-to', () => {
     expect(text({ ...MEASURES.review_block_workaround, ruleType: 'keyword' })).toContain('After a Keywords rule blocked a call');
     expect(notMeasuredShort('few_prior_calls', 'x')).toBe('needs more calls before a block to compare');
     expect(howtoParagraphs('block_workaround', { toolName: 'post_webhook' })[0]).toContain('post_webhook');
+  });
+
+  it('job failures say the outcome came from the customer', () => {
+    expect(sentenceText(findingSentence('review_job_failures', MEASURES.review_job_failures))).toBe('6 of 20 jobs failed this week (30%), as reported by your system.');
+    expect(notMeasuredShort('few_outcomes', 'Needs 10 job outcomes reported this week; has 4')).toBe('needs 6 more reported job outcomes this week');
+    expect(limitationText('review_job_failures', 'x')).toContain('doesn’t check whether they worked');
+    expect(howtoParagraphs('job_failures', {})).toHaveLength(2);
+    const h = evidenceHeader('review_job_failures', [{ requestEnd: '2026-09-28T14:02:00Z', watchNumber: 4, terminal: 'upstream_error' }], {});
+    expect(h && h.kind === 'table' && h.rows[0].slice(1)).toEqual(['4', 'Failed']);
   });
 
   it('long tasks compares the two rates and claims no cause', () => {

@@ -278,6 +278,12 @@ export function evidenceHeader(detector: string, calls: EvidenceCall[], measures
         rows: byTime.map((c) => [time(c), String(c.watchNumber ?? '—'), list(c.requestedToolNames).join(', ') || '(none)']),
         note: 'WhiteRoom records which tools were called, never what they were asked to do.',
       };
+    case 'review_job_failures':
+      return {
+        kind: 'table', caption: 'The last call of each failed job still in the window', columns: ['Time', 'Run', 'Result'],
+        rows: byTime.map((c) => [time(c), String(c.watchNumber ?? '—'), c.terminal == null ? '—' : callOutcomeLabel(String(c.terminal)) ?? String(c.terminal).replace(/_/g, ' ')]),
+        note: 'Whether a job worked comes from your system, not from these calls.',
+      };
     case 'review_long_context':
       return {
         kind: 'table', caption: 'Calls with a failed or repeated step in long conversations', columns: ['Time', 'Run', 'Called', 'Reported errors'],

@@ -531,6 +531,8 @@ export function runSummary(run: RunHeader, fallback?: RunTotals | null): {
   /** Watch rule actions, when no would-block calls are known (older or unlinked runs): worded as acting. */
   wouldAct?: number;
   models: string[];
+  /** "Succeeded" or "Failed", as the customer's system reported; absent when nothing was reported. */
+  outcome?: string;
 } {
   const linked = run.wouldBlockCalls;
   const acted = run.wouldActCalls ?? fallback?.wouldActCalls;
@@ -550,6 +552,7 @@ export function runSummary(run: RunHeader, fallback?: RunTotals | null): {
     // below the run's Watch total. With none linked, the total is shown as actions. Zero is left out.
     wouldBlock: linked ? { n: linked, atLeast: unlinked || (acted !== undefined && linked < acted) } : undefined,
     wouldAct: !linked && acted ? acted : undefined,
+    outcome: run.outcome === 'success' ? 'Succeeded' : run.outcome === 'failure' ? 'Failed' : undefined,
     models: run.models ?? [],
   };
 }

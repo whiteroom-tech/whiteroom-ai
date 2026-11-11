@@ -19,6 +19,7 @@ import { ActivityRows } from '@/components/home/ActivityRows';
 import { RecentRuns, type RecentRunsState } from '@/components/agent/RecentRuns';
 import { AgentWeekCard } from '@/components/agent/AgentWeekCard';
 import { HealthHistory } from '@/components/agent/HealthHistory';
+import { JobOutcomes } from '@/components/agent/JobOutcomes';
 import { RulesOnAgent } from '@/components/agent/RulesOnAgent';
 import { fetchControlActors, holdWho, type ControlActor } from '@/lib/control-actors';
 import { RefreshFailed } from '@/components/citadel/States';
@@ -50,7 +51,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   from: 'home' | 'runs';
   onAuthError?: (msg: string) => void;
   /** Sample data for /dev/agent: nothing is fetched and actions do nothing. */
-  preview?: { agent: AgentInfo; entries: AuditEntry[]; week?: AgentWeek; rules?: GovernanceRule[]; runs?: RunSummary[]; diagnosis?: FleetDiagnosis | null; healthHistory?: HealthHistoryEvent[] };
+  preview?: { agent: AgentInfo; entries: AuditEntry[]; week?: AgentWeek; rules?: GovernanceRule[]; runs?: RunSummary[]; diagnosis?: FleetDiagnosis | null; healthHistory?: HealthHistoryEvent[]; jobs?: { success: number; failure: number } | null };
 }) {
   const [agent, setAgent] = useState<AgentInfo | null>(preview?.agent ?? null);
   const [notFound, setNotFound] = useState(false);
@@ -447,6 +448,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
                 <Link href={`${ROUTES.performance}#agent-health-heading`} className="wr-link">Details on Performance &rarr;</Link>
               </p>
             )}
+            <JobOutcomes fleetId={fleetId} agentId={agentId} authKey={authKey} preview={preview ? preview.jobs ?? null : undefined} />
             <HealthHistory fleetId={fleetId} agentId={agentId} authKey={authKey} preview={preview?.healthHistory} />
             <div className="wr-agent-grid">
               <div className="wr-agent-col">

@@ -247,6 +247,7 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
             {s.wouldBlock && <> · {s.wouldBlock.atLeast && 'at least '}<strong>{s.wouldBlock.n}</strong> would have blocked</>}
             {s.wouldAct !== undefined && <> · {wouldActText(s.wouldAct)}</>}
             {s.models.map((m) => <span key={m}> · <span className="wr-run-summary__model">{m}</span></span>)}
+            {s.outcome && <> · Job <strong>{s.outcome.toLowerCase()}</strong>, as your system reported</>}
           </p>
         )}
         {!!run?.flags?.length && (
