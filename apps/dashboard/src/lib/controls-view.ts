@@ -510,6 +510,10 @@ export function blocksWhen(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'a
 /** `label`: when `text` is a bare "0", what it means ("None since edit"), for the tooltip and screen readers. */
 export type RowCount = { text: string; tone: 'plain' | 'hot' | 'warn'; label?: string };
 
+// Nothing caught shows as "0"; "—" would mean unknown on this dashboard.
+const NONE_SINCE_EDIT: RowCount = { text: '0', tone: 'plain', label: 'None since edit' };
+const NONE_CAUGHT: RowCount = { text: '0', tone: 'plain', label: 'None caught · 7 days' };
+
 /**
  * The count at the right of a row: "60 caught · 7 days", "0" (None since edit),
  * "Never triggers ($190 cap first)". Seven-day counts are per rule id
@@ -517,10 +521,6 @@ export type RowCount = { text: string; tone: 'plain' | 'hot' | 'warn'; label?: s
  * one agent, a Watch rule counts that agent's calls since its last
  * change, and an Enforce rule shows its count only when it covers just them.
  */
-// Nothing caught shows as "0"; "—" would mean unknown on this dashboard.
-const NONE_SINCE_EDIT: RowCount = { text: '0', tone: 'plain', label: 'None since edit' };
-const NONE_CAUGHT: RowCount = { text: '0', tone: 'plain', label: 'None caught · 7 days' };
-
 export function rowCount(rule: GovernanceRule, ctx: {
   byRuleId?: Record<string, RuleActionCounts>;
   byRuleType?: Record<string, RuleActionCounts>;

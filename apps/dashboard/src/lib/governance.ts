@@ -36,14 +36,6 @@ export const REASON_LABELS: Record<string, string> = {
   keyword_found: 'keyword found',
 };
 
-/**
- * What stepped in, said after "blocked by": the rule and, when it adds
- * something, why. `lower` for mid-sentence ("blocked by the spend cap"),
- * else a label ("Spend cap"). A reason that only restates the rule is left
- * out; one that adds something stays ("Spend cap (too many calls)"). The
- * Keywords rule is named as a rule ("the Keywords rule"): its reason only
- * repeated it.
- */
 /** Each rule's own reason: said after its name, it only repeats it ("the spend cap (budget exceeded)"). */
 const OWN_REASON: Partial<Record<GovernanceRuleType, string>> = {
   spend_cap: 'budget_exceeded',
@@ -53,6 +45,14 @@ const OWN_REASON: Partial<Record<GovernanceRuleType, string>> = {
   call_rate: 'rate_exceeded',
 };
 
+/**
+ * What stepped in, said after "blocked by": the rule and, when it adds
+ * something, why. `lower` for mid-sentence ("blocked by the spend cap"),
+ * else a label ("Spend cap"). A reason that only restates the rule is left
+ * out; one that adds something stays ("Spend cap (too many calls)"). The
+ * Keywords rule is named as a rule ("the Keywords rule"): its reason only
+ * repeated it.
+ */
 export function blockedByPhrase(ruleType: unknown, reason: unknown, lower: boolean): string {
   if (ruleType === 'keyword') return 'the Keywords rule';
   const label = ruleLabel(ruleType);

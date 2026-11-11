@@ -71,7 +71,6 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
   agentSpend?: { agent: string; perDay: number; days: number }[];
   /** What the rule is doing now, in a sentence (controls-view ruleStatus). */
   status: string;
-  /** Opens the audit trail check. */
   dirty: boolean;
   error: string | null;
   saving: boolean;
