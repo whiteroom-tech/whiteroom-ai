@@ -11,14 +11,17 @@ import type { HealthHistoryEvent } from '@/lib/whiteroom/client';
 const api = vi.hoisted(() => ({
   history: vi.fn(),
   download: vi.fn(),
+  build: vi.fn((_s: unknown) => new Uint8Array([1])),
   actors: vi.fn(async () => [] as unknown[]),
 }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({ ...(await orig<typeof import('@/lib/whiteroom/client')>()), healthHistory: api.history }));
-vi.mock('@/lib/xlsx', async (orig) => ({ ...(await orig<typeof import('@/lib/xlsx')>()), downloadWorkbook: api.download }));
+vi.mock('@/lib/xlsx', async (orig) => ({ ...(await orig<typeof import('@/lib/xlsx')>()), downloadWorkbook: api.download, buildWorkbook: api.build }));
 vi.mock('@/lib/control-actors', async (orig) => ({ ...(await orig<typeof import('@/lib/control-actors')>()), fetchControlActors: api.actors }));
 
 const { HealthHistory } = await import('@/components/agent/HealthHistory');
-const { downloadHealthReport } = await import('@/components/performance/HealthReport');
+const { downloadHealthReport, TRUNCATED_NOTE } = await import('@/components/performance/HealthReport');
+const { ControlDeniedError } = await import('@/lib/whiteroom/client');
+const { localDay } = await import('@/lib/runs');
 const { AgentHealth } = await import('@/components/performance/AgentHealth');
 
 const ev = (i: number, p: Partial<HealthHistoryEvent> = {}): HealthHistoryEvent => ({ agentId: 'a', detector: 'review_tool_loops', event: 'opened', actor: null, at: new Date(Date.UTC(2026, 10, 10, 12) - i * 60_000).toISOString(), ...p });
@@ -31,7 +34,7 @@ async function mount(node: ReturnType<typeof h>) {
   await flush();
   return { el, root, text: () => el.textContent ?? '' };
 }
-beforeEach(() => { api.history.mockReset(); api.download.mockReset(); api.actors.mockClear(); document.body.innerHTML = ''; });
+beforeEach(() => { api.history.mockReset(); api.download.mockReset(); api.build.mockClear(); api.actors.mockClear(); document.body.innerHTML = ''; });
 
 describe('Agent detail › Health history', () => {
   it('lists the newest ten, says how many more, and names who acted', async () => {
@@ -82,12 +85,36 @@ describe('Agent health › Download report', () => {
   const diagnosis = { reports: [], waiting: [], skipped: [], truncated: false, checkedAt: null, source: null, readyAgents: 0, busiest: null, minCalls: 50 } as never;
   const flagged = { runs: [], truncated: false, failed: false, loading: false, days: [] } as never;
 
-  it('downloads a workbook named for today, with a note when older entries were left out', async () => {
+  it('downloads a workbook named for the viewer’s day, with a note when older entries were left out', async () => {
     api.history.mockResolvedValue({ events: [ev(0, { actor: 'user:u1' })], cursor: 'more' });
     expect(await downloadHealthReport('f', null)).toBeNull();
     expect(api.history).toHaveBeenCalledTimes(10);
     expect(api.actors).toHaveBeenCalledWith('f', expect.any(String));
-    expect(api.download).toHaveBeenCalledWith(expect.any(Uint8Array), expect.stringMatching(/^whiteroom-health-\d{4}-\d{2}-\d{2}\.xlsx$/));
+    expect(api.download).toHaveBeenCalledWith(expect.any(Uint8Array), `whiteroom-health-${localDay(Date.now())}.xlsx`);
+    const sheets = api.build.mock.calls[0][0] as Array<{ name: string; rows: unknown[][] }>;
+    expect(sheets[1].rows).toHaveLength(11);
+    expect(sheets[1].rows.at(-1)).toEqual(['', '', '', TRUNCATED_NOTE, '']);
+  });
+
+  it('a complete history has no note', async () => {
+    api.history.mockResolvedValue({ events: [ev(0)], cursor: null });
+    expect(await downloadHealthReport('f', null)).toBeNull();
+    const sheets = api.build.mock.calls[0][0] as Array<{ rows: unknown[][] }>;
+    expect(sheets[1].rows.flat()).not.toContain(TRUNCATED_NOTE);
+  });
+
+  it('a teammate who isn’t the owner is told so, not asked to try again', async () => {
+    api.history.mockRejectedValue(new ControlDeniedError('Only the fleet’s owner can do this.'));
+    expect(await downloadHealthReport('f', null)).toBe('Only the fleet’s owner can do this.');
+    expect(api.download).not.toHaveBeenCalled();
+  });
+
+  it('a failed name lookup still downloads, naming the person as a teammate', async () => {
+    api.history.mockResolvedValue({ events: [ev(0, { event: 'snoozed', actor: 'user:u1' })], cursor: null });
+    api.actors.mockResolvedValueOnce([]);
+    expect(await downloadHealthReport('f', null)).toBeNull();
+    const sheets = api.build.mock.calls[0][0] as Array<{ rows: unknown[][] }>;
+    expect(sheets[1].rows[0][4]).toBe('a teammate');
   });
 
   it('says so, and downloads nothing, on an engine without history', async () => {
