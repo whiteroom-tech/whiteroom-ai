@@ -411,14 +411,16 @@ export type DiagnosisDetectorId =
   | 'review_model_change'
   | 'review_block_workaround'
   | 'review_long_context'
-  | 'review_job_failures';
+  | 'review_job_failures'
+  | 'review_planted_instruction'
+  | 'review_done_after_failure';
 
 export type DiagnosisMeasures = Record<string, number | string>;
 
 /** Suggested rules always start in Watch. */
 export type DiagnosisSuggestedAction =
   | { kind: 'rule'; rule: 'loop_breaker' | 'spend_cap'; mode: 'watch'; appliesTo: string[]; params: Record<string, number | string | string[]> }
-  | { kind: 'howto'; howtoId: 'handover_churn' | 'tool_errors' | 'tool_silence' | 'provider_failures' | 'bad_endings' | 'model_change' | 'block_workaround' | 'long_context' | 'job_failures' };
+  | { kind: 'howto'; howtoId: 'handover_churn' | 'tool_errors' | 'tool_silence' | 'provider_failures' | 'bad_endings' | 'model_change' | 'block_workaround' | 'long_context' | 'job_failures' | 'planted_instruction' | 'done_after_failure' };
 
 export interface DiagnosisFinding {
   recommendationId: string;
@@ -791,7 +793,11 @@ export type RunFlag =
   /** The run's last call failed or was blocked and the agent made no call for 30 minutes after (Agent Health item 7). */
   | { signal: 'ended_badly'; how: 'failed' | 'blocked' }
   /** After a rule blocked a call, the agent used a tool it hadn't used before (Agent Health item 5). */
-  | { signal: 'workaround'; tool: string };
+  | { signal: 'workaround'; tool: string }
+  /** A result from this tool looked like it was giving the agent instructions (Agent Health item 2). */
+  | { signal: 'planted_instruction'; tool: string }
+  /** The agent reported success right after a step with this tool failed (Agent Health item 4). */
+  | { signal: 'done_after_failure'; tool: string };
 
 export interface RunDaysResult {
   fleetId: string;
