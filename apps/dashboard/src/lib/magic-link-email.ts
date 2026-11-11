@@ -172,6 +172,24 @@ export function trialEndingEmail(endsOn: string, settingsUrl: string): { subject
   };
 }
 
+/**
+ * Sent once, TRIAL_ENDING_DAYS before the free period ends, to an account
+ * that subscribed with a card during it: a notice that billing starts, with
+ * nothing to choose.
+ */
+export function billingStartsEmail(planName: string, endsOn: string, settingsUrl: string): { subject: string; html: string; text: string } {
+  return {
+    subject: `Your WhiteRoom ${planName} plan starts billing on ${endsOn}`,
+    ...transactionalEmail({
+      heading: 'Your free period is ending',
+      body: `Your free period ends on ${endsOn}. From then, your ${planName} plan is billed to the card you added. Your agents keep running as they are.`,
+      cta: 'Manage billing',
+      url: settingsUrl,
+      footer: 'To change your card, open Settings before that date.',
+    }),
+  };
+}
+
 /** Sent once when an account's deletion window ends but something stops the deletion. */
 export function deletionBlockedEmail(why: string, settingsUrl: string): { subject: string; html: string; text: string } {
   return {
