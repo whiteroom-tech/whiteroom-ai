@@ -29,7 +29,8 @@ export const checkName = (detector: string) => (isDiagnosisDetector(detector) ? 
 
 /** Who acted: a person's name, "a teammate" when that person's name isn't known, else "WhiteRoom". */
 export function whoActed(actor: string | null, actions: ControlActor[]): string {
-  return actor?.startsWith('user:') ? userName(actor, actions) ?? 'a teammate' : 'WhiteRoom';
+  // userName names any "user:" actor, as "a teammate" when the name isn't known.
+  return (actor?.startsWith('user:') && userName(actor, actions)) || 'WhiteRoom';
 }
 
 /** The UTC days from `days` ago to today, as the engine reads them. */
