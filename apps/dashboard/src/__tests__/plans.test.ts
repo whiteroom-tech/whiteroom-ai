@@ -152,11 +152,16 @@ describe('the free period', () => {
     expect(effectivePlan(null, '2026-12-20T00:00:00Z', new Date('2026-11-15T00:00:00Z'))).toBe('starter');
   });
 
-  it('starts the fee 30 days after the free period: day 61 for a new account', () => {
-    expect(feeStartsAt(newTrialEndsAt(NOW))?.toISOString()).toBe('2026-11-30T00:00:00.000Z');
-    expect(feeStartsAt('2026-12-20T00:00:00Z')?.toISOString()).toBe('2027-01-19T00:00:00.000Z');
-    expect(feeStartsAt(null)).toBeNull();
-    expect(feeStartsAt('not a date')).toBeNull();
+  it('starts the Starter fee 30 days after the free period: day 61 for a new account', () => {
+    expect(feeStartsAt(newTrialEndsAt(NOW), 'starter')?.toISOString()).toBe('2026-11-30T00:00:00.000Z');
+    expect(feeStartsAt('2026-12-20T00:00:00Z', 'starter')?.toISOString()).toBe('2027-01-19T00:00:00.000Z');
+    expect(feeStartsAt(null, 'starter')).toBeNull();
+    expect(feeStartsAt('not a date', 'starter')).toBeNull();
+  });
+
+  it('starts the Pro fee the day the free period ends: day 31 for a new account', () => {
+    expect(feeStartsAt(newTrialEndsAt(NOW), 'pro')?.toISOString()).toBe(newTrialEndsAt(NOW).toISOString());
+    expect(feeStartsAt('2026-12-20T00:00:00Z', 'pro')?.toISOString()).toBe('2026-12-20T00:00:00.000Z');
   });
 });
 
@@ -192,10 +197,10 @@ describe('savings-share maths', () => {
 // without the site, a customer is billed something they weren't shown.
 describe('published pricing', () => {
   it('matches the website', () => {
-    expect(PLANS.starter.pricing).toEqual({ sharePercent: 20, shareUnitAmountDecimal: '0.2', feeCents: 1000, feeUnit: 'user' });
-    expect(PLANS.pro.pricing).toEqual({ sharePercent: 10, shareUnitAmountDecimal: '0.1', feeCents: 30000, feeUnit: 'organization' });
+    expect(PLANS.starter.pricing).toEqual({ sharePercent: 20, shareUnitAmountDecimal: '0.2', feeCents: 1000, feeUnit: 'user', feeAfterTrialDays: 30 });
+    expect(PLANS.pro.pricing).toEqual({ sharePercent: 10, shareUnitAmountDecimal: '0.1', feeCents: 30000, feeUnit: 'organization', feeAfterTrialDays: 0 });
     expect(PLANS.starter.priceLine).toBe('20% of what WhiteRoom saves you. 30 days free once you go live; $10 a month per user from your 61st day live.');
-    expect(PLANS.pro.priceLine).toBe('10% of what WhiteRoom saves you. 30 days free once you go live; $300 a month per organization from your 61st day live.');
+    expect(PLANS.pro.priceLine).toBe('10% of what WhiteRoom saves you. 30 days free once you go live; then $300 a month per organization.');
     expect(limitsFor('starter').includedAgents).toBe(3);
     expect(limitsFor('pro').includedAgents).toBe(7);
     expect(limitsFor('pro').retentionDays).toBe(365);

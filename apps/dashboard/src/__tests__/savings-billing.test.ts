@@ -245,7 +245,7 @@ describe('the platform fee', () => {
   const acct = { ...ACCOUNT, trialEndsAt: '2026-09-01T00:00:00Z' };
   const shareOnly: Item[] = [{ id: 'si_share', price: { id: 'price_s_share' } }];
 
-  it('is not added before day 61', async () => {
+  it('is not added on Starter before day 61', async () => {
     const s = fakeStripe();
     expect(await syncFee(s, acct, 'starter', shareOnly, seats(1), Date.parse('2026-09-30T23:00:00Z'))).toBeNull();
     expect(s.subscriptionItems.create).not.toHaveBeenCalled();
@@ -275,6 +275,16 @@ describe('the platform fee', () => {
     await syncFee(s, acct, 'pro', [{ id: 'si_share', price: { id: 'price_p_share' } }], deps, NOW);
     expect(s.subscriptionItems.create).toHaveBeenCalledWith(expect.objectContaining({ price: 'price_p_fee', quantity: 1 }));
     expect(deps.feeSeats).not.toHaveBeenCalled();
+  });
+
+  it('is due on Pro from the day the free period ends (sold at Checkout; added here only if missing)', async () => {
+    const s = fakeStripe();
+    const proShare: Item[] = [{ id: 'si_share', price: { id: 'price_p_share' } }];
+    expect(await syncFee(s, acct, 'pro', proShare, seats(1), Date.parse('2026-08-31T23:00:00Z'))).toBeNull();
+    expect(await syncFee(s, acct, 'pro', proShare, seats(1), Date.parse('2026-09-01T01:00:00Z'))).toBe('added');
+    const withFee: Item[] = [...proShare, { id: 'si_fee', quantity: 1, price: { id: 'price_p_fee' } }];
+    expect(await syncFee(s, acct, 'pro', withFee, seats(1), Date.parse('2026-09-01T01:00:00Z'))).toBeNull();
+    expect(s.subscriptionItems.create).toHaveBeenCalledTimes(1);
   });
 
   it("swaps the other plan's fee after a plan switch", async () => {

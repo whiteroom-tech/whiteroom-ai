@@ -197,7 +197,7 @@ describe('§8.6: plan lines', () => {
     expect(PLANS.free.priceLine).toBe('Free. Sandbox only.');
     expect(PLANS.free.blurb).toBe('Sandbox only. Take an agent live to start your 30 free days.');
     expect(PLANS.starter.priceLine).toBe('20% of what WhiteRoom saves you. 30 days free once you go live; $10 a month per user from your 61st day live.');
-    expect(PLANS.pro.priceLine).toBe('10% of what WhiteRoom saves you. 30 days free once you go live; $300 a month per organization from your 61st day live.');
+    expect(PLANS.pro.priceLine).toBe('10% of what WhiteRoom saves you. 30 days free once you go live; then $300 a month per organization.');
   });
 });
 

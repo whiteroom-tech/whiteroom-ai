@@ -7,7 +7,7 @@ import { stripe } from '@/lib/stripe';
 import { getClosing } from '@/lib/account-closing';
 import { CANCEL_CUTOFF_MS, closingDate, isClosingOpen, SUPPORT_EMAIL } from '@/lib/closing-shared';
 import { getSubscriptionRow, getTrial } from '@/lib/entitlements';
-import { hasLiveSubscription, isPaidPlanId, isTrialActive, newTrialEndsAt, stripePriceId, trialStatus } from '@/lib/plans';
+import { hasLiveSubscription, isPaidPlanId, isTrialActive, newTrialEndsAt, PLANS, stripePriceId, trialStatus } from '@/lib/plans';
 import { HOUR_MS } from '@/lib/format';
 
 /**
@@ -84,6 +84,8 @@ export async function startCheckout(plan: string): Promise<UrlResult> {
 
   const priceId = stripePriceId(plan, 'share');
   if (!priceId) return { ok: false, error: `No Stripe price is configured for the ${plan} plan.` };
+  // A fee that starts with the paid period is sold with the share (see below).
+  const feeAtCheckout = PLANS[plan].pricing!.feeAfterTrialDays === 0 ? stripePriceId(plan, 'fee') : null;
 
   try {
     const user = await requireUser();
@@ -113,9 +115,12 @@ export async function startCheckout(plan: string): Promise<UrlResult> {
     const customerId = await ensureCustomer(user.id, user.email);
     const base = appOrigin();
 
-    // Checkout sells only the plan's metered savings share (no quantity: a
-    // metered price is billed on what the meter reports). The monthly fee is
-    // added later by the billing sync, once the account reaches day 61.
+    // Checkout sells the plan's metered savings share (no quantity: a metered
+    // price is billed on what the meter reports). Pro's monthly fee starts the
+    // day the free period ends, so it is sold here too, one per organization:
+    // the trial below holds it, and the first invoice after the free period
+    // charges it for the month ahead. Starter's fee starts 30 days later and
+    // is added then by the billing sync.
     //
     // Subscribing during the free period shouldn't end it early, on either
     // plan: the remaining days carry over as a Stripe trial, so nothing is
@@ -138,7 +143,7 @@ export async function startCheckout(plan: string): Promise<UrlResult> {
     const session = await stripe().checkout.sessions.create({
       mode: 'subscription',
       customer: customerId,
-      line_items: [{ price: priceId }],
+      line_items: [{ price: priceId }, ...(feeAtCheckout ? [{ price: feeAtCheckout, quantity: 1 }] : [])],
       success_url: `${base}/settings?billing=success`,
       cancel_url: `${base}/settings?billing=cancelled`,
       // Carried onto the subscription so checkout.session.completed and every

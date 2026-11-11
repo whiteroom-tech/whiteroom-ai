@@ -69,14 +69,6 @@ export function freePlanMode(): FreePlanMode {
   return v === 'invite' || v === 'public' ? v : 'off';
 }
 
-/**
- * Days after the free period before the monthly platform fee starts. A new
- * account's free period is TRIAL_DAYS from sign-up, so the fee starts on day
- * 61. Counted from the account's stored trial_ends_at rather than from
- * sign-up, so an account with a longer stored or extended free period still
- * gets its 30 days of share-only billing before any fee.
- */
-export const FEE_AFTER_TRIAL_DAYS = 30;
 
 /**
  * Agents the engine admits into one fleet on a self-serve plan. A guard
@@ -90,12 +82,18 @@ export function newTrialEndsAt(now: Date = new Date()): Date {
   return new Date(now.getTime() + TRIAL_DAYS * 86_400_000);
 }
 
-/** When the platform fee starts for an account whose free period ends at `trialEndsAt`. Null for an unreadable date. */
-export function feeStartsAt(trialEndsAt: string | Date | null): Date | null {
+/**
+ * When the plan's platform fee starts for an account whose free period ends
+ * at `trialEndsAt`: the plan's `feeAfterTrialDays` later (day 61 on Starter,
+ * day 31 on Pro, for a new account). Counted from the stored trial_ends_at
+ * rather than from sign-up, so an extended free period moves it too. Null for
+ * an unreadable date.
+ */
+export function feeStartsAt(trialEndsAt: string | Date | null, plan: PaidPlanId): Date | null {
   if (!trialEndsAt) return null;
   const end = trialEndsAt instanceof Date ? trialEndsAt : new Date(trialEndsAt);
   if (Number.isNaN(end.getTime())) return null;
-  return new Date(end.getTime() + FEE_AFTER_TRIAL_DAYS * 86_400_000);
+  return new Date(end.getTime() + PLANS[plan].pricing!.feeAfterTrialDays * 86_400_000);
 }
 
 export interface PlanLimits {
@@ -122,9 +120,11 @@ export interface PlanLimits {
  *   engine's audit_summary savingsByDay). Billed through a Stripe meter in
  *   whole US cents saved: one meter unit = 1 cent saved, and the share price
  *   charges `shareUnitAmountDecimal` cents per unit (20% = 0.2 cents).
- * - From day 61 (FEE_AFTER_TRIAL_DAYS after the free period): a monthly
- *   platform fee of `feeCents` per `feeUnit` (per user account on Starter,
- *   one per organization on Pro).
+ * - A monthly platform fee of `feeCents` per `feeUnit` (per user account on
+ *   Starter, one per organization on Pro), from `feeAfterTrialDays` after the
+ *   free period: day 61 on Starter, day 31 on Pro. Pro's fee is sold at
+ *   Checkout with the share, so Stripe's trial holds it and the first invoice
+ *   after the free period charges it; Starter's is added by the billing sync.
  */
 export interface PlanPricing {
   /** Percent of billable savings charged. */
@@ -133,6 +133,8 @@ export interface PlanPricing {
   shareUnitAmountDecimal: string;
   /** Monthly platform fee in cents, per `feeUnit`. */
   feeCents: number;
+  /** Days after the free period before the fee starts: 0 = from the day it ends. */
+  feeAfterTrialDays: number;
   feeUnit: 'user' | 'organization';
 }
 
@@ -185,7 +187,7 @@ export const PLANS: Record<PlanId, Plan> = {
   starter: {
     id: 'starter',
     name: 'Starter',
-    pricing: { sharePercent: 20, shareUnitAmountDecimal: '0.2', feeCents: 1000, feeUnit: 'user' },
+    pricing: { sharePercent: 20, shareUnitAmountDecimal: '0.2', feeCents: 1000, feeUnit: 'user', feeAfterTrialDays: 30 },
     priceLine: '20% of what WhiteRoom saves you. 30 days free once you go live; $10 a month per user from your 61st day live.',
     blurb: 'For anyone building agents.',
     limits: { maxFleets: 1, maxAgentsPerFleet: RUNAWAY_AGENT_GUARD, includedAgents: 3, retentionDays: 30 },
@@ -194,8 +196,8 @@ export const PLANS: Record<PlanId, Plan> = {
   pro: {
     id: 'pro',
     name: 'Pro',
-    pricing: { sharePercent: 10, shareUnitAmountDecimal: '0.1', feeCents: 30000, feeUnit: 'organization' },
-    priceLine: '10% of what WhiteRoom saves you. 30 days free once you go live; $300 a month per organization from your 61st day live.',
+    pricing: { sharePercent: 10, shareUnitAmountDecimal: '0.1', feeCents: 30000, feeUnit: 'organization', feeAfterTrialDays: 0 },
+    priceLine: '10% of what WhiteRoom saves you. 30 days free once you go live; then $300 a month per organization.',
     blurb: 'For teams running agent fleets.',
     limits: { maxFleets: 10, maxAgentsPerFleet: RUNAWAY_AGENT_GUARD, includedAgents: 7, retentionDays: 365 },
     features: ['Up to 7 agents; larger fleets: talk to us', 'Up to 10 fleets', 'Audit log with session replay', '12 months of data', 'Priority support'],
