@@ -138,6 +138,20 @@ describe('Agent health › Download report', () => {
     m.root.unmount();
   });
 
+  it('any other failure is rethrown by the download, and the link says to try again and is usable again', async () => {
+    api.history.mockRejectedValue(new Error('engine down'));
+    await expect(downloadHealthReport('f', null)).rejects.toThrow('engine down');
+    const onReport = vi.fn(() => downloadHealthReport('f', null));
+    const m = await mount(h(AgentHealth, { flagged, diagnosis, line: null, onCheck: () => {}, onReview: () => {}, onReport }));
+    const link = () => [...m.el.querySelectorAll('button')].find((b) => /report|Preparing/.test(b.textContent ?? '')) as HTMLButtonElement;
+    await act(async () => { link().click(); });
+    await flush();
+    expect(m.el.querySelector('[role="alert"]')?.textContent).toBe('The report couldn’t be made. Try again.');
+    expect(link().textContent).toBe('Download report');
+    expect(link().disabled).toBe(false);
+    m.root.unmount();
+  });
+
   it('no link when the page gives no way to make one', async () => {
     const m = await mount(h(AgentHealth, { flagged, diagnosis, line: null, onCheck: () => {}, onReview: () => {} }));
     expect(m.text()).not.toContain('Download report');

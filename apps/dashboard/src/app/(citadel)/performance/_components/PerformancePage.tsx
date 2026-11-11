@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { performanceIndex, performanceEvidence, performanceFeedback, performanceRecommendationGet, performanceFleetHourly, auditSummary, ruleActions as fetchRuleActions, performanceCostForecast, governanceList, isAuthError, ControlDeniedError } from '@/lib/whiteroom/client';
+import { performanceIndex, performanceEvidence, performanceFeedback, performanceRecommendationGet, performanceFleetHourly, auditSummary, ruleActions as fetchRuleActions, performanceCostForecast, governanceList, isAuthError } from '@/lib/whiteroom/client';
+import { feedbackErrorText } from '@/lib/performance-insights';
 import { addDays, clampSpan, dayStart, localDay, runsDays, runsWindow, spanLabel, viewInstants, windowKey, type RunsRange, type RunsView } from '@/lib/runs';
 import { legacyHoursBack, NEEDS_WINDOWS, PERF_MAX_DAYS, perfOldest, perfRangeParams, perfViewFromParams, windowUnsupported } from '@/lib/performance-range';
 import { syncQueryParams } from '@/lib/url';
@@ -350,8 +351,7 @@ export function PerformancePage({ retentionDays }: {
       fetchIndex();
       return result;
     } catch (e) {
-      // Snooze, dismiss and mark fixed are the fleet owner's (Agent Health D6): say so, rather than "try again".
-      setFeedbackError({ recId, message: e instanceof ControlDeniedError ? e.message : 'Failed to submit feedback. Try again.' });
+      setFeedbackError({ recId, message: feedbackErrorText(e) });
       return 'failed';
     }
     finally { setFeedbackLoading(null); }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { plural } from '@/lib/format';
-import { showRecAgentFilter, pendingHealthRow, rowOpen, toggleChoice, agentSignals, recTitle, healthRow, unusualRow, DEFAULT_REC_STATUS, insightsVerdict, recCountSuffix, recFeedback, recStatusLabel, recEmptyText, recRowActions, untrackedSignals } from '@/lib/performance-insights';
+import { showRecAgentFilter, pendingHealthRow, rowOpen, toggleChoice, agentSignals, recTitle, healthRow, unusualRow, DEFAULT_REC_STATUS, insightsVerdict, recCountSuffix, recFeedback, recStatusLabel, recEmptyText, recRowActions, untrackedSignals, feedbackErrorText } from '@/lib/performance-insights';
+import { ControlDeniedError, WhiteRoomApiError } from '@/lib/whiteroom/client';
 import { fmtCount } from '@/lib/format';
 import { flaggedRunCount } from '@/components/performance/UnusualBehaviour';
 import { UNUSUAL_SIGNALS } from '@/lib/runs';
@@ -162,5 +163,13 @@ describe('recommendations agent filter', () => {
   });
   it('hides below 5 listed, whatever the agents: they all fit at a glance', () => {
     expect(showRecAgentFilter([{ agentId: 'a' }, { agentId: 'b' }], ['a', 'b'], '', 4)).toBe(false);
+  });
+});
+
+describe('feedback refusals', () => {
+  it('a teammate refused snooze or dismiss is told why; anything else asks to try again', () => {
+    expect(feedbackErrorText(new ControlDeniedError('Only the fleet’s owner can change this.'))).toBe('Only the fleet’s owner can change this.');
+    expect(feedbackErrorText(new WhiteRoomApiError('HTTP 500', 500))).toBe('Failed to submit feedback. Try again.');
+    expect(feedbackErrorText(new Error('network'))).toBe('Failed to submit feedback. Try again.');
   });
 });
