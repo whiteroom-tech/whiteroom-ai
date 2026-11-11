@@ -289,6 +289,13 @@ describe('Settings: jump links, Text size, and the plan cards folding', () => {
     expect(unfolded(markup(1))).toBe(true);
     expect(unfolded(markup(1, { plan: 'suspended', onTrial: false }))).toBe(true);
     expect(unfolded(markup(1, { plan: 'starter', onTrial: false, graceEndsAt: new Date(Date.now() + 5 * 86_400_000).toISOString() }))).toBe(true);
+    // Set to cancel at the period end, not yet lapsed: still choosing, so open.
+    const ending = renderToStaticMarkup(h(SettingsView, {
+      closing: null, billingResult: null, purchasablePlans: ['starter', 'pro'],
+      account: { id: 'u', email: 'a@example.test', name: 'A', image: null, timezone: null, emailVerified: true, methods: [], pendingEmailChange: null, fleetCount: 1 },
+      entitlement: { plan: 'pro', planName: 'Pro', limits: limitsFor('pro'), subscription: { plan: 'pro', status: 'active', planOverride: null, stripeCustomerId: 'cus_x', stripeSubscriptionId: 'sub_x', currentPeriodEnd: new Date(Date.now() + 9 * 86_400_000).toISOString(), cancelAtPeriodEnd: true, lapsedAt: null }, trialEndsAt: new Date(Date.now() - 40 * 86_400_000).toISOString(), onTrial: false, usage: { fleets: 1, agents: 1 } },
+    }));
+    expect(unfolded(ending)).toBe(true);
     // Folded or not, the cards and their scroll target are on the page.
     expect(markup(1, { plan: 'pro', onTrial: false })).toContain('id="settings-plan-choices"');
   });

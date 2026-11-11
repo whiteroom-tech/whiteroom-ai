@@ -373,7 +373,8 @@ function PlanSection({
   // Counted in the viewer's zone, so only once it's known: the server's UTC
   // count can differ by a day and would mismatch hydration.
   const trialDaysLeft = zone !== null ? freeDaysLeft(entitlement.trialEndsAt) : null;
-  const plansOpen = !planSettled({ plan, onTrial: entitlement.onTrial, cardFailed: !!cardFailed, cancelled });
+  // Set to end (before or after it lapses): they're choosing whether to stay, so the cards stay open.
+  const plansOpen = !planSettled({ plan, onTrial: entitlement.onTrial, cardFailed: !!cardFailed, cancelled: cancelled || !!subscription?.cancelAtPeriodEnd });
 
   return (
     <Section title="Plan" description="Limits apply to every fleet on the account">
