@@ -368,7 +368,8 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   const activity = latestActivity(entries, 8, Date.now(), { agentShown: true });
   const breakEnd = agent ? breakEndsAt(agent) : null;
   const health = agentHealthLine(diagnosis, agentId, now);
-  const card = agent ? nowCard(agent, runs.kind === 'ok' ? runs.runs : null, shortDate) : null;
+  // The Now card says the header's words, pending ones included, so the two never disagree.
+  const card = agent && words ? nowCard(agent, runs.kind === 'ok' ? runs.runs : null, shortDate, words.text) : null;
   const goToTaskType = () => {
     taskInput.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     taskInput.current?.querySelector('input')?.focus({ preventScroll: true });
@@ -459,6 +460,8 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
                   </div>
                 </Panel>
 
+                <RulesOnAgent fleetId={fleetId} authKey={authKey} agentId={agentId} preview={preview ? (preview.rules ?? []) : undefined} />
+
                 <Panel title="Task type">
                   <p className="wr-agent-cap" style={{ margin: '0 0 6px' }}>
                     {taskNote ? <span role="status" style={{ color: taskNote.ok ? 'var(--ok)' : 'var(--bad)' }}>{taskNote.text}</span> : 'Used to estimate cost per task on Performance'}
@@ -476,8 +479,6 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
                     <Button disabled={taskDraft === null || !taskDraft.trim()} busy={taskSaving} busyLabel="Saving…" onClick={saveTaskType}>Save</Button>
                   </div>
                 </Panel>
-
-                <RulesOnAgent fleetId={fleetId} authKey={authKey} agentId={agentId} preview={preview ? (preview.rules ?? []) : undefined} />
               </div>
 
               <div className="wr-agent-col">

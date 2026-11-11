@@ -79,7 +79,7 @@ export function statusWords(state: AgentState | 'removing'): { text: string; ton
 
 /** The Now card. */
 export interface NowCard {
-  /** Header right: "Running", "Not running", "Paused", "Stopped". */
+  /** Header right: the page header's own words ("Working", "Waiting for work", "Pausing…"), passed in so the two never disagree. */
   status: string;
   /** "Run #8 · 62 tasks · 9.4 min so far" or "Last run #4 · 6 tasks"; null with no run known. */
   run: { label: string; number: number; tail: string } | null;
@@ -90,10 +90,8 @@ export interface NowCard {
   allTime: string | null;
 }
 
-export function nowCard(a: AgentInfo, runs: RunSummary[] | null, fmtDate: (iso: string) => string): NowCard {
-  const s = agentState(a);
+export function nowCard(a: AgentInfo, runs: RunSummary[] | null, fmtDate: (iso: string) => string, status: string): NowCard {
   const shift = currentShift(a);
-  const status = a.hold ? (a.hold.state === 'stopped' ? 'Stopped' : 'Paused') : s === 'resting' ? statusWords('resting').text : shift ? 'Running' : 'Not running';
   let run: NowCard['run'] = null;
   if (shift) {
     run = { label: 'Run', number: shift.watchNumber || 1, tail: [taskWord(shift.tasksCompleted), `${Math.round(shift.minutesWorked * 10) / 10} min so far`].join(' · ') };

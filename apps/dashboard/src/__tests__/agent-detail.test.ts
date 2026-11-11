@@ -55,20 +55,19 @@ describe('the Now card', () => {
   const run = (shift: number): RunSummary => ({ runId: `a~${shift}`, agentId: 'a', shift, startedAt: '2026-10-24T20:45:00Z', endedAt: '2026-10-24T20:45:24Z', lengthSeconds: 24, calls: 6, failedCalls: 0, blockedCalls: 0, wouldActCalls: 0, spendMicros: 0, unpricedAttempts: 0, coverage: { calls: 6, checked: 6 }, flags: [] });
   it('shows the last run, linked when Recent runs has it, and the all-time totals', () => {
     const idle: AgentInfo = { agentId: 'a', status: 'idle', currentShift: null, lastShift: { watchNumber: 4, tokensUsed: 900, tasksCompleted: 6, minutesWorked: 0.4 }, lifetime: { tokensUsed: 53_400, tasksCompleted: 60, minutesWorked: 40 } };
-    expect(nowCard(idle, [run(4)], date)).toEqual({ status: 'Not running', run: { label: 'Last run', number: 4, tail: '6 tasks' }, runId: 'a~4', runDate: '10-24', allTime: 'All time: 60 tasks · 53.4K tokens' });
-    expect(nowCard(idle, null, date).runId).toBeNull();
+    expect(nowCard(idle, [run(4)], date, 'Waiting for work')).toEqual({ status: 'Waiting for work', run: { label: 'Last run', number: 4, tail: '6 tasks' }, runId: 'a~4', runDate: '10-24', allTime: 'All time: 60 tasks · 53.4K tokens' });
+    expect(nowCard(idle, null, date, 'Waiting for work').runId).toBeNull();
   });
   it('shows the run in progress, and never lifetime totals as a run (M14)', () => {
-    expect(nowCard(working, [], date)).toMatchObject({ status: 'Running', run: { label: 'Run', number: 8, tail: '62 tasks · 9.4 min so far' }, allTime: null });
+    expect(nowCard(working, [], date, 'Working')).toMatchObject({ status: 'Working', run: { label: 'Run', number: 8, tail: '62 tasks · 9.4 min so far' }, allTime: null });
     // Older engine: an idle agent's flat fields are lifetime totals, so no run is claimed.
-    expect(nowCard({ agentId: 'a', status: 'idle', watchNumber: 41, tasksCompleted: 332 }, [], date).run).toBeNull();
+    expect(nowCard({ agentId: 'a', status: 'idle', watchNumber: 41, tasksCompleted: 332 }, [], date, 'Waiting for work').run).toBeNull();
   });
-  it('says the same words as the header for a short pause', () => {
-    expect(nowCard({ agentId: 'a', status: 'resting' }, [], date).status).toBe(statusWords('resting').text);
-  });
-
-  it('says Paused or Stopped while held', () => {
-    expect(nowCard({ agentId: 'a', status: 'working', hold: { state: 'stopped', by: 'x', reason: null, at: '2026-10-01T13:00:00Z' } }, [], date).status).toBe('Stopped');
+  it('says the header’s words, so the two agree just after Pause and for an agent not reporting', () => {
+    // The page passes the header's words (pending ?? agentState): a run in progress doesn't turn them into "Working".
+    expect(nowCard(working, [], date, statusWords('pausing').text).status).toBe('Pausing…');
+    expect(nowCard(working, [], date, statusWords('stale').text).status).toBe('Not reporting');
+    expect(nowCard(working, [], date, statusWords(agentState({ ...working, hold: { state: 'stopped', by: 'x', reason: null, at: '2026-10-01T13:00:00Z' } })).text).status).toBe('Stopped');
   });
 });
 

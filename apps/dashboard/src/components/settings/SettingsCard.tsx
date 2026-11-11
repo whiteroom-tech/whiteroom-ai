@@ -3,9 +3,14 @@
  * title with an optional sub-line and right-hand action in the header, a
  * rule under it, then the body. `tone="danger"` is Delete account's red card.
  */
-export function SettingsCard({ id, title, sub, right, tone = 'default', level = 2, children }: {
+export function SettingsCard({ id, anchor = false, title, sub, right, tone = 'default', level = 2, children }: {
   /** The heading's id stem; the section is labelled by it. */
   id: string;
+  /**
+   * Also put `id` on the section, so `#id` links land on the card. Opt-in:
+   * some pages already wrap a card in an element with that id (Settings' `#alerts`).
+   */
+  anchor?: boolean;
   title: React.ReactNode;
   sub?: React.ReactNode;
   right?: React.ReactNode;
@@ -16,7 +21,7 @@ export function SettingsCard({ id, title, sub, right, tone = 'default', level = 
 }) {
   const Heading = level === 3 ? 'h3' : 'h2';
   return (
-    <section className={`wr-panel wr-scard${tone === 'danger' ? ' wr-scard--danger' : ''}`} aria-labelledby={`${id}-title`}>
+    <section id={anchor ? id : undefined} className={`wr-panel wr-scard${tone === 'danger' ? ' wr-scard--danger' : ''}`} aria-labelledby={`${id}-title`}>
       <div className="wr-scard__head">
         <div style={{ minWidth: 0 }}>
           <Heading id={`${id}-title`} className="wr-panel__title wr-scard__title">{title}</Heading>

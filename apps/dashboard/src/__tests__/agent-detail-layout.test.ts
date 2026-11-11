@@ -1,5 +1,5 @@
 // The agent page put together, as in the mockup: Last 7 days above the grid,
-// Now, Task type and Rules on this agent on the left, Recent runs and
+// Now, Rules on this agent and Task type on the left, Recent runs and
 // activity on the right, and none of the cut panels.
 import { describe, expect, it, vi } from 'vitest';
 import { createElement as h } from 'react';
@@ -14,7 +14,7 @@ const { weekWindow } = await import('@/lib/home-agents');
 const RULE: GovernanceRule = { id: 'r9', fleetId: 'f', changedBy: 'x', changedAt: '2026-10-01T00:00:00Z', version: 1, response: 'block', ruleType: 'call_rate', mode: 'enforce', appliesTo: 'all', params: { maxCalls: 60 } };
 
 describe('agent page layout', () => {
-  it('shows the week first, then Now, Task type and the rules, then Recent runs', () => {
+  it('shows the week first, then Now, the rules and Task type, then Recent runs', () => {
     const html = renderToStaticMarkup(h(AgentDetail, {
       fleetId: 'f', agentId: 'lead-agent', from: 'home',
       preview: {
@@ -27,9 +27,9 @@ describe('agent page layout', () => {
     const at = (s: string) => html.indexOf(s);
     expect(at('Last 7 days')).toBeGreaterThan(-1);
     expect(at('Last 7 days')).toBeLessThan(at('>Now<'));
-    expect(at('>Now<')).toBeLessThan(at('Task type'));
-    expect(at('Task type')).toBeLessThan(at('Rules on this agent'));
-    expect(at('Rules on this agent')).toBeLessThan(at('Recent runs'));
+    expect(at('>Now<')).toBeLessThan(at('Rules on this agent'));
+    expect(at('Rules on this agent')).toBeLessThan(at('>Task type<'));
+    expect(at('>Task type<')).toBeLessThan(at('Recent runs'));
     expect(html).toContain('>blocked<');
     expect(html).toContain('Last run');
     expect(html).toContain('href="/controls?rule=r9"');
