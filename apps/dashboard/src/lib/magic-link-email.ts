@@ -155,6 +155,41 @@ export function accountClosingEmail(
   return { subject: reason === 'deleted' ? 'Your WhiteRoom account will be deleted' : 'Your WhiteRoom plan has ended', ...email };
 }
 
+/**
+ * Sent once, TRIAL_ENDING_DAYS before the free period ends, to an account
+ * that hasn't chosen a plan. Says what happens and when.
+ */
+export function trialEndingEmail(endsOn: string, settingsUrl: string): { subject: string; html: string; text: string } {
+  return {
+    subject: `Your WhiteRoom free period ends on ${endsOn}`,
+    ...transactionalEmail({
+      heading: 'Your free period is ending',
+      body: `Your free period ends on ${endsOn}. Choose a plan before then to keep your agents running. You won't be charged until your free period is over.`,
+      cta: 'Choose a plan',
+      url: settingsUrl,
+      footer: 'Without a plan, your agents stop on that date. Your fleets and keys are kept.',
+    }),
+  };
+}
+
+/**
+ * Sent once, TRIAL_ENDING_DAYS before the free period ends, to an account
+ * that subscribed with a card during it: a notice that billing starts, with
+ * nothing to choose.
+ */
+export function billingStartsEmail(planName: string, endsOn: string, settingsUrl: string): { subject: string; html: string; text: string } {
+  return {
+    subject: `Your WhiteRoom ${planName} plan starts billing on ${endsOn}`,
+    ...transactionalEmail({
+      heading: 'Your free period is ending',
+      body: `Your free period ends on ${endsOn}. From then, your ${planName} plan is billed to the card you added. Your agents keep running as they are.`,
+      cta: 'Manage billing',
+      url: settingsUrl,
+      footer: 'To change your card, open Settings before that date.',
+    }),
+  };
+}
+
 /** Sent once when an account's deletion window ends but something stops the deletion. */
 export function deletionBlockedEmail(why: string, settingsUrl: string): { subject: string; html: string; text: string } {
   return {

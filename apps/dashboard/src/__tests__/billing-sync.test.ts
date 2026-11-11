@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   syncAccount: vi.fn(),
   finishDeleted: vi.fn(),
   cancelClosed: vi.fn(),
+  trialReminders: vi.fn(),
 }));
 
 const connectFails = vi.hoisted(() => ({ current: false }));
@@ -25,6 +26,7 @@ vi.mock('@/lib/savings-billing', () => ({
   feeSeats: vi.fn(),
 }));
 vi.mock('@/lib/account-closing', () => ({ finishDeletedAccounts: mocks.finishDeleted, cancelClosedSubscriptions: mocks.cancelClosed }));
+vi.mock('@/lib/trial-ending-email', () => ({ sendTrialEndingEmails: mocks.trialReminders }));
 const fakeStripe = vi.hoisted(() => ({ marker: 'stripe' }));
 vi.mock('@/lib/stripe', () => ({ stripe: () => fakeStripe }));
 
@@ -54,6 +56,7 @@ beforeEach(() => {
   mocks.syncAccount.mockReset().mockResolvedValue(NOTHING);
   mocks.finishDeleted.mockReset().mockResolvedValue({ deleted: 0, skipped: 0, blocked: 0 });
   mocks.cancelClosed.mockReset().mockResolvedValue({ cancelled: 0, failed: 0 });
+  mocks.trialReminders.mockReset().mockResolvedValue({ sent: 0, failed: 0 });
 });
 
 describe('billing sync', () => {
@@ -283,5 +286,27 @@ describe('billing sync: closed accounts\' subscriptions', () => {
     const res = await run(SECRET);
     expect(res.status).toBe(200);
     expect(mocks.cancelClosed).not.toHaveBeenCalled();
+  });
+});
+
+describe('billing sync: trial-ending reminders', () => {
+  it('sends them and reports the count', async () => {
+    mocks.trialReminders.mockResolvedValue({ sent: 2, failed: 1 });
+    const res = await run(SECRET);
+    expect(res.status).toBe(200);
+    expect(mocks.trialReminders).toHaveBeenCalledOnce();
+    expect((await res.json()).trialReminders).toEqual({ sent: 2, failed: 1 });
+  });
+
+  it('never turns a failed pass into a 500', async () => {
+    mocks.trialReminders.mockResolvedValue(null);
+    const res = await run(SECRET);
+    expect(res.status).toBe(200);
+    expect((await res.json()).trialReminders).toBeNull();
+  });
+
+  it('is not run without the sync secret', async () => {
+    await run();
+    expect(mocks.trialReminders).not.toHaveBeenCalled();
   });
 });

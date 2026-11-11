@@ -4,6 +4,7 @@ import { stripe } from '@/lib/stripe';
 import { feeSeats, savingsByUtcDay, syncAccountBilling, type BillingStripe } from '@/lib/savings-billing';
 import { syncSecretMatches } from '@/lib/sync-secret';
 import { cancelClosedSubscriptions, finishDeletedAccounts } from '@/lib/account-closing';
+import { sendTrialEndingEmails } from '@/lib/trial-ending-email';
 import { ACTIVE_STATUS_LIST, LAPSE_GRACE_DAYS, lapseSuspendOn, PAID_PLAN_IDS } from '@/lib/plans';
 
 export const runtime = 'nodejs';
@@ -49,6 +50,11 @@ const ACCOUNT_GRACE_MS = 30_000;
  * 3. Closed accounts. Once an account's fleet has closed, any Stripe
  *    subscription that can still bill is cancelled; a deleted account's
  *    dashboard rows go once its removal date has passed.
+ *
+ * 4. Trial-ending reminders. One email per free period, in its last days:
+ *    a plan choice to an account without a plan, or a notice that billing
+ *    starts to one that subscribed with a card during its free days
+ *    (lib/trial-ending-email.ts).
  */
 export async function POST(req: Request): Promise<Response> {
   if (!syncSecretMatches(req.headers.get('x-wr-sync-secret'))) {
@@ -74,6 +80,9 @@ export async function POST(req: Request): Promise<Response> {
     console.error('[billing-sync] could not finish deleted accounts:', err instanceof Error ? err.message : err);
     return null;
   });
+  // Best effort, and never a 500: a retried run would re-run every other
+  // pass for an email the next hourly run sends anyway. Logged inside.
+  const trialReminders = await sendTrialEndingEmails();
 
   // A failed trial, cancel or deletion pass, or any subscription that didn't
   // cancel, is a 500 so Cloud Scheduler records the failure and retries. The
@@ -87,8 +96,8 @@ export async function POST(req: Request): Promise<Response> {
     : closedSubscriptions.failed > 0 ? `Could not cancel ${closedSubscriptions.failed} closed account subscription(s).`
     : deletions === null ? 'Could not finish deleted accounts.'
     : null;
-  if (failed) return Response.json({ error: failed, billing, closedSubscriptions, deletions }, { status: 500 });
-  return Response.json({ trialsQueued: trials, gracesQueued: graces, billing, closedSubscriptions, deletions });
+  if (failed) return Response.json({ error: failed, billing, closedSubscriptions, deletions, trialReminders }, { status: 500 });
+  return Response.json({ trialsQueued: trials, gracesQueued: graces, billing, closedSubscriptions, deletions, trialReminders });
 }
 
 /**
