@@ -51,7 +51,7 @@ describe('trial-ending reminders', () => {
     expect(sql).toContain("trial_state IS DISTINCT FROM 'not_started'");
     expect(sql).toContain('closes_at IS NULL');
     expect(sql).toContain('s.plan_override IS NULL');
-    expect(sql).toContain("s.status = 'trialing'");
+    expect(sql).toContain("s.status = 'trialing' AND NOT s.cancel_at_period_end");
     expect(sql).toContain('FOR UPDATE OF u2 SKIP LOCKED');
     expect(params[0]).toBe(NOW);
     expect(params[1]).toBe(7);

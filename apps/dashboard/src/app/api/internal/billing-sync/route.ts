@@ -51,8 +51,10 @@ const ACCOUNT_GRACE_MS = 30_000;
  *    subscription that can still bill is cancelled; a deleted account's
  *    dashboard rows go once its removal date has passed.
  *
- * 4. Trial-ending reminders. One email per free period, in its last days,
- *    to an account that hasn't chosen a plan (lib/trial-ending-email.ts).
+ * 4. Trial-ending reminders. One email per free period, in its last days:
+ *    a plan choice to an account without a plan, or a notice that billing
+ *    starts to one that subscribed with a card during its free days
+ *    (lib/trial-ending-email.ts).
  */
 export async function POST(req: Request): Promise<Response> {
   if (!syncSecretMatches(req.headers.get('x-wr-sync-secret'))) {

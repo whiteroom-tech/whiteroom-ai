@@ -33,13 +33,18 @@ export interface TrialReminderPass {
  *   `trialing`, which is how Checkout carries the free days over). Tells them
  *   billing starts on that date; there is nothing to choose.
  *
- * No email for a subscription already billing, an admin override (comped or
- * a contract), a closing or deleted account (its own email already went), or
- * a Free account that hasn't gone live (trial_state 'not_started').
+ * No email for a subscription already billing, one set to cancel at the end
+ * of its free days (it won't bill, and the customer chose that in the
+ * portal), an admin override (comped or a contract), a closing or deleted
+ * account (its own email already went), or a Free account that hasn't gone
+ * live (trial_state 'not_started').
  *
  * Each account is claimed before its send, so two overlapping runs send one
  * email, and the claim is released if the send fails so the next run tries
- * again. Null if the database refused.
+ * again. At most once, not at least once: if the release itself fails, or
+ * the process dies between claim and send, that free period gets no email
+ * (the banner still shows). A failed release is logged with the user id so
+ * it can be cleared by hand. Null if the database refused.
  */
 export async function sendTrialEndingEmails(now = Date.now()): Promise<TrialReminderPass | null> {
   const canBuy = purchasablePlans().length > 0;
@@ -62,7 +67,7 @@ export async function sendTrialEndingEmails(now = Date.now()): Promise<TrialRemi
            AND s.plan_override IS NULL
            AND (
              -- billing: a card-backed subscription still in its free days
-             (s.plan = ANY($3) AND s.status = 'trialing')
+             (s.plan = ANY($3) AND s.status = 'trialing' AND NOT s.cancel_at_period_end)
              -- choose: nothing paid behind the account
              OR ($5 AND NOT COALESCE(s.plan = ANY($3) AND s.status = ANY($4), false))
            )
@@ -99,7 +104,12 @@ export async function sendTrialEndingEmails(now = Date.now()): Promise<TrialRemi
           `UPDATE users SET trial_ending_email_for = NULL WHERE id = $1 AND trial_ending_email_for = $2::timestamptz`,
           [row.id, row.trial_ends_at],
         )
-        .catch(() => {});
+        .catch((err) => {
+          console.error(
+            `[trial-reminder] couldn't release the claim for user ${row.id}; no reminder for this free period unless trial_ending_email_for is cleared:`,
+            err instanceof Error ? err.message : err,
+          );
+        });
     }
   }
   return pass;
