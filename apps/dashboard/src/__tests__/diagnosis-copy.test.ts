@@ -350,6 +350,21 @@ describe('evidence headers', () => {
     ], {});
     expect(h && h.kind === 'table' && h.rows.map((r) => r[2])).toEqual(['Cancelled', 'Failed', 'some new state', '—']);
   });
+  it('bad endings: the last call of each run, with its result', () => {
+    const h = evidenceHeader('review_bad_endings', [
+      c({ requestEnd: '2026-09-28T14:03:00Z', watchNumber: 7, reportedModel: 'claude-haiku-4-5', terminal: 'governance_blocked' }),
+      c({ requestEnd: '2026-09-28T14:00:00Z', terminal: 'upstream_error' }),
+    ], {});
+    expect(h && h.kind === 'table' && h.columns).toEqual(['Time', 'Run', 'Model', 'Result']);
+    expect(h && h.kind === 'table' && h.rows.map((r) => r.slice(1))).toEqual([['7', 'claude-haiku-4-5', 'Blocked'], ['—', '—', 'Failed']]);
+  });
+  it('model changed: what was asked for and what answered', () => {
+    const h = evidenceHeader('review_model_change', [
+      c({ watchNumber: 3, requestedModel: 'claude-sonnet-4-5', reportedModel: 'claude-sonnet-4-5-20261015' }),
+      c({}),
+    ], {});
+    expect(h && h.kind === 'table' && h.rows.map((r) => r.slice(1))).toEqual([['3', 'claude-sonnet-4-5', 'claude-sonnet-4-5-20261015'], ['—', '—', '—']]);
+  });
   it('silence: offered vs called', () => {
     const h = evidenceHeader('review_tool_silence', [c({ watchNumber: 50, toolNames: ['search', 'persist_lead'], requestedToolNames: ['search'] })], { toolName: 'persist_lead' });
     expect(h && h.kind === 'table' && h.rows[0].slice(1)).toEqual(['50', 'yes', 'search']);

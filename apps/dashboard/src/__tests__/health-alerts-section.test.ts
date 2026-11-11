@@ -67,6 +67,17 @@ describe('Settings › Alerts › Health check alerts', () => {
     m.root.unmount();
   });
 
+  it('an engine that doesn’t take the setting doesn’t claim it saved', async () => {
+    api.status = { slack: null, health: { frequency: 'daily', tz: 'UTC' } };
+    api.setHealth.mockResolvedValue(null);
+    const m = await mount();
+    await choose(m.select()!, 'live');
+    expect(m.select()!.value).toBe('daily');
+    expect(m.text()).not.toContain('Saved.');
+    expect(m.text()).toContain('doesn’t support health check alerts');
+    m.root.unmount();
+  });
+
   it('a refused change goes back to what was saved and says why', async () => {
     api.status = { slack: null, health: { frequency: 'daily', tz: 'UTC' } };
     api.setHealth.mockRejectedValue(new Error('Couldn’t save it. Try again.'));

@@ -3,7 +3,7 @@
 // done. They must reject so the UI keeps the draft and shows the failure.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { alertsSetTeams, alertsTest, ControlDeniedError, controlFailure, governanceUpdateRule, isAuthError, pauseAgent, resumeAgent, updateAgentTaskType } from '@/lib/whiteroom/client';
+import { alertsSetHealth, alertsSetTeams, alertsTest, ControlDeniedError, controlFailure, governanceUpdateRule, isAuthError, pauseAgent, resumeAgent, updateAgentTaskType } from '@/lib/whiteroom/client';
 
 const fetchMock = vi.fn();
 
@@ -112,6 +112,12 @@ describe('alerts actions', () => {
     fetchMock.mockResolvedValue(jsonResponse({ slack: null, teams: null }));
     await alertsSetTeams('f', null);
     expect(sent()).toEqual({ action: 'alerts_set_teams', fleet_id: 'f', teams_url: null });
+  });
+
+  it('alerts_set_health sends the frequency and the time zone', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ slack: null, health: { frequency: 'weekly', tz: 'Europe/London' } }));
+    expect(await alertsSetHealth('f', 'weekly', 'Europe/London')).toEqual({ slack: null, health: { frequency: 'weekly', tz: 'Europe/London' } });
+    expect(sent()).toEqual({ action: 'alerts_set_health', fleet_id: 'f', frequency: 'weekly', tz: 'Europe/London' });
   });
 
   it('alerts_test names the channel', async () => {

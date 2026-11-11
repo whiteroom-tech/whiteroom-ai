@@ -97,7 +97,9 @@ function HealthRow({ fleetId, frequency, onStatus, preview = false }: { fleetId:
     setBusy(true);
     try {
       const s = await alertsSetHealth(fleetId, next, browserZone());
-      if (s) onStatus(s);
+      // null: this engine doesn't have health check alerts, so nothing was saved.
+      if (!s) throw new Error('This engine doesn’t support health check alerts yet.');
+      onStatus(s);
       setNote({ ok: true, text: 'Saved.' });
     } catch (e) {
       setValue(before);

@@ -12,7 +12,9 @@ import { checkGroups, healthCounts, healthHeadline } from '@/lib/performance-ove
 import { Disclosure } from '@/app/(citadel)/performance/_components/primitives';
 import { flaggedRunCount, UnusualDetails, type FlaggedRuns } from './UnusualBehaviour';
 
-// The two sources' own definitions, plus the one WhiteRoom word their detail uses.
+// The two sources' own definitions, plus the one WhiteRoom word their detail
+// uses. It no longer says streamed calls can't be checked for repeats: the
+// engine reads streamed replies' tool calls now (Agent Health item 6).
 const HINT = `${HELP.unusualBehaviour} Not tracked yet: ${untrackedSignals().join(', ').toLowerCase()}. ${HELP.agentHealthCheck} ${WATCH_DEFINITION}`;
 
 const TONE: Record<HealthRow['tone'], string> = { ok: 'var(--tx)', warn: 'var(--warn-tx)', muted: 'var(--tx2)' };
