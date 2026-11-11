@@ -24,6 +24,18 @@ export const DIAGNOSIS_DETECTORS: DiagnosisDetectorId[] = [
   'review_done_after_failure',
 ];
 
+/**
+ * Health checks' categories, most important first, and each one's checks in
+ * order of impact: safety, then work that fails, loops, cost, and slow change.
+ */
+export const CHECK_CATEGORIES: { title: string; detectors: DiagnosisDetectorId[] }[] = [
+  { title: 'Safety and control', detectors: ['review_planted_instruction', 'review_block_workaround', 'review_done_after_failure'] },
+  { title: 'Failing work', detectors: ['review_job_failures', 'review_tool_errors', 'review_provider_failures'] },
+  { title: 'Stuck and looping', detectors: ['review_tool_loops', 'review_bad_endings', 'review_handover_churn'] },
+  { title: 'Cost', detectors: ['review_spend_outliers'] },
+  { title: 'Changes in behaviour', detectors: ['review_model_change', 'review_tool_silence', 'review_long_context'] },
+];
+
 export function isDiagnosisDetector(detector: string): detector is DiagnosisDetectorId {
   return (DIAGNOSIS_DETECTORS as string[]).includes(detector);
 }

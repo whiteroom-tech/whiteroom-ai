@@ -8,7 +8,7 @@ import type { FleetDiagnosis } from '@/lib/whiteroom/types';
 import { diagnosisSummary, type StatusLine } from '@/lib/diagnosis/model';
 import { agentHealthView } from '@/lib/agent-health';
 import { rowOpen, toggleChoice, untrackedSignals, type HealthRow } from '@/lib/performance-insights';
-import { checkGroups, healthCounts, healthHeadline } from '@/lib/performance-overview';
+import { checkSections, healthCounts, healthHeadline } from '@/lib/performance-overview';
 import { Disclosure } from '@/app/(citadel)/performance/_components/primitives';
 import { flaggedRunCount, UnusualDetails, type FlaggedRuns } from './UnusualBehaviour';
 
@@ -25,7 +25,7 @@ const WARN_ICON = <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="t
 /**
  * Performance › Agent health, beside Recommendations: what the health checks
  * found, as one headline; the Unusual behaviour line; and the checks folded
- * below, one row per check across agents.
+ * below, one row per check across agents, under their categories.
  */
 export function AgentHealth({ flagged, diagnosis, line, onCheck, onReview, onReport }: {
   flagged: FlaggedRuns;
@@ -48,7 +48,7 @@ export function AgentHealth({ flagged, diagnosis, line, onCheck, onReview, onRep
   // Before the first stored check: the verdict from flags, or the check's own pending line.
   const title = headline?.title ?? view.verdict?.title ?? view.health?.text ?? null;
   const warn = headline ? headline.tone === 'warn' : view.verdict?.tone === 'warn' || view.health?.tone === 'warn';
-  const groups = diagnosis && summary ? checkGroups(diagnosis) : [];
+  const sections = diagnosis && summary ? checkSections(diagnosis) : [];
   const open = rowOpen(checksOpen, view.healthOpen);
 
   return (
@@ -88,15 +88,20 @@ export function AgentHealth({ flagged, diagnosis, line, onCheck, onReview, onRep
         </UnusualRow>
       )}
 
-      {summary && groups.length > 0 && (
+      {summary && sections.length > 0 && (
         <Disclosure label="Health checks" note={healthCounts(summary)} open={open} onToggle={() => setChecksOpen(!open)} controls={checksId}>
           <div className="wr-health__checks">
-            {groups.map((g) => (
-              <div key={g.title} className="wr-health__check">
-                <span>{g.title}</span>
-                <span className="wr-cap" style={{ color: g.tone === 'problem' ? 'var(--warn-tx)' : g.tone === 'ok' ? 'var(--ok)' : 'var(--tx2)', fontWeight: g.tone === 'problem' ? 600 : undefined }}>
-                  {g.status}{g.problemAgents.length > 0 && <> · <span className="wr-agent-name">{g.problemAgents.join(', ')}</span></>}
-                </span>
+            {sections.map((s, i) => (
+              <div key={s.title} role="group" aria-labelledby={`${checksId}-g${i}`} className="wr-health__group">
+                <h4 id={`${checksId}-g${i}`} className="wr-health__group-title wr-cap">{s.title}</h4>
+                {s.checks.map((g) => (
+                  <div key={g.detector} className="wr-health__check">
+                    <span><span className="wr-health__n" aria-hidden="true">{g.n}.</span>{g.title}</span>
+                    <span className="wr-cap" style={{ color: g.tone === 'problem' ? 'var(--warn-tx)' : g.tone === 'ok' ? 'var(--ok)' : 'var(--tx2)', fontWeight: g.tone === 'problem' ? 600 : undefined }}>
+                      {g.status}{g.problemAgents.length > 0 && <> · <span className="wr-agent-name">{g.problemAgents.join(', ')}</span></>}
+                    </span>
+                  </div>
+                ))}
               </div>
             ))}
             {diagnosis!.waiting.length > 0 && (

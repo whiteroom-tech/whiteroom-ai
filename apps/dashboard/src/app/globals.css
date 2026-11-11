@@ -708,6 +708,9 @@ a.wr-ctrl__row:hover .wr-ctrl__name { color: var(--brand); text-decoration: unde
 .wr-health__check { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .wr-health__check > :first-child { flex: 1 1 200px; }
 .wr-health__check:last-of-type { border-bottom: 0; }
+.wr-health__group + .wr-health__group { border-top: 1px solid var(--line); }
+.wr-health__group-title { margin: 0; padding: 12px 0 2px; color: var(--tx2); font-weight: 600; }
+.wr-health__n { display: inline-block; min-width: 2.2ch; margin-right: 6px; color: var(--tx2); font-variant-numeric: tabular-nums; }
 /* Recommendations. */
 .wr-recs { overflow: hidden; display: flex; flex-direction: column; }
 .wr-recs__head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 14px 20px; border-bottom: 1px solid var(--line); }

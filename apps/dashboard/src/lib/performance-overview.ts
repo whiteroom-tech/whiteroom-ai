@@ -6,7 +6,7 @@ import type { FleetDiagnosis, GovernanceRule, GovernanceRuleType, PerformanceMod
 import type { DaySavings } from '@/lib/analytics-metrics';
 import type { GovernanceCounts, GovernanceTally } from '@/lib/governance';
 import { RULE_LABELS } from '@/lib/governance';
-import { DIAGNOSIS_DETECTORS, notMeasuredShort } from '@/lib/diagnosis/copy';
+import { CHECK_CATEGORIES, DIAGNOSIS_DETECTORS, notMeasuredShort } from '@/lib/diagnosis/copy';
 import { checkTitle } from '@/lib/diagnosis/model';
 import { alertOnly, notSetUp, ruleSentence } from '@/lib/controls-view';
 import { fmtCost, fmtCount, fmtTokens, plural } from '@/lib/format';
@@ -198,6 +198,7 @@ export function topCaught(counts: GovernanceCounts | null, byRuleId: Record<stri
 // -- Agent health ---------------------------------------------------------------
 
 export interface CheckGroup {
+  detector: string;
   title: string;
   /** "7 passed", "3 passed · 4 set aside", "needs about 14 more days · 7 agents". */
   status: string;
@@ -207,9 +208,31 @@ export interface CheckGroup {
   problemAgents: string[];
 }
 
+export interface CheckSection {
+  title: string;
+  /** Each check numbered down the whole list, most important first. */
+  checks: (CheckGroup & { n: number })[];
+}
+
 /**
- * Health checks grouped by check, one row each (six today), across agents:
- * problems, then passed, set aside, and what the rest still need.
+ * Health checks under their categories (CHECK_CATEGORIES), most important
+ * first. A check with no category goes last, under Other checks; an empty
+ * category is left out.
+ */
+export function checkSections(d: FleetDiagnosis): CheckSection[] {
+  const rows = checkGroups(d);
+  const known = new Set<string>(CHECK_CATEGORIES.flatMap((c) => c.detectors));
+  const sections = [
+    ...CHECK_CATEGORIES.map((c) => ({ title: c.title, rows: c.detectors.flatMap((det) => rows.filter((r) => r.detector === det)) })),
+    { title: 'Other checks', rows: rows.filter((r) => !known.has(r.detector)) },
+  ].filter((s) => s.rows.length > 0);
+  let n = 0;
+  return sections.map((s) => ({ title: s.title, checks: s.rows.map((r) => ({ ...r, n: ++n })) }));
+}
+
+/**
+ * Health checks grouped by check, one row each, across agents, in detector
+ * order: problems, then passed, set aside, and what the rest still need.
  */
 export function checkGroups(d: FleetDiagnosis): CheckGroup[] {
   const order = [...DIAGNOSIS_DETECTORS as string[]];
@@ -233,7 +256,7 @@ export function checkGroups(d: FleetDiagnosis): CheckGroup[] {
       g.setAside ? `${g.setAside} set aside` : '',
       ...[...g.waiting].map(([note, n]) => `${note} · ${n} ${plural(n, 'agent')}`),
     ].filter(Boolean);
-    return { title: checkTitle(det), status: parts.join(' · '), tone: g.problems.length ? 'problem' : g.passed && !g.waiting.size && !g.setAside ? 'ok' : 'neutral', problemAgents: g.problems };
+    return { detector: det, title: checkTitle(det), status: parts.join(' · '), tone: g.problems.length ? 'problem' : g.passed && !g.waiting.size && !g.setAside ? 'ok' : 'neutral', problemAgents: g.problems };
   });
 }
 
