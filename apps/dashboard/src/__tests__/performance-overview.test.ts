@@ -3,8 +3,9 @@
 import { describe, expect, it } from 'vitest';
 import type { FleetDiagnosis, GovernanceRule } from '@/lib/whiteroom/types';
 import type { GovernanceCounts } from '@/lib/governance';
+import { CHECK_CATEGORIES, DIAGNOSIS_DETECTORS } from '@/lib/diagnosis/copy';
 import {
-  checkGroups, countTrend, fewerTokens, lookbackText, healthCounts, healthHeadline, latencyTrend, modelShares, pctChange, perCallTrend, pricesFrom, priorLabel,
+  checkGroups, checkSections, countTrend, fewerTokens, lookbackText, healthCounts, healthHeadline, latencyTrend, modelShares, pctChange, perCallTrend, pricesFrom, priorLabel,
   inputByLocalDay, inputTokensOf, predictionNote, rangeHoldsWeek, WEEK_HOURS, weekHourlyFrom, rangeContextCard, ruleModeCounts, savedCaption, tokenTotals, topCaught, trendText,
 } from '@/lib/performance-overview';
 
@@ -128,10 +129,24 @@ describe('Agent health', () => {
   const d = { reports: [report('a', true), report('b', false)] } as FleetDiagnosis;
   it('groups the checks by check, across agents', () => {
     expect(checkGroups(d)).toEqual([
-      { title: 'Repeating the same call', status: '1 problem · 1 set aside', tone: 'problem', problemAgents: ['a'] },
-      { title: 'Unusually expensive days', status: 'starts in about 7 days · 2 agents', tone: 'neutral', problemAgents: [] },
-      { title: 'A tool keeps failing', status: '2 passed', tone: 'ok', problemAgents: [] },
+      { detector: 'review_tool_loops', title: 'Repeating the same call', status: '1 problem · 1 set aside', tone: 'problem', problemAgents: ['a'] },
+      { detector: 'review_spend_outliers', title: 'Unusually expensive days', status: 'starts in about 7 days · 2 agents', tone: 'neutral', problemAgents: [] },
+      { detector: 'review_tool_errors', title: 'A tool keeps failing', status: '2 passed', tone: 'ok', problemAgents: [] },
     ]);
+  });
+  it('sorts the checks under their categories, most important first, numbered down the list', () => {
+    const all = { reports: [{ ...report('a', true), clear: [...CHECK_CATEGORIES.flatMap((c) => c.detectors), 'review_cache_behavior'].map((detector) => ({ detector, note: null })) }] } as FleetDiagnosis;
+    expect(checkSections(all).map((s) => [s.title, s.checks.map((c) => `${c.n}. ${c.title}`)])).toEqual([
+      ['Safety and control', ['1. Suspicious instruction in a tool result', '2. Tried another way after a block', '3. Said done after a failed step']],
+      ['Failing work', ['4. Jobs are failing', '5. A tool keeps failing', '6. Model provider errors']],
+      ['Stuck and looping', ['7. Repeating the same call', '8. Runs ending badly', '9. Starting over too often']],
+      ['Cost', ['10. Unusually expensive days']],
+      ['Changes in behaviour', ['11. Model changed', '12. Stopped using a key tool', '13. More trouble on long tasks']],
+      ['Other checks', ['14. Cache behavior']],
+    ]);
+    // Every check has a category, and an empty category is left out.
+    expect(CHECK_CATEGORIES.flatMap((c) => c.detectors).sort()).toEqual([...DIAGNOSIS_DETECTORS].sort());
+    expect(checkSections(d).map((s) => [s.title, s.checks.map((c) => c.n)])).toEqual([['Failing work', [1]], ['Stuck and looping', [2]], ['Cost', [3]]]);
   });
   it('is green only when every agent checked passed', () => {
     const r = (agentId: string, o: Partial<FleetDiagnosis['reports'][number]>) => ({ schema: 'diagnosis.v1', agentId, window: { from: '', to: '', days: 7, calls: 1, watches: 1 }, findings: [], clear: [], notMeasured: [], ...o }) as FleetDiagnosis['reports'][number];
