@@ -17,6 +17,8 @@ export const DIAGNOSIS_DETECTORS: DiagnosisDetectorId[] = [
   'review_provider_failures',
   'review_bad_endings',
   'review_model_change',
+  'review_block_workaround',
+  'review_long_context',
 ];
 
 export function isDiagnosisDetector(detector: string): detector is DiagnosisDetectorId {
@@ -32,6 +34,8 @@ export const TITLES: Record<DiagnosisDetectorId, string> = {
   review_provider_failures: 'Model provider errors',
   review_bad_endings: 'Runs ending badly',
   review_model_change: 'Model changed',
+  review_block_workaround: 'Tried another way after a block',
+  review_long_context: 'More trouble on long tasks',
 };
 
 /** Days a Diagnosis snooze lasts. Sent with every snooze, so the copy and the engine agree. */
@@ -114,6 +118,18 @@ export function findingSentence(detector: DiagnosisDetectorId, m: DiagnosisMeasu
         ? [t('Now asks for '), code(m.newModel), ...(has(m, 'previousModel') ? [t(' (was '), code(m.previousModel), t(')')] : []), ...since, t(', for '), v(m.sharePct), t('% of its calls this week. Its results may change with the model.')]
         : [code(m.requestedModel), t(' is now answered by '), code(m.newModel), ...(has(m, 'previousModel') ? [t(' (was '), code(m.previousModel), t(')')] : []), ...since, t(', for '), v(m.sharePct), t('% of its calls this week. The provider changed the model behind the name, so its results may change.')];
     }
+    case 'review_block_workaround': {
+      const rule = m.ruleType === 'keyword' ? 'a Keywords rule' : 'a Tool list rule';
+      const parts = [t(`After ${rule} blocked a call, it used `), code(m.toolName), t(', a tool it hadn’t used before this week.')];
+      if (Number(m.workarounds) > 1) parts.push(t(' This happened '), ...count(m.workarounds, 'time', 'times'), t('.'));
+      parts.push(t(' Worth a look: it may be getting around the rule.'));
+      return parts;
+    }
+    case 'review_long_context':
+      return [
+        v(m.longRatePct), t('% of its calls in long conversations had a failed or repeated step, against '), v(m.shortRatePct),
+        t('% in short ones. It has more trouble when its conversation is long.'),
+      ];
   }
 }
 
@@ -160,6 +176,7 @@ export function notMeasuredShort(code: string, reason: string): string {
     case 'few_results': return left(/has (\d+)/, 20, (m) => `needs ${m} more tool ${plural(m, 'result')}`);
     case 'not_captured': return 'nothing recorded yet';
     case 'few_measured_calls': return left(/has (\d+)/, 50, (m) => `needs ${m} more fully recorded ${plural(m, 'call')} this week`);
+    case 'few_prior_calls': return 'needs more calls before a block to compare';
     case 'few_baseline_calls': return left(/has (\d+)/, 20, (m) => `needs ${m} more ${plural(m, 'call')} from before this week`);
     case 'model_unknown': return 'the provider doesn\u2019t say which model answered';
     case 'few_requests': return left(/had (\d+)/, 100, (m) => `needs ${m} more ${plural(m, 'call')} to one model in a day`);
@@ -196,6 +213,16 @@ export function howtoParagraphs(howtoId: string, m: DiagnosisMeasures): string[]
       return [
         'Open the calls to see the last call of each run and what went wrong.',
         'Common fixes: have the agent retry a failed call before it stops, and check whether a rule blocked work it needed to finish.',
+      ];
+    case 'block_workaround':
+      return [
+        `Open the calls to see what ${tool} was used for straight after the block.`,
+        'If it did the blocked work another way, add that tool to the rule, or tell the agent which tools it may use.',
+      ];
+    case 'long_context':
+      return [
+        'Have its tools send back shorter answers, so its conversation grows more slowly.',
+        'Or split long jobs into smaller ones, each with its own run.',
       ];
     case 'model_change':
       return [

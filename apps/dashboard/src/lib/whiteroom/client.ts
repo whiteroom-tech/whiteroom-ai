@@ -108,6 +108,15 @@ export function controlFailure(e: unknown): 'sign-out' | 'refused' | 'failed' {
 }
 
 /**
+ * What a failed snooze, dismiss or mark fixed says. They are the fleet
+ * owner's (Agent Health D6): a teammate is told so in the refusal's own
+ * words, never asked to try again.
+ */
+export function feedbackErrorText(e: unknown): string {
+  return e instanceof ControlDeniedError ? e.message : 'Failed to submit feedback. Try again.';
+}
+
+/**
  * True only for a genuine credential rejection (401/403). A timeout, network
  * failure, or 5xx is NOT an auth error — credentials should be kept and the
  * call retried. Nor is a control refusal: signing out wouldn't help.
@@ -151,7 +160,7 @@ const READ_ACTIONS: ReadonlySet<string> = new Set([
   'performance_agent_scores', 'performance_recommendations_list', 'performance_recommendations_get',
   'performance_live_feed', 'performance_recommendations_export', 'performance_cost_forecast',
   'agent_budgets_get', 'governance_list', 'get_diagnosis', 'audit_integrity', 'verify_audit', 'audit_summary',
-  'rule_would_act', 'list_runs', 'rule_actions', 'run_days', 'get_run_events', 'alerts_get',
+  'rule_would_act', 'list_runs', 'rule_actions', 'run_days', 'get_run_events', 'alerts_get', 'health_history',
   'fleet_data_settings_get', 'compression_preview',
 ]);
 
@@ -578,6 +587,36 @@ export function performanceAgent(fleetId: string, agentId: string, hoursBack?: n
 
 export function performanceEvidence(fleetId: string, findingId: string, key?: string): Promise<PerformanceEvidenceResult> {
   return apiCall<PerformanceEvidenceResult>({ action: 'performance_evidence', fleet_id: fleetId, finding_id: findingId }, key);
+}
+
+/** One Health history entry (Agent Health item 9). actor: "user:<id>" for a person's action, null for WhiteRoom's. */
+export interface HealthHistoryEvent {
+  agentId: string;
+  detector: string;
+  event: 'opened' | 'resolved' | 'snoozed' | 'dismissed' | 'marked_fixed' | 'alert_sent';
+  actor: string | null;
+  at: string;
+}
+
+/**
+ * Health history, newest first, a page at a time; days are UTC. Dashboard
+ * only. Null from an engine without it.
+ */
+export async function healthHistory(
+  fleetId: string,
+  opts: { fromDay: string; toDay: string; agentId?: string; cursor?: string | null },
+  key?: string,
+): Promise<{ events: HealthHistoryEvent[]; cursor: string | null } | null> {
+  try {
+    return await apiCall<{ events: HealthHistoryEvent[]; cursor: string | null }>({
+      action: 'health_history', fleet_id: fleetId, from_day: opts.fromDay, to_day: opts.toDay,
+      ...(opts.agentId && { agent_id: opts.agentId }), ...(opts.cursor && { cursor: opts.cursor }),
+    }, key);
+  } catch (e) {
+    // An engine without health_history refuses it as an unknown action (400).
+    if (e instanceof WhiteRoomApiError && e.status === 400 && /unknown action/i.test(e.reason ?? '')) return null;
+    throw e;
+  }
 }
 
 export function performanceFeedback(

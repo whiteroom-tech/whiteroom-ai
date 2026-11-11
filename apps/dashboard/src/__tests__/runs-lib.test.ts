@@ -415,6 +415,7 @@ describe('what stood out: run flags', () => {
     expect(flagText({ signal: 'error_streak', calls: 4 })).toBe('4 failed calls in a row');
     expect(flagText({ signal: 'ended_badly', how: 'failed' })).toBe('Ended on a failed call');
     expect(flagText({ signal: 'ended_badly', how: 'blocked' })).toBe('Ended on a blocked call');
+    expect(flagText({ signal: 'workaround', tool: 'post_webhook' })).toBe('Used a new tool after a block: post_webhook');
     expect(standOut({ ...base, blockedCalls: 1, flags: [{ signal: 'error_streak', calls: 3 }] })).toEqual({ tone: 'flag', text: '3 failed calls in a row' });
     expect(standOut({ ...base, flags: [{ signal: 'repeating_call', tool: 'x', calls: 5 }, { signal: 'error_streak', calls: 3 }] }).text).toBe('Repeating the same call: x ×5 · 1 more flag');
   });

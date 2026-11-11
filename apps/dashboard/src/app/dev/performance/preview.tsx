@@ -60,7 +60,7 @@ const PROBLEM = diagnosis([HANDOVER_FINDING]);
 /** Agent health as on Performance, from sample flags and health-check results. */
 function Insights({ runs, health }: { runs: RunSummary[]; health: FleetDiagnosis }) {
   const flagged = useFlaggedRuns('acme-claims-prod', undefined, runs);
-  return <AgentHealth flagged={flagged} diagnosis={health} line={statusLine(health, 'idle', Date.now(), false)} onCheck={() => {}} onReview={() => {}} />;
+  return <AgentHealth flagged={flagged} diagnosis={health} line={statusLine(health, 'idle', Date.now(), false)} onCheck={() => {}} onReview={() => {}} onReport={async () => 'Preview: no report is made.'} />;
 }
 
 // Recommendations: an older engine one, plus the health-check finding in a problem week.
