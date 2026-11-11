@@ -183,7 +183,7 @@ function windowText(e: AuditEntry, style: 'between' | 'range' = 'between'): stri
   return style === 'between' ? `between ${from} and ${to}` : `${from}–${to}`;
 }
 
-/** "spend cap (budget exceeded) ×3" — rule, why, and how many calls it stands for. */
+/** "the spend cap ×3": the rule, why when it adds something, and how many calls it stands for. */
 function governancePhrase(e: AuditEntry): string {
   const n = occurrences(e);
   const times = n > 1 ? ` ×${n}` : '';

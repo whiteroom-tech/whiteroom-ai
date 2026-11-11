@@ -35,7 +35,8 @@ const text = (html: string) => { const el = new Window().document.createElement(
 describe("Home (mockup parity)", () => {
   it("opens with the fact line, not Needs you", () => {
     const t = text(home());
-    expect(t).toContain("No agents on hold · 0 flagged runs today · rules caught 0 times today · Last 7 days →");
+    expect(t).toContain("No agents on hold · 0 flagged runs today · Last 7 days →");
+    expect(t).not.toContain("rules caught");
     expect(t).not.toContain("Nothing needs you");
   });
 
@@ -98,6 +99,8 @@ describe("Home (mockup parity)", () => {
     const t = text(home({ todayRules: { blocks: 1, wouldBlocks: 4, paused: 2, stopped: 0, toldYou: 1 } }));
     expect(t).toContain("rules caught 5 times today, 1 blocked, and acted 3 other times");
     expect(text(home({ todayRules: tally(0, 4) }))).toContain("rules caught 4 times today, 0 blocked ·");
+    // No calls caught but a pause today: the line stays, so the pause is not hidden.
+    expect(text(home({ todayRules: { blocks: 0, wouldBlocks: 0, paused: 2, stopped: 0, toldYou: 0 } }))).toContain("rules caught 0 times today, and acted 2 other times");
   });
 });
 

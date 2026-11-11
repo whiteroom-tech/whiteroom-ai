@@ -113,7 +113,7 @@ describe('run detail rows', () => {
     expect(cancelled.glyph).toBe('call');
     // A rule event's ×N can include the run before's repeats; Rule actions has this run's exact count.
     const rule = timelineRow({ id: 'ev:1', kind: 'event', at: '2026-10-01T14:00:00Z', type: 'governance_would_block', detail: { ruleType: 'spend_cap', reason: 'budget_exceeded', occurrences: 10, agentId: 'lead-agent' } } as Parameters<typeof timelineRow>[0]);
-    expect(rule.text).toBe('Would have been blocked by the spend cap (budget exceeded)');
+    expect(rule.text).toBe('Would have been blocked by the spend cap');
     expect(timelineRow({ id: 'call:3', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete', requestedTools: ['persist_lead', 'persist_lead', 'persist_lead', 'notify'] }).text)
       .toBe('Model call · asked for persist_lead ×3, notify');
   });
@@ -152,13 +152,14 @@ describe('run detail rows', () => {
   });
   it('shades a call a rule acted on, with what it did and the mode', () => {
     const row = timelineRow({ id: 'c1', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete', ruleActions: [{ ruleId: 'r', ruleType: 'model_allowlist', mode: 'watch', response: 'block', outcome: 'would_block', reason: 'model_not_allowed' }] });
-    expect(row.rule).toEqual({ text: 'would have been blocked: model not on the allowlist', mode: 'watch' });
+    // On screen a Watch block says the reason alone (the Watch badge says "would have"); the export keeps the words.
+    expect(row.rule).toEqual({ text: 'would have been blocked: model not on the allowlist', screen: 'model not on the allowlist', mode: 'watch' });
     const blocked = timelineRow({ id: 'c2', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'governance_blocked', ruleActions: [{ ruleId: 'r', ruleType: 'spend_cap', mode: 'enforce', response: 'block', outcome: 'blocked', reason: 'budget_exceeded' }] });
-    expect(blocked.rule).toEqual({ text: 'blocked: over the spend cap', mode: 'enforce' });
+    expect(blocked.rule).toEqual({ text: 'blocked: over the spend cap', screen: 'blocked: over the spend cap', mode: 'enforce' });
     expect(blocked.tag).toBeUndefined();
     // A Watch rule that would pause, stop or alert is worded by its response, not as a block.
     const pause = timelineRow({ id: 'c4', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete', ruleActions: [{ ruleId: 'p', ruleType: 'spend_cap', mode: 'watch', response: 'pause', outcome: 'would_block', reason: 'budget_exceeded' }] });
-    expect(pause.rule).toEqual({ text: 'would have paused the agent: over the spend cap', mode: 'watch' });
+    expect(pause.rule).toEqual({ text: 'would have paused the agent: over the spend cap', screen: 'would have paused the agent: over the spend cap', mode: 'watch' });
     // A rule's own name is used when the engine sends one.
     expect(ruleActivityRow({ at: '', ruleId: 'r', ruleType: 'spend_cap', response: 'block', mode: 'enforce', occurrences: 1, ruleName: 'Daily cap' }).lead).toBe('Daily cap blocked');
     // A rule that acted leads a Watch one on the same call.
@@ -166,7 +167,13 @@ describe('run detail rows', () => {
       { ruleId: 'w', ruleType: 'model_allowlist', mode: 'watch', response: 'block', outcome: 'would_block', reason: 'model_not_allowed' },
       { ruleId: 'e', ruleType: 'spend_cap', mode: 'enforce', response: 'block', outcome: 'blocked', reason: 'budget_exceeded' },
     ] });
-    expect(both.rule).toEqual({ text: 'blocked: over the spend cap (+1 more)', mode: 'enforce' });
+    expect(both.rule).toEqual({ text: 'blocked: over the spend cap (+1 more)', screen: 'blocked: over the spend cap (+1 more)', mode: 'enforce' });
+    // A Watch block first, then a Watch pause: the reason alone, with the count of the rest.
+    const mixed = timelineRow({ id: 'c5', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete', ruleActions: [
+      { ruleId: 'w', ruleType: 'model_allowlist', mode: 'watch', response: 'block', outcome: 'would_block', reason: 'model_not_allowed' },
+      { ruleId: 'p', ruleType: 'spend_cap', mode: 'watch', response: 'pause', outcome: 'would_block', reason: 'budget_exceeded' },
+    ] });
+    expect(mixed.rule?.screen).toBe('model not on the allowlist (+1 more)');
   });
   it('writes the summary line, from the run or else from the runs list', () => {
     vi.stubEnv('TZ', 'America/New_York');
@@ -223,6 +230,9 @@ describe('run detail rows', () => {
     const [summary, events] = runSheets(head, [{ id: 'c1', kind: 'call', at: '2026-10-25T00:45:01Z', type: 'complete', model: 'm1' }]);
     expect(summary.rows).toContainEqual(['Run', 'a #4']);
     expect(summary.rows).toContainEqual(['Models', 'm1']);
+    // The export's Rule column keeps the full words, though the screen shows the reason alone.
+    const watched = runSheets(head, [{ id: 'c2', kind: 'call', at: '2026-10-25T00:45:02Z', type: 'complete', model: 'm1', ruleActions: [{ ruleId: 'r', ruleType: 'model_allowlist', mode: 'watch', response: 'block', outcome: 'would_block', reason: 'model_not_allowed' }] }])[1];
+    expect(watched.rows[0][5]).toBe('would have been blocked: model not on the allowlist (Watch)');
     // Spend is a number that sums, with unpriced calls on their own row.
     const priced = runSheets({ ...head, spendMicros: 52_000, unpricedAttempts: 1 }, [])[0].rows;
     expect(priced).toContainEqual(['Spend (USD)', 0.052]);

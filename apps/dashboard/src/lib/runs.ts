@@ -389,7 +389,13 @@ export interface TimelineRow {
   text: string;
   tag?: { label: string; tone: TagTone };
   /** A call a rule acted on, or would have: the row is shaded, with what the rule did and its mode. */
-  rule?: { text: string; mode: 'watch' | 'enforce' };
+  rule?: {
+    /** In full, for the export: "would have been blocked: model not on the allowlist". */
+    text: string;
+    /** On screen: a Watch block says the reason alone, since the Watch badge beside it says "would have". */
+    screen: string;
+    mode: 'watch' | 'enforce';
+  };
 }
 
 const CALL_OUTCOME: Record<string, { label: string; tone: TagTone } | undefined> = {
@@ -452,7 +458,10 @@ function callRule(e: RunEvent): TimelineRow['rule'] {
   const more = all.filter((x) => x !== a);
   const why = reasonText(a.reason) ?? (a.ruleName ?? RULE_LABELS[a.ruleType as GovernanceRuleType] ?? 'a rule').toLowerCase();
   const did = a.mode === 'enforce' ? CALL_OUTCOME_TEXT[a.outcome] : WOULD_TEXT[a.response];
-  return { text: `${did ?? 'a rule acted'}: ${why}${more.length ? ` (+${more.length} more)` : ''}`, mode: a.mode === 'enforce' ? 'enforce' : 'watch' };
+  const tail = `${why}${more.length ? ` (+${more.length} more)` : ''}`;
+  const text = `${did ?? 'a rule acted'}: ${tail}`;
+  const watchBlock = a.mode !== 'enforce' && a.response === 'block';
+  return { text, screen: watchBlock ? tail : text, mode: a.mode === 'enforce' ? 'enforce' : 'watch' };
 }
 
 const START_EVENT = /^(watch_start|run_started)$/;

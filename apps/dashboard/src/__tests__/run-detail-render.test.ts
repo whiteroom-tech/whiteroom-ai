@@ -44,7 +44,9 @@ describe('run page', () => {
     expect(text).toContain('These rules are in Watch, so the calls went through.');
     expect([...el.querySelectorAll('a')].find((a) => a.textContent?.startsWith('Open Model allowlist in Controls'))?.getAttribute('href')).toBe('/controls?rule=gr_allow');
     expect(el.querySelectorAll('.wr-timeline > li.is-shaded')).toHaveLength(2);
-    expect(text).toContain('would have been blocked: model not on the allowlist');
+    expect([...el.querySelectorAll('.wr-timeline__rule')].map((r) => r.textContent)).toEqual(['model not on the allowlistWatch', 'model not on the allowlistWatch']);
+    expect(text).not.toContain('would have been blocked');
+    expect(el.querySelector('.wr-timeline__legend')?.textContent).toContain('model call (shaded: a rule matched)');
     // The model is in the summary line, so the calls don't repeat it.
     expect([...el.querySelectorAll('.wr-timeline__text')].map((t) => t.textContent)).toEqual(['Run started', 'Model call', 'Model call']);
     expect([...el.querySelectorAll('.wr-timeline__glyph')].map((g) => g.textContent)).toEqual(['▶', '◇', '◇']);

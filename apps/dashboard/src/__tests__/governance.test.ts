@@ -55,7 +55,7 @@ describe('tool rules', () => {
     expect(c.byRule.tool_list).toEqual({ blocks: 1, wouldBlocks: 2 });
     expect(RULE_LABELS.tool_list).toBe('Tool list');
     expect(REASON_LABELS.tool_not_allowed).toBe('tool not allowed');
-    expect(eventModel(ev('governance_block', { agentId: 'a1', ruleType: 'tool_list', reason: 'tool_not_allowed' })).said).toBe('was blocked by the tool list (tool not allowed)');
+    expect(eventModel(ev('governance_block', { agentId: 'a1', ruleType: 'tool_list', reason: 'tool_not_allowed' })).said).toBe('was blocked by the tool list');
   });
 });
 
@@ -63,7 +63,7 @@ describe('call rate rules', () => {
   it('counts under Call rate and reads as too many calls', () => {
     const c = governanceCounts([ev('governance_block', { agentId: 'a1', ruleType: 'call_rate', reason: 'rate_exceeded' })]);
     expect(c.byRule.call_rate).toEqual({ blocks: 1, wouldBlocks: 0 });
-    expect(eventModel(ev('governance_block', { agentId: 'a1', ruleType: 'call_rate', reason: 'rate_exceeded' })).said).toBe('was blocked by the call rate (too many calls)');
+    expect(eventModel(ev('governance_block', { agentId: 'a1', ruleType: 'call_rate', reason: 'rate_exceeded' })).said).toBe('was blocked by the call rate');
   });
 });
 
@@ -112,21 +112,28 @@ describe('activity feed governance rows', () => {
     expect(m.tone).toBe('block');
     expect(m.accent).toBe('var(--bad)');
     expect(m.who).toBe('Research-agent');
-    expect(m.said).toBe('was blocked by the spend cap (budget exceeded) ×3');
+    expect(m.said).toBe('was blocked by the spend cap ×3');
     expect(technicalLine(m)).toContain('reason budget_exceeded');
   });
 
   it('marks would-blocks as Watch', () => {
     const m = eventModel(ev('governance_would_block', { agentId: 'a1', ruleType: 'model_allowlist', reason: 'model_not_allowed', model: 'gpt-4o' }), NOW);
     expect(m.code).toBe('W/B');
-    expect(m.said).toBe('would have been blocked by the model allowlist (model not allowed)');
+    expect(m.said).toBe('would have been blocked by the model allowlist');
     expect(eventModel(ev('governance_would_block', { agentId: 'a1', ruleType: 'keyword', reason: 'keyword_found' })).said).toBe('would have been blocked by the Keywords rule');
     expect(eventModel(ev('governance_block', { agentId: 'a1', ruleType: 'keyword', reason: 'keyword_found' })).said).toBe('was blocked by the Keywords rule');
     expect(eventModel(ev('governance_block', { agentId: 'a1', ruleType: 'keyword', reason: 'keyword_found', occurrences: 3 })).said).toBe('was blocked by the Keywords rule ×3');
     // The Home chip says the same.
     expect(blockedByPhrase('keyword', 'keyword_found', false)).toBe('the Keywords rule');
-    expect(blockedByPhrase('spend_cap', 'budget_exceeded', false)).toBe('Spend cap (budget exceeded)');
-    expect(blockedByPhrase('spend_cap', 'budget_exceeded', true)).toBe('the spend cap (budget exceeded)');
+    // A reason that only restates the rule is left out.
+    expect(blockedByPhrase('spend_cap', 'budget_exceeded', false)).toBe('Spend cap');
+    expect(blockedByPhrase('spend_cap', 'budget_exceeded', true)).toBe('the spend cap');
+    expect(blockedByPhrase('loop_breaker', 'loop_detected', true)).toBe('the loop breaker');
+    expect(blockedByPhrase('model_allowlist', 'model_not_allowed', true)).toBe('the model allowlist');
+    expect(blockedByPhrase('tool_list', 'tool_not_allowed', true)).toBe('the tool list');
+    expect(blockedByPhrase('call_rate', 'rate_exceeded', true)).toBe('the call rate');
+    // A reason that adds something stays.
+    expect(blockedByPhrase('spend_cap', 'rate_exceeded', true)).toBe('the spend cap (too many calls)');
     expect(blockedByPhrase('spend_cap', 'something_new', true)).toBe('the spend cap');
     expect(blockedByPhrase(undefined, undefined, false)).toBe(ruleLabel(undefined));
     expect(blockedByPhrase('mystery', undefined, true)).toBe(`the ${ruleLabel('mystery').toLowerCase()}`);

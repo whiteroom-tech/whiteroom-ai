@@ -301,7 +301,7 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
                   <span className={`wr-timeline__glyph is-${r.glyph}`} aria-label={GLYPH_NAME[r.glyph]} role="img">{GLYPH[r.glyph]}</span>
                   <span className="wr-timeline__text">{r.text}</span>
                   {r.rule ? (
-                    <span className="wr-timeline__rule"><span>{r.rule.text}</span><ModeMark mode={r.rule.mode} /></span>
+                    <span className="wr-timeline__rule"><span>{r.rule.screen}</span><ModeMark mode={r.rule.mode} /></span>
                   ) : r.tag ? <Tag tone={r.tag.tone}>{r.tag.label}</Tag> : <span />}
                 </li>
               ))}
@@ -318,7 +318,7 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
           {rows.length > 0 && (
             <p className="wr-timeline__legend">
               {(['start', 'call', 'done', 'bad', 'event'] as TimelineGlyph[]).filter((g) => glyphs.has(g) || g === 'call' || g === 'bad').map((g) => (
-                <span key={g} className={g === 'bad' ? 'is-bad' : undefined}><span aria-hidden="true">{GLYPH[g]}</span> {g === 'call' && shaded ? 'model call (shaded: a rule acted on it, or would have)' : GLYPH_NAME[g]}</span>
+                <span key={g} className={g === 'bad' ? 'is-bad' : undefined}><span aria-hidden="true">{GLYPH[g]}</span> {g === 'call' && shaded ? 'model call (shaded: a rule matched)' : GLYPH_NAME[g]}</span>
               ))}
             </p>
           )}

@@ -165,7 +165,8 @@ describe('Controls page', () => {
     expect([...all.querySelectorAll('.ctl-row .ctl-mtag')].map((t) => t.textContent)).toEqual(['Enforce', 'Watch', 'Watch']);
     expect(all.querySelector('.ctl-mtag.is-block')?.textContent).toBe('Enforce');
     expect(all.querySelector('.ctl-row.is-block')?.textContent).toContain('Same call 100× in a run');
-    expect(all.textContent).toContain('1 Enforce · 2 Watch · new agents get these too');
+    expect(all.textContent).toContain('New agents get these too.');
+    expect(all.textContent).not.toContain('1 Enforce · 2 Watch · new');
     // Specific agents are grouped under each agent's name.
     expect(m.text()).toContain('Only lead-agent, market-researcher have extra rules');
     expect([...m.el.querySelectorAll('.ctl-owner')].map((o) => o.textContent)).toEqual(['lead-agent1 rule', 'market-researcher1 rule']);
@@ -731,6 +732,17 @@ describe('Controls page, suggestions, removing and filtering', () => {
     expect(api.update).toHaveBeenCalledTimes(1);
     expect(m.el.querySelector('.wr-toast')!.textContent).toContain('gpt-4o allowed for all agents.');
     expect(m.button('Add to allowlist…')).toBeUndefined();
+    m.root.unmount();
+  });
+
+  it('a row with nothing caught shows 0, and keeps its meaning for screen readers and the tooltip', async () => {
+    const m = await mount();
+    const zeros = [...m.el.querySelectorAll('.ctl-row__count')].filter((c) => c.querySelector('[aria-hidden="true"]')?.textContent === '0');
+    expect(zeros.length).toBeGreaterThan(0);
+    for (const z of zeros) {
+      expect(z.querySelector('.wr-sr-only')?.textContent).toMatch(/^None (since edit|caught · 7 days)$/);
+      expect(z.getAttribute('title')).toBe(z.querySelector('.wr-sr-only')?.textContent);
+    }
     m.root.unmount();
   });
 
@@ -1639,40 +1651,18 @@ describe('Controls page, mockup suggestions and toasts', () => {
     m.root.unmount();
   });
 
-  it('Check audit trail runs the check and says what it covered', async () => {
+  it('has no audit button: Home, Runs and Settings carry it', async () => {
     const m = await mount();
-    await m.click(m.button('Check audit trail'));
-    await flush();
-    expect(dlg(m).textContent).toContain('Nothing changed or missing');
-    expect(dlg(m).textContent).toContain('All 2,045 events checked · just now. Events before tracking started aren’t covered.');
+    await m.open('Only claude');
+    expect([...m.el.querySelectorAll('button')].some((b) => b.textContent === 'Check audit trail')).toBe(false);
     m.root.unmount();
   });
 
-  it('beside Check audit trail, a plain link to test the rules in Sandbox', async () => {
+  it('rule history has a plain link to test the rules in Sandbox', async () => {
     const m = await mount();
     await m.open('Only claude');
     const link = [...m.el.querySelectorAll('a')].find((x) => x.textContent === 'Test in Sandbox');
     expect(link?.getAttribute('href')).toBe('/sandbox/practice');
-    m.root.unmount();
-  });
-
-  it('Check audit trail says when tracking hasn’t started, and when the check didn’t run', async () => {
-    const client = await import('@/lib/whiteroom/client');
-    const integrity = vi.spyOn(client, 'auditIntegrity');
-    integrity.mockResolvedValueOnce({ fleetId: 'f1', mode: 'legacy', headSeq: 0, verifiedThroughSeq: 0, verifiedAt: null, prunedBeforeTracking: false, legacyEvents: 3, gaps: { count: 0, recent: [] }, anchoring: { enabled: false } });
-    const m = await mount();
-    await m.click(m.button('Check audit trail'));
-    await flush();
-    expect(dlg(m).textContent).toContain('History tracking hasn’t started for this fleet yet.');
-    await m.click(m.button('Done'));
-    integrity.mockRejectedValueOnce(new Error('down'));
-    await m.click(m.button('Check audit trail'));
-    await flush();
-    expect(dlg(m).textContent).toContain('The check didn’t run. Try again.');
-    await m.click(m.button('Check again'));
-    await flush();
-    expect(dlg(m).textContent).toContain('Nothing changed or missing');
-    integrity.mockRestore();
     m.root.unmount();
   });
 
