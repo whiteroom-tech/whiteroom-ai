@@ -77,7 +77,7 @@ export function AgentPreview() {
         fleetId="acme-claims-prod"
         agentId="lead-agent"
         from="home"
-        preview={{ agent: STATES[which], entries: which === 'idle' ? [] : ENTRIES, week: which === 'idle' ? {} : WEEK, rules: RULES, runs: which === 'idle' ? [] : RUNS, diagnosis: which === 'idle' ? null : which === 'working' ? PROBLEM : HEALTHY, healthHistory: which === 'idle' ? [] : HISTORY }}
+        preview={{ agent: STATES[which], entries: which === 'idle' ? [] : ENTRIES, week: which === 'idle' ? {} : WEEK, rules: RULES, runs: which === 'idle' ? [] : RUNS, diagnosis: which === 'idle' ? null : which === 'working' ? PROBLEM : HEALTHY, healthHistory: which === 'idle' ? [] : HISTORY, jobs: which === 'idle' ? null : { success: 42, failure: 8 } }}
       />
     </AppShell>
   );

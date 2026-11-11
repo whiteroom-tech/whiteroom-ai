@@ -27,11 +27,11 @@ const DATA: RunEventsResult = {
   page: 0, pages: 1, total: 3, eventFound: null,
 };
 
-async function mount() {
+async function mount(data: RunEventsResult = DATA) {
   const el = document.createElement('div');
   document.body.appendChild(el);
   const root = createRoot(el);
-  await act(async () => { root.render(h(RunDetail, { fleetId: 'f1', runId: 'lead-agent~14', preview: DATA })); });
+  await act(async () => { root.render(h(RunDetail, { fleetId: 'f1', runId: 'lead-agent~14', preview: data })); });
   return { el, root };
 }
 
@@ -53,6 +53,18 @@ describe('run page', () => {
     expect(el.querySelector('.wr-timeline__legend')?.textContent).toContain('blocked or failed');
     expect(text).toContain('This run is part of your audit trail.');
     root.unmount();
+  });
+
+  it('says the job outcome the customer’s system reported, and nothing when none was', async () => {
+    let m = await mount({ ...DATA, run: { ...DATA.run, outcome: 'failure' } });
+    expect(m.el.querySelector('.wr-run-summary')?.textContent).toMatch(/claude-sonnet-4-5 · Job failed, as your system reported$/);
+    m.root.unmount();
+    m = await mount({ ...DATA, run: { ...DATA.run, outcome: 'success' } });
+    expect(m.el.querySelector('.wr-run-summary')?.textContent).toMatch(/Job succeeded, as your system reported$/);
+    m.root.unmount();
+    m = await mount();
+    expect(m.el.querySelector('.wr-run-summary')?.textContent).not.toContain('Job');
+    m.root.unmount();
   });
 
   it('moves focus to the call a Rule activity row names', async () => {

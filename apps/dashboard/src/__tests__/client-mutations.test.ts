@@ -3,7 +3,7 @@
 // done. They must reject so the UI keeps the draft and shows the failure.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { alertsSetHealth, healthHistory, alertsSetTeams, alertsTest, ControlDeniedError, controlFailure, governanceUpdateRule, isAuthError, pauseAgent, resumeAgent, updateAgentTaskType } from '@/lib/whiteroom/client';
+import { alertsSetHealth, healthHistory, jobOutcomes, alertsSetTeams, alertsTest, ControlDeniedError, controlFailure, governanceUpdateRule, isAuthError, pauseAgent, resumeAgent, updateAgentTaskType } from '@/lib/whiteroom/client';
 
 const fetchMock = vi.fn();
 
@@ -129,6 +129,19 @@ describe('alerts actions', () => {
     // Any other refusal is an error, not "no history".
     fetchMock.mockResolvedValue(jsonResponse({ error: 'to_day must be on or after from_day.' }, 400));
     await expect(healthHistory('f', { fromDay: '2026-11-11', toDay: '2026-11-01' })).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('job_outcomes sends the agent, returns the counts, and is null on an engine without it', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ fleetId: 'f', days: 7, agents: { a: { success: 3, failure: 1 } } }));
+    expect(await jobOutcomes('f', 'a')).toEqual({ a: { success: 3, failure: 1 } });
+    expect(sent()).toEqual({ action: 'job_outcomes', fleet_id: 'f', agent_id: 'a' });
+    fetchMock.mockResolvedValue(jsonResponse({ fleetId: 'f', days: 7 }));
+    expect(await jobOutcomes('f')).toEqual({});
+    expect(sent()).toEqual({ action: 'job_outcomes', fleet_id: 'f' });
+    fetchMock.mockResolvedValue(jsonResponse({ error: 'Unknown action.' }, 400));
+    expect(await jobOutcomes('f', 'a')).toBeNull();
+    fetchMock.mockResolvedValue(jsonResponse({ error: 'boom' }, 500));
+    await expect(jobOutcomes('f', 'a')).rejects.toMatchObject({ status: 500 });
   });
 
   it('alerts_test names the channel', async () => {

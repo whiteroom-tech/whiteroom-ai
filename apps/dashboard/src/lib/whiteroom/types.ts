@@ -410,14 +410,15 @@ export type DiagnosisDetectorId =
   | 'review_bad_endings'
   | 'review_model_change'
   | 'review_block_workaround'
-  | 'review_long_context';
+  | 'review_long_context'
+  | 'review_job_failures';
 
 export type DiagnosisMeasures = Record<string, number | string>;
 
 /** Suggested rules always start in Watch. */
 export type DiagnosisSuggestedAction =
   | { kind: 'rule'; rule: 'loop_breaker' | 'spend_cap'; mode: 'watch'; appliesTo: string[]; params: Record<string, number | string | string[]> }
-  | { kind: 'howto'; howtoId: 'handover_churn' | 'tool_errors' | 'tool_silence' | 'provider_failures' | 'bad_endings' | 'model_change' | 'block_workaround' | 'long_context' };
+  | { kind: 'howto'; howtoId: 'handover_churn' | 'tool_errors' | 'tool_silence' | 'provider_failures' | 'bad_endings' | 'model_change' | 'block_workaround' | 'long_context' | 'job_failures' };
 
 export interface DiagnosisFinding {
   recommendationId: string;
@@ -779,6 +780,8 @@ export interface RunSummary {
   flags?: RunFlag[];
   /** Times a Watch rule would have acted in this run (engine E1a). Absent from older engines. */
   wouldActCalls?: number;
+  /** Whether the job worked, as the customer's system reported (Agent Health item 3); absent when nothing was reported. */
+  outcome?: 'success' | 'failure';
 }
 
 /** A run flag: flags only, nothing was blocked. */
@@ -830,6 +833,8 @@ export interface RunEvent {
 export interface RunHeader {
   runId: string; agentId: string; shift: number; startedAt: string; endedAt: string;
   flags?: RunFlag[];
+  /** Whether the job worked, as the customer's system reported; absent when nothing was reported. */
+  outcome?: 'success' | 'failure';
   ruleActions?: RunRuleAction[];
   calls?: number;
   spendMicros?: number;

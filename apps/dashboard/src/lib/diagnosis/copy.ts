@@ -19,6 +19,7 @@ export const DIAGNOSIS_DETECTORS: DiagnosisDetectorId[] = [
   'review_model_change',
   'review_block_workaround',
   'review_long_context',
+  'review_job_failures',
 ];
 
 export function isDiagnosisDetector(detector: string): detector is DiagnosisDetectorId {
@@ -36,6 +37,7 @@ export const TITLES: Record<DiagnosisDetectorId, string> = {
   review_model_change: 'Model changed',
   review_block_workaround: 'Tried another way after a block',
   review_long_context: 'More trouble on long tasks',
+  review_job_failures: 'Jobs are failing',
 };
 
 /** Days a Diagnosis snooze lasts. Sent with every snooze, so the copy and the engine agree. */
@@ -130,6 +132,8 @@ export function findingSentence(detector: DiagnosisDetectorId, m: DiagnosisMeasu
         v(m.longRatePct), t('% of its calls in long conversations had a failed or repeated step, against '), v(m.shortRatePct),
         t('% in short ones. It has more trouble when its conversation is long.'),
       ];
+    case 'review_job_failures':
+      return [v(m.failedJobs), t(' of '), ...count(m.reportedJobs, 'job', 'jobs'), t(' failed this week ('), v(m.failurePct), t('%), as reported by your system.')];
   }
 }
 
@@ -147,6 +151,7 @@ export function limitationText(detector: DiagnosisDetectorId, limitation: string
   if (!limitation) return null;
   if (detector === 'review_tool_errors') return 'Only counts errors your agent reports back.';
   if (detector === 'review_tool_silence') return 'Only counts calls WhiteRoom sees in full. If you stopped using this tool on purpose, dismiss this.';
+  if (detector === 'review_job_failures') return 'Counts only the jobs your system reported. WhiteRoom doesn’t check whether they worked.';
   if (detector === 'review_handover_churn') return null; // internal nuance; the sentence already hedges
   return limitation;
 }
@@ -176,6 +181,7 @@ export function notMeasuredShort(code: string, reason: string): string {
     case 'few_results': return left(/has (\d+)/, 20, (m) => `needs ${m} more tool ${plural(m, 'result')}`);
     case 'not_captured': return 'nothing recorded yet';
     case 'few_measured_calls': return left(/has (\d+)/, 50, (m) => `needs ${m} more fully recorded ${plural(m, 'call')} this week`);
+    case 'few_outcomes': return left(/has (\d+)/, 10, (m) => `needs ${m} more reported job ${plural(m, 'outcome')} this week`);
     case 'few_prior_calls': return 'needs more calls before a block to compare';
     case 'few_baseline_calls': return left(/has (\d+)/, 20, (m) => `needs ${m} more ${plural(m, 'call')} from before this week`);
     case 'model_unknown': return 'the provider doesn\u2019t say which model answered';
@@ -213,6 +219,11 @@ export function howtoParagraphs(howtoId: string, m: DiagnosisMeasures): string[]
       return [
         'Open the calls to see the last call of each run and what went wrong.',
         'Common fixes: have the agent retry a failed call before it stops, and check whether a rule blocked work it needed to finish.',
+      ];
+    case 'job_failures':
+      return [
+        'Open the runs your system marked as failed to see what the agent did in them.',
+        'The outcome comes from your own check, so a change there (a stricter test) can raise this too.',
       ];
     case 'block_workaround':
       return [

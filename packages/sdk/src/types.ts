@@ -170,6 +170,18 @@ export interface CompleteTaskReplay {
   status: AgentStatus;
 }
 
+/** Whether a job worked, as your system reports it. */
+export type JobOutcome = "success" | "failure";
+
+export interface ReportOutcomeResponse {
+  success: true;
+  agent_id: string;
+  /** The run the outcome was recorded for. */
+  run: number;
+  /** True when it replaced an earlier report for the same run. */
+  replaced: boolean;
+}
+
 export interface CheckWatchResponse {
   agentId: string;
   status: AgentStatus;
