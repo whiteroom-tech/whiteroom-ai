@@ -18,6 +18,8 @@ import type {
   ListFleetsResponse,
   HandoverDoc,
   ApiError,
+  JobOutcome,
+  ReportOutcomeResponse,
 } from "./types.js";
 
 export interface WhiteRoomConfig {
@@ -129,6 +131,21 @@ export class WhiteRoomClient {
       minutes_spent: opts.minutesSpent,
       tokens_used: opts.tokensUsed,
       idempotency_key: opts.idempotencyKey,
+    });
+  }
+
+  /**
+   * Whether a job worked, as your own system decided (a test passed, a
+   * ticket closed). It attaches to the agent's current run, so report it
+   * before the agent starts its next job; a second report for the same run
+   * replaces the first. Shown in WhiteRoom as "reported by your system".
+   */
+  async reportOutcome(agentId: string, outcome: JobOutcome, fleetId?: string): Promise<ReportOutcomeResponse> {
+    return this.post("/api/white-room", {
+      action: "report_outcome",
+      agent_id: agentId,
+      outcome,
+      fleet_id: fleetId,
     });
   }
 
