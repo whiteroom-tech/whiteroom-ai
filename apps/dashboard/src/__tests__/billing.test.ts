@@ -52,13 +52,20 @@ describe('startCheckout', () => {
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
-  // Metered: no quantity, and no fee item (the billing sync adds that at day 61).
-  it('sells only the plan\'s savings-share price, on both plans', async () => {
+  // The share is metered: no quantity. Pro's fee starts with the paid period,
+  // so it is sold here, one per organization; Starter's is added at day 61.
+  it('sells Pro its share and its monthly fee, and Starter only its share', async () => {
     expect(await startCheckout('pro')).toEqual({ ok: true, url: 'https://checkout.stripe.com/c/pay/cs_test' });
-    expect(sent().line_items).toEqual([{ price: 'price_pro_share' }]);
+    expect(sent().line_items).toEqual([{ price: 'price_pro_share' }, { price: 'price_pro_fee', quantity: 1 }]);
     mocks.createSession.mockClear();
     await startCheckout('starter');
     expect(sent().line_items).toEqual([{ price: 'price_starter_share' }]);
+  });
+
+  it('sells Pro its share alone while no fee price is configured', async () => {
+    delete process.env.STRIPE_PRICE_PRO_FEE;
+    await startCheckout('pro');
+    expect(sent().line_items).toEqual([{ price: 'price_pro_share' }]);
   });
 
   it('refuses a plan with no share price, even with a retired one set', async () => {

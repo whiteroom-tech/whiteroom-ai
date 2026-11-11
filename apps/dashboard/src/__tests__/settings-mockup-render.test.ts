@@ -67,7 +67,7 @@ describe('Settings plan: savings share and soft agent counts', () => {
   it('shows the three plans with their prices, and Enterprise as talk to us', () => {
     const t = view(1);
     expect(t).toContain('Starter 20% of what WhiteRoom saves you. 30 days free once you go live; $10 a month per user from your 61st day live.');
-    expect(t).toContain('Pro 10% of what WhiteRoom saves you. 30 days free once you go live; $300 a month per organization from your 61st day live.');
+    expect(t).toContain('Pro 10% of what WhiteRoom saves you. 30 days free once you go live; then $300 a month per organization.');
     expect(t).toContain('Enterprise Custom. Talk to us.');
     expect(t).toContain('Up to 7 agents; larger fleets: talk to us');
     expect(t).not.toMatch(/\$200|per agent|90 days|5 agents included/);

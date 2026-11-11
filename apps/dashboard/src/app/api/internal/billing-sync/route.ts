@@ -44,8 +44,9 @@ const ACCOUNT_GRACE_MS = 30_000;
  *
  * 2. Savings share and platform fee. For each subscription that can bill,
  *    each completed day's billable savings goes to the Stripe meter, and
- *    from day 61 the monthly fee is added to the subscription and kept at
- *    the right quantity (lib/savings-billing.ts).
+ *    the monthly fee is kept on the subscription at the right quantity: added
+ *    here from day 61 on Starter, sold at Checkout on Pro (and added here
+ *    from day 31 if it is missing) (lib/savings-billing.ts).
  *
  * 3. Closed accounts. Once an account's fleet has closed, any Stripe
  *    subscription that can still bill is cancelled; a deleted account's

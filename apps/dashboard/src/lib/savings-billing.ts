@@ -286,8 +286,9 @@ export async function reportSavings(
 }
 
 /**
- * The monthly platform fee, from FEE_AFTER_TRIAL_DAYS after the free period:
- * added once (no proration: the first full month is the first one charged),
+ * The monthly platform fee, from the plan's feeAfterTrialDays after the free
+ * period: added once (no proration: the first full month is the first one
+ * charged),
  * then kept at the right quantity. Starter is per user account, Pro one per
  * organization. A fee left from the other plan after a switch is removed.
  */
@@ -299,7 +300,7 @@ export async function syncFee(
   deps: Pick<BillingDeps, 'feeSeats'>,
   now: number,
 ): Promise<AccountResult['fee']> {
-  const start = feeStartsAt(account.trialEndsAt);
+  const start = feeStartsAt(account.trialEndsAt, plan);
   const price = stripePriceId(plan, 'fee');
   if (!start || now < start.getTime() || !price) return null;
 
