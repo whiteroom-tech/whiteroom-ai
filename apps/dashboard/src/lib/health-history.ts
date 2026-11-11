@@ -17,6 +17,9 @@ export const EVENT_LABEL: Record<HealthHistoryEvent['event'], string> = {
   alert_sent: 'Alert sent',
 };
 
+/** The Checks today sheet when no check has run (or none could be read). */
+export const NO_CHECKS_YET = 'No health checks have run yet for this fleet.';
+
 /** A finding's status in the report's words. */
 const FINDING_STATUS: Record<string, string> = { open: 'Problem', snoozed: 'Snoozed', dismissed: 'Dismissed', reported_implemented: 'Marked fixed', resolved: 'Stopped happening' };
 
@@ -74,6 +77,8 @@ export function healthReportSheets(
     for (const c of r.clear) now.push([r.agentId, checkName(c.detector), 'Passed']);
     for (const n of r.notMeasured) now.push([r.agentId, checkName(n.detector), 'Needs more data']);
   }
+  // Said in the sheet, so an empty one isn't read as "nothing wrong".
+  if (now.length === 0) now.push(['', NO_CHECKS_YET, '']);
   return [
     { name: 'Checks today', header: ['Agent', 'Check', 'Status'], rows: now },
     { name: 'History', header: ['When', 'Agent', 'Check', 'What happened', 'By'], rows: history.map((e) => [fmt(e.at), e.agentId, checkName(e.detector), EVENT_LABEL[e.event] ?? e.event, whoActed(e.actor, actions)]) },

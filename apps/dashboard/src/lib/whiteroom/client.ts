@@ -102,6 +102,11 @@ export class ControlDeniedError extends WhiteRoomApiError {
  *   reason as it is; trying again gives the same answer, so offer no retry.
  * - `failed`: anything else (network, 5xx, engine refusal). Worth a retry.
  */
+export function controlFailure(e: unknown): 'sign-out' | 'refused' | 'failed' {
+  if (e instanceof ControlDeniedError) return 'refused';
+  return isAuthError(e) ? 'sign-out' : 'failed';
+}
+
 /**
  * What a failed snooze, dismiss or mark fixed says. They are the fleet
  * owner's (Agent Health D6): a teammate is told so in the refusal's own
@@ -109,11 +114,6 @@ export class ControlDeniedError extends WhiteRoomApiError {
  */
 export function feedbackErrorText(e: unknown): string {
   return e instanceof ControlDeniedError ? e.message : 'Failed to submit feedback. Try again.';
-}
-
-export function controlFailure(e: unknown): 'sign-out' | 'refused' | 'failed' {
-  if (e instanceof ControlDeniedError) return 'refused';
-  return isAuthError(e) ? 'sign-out' : 'failed';
 }
 
 /**

@@ -1,7 +1,7 @@
 // Health history (Agent Health item 9): the report's sheets, who acted, the
 // days read, and reading every page.
 import { describe, expect, it, vi } from 'vitest';
-import { checkName, healthReportSheets, historyDays, readAllHistory, whoActed } from '@/lib/health-history';
+import { checkName, healthReportSheets, historyDays, NO_CHECKS_YET, readAllHistory, whoActed } from '@/lib/health-history';
 import type { HealthHistoryEvent } from '@/lib/whiteroom/client';
 import type { FleetDiagnosis } from '@/lib/whiteroom/types';
 
@@ -48,5 +48,11 @@ describe('health history', () => {
     expect(history.rows[0]).toEqual(['2026-11-04', 'a', 'Repeating the same call', 'Snoozed', 'R Haque']);
     // An agent id that looks like a formula stays text: the workbook writes text cells as text.
     expect(history.rows[1][1]).toBe('=HYPERLINK("x")');
+  });
+
+  it('the report says so when no check has run, rather than an empty sheet', () => {
+    for (const diagnosis of [null, { reports: [] } as unknown as FleetDiagnosis]) {
+      expect(healthReportSheets(diagnosis, [], [], (x) => x)[0].rows).toEqual([['', NO_CHECKS_YET, '']]);
+    }
   });
 });
