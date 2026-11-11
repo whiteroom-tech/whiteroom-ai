@@ -83,7 +83,7 @@ export function HomeFacts({ agents, holds, holdsKnown, flaggedToday, todayRules,
       ? <Link prefetch={false} key="flagged" href={`${ROUTES.runs}?show=flagged&range=today`} className="wr-link">{text}</Link>
       : <span key="flagged">{text}</span>);
   }
-  if (todayRules) {
+  if (todayRules && tallyTotal(todayRules) > 0) {
     // "Caught" counts each time a rule matched a call (two rules on one call count twice), in Enforce or Watch (the mockup's word,
     // as on Controls: "120 caught this week, 0 blocked"); how many were really
     // blocked is said beside it. Pauses, stops and alerts are other actions.

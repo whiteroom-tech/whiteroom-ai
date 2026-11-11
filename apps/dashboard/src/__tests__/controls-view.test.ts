@@ -161,7 +161,7 @@ describe('row counts and the editor status', () => {
   it('Block: the last 7 days, per rule id or when it is the only one of its type', () => {
     const r = rule({ id: 'gr_1', mode: 'enforce' });
     expect(rowCount(r, { byRuleId: { gr_1: week({ blocked: 4 }) }, onlyOfItsType: false })).toEqual({ text: '4 blocked · 7 days', tone: 'hot' });
-    expect(rowCount(rule({ id: 'gr_2', mode: 'enforce' }), { byRuleId: { gr_1: week({ blocked: 4 }) }, onlyOfItsType: false })).toEqual({ text: 'None caught · 7 days', tone: 'plain' });
+    expect(rowCount(rule({ id: 'gr_2', mode: 'enforce' }), { byRuleId: { gr_1: week({ blocked: 4 }) }, onlyOfItsType: false })).toEqual({ text: '0', tone: 'plain', label: 'None caught · 7 days' });
     expect(rowCount({ ...r, response: 'notify' }, { byRuleType: { spend_cap: week({ toldYou: 1 }) }, onlyOfItsType: true }).text).toBe('1 alerted you · 7 days');
     expect(rowCount(r, { byRuleType: { spend_cap: week({ blocked: 4 }) }, onlyOfItsType: false }).text).toBe('');
     // Viewing one agent: fleet-wide counts aren't that agent's.
@@ -169,13 +169,15 @@ describe('row counts and the editor status', () => {
     expect(rowCount({ ...r, appliesTo: ['lead'] }, { byRuleId: { gr_1: week({ blocked: 4 }) }, onlyOfItsType: false, agent: 'lead' }).text).toBe('4 blocked · 7 days');
   });
 
-  it('Record only: caught in 7 days, else "None since edit" when nothing since its last change', () => {
+  it('Record only: caught in 7 days, else 0 ("None since edit") when nothing since its last change', () => {
+    // Nothing caught shows as "0", with the old words kept for the tooltip and screen readers.
+    expect(rowCount(rule({ mode: 'watch' }), { byRuleId: {}, onlyOfItsType: false, wouldAct: { byAgent: {} } })).toEqual({ text: '0', tone: 'plain', label: 'None since edit' });
     const r = rule({ id: 'w' });
     expect(rowCount(r, { byRuleId: { w: week({ wouldAct: 60 }) }, onlyOfItsType: false })).toEqual({ text: '60 caught · 7 days', tone: 'hot' });
-    expect(rowCount(r, { byRuleId: {}, onlyOfItsType: false, wouldAct: { byAgent: {} } }).text).toBe('None since edit');
-    expect(rowCount(r, { byRuleId: {}, onlyOfItsType: false, wouldAct: { byAgent: { a: 2 } } }).text).toBe('None caught · 7 days');
+    expect(rowCount(r, { byRuleId: {}, onlyOfItsType: false, wouldAct: { byAgent: {} } }).label).toBe('None since edit');
+    expect(rowCount(r, { byRuleId: {}, onlyOfItsType: false, wouldAct: { byAgent: { a: 2 } } }).label).toBe('None caught · 7 days');
     expect(rowCount(r, { onlyOfItsType: false, wouldAct: { byAgent: { a: 2, b: 3 } } }).text).toBe('5 caught since edit');
-    expect(rowCount(r, { onlyOfItsType: false, wouldAct: { byAgent: { a: 2 } }, agent: 'b' }).text).toBe('None since edit');
+    expect(rowCount(r, { onlyOfItsType: false, wouldAct: { byAgent: { a: 2 } }, agent: 'b' }).label).toBe('None since edit');
     expect(rowCount(r, { onlyOfItsType: false, wouldAct: { byAgent: { a: 2 }, unversioned: true } }).text).toBe('');
   });
 
@@ -183,7 +185,7 @@ describe('row counts and the editor status', () => {
     expect(rowCount(rule({}), { onlyOfItsType: false, neverFirst: '$190' })).toEqual({ text: 'Never triggers ($190 cap first)', tone: 'warn' });
     expect(rowCount(rule({ ruleType: 'tool_list', params: { blockedTools: [] } }), { onlyOfItsType: false })).toEqual({ text: 'Does nothing until you add a tool', tone: 'warn' });
     // Keywords hidden from this caller still count as picked.
-    expect(rowCount(rule({ ruleType: 'keyword', params: { where: 'incoming', keywords: [], wholeWord: true, keywordCount: 2 } }), { onlyOfItsType: false, wouldAct: { byAgent: {} } }).text).toBe('None since edit');
+    expect(rowCount(rule({ ruleType: 'keyword', params: { where: 'incoming', keywords: [], wholeWord: true, keywordCount: 2 } }), { onlyOfItsType: false, wouldAct: { byAgent: {} } }).label).toBe('None since edit');
     expect(rowCount(rule({ mode: 'off' }), { onlyOfItsType: false }).text).toBe('');
   });
 

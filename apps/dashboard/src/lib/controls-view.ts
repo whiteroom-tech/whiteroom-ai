@@ -507,10 +507,15 @@ export function blocksWhen(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'a
   }
 }
 
-export type RowCount = { text: string; tone: 'plain' | 'hot' | 'warn' };
+/** `label`: when `text` is a bare "0", what it means ("None since edit"), for the tooltip and screen readers. */
+export type RowCount = { text: string; tone: 'plain' | 'hot' | 'warn'; label?: string };
+
+// Nothing caught shows as "0"; "—" would mean unknown on this dashboard.
+const NONE_SINCE_EDIT: RowCount = { text: '0', tone: 'plain', label: 'None since edit' };
+const NONE_CAUGHT: RowCount = { text: '0', tone: 'plain', label: 'None caught · 7 days' };
 
 /**
- * The count at the right of a row: "60 caught · 7 days", "None since edit",
+ * The count at the right of a row: "60 caught · 7 days", "0" (None since edit),
  * "Never triggers ($190 cap first)". Seven-day counts are per rule id
  * (rule_actions byRuleId); "since edit" comes from rule_would_act. Viewing
  * one agent, a Watch rule counts that agent's calls since its last
@@ -535,16 +540,16 @@ export function rowCount(rule: GovernanceRule, ctx: {
     const justThem = !ctx.agent || (rule.appliesTo !== 'all' && rule.appliesTo.length === 1 && rule.appliesTo[0] === ctx.agent);
     if (!justThem || !week) return { text: '', tone: 'plain' };
     const n = week[TALLY[response]];
-    return n ? { text: `${fmtCount(n)} ${TALLY_WORD[response]} · 7 days`, tone: 'hot' } : { text: 'None caught · 7 days', tone: 'plain' };
+    return n ? { text: `${fmtCount(n)} ${TALLY_WORD[response]} · 7 days`, tone: 'hot' } : NONE_CAUGHT;
   }
   const since = ctx.wouldAct && !ctx.wouldAct.unversioned ? ctx.wouldAct : null;
   const sinceN = since ? (ctx.agent ? since.byAgent[ctx.agent] ?? 0 : Object.values(since.byAgent).reduce((a, b) => a + b, 0)) : null;
   if (ctx.agent || !week) {
     if (sinceN === null) return { text: '', tone: 'plain' };
-    return sinceN ? { text: `${fmtCount(sinceN)} caught since edit`, tone: 'hot' } : { text: 'None since edit', tone: 'plain' };
+    return sinceN ? { text: `${fmtCount(sinceN)} caught since edit`, tone: 'hot' } : NONE_SINCE_EDIT;
   }
   if (week.wouldAct) return { text: `${fmtCount(week.wouldAct)} caught · 7 days`, tone: 'hot' };
-  return { text: sinceN === 0 ? 'None since edit' : 'None caught · 7 days', tone: 'plain' };
+  return sinceN === 0 ? NONE_SINCE_EDIT : NONE_CAUGHT;
 }
 
 const WOULD_VERB: Record<GovernanceResponse, (who: string) => string> = {

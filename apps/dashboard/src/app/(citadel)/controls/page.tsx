@@ -16,7 +16,6 @@ import { LiveStatus, PageHeader } from "@/components/citadel/PageChrome";
 import { SuggestionDraft } from "./_components/SuggestionDraft";
 import { RuleEditor } from "./_components/RuleEditor";
 import { AddRuleDialog } from "./_components/AddRuleDialog";
-import { AuditCheckDialog } from "./_components/AuditCheckDialog";
 import { ChoiceDialog } from "./_components/ChoiceDialog";
 import { useFleetAuth } from "@/hooks/useFleetAuth";
 import {
@@ -134,7 +133,6 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const [toast, setToastState] = useState<ToastState | null>(null);
   const toastId = useRef(0);
   const showToast = useCallback((message: string, undo?: () => void) => setToastState({ id: ++toastId.current, message, undo }), []);
-  const [auditOpen, setAuditOpen] = useState(false);
   /** "Also covered by N rules for all agents", while one agent is picked. */
   const [alsoOpen, setAlsoOpen] = useState(false);
   /** Each agent's average daily spend (14 days), for a spend cap on specific agents; null: couldn't read. */
@@ -805,7 +803,9 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
           <span>{c.pre}{c.val && <span style={{ fontFamily: FONT_MONO }}>{c.val}</span>}{c.post}</span>
         </span>
         {showScope && <span className="ctl-cap">{r.appliesTo === "all" ? "All agents" : r.appliesTo.join(", ")}</span>}
-        {count.text && <span className={`ctl-row__count is-${count.tone}`}>{count.text}</span>}
+        {count.text && (count.label
+          ? <span className={`ctl-row__count is-${count.tone}`} title={count.label}><span aria-hidden="true">{count.text}</span><span className="wr-sr-only">{count.label}</span></span>
+          : <span className={`ctl-row__count is-${count.tone}`}>{count.text}</span>)}
         {modeTag(r)}
       </button>
     );
@@ -835,7 +835,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
 
   const lists = !agentFilter ? (
     <>
-      {card("Rules for all agents", groups.all.length ? `${modeCount(groups.all)} · new agents get these too` : "No rules cover every agent.", <div>{groups.all.map((r) => row(r))}</div>)}
+      {card("Rules for all agents", groups.all.length ? "New agents get these too." : "No rules cover every agent.", <div>{groups.all.map((r) => row(r))}</div>)}
       {card("Rules for specific agents", groups.byAgent.length ? `Only ${groups.byAgent.map((g) => g.agent).join(", ")} ${groups.byAgent.length > 1 ? "have" : "has"} extra rules` : "No agent has extra rules.",
         groups.byAgent.map((g) => (
           <div key={g.agent}>
@@ -1012,7 +1012,6 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                   status={ruleStatus(edited, { week: weekOf(edited), wouldAct: wouldOf(edited), neverFirst: neverFirst(edited) })}
                   ruleHistory={history}
                   startOpen={justAdded === edited.id || restoredEdit === edited.id}
-                  onAudit={() => setAuditOpen(true)}
                   onUndo={undo}
                   dirty={dirty}
                   error={error}
@@ -1036,7 +1035,6 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                   ))}
                 </div>
               )}
-              <Button onClick={() => setAuditOpen(true)} style={{ alignSelf: "flex-start" }}>Check audit trail</Button>
             </aside>
           )}
         </div>
@@ -1045,7 +1043,6 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       {toast && <Toast key={toast.id} message={toast.message} action={toast.undo ? { label: "Undo", onClick: toast.undo } : undefined} onClose={() => setToastState((t) => (t?.id === toast.id ? null : t))} />}
 
       <AddRuleDialog open={adding !== "closed"} busy={adding === "busy"} onPick={(t) => void add(t)} onCancel={() => setAdding("closed")} />
-      <AuditCheckDialog open={auditOpen} fleetId={fleetId} onClose={() => setAuditOpen(false)} />
 
       <ChoiceDialog
         open={dialog?.kind === "enforce"}

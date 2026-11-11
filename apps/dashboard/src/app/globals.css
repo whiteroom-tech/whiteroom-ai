@@ -784,9 +784,6 @@ button.ctl-row.is-on, button.ctl-row.is-on:hover { background: var(--brand-dim);
 .ctl-tile__lbl { font-size: var(--fs-sm); font-weight: 600; color: var(--tx2); }
 .ctl-tile__num { margin: 4px 0 2px; font-family: var(--font-display); font-size: var(--fs-card); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--tx); }
 .ctl-warnbox { margin: 12px 0 0; padding: 10px 12px; border: 1px solid var(--warn); border-radius: 8px; }
-.ctl-audit { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border: 1px solid var(--line); border-radius: 10px; color: var(--tx); }
-.ctl-audit.is-ok > svg { color: var(--ok); }
-.ctl-audit.is-bad > svg { color: var(--bad); }
 @media (prefers-reduced-motion: reduce) { .ctl-disc__chev, button.ctl-row { transition: none; } }
 @media (max-width: 720px) {
   .ctl-body { padding: 0 16px 32px; }

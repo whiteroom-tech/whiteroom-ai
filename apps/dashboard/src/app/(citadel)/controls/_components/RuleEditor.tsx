@@ -47,7 +47,7 @@ const help = { margin: 0, fontSize: 'var(--fs-sm)', lineHeight: 1.5, color: 'var
 const usd = (n: number) => `$${n < 10 ? n.toFixed(2) : Math.round(n).toLocaleString('en-US')}`;
 const sentenceRow = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, fontSize: 'var(--fs-md)' } as const;
 
-export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, history, ruleHistory, actors, undoOf, onUndo, fleetDailySpend = null, agentSpend = [], status, startOpen = false, dirty, error, saving, onSave, onDiscard, onClose, onRemove, onAudit }: {
+export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, history, ruleHistory, actors, undoOf, onUndo, fleetDailySpend = null, agentSpend = [], status, startOpen = false, dirty, error, saving, onSave, onDiscard, onClose, onRemove }: {
   rule: GovernanceRule;
   draft: RuleDraft;
   onDraft: (d: RuleDraft) => void;
@@ -71,8 +71,6 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
   agentSpend?: { agent: string; perDay: number; days: number }[];
   /** What the rule is doing now, in a sentence (controls-view ruleStatus). */
   status: string;
-  /** Opens the audit trail check. */
-  onAudit: () => void;
   dirty: boolean;
   error: string | null;
   saving: boolean;
@@ -314,7 +312,6 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
             <HistoryLine key={h.id} entry={h} actors={actors} undo={undoOf(h)} onUndo={onUndo} busy={saving} />
           ))}
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
-            <Button size={28} onClick={onAudit}>Check audit trail</Button>
             <Link href={ROUTES.practiceTest} style={{ color: 'var(--brand)', fontWeight: 600, fontSize: 'var(--fs-sm)' }}>Test in Sandbox</Link>
           </div>
         </div>
