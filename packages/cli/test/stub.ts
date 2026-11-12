@@ -324,7 +324,8 @@ export async function startStub(o: StubOptions = {}): Promise<Stub> {
 export function testEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(process.env)) if (!/^(WHITEROOM_|ANTHROPIC_|OPENAI_|AZURE_OPENAI_|AWS_BEARER_TOKEN_)/.test(k) && k !== "NODE_OPTIONS") env[k] = v;
-  return { ...env, ...extra };
+  // No exit report to the Sandbox (sandbox run) unless a test asks for one: tests never call a real WhiteRoom.
+  return { ...env, WHITEROOM_NO_EXIT_REPORT: "1", ...extra };
 }
 
 export interface CliRun {

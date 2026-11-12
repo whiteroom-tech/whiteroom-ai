@@ -76,6 +76,7 @@ whiteroom sandbox run --provider anthropic -- python agent.py
 - It asks for your Sandbox URL (it won't show; or set `WHITEROOM_SANDBOX_URL`), sets the base URL your SDK reads (`ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL` ending in `/v1`, or `AZURE_OPENAI_ENDPOINT`) and runs your command once, as typed, without a shell. The Sandbox page's checks start on its first call.
 - Providers: `anthropic`, `openai`, `azure-openai`, `foundry`, `bedrock-mantle`.
 - If another base URL in your environment points at WhiteRoom, it stops without running anything, so calls can't go to production by mistake.
+- When your agent exits, it tells your Sandbox the exit code (and nothing else), so the Sandbox page's check ends then instead of waiting for more calls. If that takes longer than 3 seconds or fails, it's skipped. Set `WHITEROOM_NO_EXIT_REPORT=1` to turn it off.
 - It exits with your agent's exit code (`128` plus the signal's number if a signal ended it), `2` for a setup or usage problem, or `130` if you press Ctrl+C at the Sandbox URL prompt.
 - For `openai` it also sets `OPENAI_API_BASE`, which older SDKs read.
 - Ctrl+C reaches your agent once, from the terminal. To stop a run from a script, send `SIGTERM` to the CLI; it passes that on (a `SIGINT` sent to the CLI alone isn't).

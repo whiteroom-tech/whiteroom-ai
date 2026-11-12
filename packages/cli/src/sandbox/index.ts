@@ -17,6 +17,8 @@ Usage:
             which you paste when asked (or set WHITEROOM_SANDBOX_URL).
             Example: whiteroom sandbox run --provider anthropic -- python agent.py
             Providers: ${RUN_PROVIDERS.join(", ")}.
+            Tells your Sandbox its exit code when it exits, so the page's
+            check ends then (WHITEROOM_NO_EXIT_REPORT=1 turns this off).
             Exits with your agent's exit code; 2 for a setup or usage problem,
             130 if you press Ctrl+C before it starts.
 

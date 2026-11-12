@@ -3,10 +3,12 @@
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import type { AddressInfo } from "node:net";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, it } from "node:test";
+import { after, describe, it } from "node:test";
 import { run, sandboxSetting, sandboxUrlOf, whiteRoomBaseUrls } from "../src/sandbox/run.js";
 import { Interrupted } from "../src/practice/preflight.js";
 import { PKG, testEnv } from "./stub.js";
@@ -173,3 +175,63 @@ describe("sandbox run", () => {
     assert.deepEqual(whiteRoomBaseUrls({ OPENAI_BASE_URL: "http://localhost:4000", AZURE_OPENAI_ENDPOINT: "https://app.whiteroom.tech/x", ANTHROPIC_BASE_URL: "https://proxy.whiteroom.tech" }, ["ANTHROPIC_BASE_URL"]), ["AZURE_OPENAI_ENDPOINT"]);
   });
 });
+
+/** A stand-in WhiteRoom on loopback that records exit reports, answering as `answer` says. */
+async function exitServer(answer: (req: IncomingMessage, res: ServerResponse) => void = (_q, res) => res.end("{}")) {
+  const posts: { path: string; key: string | undefined; body: Record<string, unknown> }[] = [];
+  const server = createServer((req, res) => {
+    let raw = "";
+    req.on("data", (d) => { raw += d; });
+    req.on("end", () => { posts.push({ path: req.url ?? "", key: req.headers["x-whiteroom-key"] as string | undefined, body: raw ? JSON.parse(raw) : {} }); answer(req, res); });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/${SANDBOX_KEY}`;
+  after(() => { server.closeAllConnections(); server.close(); });
+  return { posts, url };
+}
+
+describe("sandbox run tells the Sandbox when the agent exits", () => {
+  it("posts the exit code with the Sandbox key, then exits with the agent's code", async () => {
+    const s = await exitServer();
+    const r = await cli(["--provider", "anthropic", "--", process.execPath, AGENT, "3"], { WHITEROOM_SANDBOX_URL: s.url, WHITEROOM_NO_EXIT_REPORT: "0" });
+    assert.equal(r.code, 3);
+    assert.equal(s.posts.length, 1);
+    assert.equal(s.posts[0].path, "/api/sandbox/exit");
+    assert.equal(s.posts[0].key, SANDBOX_KEY);
+    assert.deepEqual(Object.keys(s.posts[0].body).sort(), ["code", "ran_ms", "signal"]);
+    assert.equal(s.posts[0].body.code, 3);
+    assert.equal(s.posts[0].body.signal, false);
+    assert.ok(Number.isInteger(s.posts[0].body.ran_ms) && (s.posts[0].body.ran_ms as number) >= 0);
+    // The agent never sees the switch or the key under a WHITEROOM_ name.
+    assert.deepEqual(Object.keys(seenBy(r.stdout).seen), ["ANTHROPIC_BASE_URL"]);
+  });
+
+  it("a signal is sent as one, with no code; the CLI still exits 128 + its number", async () => {
+    const s = await exitServer();
+    const r = await cli(["--provider", "anthropic", "--", process.execPath, "-e", "process.kill(process.pid, 'SIGTERM')"], { WHITEROOM_SANDBOX_URL: s.url, WHITEROOM_NO_EXIT_REPORT: "0" });
+    assert.equal(r.code, 143);
+    assert.deepEqual({ code: s.posts[0].body.code, signal: s.posts[0].body.signal }, { code: null, signal: true });
+  });
+
+  it("an error, a redirect or no answer never changes the exit code, and a hung WhiteRoom holds it 3 s at most", async () => {
+    const failing = await exitServer((_q, res) => { res.statusCode = 500; res.end("no"); });
+    assert.equal((await cli(["--provider", "anthropic", "--", process.execPath, AGENT, "4"], { WHITEROOM_SANDBOX_URL: failing.url, WHITEROOM_NO_EXIT_REPORT: "0" })).code, 4);
+    // A redirect isn't followed: the place it points never hears from the CLI.
+    const elsewhere = await exitServer();
+    const redirecting = await exitServer((_q, res) => { res.statusCode = 307; res.setHeader("Location", `${elsewhere.url}/api/sandbox/exit`); res.end(); });
+    assert.equal((await cli(["--provider", "anthropic", "--", process.execPath, AGENT, "0"], { WHITEROOM_SANDBOX_URL: redirecting.url, WHITEROOM_NO_EXIT_REPORT: "0" })).code, 0);
+    assert.equal(redirecting.posts.length, 1);
+    assert.equal(elsewhere.posts.length, 0);
+    const hung = await exitServer(() => { /* never answers */ });
+    const t0 = Date.now();
+    assert.equal((await cli(["--provider", "anthropic", "--", process.execPath, AGENT, "5"], { WHITEROOM_SANDBOX_URL: hung.url, WHITEROOM_NO_EXIT_REPORT: "0" })).code, 5);
+    assert.ok(Date.now() - t0 < 8_000);
+  });
+
+  it("WHITEROOM_NO_EXIT_REPORT=1 sends nothing", async () => {
+    const s = await exitServer();
+    assert.equal((await cli(["--provider", "anthropic", "--", process.execPath, AGENT, "0"], { WHITEROOM_SANDBOX_URL: s.url, WHITEROOM_NO_EXIT_REPORT: "1" })).code, 0);
+    assert.equal(s.posts.length, 0);
+  });
+});
+
