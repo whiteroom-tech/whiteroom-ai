@@ -44,6 +44,17 @@ const answer = (stage: string, statuses: Record<string, string> = {}, ended = fa
   rules: [],
 })!;
 
+describe('a not-proven result', () => {
+  it('row 03 says the agent went quiet after the 529; the Next card says what to do, once', async () => {
+    await render('checks-report-not-proven');
+    expect(text()).toContain('Nothing to fix so far · 4 of 8 checked');
+    expect(document.querySelector('[data-row="03"]')?.textContent).toContain('Went quiet after the 529');
+    expect(document.querySelector('[data-row="03"]')?.textContent).not.toContain('Not proven: we returned');
+    const next = document.querySelector('section[aria-label="Next"]')?.textContent ?? '';
+    expect(next.split('Run a longer task (at least 12 calls), then check again.')).toHaveLength(2);
+  });
+});
+
 describe('the right-hand cards follow the step', () => {
   it('Connect: What we check, open beside the key form on a laptop', async () => {
     await render('sample-offer');

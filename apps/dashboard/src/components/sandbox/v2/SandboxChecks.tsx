@@ -18,7 +18,7 @@ import {
 } from '@/lib/sandbox/checks';
 import { restartedCheck, restartNote, SCORED_CHECKS, tooFewCalls, tooFewNote } from '@/lib/sandbox/check-report';
 import {
-  callsText, LIVE_TRACK, liveRowName, nextSteps, notRunFor, nowExplained, practiceBinding, ROW_GROUP_NAMES, rowCounts, rowsHeadline, rowsSummary, sandboxRows, STATE_WORDS,
+  callsText, FULL_CHECK_CALLS, LIVE_TRACK, liveRowName, nextSteps, notRunFor, nowExplained, practiceBinding, ROW_GROUP_NAMES, rowCounts, rowsHeadline, rowsSummary, sandboxRows, STATE_WORDS,
   type BoundPractice, type NextStep, type RowLimits, type SandboxRow,
 } from '@/lib/sandbox/sandbox-rows';
 import { getPracticeResult, getPracticeRun, listPracticeRuns } from '@/lib/sandbox/practice/api';
@@ -473,7 +473,7 @@ function NextLine({ step, href, onPractice, plan, goLive }: { step: NextStep; hr
   switch (step.kind) {
     case 'again': return <>Run your agent again, with a longer task, so the live checks can run.</>;
     case 'restarted': return <>WhiteRoom restarted during this check. Check again.</>;
-    case 'not_proven': return <>Run a longer task (at least 12 calls), then check again.</>;
+    case 'not_proven': return <>Run a longer task (at least {FULL_CHECK_CALLS} calls), then check again.</>;
     case 'fix': return <>{NEXT_SHORT[step.num] ?? `${step.text} Then check again.`}</>;
     case 'practice': return <><PracticeLink href={href} onPractice={onPractice && (() => onPractice())} /> for {step.rows}. A few minutes.</>;
     case 'live':

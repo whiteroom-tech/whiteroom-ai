@@ -2,7 +2,7 @@
 // results, its rule probes and its parts, with the headline counted over them.
 import { describe, expect, it } from 'vitest';
 import { CHECK_IDS, checkStateOf, type CheckState, type CheckStatus, type RuleProbe } from '@/lib/sandbox/checks';
-import { nextSteps, practiceBinding, practiceRows, ROWS, rowsHeadline, rowsSummary, sandboxRows, type BoundPractice } from '@/lib/sandbox/sandbox-rows';
+import { FULL_CHECK_CALLS, nextSteps, practiceBinding, practiceRows, ROWS, rowsHeadline, rowsSummary, sandboxRows, type BoundPractice } from '@/lib/sandbox/sandbox-rows';
 
 const ALL_PASSED: Record<string, [CheckStatus, string]> = {
   spend_cap: ['passed', 'We blocked a call → it didn’t retry that call.'],
@@ -85,6 +85,8 @@ describe('the eight rows', () => {
     expect(nextSteps(sandboxRows(parsed, allPractice), { few: false, sample: false }).map((x) => x.kind)).toEqual(['not_proven']);
     expect(nextSteps(sandboxRows(parsed, allPractice), { few: true, sample: false }).map((x) => x.kind)).toEqual(['again']);
     expect(nextSteps(sandboxRows(parsed, allPractice), { few: false, sample: true }).map((x) => x.kind)).toEqual([]);
+    // The calls a full check takes, as the engine runs it (sandbox-check.ts): the Next step names it.
+    expect(FULL_CHECK_CALLS).toBe(12);
     // The flag only counts on a not-checked result; an older engine without it reads Not checked.
     const old = raw(state({ checks: { pause_stop: ['not_checked', np('we stopped your agent and let it go')] } }));
     expect(by(checkStateOf(old)!)['07'].state).toBe('not_checked');

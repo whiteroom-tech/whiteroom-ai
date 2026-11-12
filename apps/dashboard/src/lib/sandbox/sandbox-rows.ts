@@ -460,6 +460,14 @@ export function nowExplained(check: CheckId, stage: CheckStage, agent: string): 
   }
 }
 
+/**
+ * Calls a well-behaved agent makes to get through every live test (engine
+ * sandbox-check.ts): 4 observed (OBSERVE_CALLS, with the hand-over), then
+ * two each for the block, the pause, the stop and the 529: the refused call
+ * and the one after it that shows the agent carried on.
+ */
+export const FULL_CHECK_CALLS = 4 + 2 * 4;
+
 /** One of the report's next steps (the Next card): a fix, practice tasks, or what to do once it's all clear. */
 export type NextStep =
   | { kind: 'fix'; num: string; text: string }

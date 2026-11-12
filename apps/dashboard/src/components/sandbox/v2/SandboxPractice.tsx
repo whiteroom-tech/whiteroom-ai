@@ -19,6 +19,9 @@ import { useSeenAt } from './useSeenAt';
 import s from '../guided.module.css';
 import v from './v2.module.css';
 
+/** The command that writes the Python starter adapter (never null: not the sample agent's). */
+const STARTER = cliCommands(false, 'python').starter ?? '';
+
 /** /dev/sandbox-v2: a fixed practice card instead of the engine. */
 export interface SandboxPracticePreview {
   who?: 'mine' | 'sample';
@@ -349,7 +352,7 @@ export function SandboxPractice({ fleet, agent, provider, sandboxKey, initialPro
             <input id="sbx-pt-adapter" className={`${s.formInput} ${v.mono}`} value={adapter} maxLength={200} spellCheck={false} onChange={(e) => setAdapter(e.target.value)} />
             <p className={v.rsub}>Remembered in this browser. <button type="button" className={v.linkButton} aria-expanded={starter} onClick={() => setStarter((x) => !x)}>New to this? Get a starter adapter</button></p>
             {starter && <>
-              <div className={v.codeRow}><code className={v.codeLine}>{cliCommands(false, 'python').starter}</code><CopyButton text={cliCommands(false, 'python').starter ?? ''} label="Copy the starter adapter command" /></div>
+              <div className={v.codeRow}><code className={v.codeLine}>{STARTER}</code><CopyButton text={STARTER} label="Copy the starter adapter command" /></div>
               <p className={v.rsub}>It writes wr_adapter.py: replace its marked function with a call to your agent. JavaScript: <code className={v.mono}>--lang js</code>, then <code className={v.mono}>node wr-adapter.mjs</code>.</p>
             </>}
           </div>
