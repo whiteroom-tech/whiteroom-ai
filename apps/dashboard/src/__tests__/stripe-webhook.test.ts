@@ -16,11 +16,24 @@ const mocks = vi.hoisted(() => ({
   activate: vi.fn(),
   /** Invoices with no status are paid ones. */
   invoices: [] as Array<{ amount_paid?: number; amount_due?: number; status?: string; attempted?: boolean; attempt_count?: number; status_transitions?: { paid_at: number } }>,
+  /**
+   * Users and Stripe customers that belong to the other region's dashboard
+   * (the Stripe account is shared). Everything else is this region's.
+   */
+  foreign: { users: new Set<string>(), customers: new Set<string>() },
   /** What Stripe says the subscription is now (deliver() sets it to the payload unless a test says otherwise). */
   current: null as Record<string, unknown> | null,
 }));
 
-vi.mock('@/lib/db', () => ({ db: () => ({ query: mocks.query, connect: async () => ({ query: mocks.query, release: () => {} }) }) }));
+/** Answers "is this user / customer ours?" from mocks.foreign; every other query goes to mocks.query. */
+async function dbQuery(sql: string, params?: unknown[]) {
+  const q = String(sql);
+  const ours = (set: Set<string>) => (set.has(String(params?.[0])) ? { rowCount: 0, rows: [] } : { rowCount: 1, rows: [{ '?column?': 1 }] });
+  if (q.includes('SELECT 1 FROM users WHERE id = $1')) return ours(mocks.foreign.users);
+  if (q.includes('SELECT 1 FROM subscriptions WHERE stripe_customer_id = $1')) return ours(mocks.foreign.customers);
+  return mocks.query(sql, params);
+}
+vi.mock('@/lib/db', () => ({ db: () => ({ query: dbQuery, connect: async () => ({ query: mocks.query, release: () => {} }) }) }));
 // The lock itself is tested in entitlements-sync.test.ts; here it just runs the work, handing it the push.
 vi.mock('@/lib/entitlements', () => ({
   enqueueEntitlementSync: mocks.enqueue,
@@ -86,6 +99,8 @@ function written() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.foreign.users.clear();
+  mocks.foreign.customers.clear();
   process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
   process.env.STRIPE_PRICE_STARTER = 'price_starter';
   process.env.STRIPE_PRICE_PRO = 'price_pro';
@@ -449,6 +464,14 @@ describe('stripe webhook: order, replacement and delivery', () => {
     expect(mocks.sync).not.toHaveBeenCalled();
   });
 
+  it("acknowledges and skips another region's subscription (the Stripe account is shared): nothing written, nothing pushed", async () => {
+    mocks.foreign.users.add('u1');
+    expect((await event('customer.subscription.updated', sub('active'))).status).toBe(200);
+    expect(upserts()).toHaveLength(0);
+    expect(mocks.sync).not.toHaveBeenCalled();
+    expect(mocks.query.mock.calls.some((c) => String(c[0]).includes('DELETE FROM stripe_events WHERE id = $1'))).toBe(false);
+  });
+
   it('past_due and trialing count as active for the replacement rule', async () => {
     await event('customer.subscription.updated', sub('past_due'));
     expect((upserts()[0][1] as unknown[])[7]).toEqual(['active', 'trialing', 'past_due']);
@@ -565,6 +588,28 @@ describe('stripe webhook: order, replacement and delivery', () => {
       await event('customer.tax_id.created', { object: 'tax_id', customer: { id: 'cus_1' }, type: 'eu_vat' });
       expect(mocks.updateCustomer).toHaveBeenCalledWith('cus_1', { tax_exempt: 'reverse' });
       expect(upserts()).toHaveLength(0);
+    });
+
+    it("never touches another region's customer, or one created by hand in Stripe", async () => {
+      mocks.foreign.customers.add('cus_1');
+      stripeCustomer('GB', [['gb_vat', 'verified']]);
+      await event('customer.tax_id.updated', { object: 'tax_id', customer: 'cus_1', type: 'gb_vat' });
+      await completed();
+      expect(mocks.retrieveCustomer).not.toHaveBeenCalled();
+      expect(mocks.updateCustomer).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a two-word name inside the registered one', 'ACME WIDGETS EUROPE LTD', 'Acme Widgets', true],
+      ['the registered name inside a longer trading name', 'Acme Widgets Ltd', 'Acme Widgets (UK Sales)', true],
+      ['one word inside a longer name', 'ACME WIDGETS LTD', 'Acme', false],
+      ['a generic word inside a longer name', 'GROUP HOLDINGS LTD', 'Group Ltd', false],
+      ['names that reduce to a single letter', 'A LIMITED', 'A Ltd', false],
+      ['names that are only legal forms', 'THE COMPANY LIMITED', 'Ltd', false],
+    ])('name matching: %s -> %s', async (_why, registered, entered, marks) => {
+      stripeCustomer('GB', [['gb_vat', 'verified', { verified_name: registered }]], 'none', entered);
+      await completed();
+      expect(mocks.updateCustomer).toHaveBeenCalledTimes(marks ? 1 : 0);
     });
 
     it('skips a deleted customer, and a tax ID event with no customer', async () => {

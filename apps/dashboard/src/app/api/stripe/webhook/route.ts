@@ -172,16 +172,20 @@ function nameKey(name: string): string {
 
 /**
  * Whether the name the VAT register holds for a number is the company the
- * customer says it is: equal once reduced, or one wholly inside the other by
- * whole words ("Acme" and "Acme Widgets"), so a trading name still matches.
- * Anything else, including a register that returns no name, is for a person.
+ * customer says it is. Equal once reduced, or the shorter wholly inside the
+ * longer by whole words, but only when the shorter is at least two words
+ * ("Acme Widgets" in "Acme Widgets Europe"): a single word inside a longer
+ * name ("Group" in "Group Holdings") says too little. Anything else,
+ * including a register that returns no name, is for a person.
  */
 function sameCompany(registered: string | null | undefined, entered: string | null | undefined): boolean {
   if (!registered || !entered) return false;
   const a = nameKey(registered);
   const b = nameKey(entered);
   if (a.length < 2 || b.length < 2) return false;
-  return a === b || ` ${a} `.includes(` ${b} `) || ` ${b} `.includes(` ${a} `);
+  if (a === b) return true;
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+  return shorter.split(' ').length >= 2 && ` ${longer} `.includes(` ${shorter} `);
 }
 
 /**
@@ -213,6 +217,11 @@ function sameCompany(registered: string | null | undefined, entered: string | nu
  */
 async function markReverseCharge(customerId: string | null): Promise<void> {
   if (!customerId) return;
+  // Only a customer this region recorded (lib/billing ensureCustomer): the
+  // Stripe account is shared with the other region's dashboard, and with
+  // anything created by hand in Stripe.
+  const { rows } = await db().query(`SELECT 1 FROM subscriptions WHERE stripe_customer_id = $1`, [customerId]);
+  if (rows.length === 0) return;
   try {
     const customer = await stripe().customers.retrieve(customerId, { expand: ['tax_ids'] });
     if ('deleted' in customer && customer.deleted) return;
@@ -267,7 +276,14 @@ function periodEnd(sub: Stripe.Subscription): Date | null {
 
 async function resolveUserId(sub: Stripe.Subscription): Promise<string | null> {
   const fromSub = sub.metadata?.whiteroom_user_id;
-  if (fromSub) return fromSub;
+  if (fromSub) {
+    // The US and EU dashboards share one Stripe account, and each webhook
+    // destination receives every event on it. A user who isn't in this
+    // region's database is the other region's: not ours to apply (saving it
+    // would fail on the users foreign key, and Stripe would retry for days).
+    const { rows } = await db().query(`SELECT 1 FROM users WHERE id = $1`, [fromSub]);
+    return rows.length > 0 ? fromSub : null;
+  }
 
   // Subscriptions created outside our checkout (in the Stripe dashboard, say)
   // carry no metadata, so fall back to the customer we recorded at signup.
