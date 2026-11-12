@@ -97,6 +97,9 @@ beforeEach(() => {
   // (an outbox row answers with its id).
   mocks.query.mockImplementation(async (sql: string) => (String(sql).includes('RETURNING id') ? { rowCount: 1, rows: [{ id: 41 }] } : { rowCount: 1, rows: [] }));
   mocks.retrieve.mockImplementation(async () => mocks.current);
+  // A US customer with no tax ID unless a test says otherwise: never reverse charge.
+  mocks.retrieveCustomer.mockReset().mockResolvedValue({ id: 'cus_1', tax_exempt: 'none', address: { country: 'US' }, tax_ids: { data: [] } });
+  mocks.updateCustomer.mockReset().mockResolvedValue({});
   mocks.sync.mockResolvedValue(true);
   mocks.getClosing.mockResolvedValue(null);
   mocks.cancelClosing.mockResolvedValue(true);
@@ -530,14 +533,45 @@ describe('stripe webhook: order, replacement and delivery', () => {
       expect(upserts()).toHaveLength(0);
     });
 
-    it('still applies the subscription, and acknowledges, when Stripe refuses the check or the update', async () => {
-      vi.spyOn(console, 'error').mockImplementation(() => {});
-      mocks.retrieveCustomer.mockRejectedValue(new Error('stripe down'));
+    it('skips a deleted customer, and a tax ID event with no customer', async () => {
+      mocks.retrieveCustomer.mockResolvedValue({ id: 'cus_1', deleted: true });
       expect((await completed()).status).toBe(200);
-      expect((upserts()[0][1] as unknown[])[0]).toBe('u1');
+      mocks.retrieveCustomer.mockClear();
+      expect((await event('customer.tax_id.updated', { object: 'tax_id', customer: null, type: 'gb_vat' })).status).toBe(200);
+      expect(mocks.retrieveCustomer).not.toHaveBeenCalled();
+      expect(mocks.updateCustomer).not.toHaveBeenCalled();
+    });
+
+    const released = () => mocks.query.mock.calls.some((c) => String(c[0]).includes('DELETE FROM stripe_events WHERE id = $1'));
+
+    it.each([
+      ['a network failure', Object.assign(new Error('socket hang up'), { type: 'StripeConnectionError' })],
+      ['a Stripe 5xx', Object.assign(new Error('api error'), { type: 'StripeAPIError', statusCode: 500 })],
+      ['a rate limit', Object.assign(new Error('slow down'), { type: 'StripeRateLimitError', statusCode: 429 })],
+    ])('fails the delivery on %s while marking, so Stripe redelivers (the subscription is already applied)', async (_why, err) => {
       stripeCustomer('GB', [['gb_vat', 'verified']]);
-      mocks.updateCustomer.mockRejectedValue(new Error('stripe down'));
+      mocks.updateCustomer.mockRejectedValue(err);
+      expect((await completed()).status).toBe(500);
+      expect(mocks.updateCustomer).toHaveBeenCalledWith('cus_1', { tax_exempt: 'reverse' });
+      expect(released()).toBe(true);
+      expect((upserts()[0][1] as unknown[])[0]).toBe('u1');
+    });
+
+    it('fails a tax ID event on a temporary failure reading the customer, so it is redelivered', async () => {
+      mocks.retrieveCustomer.mockRejectedValue(Object.assign(new Error('timeout'), { type: 'StripeConnectionError' }));
+      expect((await event('customer.tax_id.updated', { object: 'tax_id', customer: 'cus_1', type: 'gb_vat' })).status).toBe(500);
+      expect(released()).toBe(true);
+    });
+
+    it('logs and acknowledges a permanent refusal, which a retry would only repeat', async () => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+      stripeCustomer('GB', [['gb_vat', 'verified']]);
+      mocks.updateCustomer.mockRejectedValue(Object.assign(new Error('No such customer'), { type: 'StripeInvalidRequestError', statusCode: 404 }));
       expect((await completed()).status).toBe(200);
+      expect(mocks.updateCustomer).toHaveBeenCalledWith('cus_1', { tax_exempt: 'reverse' });
+      expect(released()).toBe(false);
+      expect(log).toHaveBeenCalledWith(expect.stringContaining("couldn't check or mark customer cus_1"), 'No such customer');
+      expect((upserts()[0][1] as unknown[])[0]).toBe('u1');
     });
   });
 });

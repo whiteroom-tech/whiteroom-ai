@@ -148,8 +148,14 @@ function vatTypeFor(country: string): 'gb_vat' | 'eu_vat' {
  *
  * Read fresh from Stripe each time, so it is the same whichever event calls
  * it and however often: a customer already marked, or whose tax status was
- * changed by hand, is left alone. It only ever sets the flag. Best effort: a
- * failure is logged and never fails the delivery or the subscription.
+ * changed by hand, is left alone. It only ever sets the flag.
+ *
+ * A temporary Stripe failure (network, 5xx, rate limit) is thrown, so the
+ * delivery fails, its claim is released and Stripe redelivers; otherwise a
+ * VAT number verified before checkout completed would never be marked, as no
+ * later tax ID event comes. Redelivery is safe: the subscription is read
+ * fresh too. A permanent refusal (a 4xx: the customer is gone, say) would
+ * fail every time, so it is logged and the delivery acknowledged.
  */
 async function markReverseCharge(customerId: string | null): Promise<void> {
   if (!customerId) return;
@@ -164,8 +170,20 @@ async function markReverseCharge(customerId: string | null): Promise<void> {
     if (!verified) return;
     await stripe().customers.update(customerId, { tax_exempt: 'reverse' });
   } catch (err) {
+    if (isTransientStripeError(err)) throw err;
     console.error(`[stripe] couldn't check or mark customer ${customerId} reverse charge:`, err instanceof Error ? err.message : err);
   }
+}
+
+/**
+ * Whether a Stripe call might succeed if tried again: no HTTP status at all
+ * (a network failure), a 5xx, or a 429. A 4xx other than 429 is Stripe
+ * refusing the request itself, which a retry would only repeat.
+ */
+function isTransientStripeError(err: unknown): boolean {
+  const status = typeof err === 'object' && err !== null ? (err as { statusCode?: unknown }).statusCode : undefined;
+  if (typeof status !== 'number') return true;
+  return status >= 500 || status === 429;
 }
 
 /**
