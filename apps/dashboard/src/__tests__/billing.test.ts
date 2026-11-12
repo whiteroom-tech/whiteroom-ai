@@ -6,11 +6,15 @@ const mocks = vi.hoisted(() => ({
   getTrialEndsAt: vi.fn(),
   getClosing: vi.fn(),
   createSession: vi.fn(),
+  retrieveCustomer: vi.fn(),
+  createCustomer: vi.fn(),
+  createPortal: vi.fn(),
+  query: vi.fn(),
   trialState: { current: null as string | null },
 }));
 
 vi.mock('@/auth', () => ({ auth: async () => mocks.session.current }));
-vi.mock('@/lib/db', () => ({ db: () => ({ query: vi.fn().mockResolvedValue({ rows: [] }) }) }));
+vi.mock('@/lib/db', () => ({ db: () => ({ query: mocks.query }) }));
 vi.mock('@/lib/app-origin', () => ({ appOrigin: () => 'https://app.whiteroom.tech' }));
 vi.mock('@/lib/entitlements', () => ({
   getSubscriptionRow: mocks.getSubscriptionRow,
@@ -19,10 +23,14 @@ vi.mock('@/lib/entitlements', () => ({
 }));
 vi.mock('@/lib/account-closing', () => ({ getClosing: mocks.getClosing }));
 vi.mock('@/lib/stripe', () => ({
-  stripe: () => ({ checkout: { sessions: { create: mocks.createSession } } }),
+  stripe: () => ({
+    checkout: { sessions: { create: mocks.createSession } },
+    customers: { retrieve: mocks.retrieveCustomer, create: mocks.createCustomer },
+    billingPortal: { sessions: { create: mocks.createPortal } },
+  }),
 }));
 
-const { startCheckout } = await import('@/lib/billing');
+const { openBillingPortal, startCheckout } = await import('@/lib/billing');
 
 const DAY = 86_400_000;
 
@@ -38,6 +46,10 @@ beforeEach(() => {
   // An existing Stripe customer, so ensureCustomer doesn't create one.
   mocks.getSubscriptionRow.mockResolvedValue({ stripeCustomerId: 'cus_1', stripeSubscriptionId: null, status: 'active' });
   mocks.createSession.mockResolvedValue({ url: 'https://checkout.stripe.com/c/pay/cs_test' });
+  mocks.retrieveCustomer.mockResolvedValue({ id: 'cus_1' });
+  mocks.createCustomer.mockResolvedValue({ id: 'cus_new' });
+  mocks.createPortal.mockResolvedValue({ url: 'https://billing.stripe.com/p/session/x' });
+  mocks.query.mockResolvedValue({ rows: [] });
 });
 
 function sent() {
@@ -128,5 +140,57 @@ describe('startCheckout', () => {
     mocks.getClosing.mockResolvedValue({ reason: 'deleted', closesAt: new Date(Date.now() - DAY).toISOString() });
     expect(await startCheckout('starter')).toMatchObject({ ok: false, support: true });
     expect(mocks.createSession).not.toHaveBeenCalled();
+  });
+});
+
+/** Stripe's refusal for an id the key's account doesn't have. */
+const missing = () => Object.assign(new Error("No such customer: 'cus_1'"), { type: 'invalid_request_error', code: 'resource_missing' });
+
+describe('stored Stripe customers', () => {
+  it('reuses a stored customer Stripe still has', async () => {
+    await startCheckout('pro');
+    expect(mocks.retrieveCustomer).toHaveBeenCalledWith('cus_1');
+    expect(mocks.createCustomer).not.toHaveBeenCalled();
+    expect(sent().customer).toBe('cus_1');
+  });
+
+  it("replaces one from another Stripe account (or deleted), records the new one, and checks out with it", async () => {
+    mocks.retrieveCustomer.mockRejectedValue(missing());
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect((await startCheckout('pro')).ok).toBe(true);
+    expect(mocks.createCustomer).toHaveBeenCalledWith({ email: 'u1@example.com', metadata: { whiteroom_user_id: 'u1' } });
+    expect(mocks.query).toHaveBeenCalledWith(expect.stringContaining('stripe_customer_id = EXCLUDED.stripe_customer_id'), ['u1', 'cus_new']);
+    expect(sent().customer).toBe('cus_new');
+
+    mocks.createSession.mockClear();
+    mocks.retrieveCustomer.mockResolvedValue({ id: 'cus_1', deleted: true });
+    await startCheckout('pro');
+    expect(sent().customer).toBe('cus_new');
+  });
+
+  it('logs why Stripe refused a checkout, and still shows the plain error', async () => {
+    mocks.createSession.mockRejectedValue(Object.assign(new Error('No such price'), { type: 'invalid_request_error', code: 'resource_missing' }));
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(await startCheckout('pro')).toEqual({ ok: false, error: 'Could not start checkout.' });
+    expect(log).toHaveBeenCalledWith('[billing] checkout (pro) failed for user u1: invalid_request_error/resource_missing: No such price');
+  });
+
+  it('does not check out on a stored customer Stripe refuses for any other reason', async () => {
+    mocks.retrieveCustomer.mockRejectedValue(Object.assign(new Error('rate limited'), { type: 'rate_limit_error' }));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect((await startCheckout('pro')).ok).toBe(false);
+    expect(mocks.createCustomer).not.toHaveBeenCalled();
+    expect(mocks.createSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('openBillingPortal', () => {
+  it('opens the portal for a stored customer', async () => {
+    expect(await openBillingPortal()).toEqual({ ok: true, url: 'https://billing.stripe.com/p/session/x' });
+  });
+
+  it('says there is no billing account yet when the stored customer is from another Stripe account', async () => {
+    mocks.createPortal.mockRejectedValue(missing());
+    expect(await openBillingPortal()).toEqual({ ok: false, error: 'No billing account yet — subscribe to a plan first.' });
   });
 });
