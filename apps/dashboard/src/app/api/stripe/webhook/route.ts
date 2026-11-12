@@ -22,6 +22,9 @@ const HANDLED = new Set([
   'customer.subscription.created',
   'customer.subscription.updated',
   'customer.subscription.deleted',
+  // A VAT number Stripe has finished checking (or one added later in the portal).
+  'customer.tax_id.created',
+  'customer.tax_id.updated',
 ]);
 
 export async function POST(req: Request): Promise<Response> {
@@ -92,7 +95,15 @@ async function handle(event: Stripe.Event): Promise<void> {
       // Whose it is comes from the session's customer (recorded when checkout
       // created it); the subscription itself is read under the lock, once.
       await applySubscription({ id: subscriptionId, customer: session.customer, metadata: session.metadata ?? {} } as Stripe.Subscription);
-      await markReverseCharge(session);
+      await markReverseCharge(idOf(session.customer));
+      return;
+    }
+    case 'customer.tax_id.created':
+    case 'customer.tax_id.updated': {
+      // Stripe checks a UK or EU VAT number with HMRC or VIES after it's
+      // entered, so it is usually still pending at checkout: this is when a
+      // verified one arrives.
+      await markReverseCharge(idOf((event.data.object as Stripe.TaxId).customer));
       return;
     }
     case 'customer.subscription.created':
@@ -117,25 +128,43 @@ const REVERSE_CHARGE_COUNTRIES = new Set([
   'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE',
 ]);
 
+/** A customer reference's id, whether Stripe sent the id or the expanded object. */
+function idOf(customer: string | { id: string } | null | undefined): string | null {
+  return typeof customer === 'string' ? customer : customer?.id ?? null;
+}
+
+/** The tax ID type a reverse-charge country's VAT number has in Stripe. */
+function vatTypeFor(country: string): 'gb_vat' | 'eu_vat' {
+  return country === 'GB' ? 'gb_vat' : 'eu_vat';
+}
+
 /**
- * A UK or EU business that gave a VAT number at checkout accounts for the VAT
- * itself (the reverse charge). Marking its Stripe
- * customer `reverse` makes every invoice say so. Only ever sets it: a customer
- * whose tax status was already changed (by hand, say) is left alone. Best
- * effort: a failure is logged and the subscription still applies, since a
- * missing invoice note is fixed by hand in Stripe (Customers -> Tax status).
+ * Marks a UK or EU business customer reverse charge (tax_exempt "reverse"),
+ * so its invoices say it accounts for the VAT itself, but only on Stripe's
+ * word, never on what was typed: the customer's billing country must be the UK
+ * or an EU member state, and it must hold a VAT number of that country's type
+ * (gb_vat or eu_vat) that Stripe has verified with HMRC or VIES. Pending,
+ * unverified or unavailable leaves it for a person (Customers -> Tax status).
+ *
+ * Read fresh from Stripe each time, so it is the same whichever event calls
+ * it and however often: a customer already marked, or whose tax status was
+ * changed by hand, is left alone. It only ever sets the flag. Best effort: a
+ * failure is logged and never fails the delivery or the subscription.
  */
-async function markReverseCharge(session: Stripe.Checkout.Session): Promise<void> {
-  const details = session.customer_details;
-  const country = details?.address?.country;
-  const customerId = typeof session.customer === 'string' ? session.customer : session.customer?.id;
-  if (!customerId || !country || !REVERSE_CHARGE_COUNTRIES.has(country)) return;
-  if (!details?.tax_ids?.length) return;
-  if (details.tax_exempt && details.tax_exempt !== 'none') return;
+async function markReverseCharge(customerId: string | null): Promise<void> {
+  if (!customerId) return;
   try {
+    const customer = await stripe().customers.retrieve(customerId, { expand: ['tax_ids'] });
+    if ('deleted' in customer && customer.deleted) return;
+    const country = customer.address?.country;
+    if (!country || !REVERSE_CHARGE_COUNTRIES.has(country)) return;
+    if (customer.tax_exempt && customer.tax_exempt !== 'none') return;
+    const vat = vatTypeFor(country);
+    const verified = (customer.tax_ids?.data ?? []).some((t) => t.type === vat && t.verification?.status === 'verified');
+    if (!verified) return;
     await stripe().customers.update(customerId, { tax_exempt: 'reverse' });
   } catch (err) {
-    console.error(`[stripe] couldn't mark customer ${customerId} reverse charge (${country}):`, err instanceof Error ? err.message : err);
+    console.error(`[stripe] couldn't check or mark customer ${customerId} reverse charge:`, err instanceof Error ? err.message : err);
   }
 }
 
