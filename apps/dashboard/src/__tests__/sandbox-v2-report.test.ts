@@ -108,7 +108,7 @@ describe('the report on the page', () => {
     // The eight rows, in number order and two groups; the headline counts them.
     expect([...document.querySelectorAll('li[data-row]')].map((li) => li.getAttribute('data-row'))).toEqual(['01', '02', '03', '04', '05', '06', '07', '08']);
     expect([...document.querySelectorAll('section[aria-label^="The "]')].map((x) => x.getAttribute('aria-label'))).toEqual(['The agent', 'The guardrails']);
-    expect(body).toMatch(/\d of 8 checked · 2 need practice tasks/);
+    expect(body).toMatch(/\d of 8 checked · \d not checked · 2 need practice tasks/);
     // The failed row opens in place with what happened and how to fix it.
     const fix = document.querySelector('li[data-row="03"]')!;
     expect(fix.getAttribute('data-state')).toBe('failed');
@@ -155,7 +155,7 @@ describe('the report on the page', () => {
     const html = renderToStaticMarkup(h(ReportView, { state: few, checked: 'just now', calls: 3, onAgain: () => {} }));
     expect(html).not.toContain('Not enough calls to check your agent');
     expect(html).toContain('Nothing was checked this time');
-    expect(html).toContain('0 of 8 checked · 2 need practice tasks · support-bot · 3 calls · just now');
+    expect(html).toContain('0 of 8 checked · 6 not checked · 2 need practice tasks · support-bot · 3 calls · just now');
     expect(html).toContain(tooFewNote(3));
     expect(html).toContain('Only 3 calls this time, so the live checks couldn’t run.');
     // All eight rows, in order; practice rows still offer practice tasks, and so does the next step.
