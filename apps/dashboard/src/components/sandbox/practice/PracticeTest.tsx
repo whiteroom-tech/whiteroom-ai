@@ -238,7 +238,7 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
     }
     setCode({ code: made.code, codeExpiresAt: made.codeExpiresAt });
     setKeyChoice(key);
-    setSaid('Run code ready. It expires in 30 minutes.');
+    setSaid('Run code ready. It expires in 12 hours.');
     track('practice_started', { sample: st.sample, runs: st.runs, rerun: !!st.scope });
     setResult(null);
     // Shown from the start reply at once, so the run code can't be lost to a failed read; polling fills in the rest.
