@@ -20,11 +20,11 @@ function samplePlan(plan: unknown): Entitlement {
     usage: { fleets: 1, agents: 2 }, ...extra,
   });
   if (plan === 'free') return paid('free', { planName: 'Free', trialEndsAt: new Date(Date.now() - 60_000).toISOString(), usage: { fleets: 1, agents: 0 } });
-  if (plan === 'grace') return paid('starter', { planName: 'Starter', subscription: sub('canceled', new Date(Date.now() - 3 * DAY).toISOString()), graceEndsAt: new Date(Date.now() + 11 * DAY).toISOString() });
-  if (plan === 'past-due') return paid('starter', { planName: 'Starter', subscription: sub('past_due') });
-  if (plan === 'paying') return paid('starter', { planName: 'Starter', subscription: sub('active'), usage: { fleets: 1, agents: 7 } });
+  if (plan === 'grace') return paid('starter', { planName: 'Individual', subscription: sub('canceled', new Date(Date.now() - 3 * DAY).toISOString()), graceEndsAt: new Date(Date.now() + 11 * DAY).toISOString() });
+  if (plan === 'past-due') return paid('starter', { planName: 'Individual', subscription: sub('past_due') });
+  if (plan === 'paying') return paid('starter', { planName: 'Individual', subscription: sub('active'), usage: { fleets: 1, agents: 7 } });
   return {
-    plan: 'starter', planName: 'Starter', limits: limitsFor('starter'), subscription: null,
+    plan: 'starter', planName: 'Individual', limits: limitsFor('starter'), subscription: null,
     trialEndsAt: new Date(Date.now() + 20 * 86_400_000).toISOString(), onTrial: true,
     usage: { fleets: 1, agents: 7 },
   };

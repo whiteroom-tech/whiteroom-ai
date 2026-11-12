@@ -100,8 +100,8 @@ suite('trial-ending reminders against Postgres', () => {
     expect(Object.keys(s).sort()).toEqual(['abandoned-checkout', 'legacy-state', 'no-plan', 'pro-card', 'starter-card']);
     expect(s['no-plan']).toMatch(/^Your WhiteRoom free period ends on /);
     expect(s['abandoned-checkout']).toMatch(/^Your WhiteRoom free period ends on /);
-    expect(s['pro-card']).toMatch(/^Your WhiteRoom Pro plan starts billing on /);
-    expect(s['starter-card']).toMatch(/^Your WhiteRoom Starter plan starts billing on /);
+    expect(s['pro-card']).toMatch(/^Your WhiteRoom Teams plan starts billing on /);
+    expect(s['starter-card']).toMatch(/^Your WhiteRoom Individual plan starts billing on /);
   });
 
   it('sends once per free-period end, and once more when the free period is extended', async () => {

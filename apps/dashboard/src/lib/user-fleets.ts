@@ -112,7 +112,7 @@ export async function addUserFleet(
         error: plan === 'suspended'
           ? 'Your plan has ended. Pick a plan in Settings to link more fleets.'
           : plan === 'free'
-          ? 'Production fleets start on Starter. Pick a plan in Settings to link one.'
+          ? 'Production fleets start on Individual. Pick a plan in Settings to link one.'
           : `Your ${PLANS[plan].name} plan includes ${limit} ${plural(limit, 'fleet')} and you're using ${used}. Upgrade in Settings to link more.`,
       };
     }

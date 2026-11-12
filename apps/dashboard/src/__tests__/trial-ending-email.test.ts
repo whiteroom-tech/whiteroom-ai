@@ -39,7 +39,7 @@ describe('trial-ending reminders', () => {
     mocks.query.mockResolvedValueOnce({ rows: [{ id: 'p1', email: 'p1@example.com', trial_ends_at: ENDS, plan: 'pro', status: 'trialing' }] });
     expect(await sendTrialEndingEmails(NOW)).toEqual({ sent: 1, failed: 0 });
     const mail = mocks.send.mock.calls[0][0];
-    expect(mail.subject).toBe('Your WhiteRoom Pro plan starts billing on November 15, 2026');
+    expect(mail.subject).toBe('Your WhiteRoom Teams plan starts billing on November 15, 2026');
     expect(mail.text).toContain('billed to the card you added');
     expect(mail.text).not.toContain('Choose a plan');
   });
@@ -93,9 +93,9 @@ describe('trial-ending email', () => {
 
 describe('billing-starts email', () => {
   it('says when billing starts and on which plan, with nothing to choose', () => {
-    const { subject, text } = billingStartsEmail('Pro', 'November 15, 2026', 'https://app.whiteroom.tech/settings');
-    expect(subject).toBe('Your WhiteRoom Pro plan starts billing on November 15, 2026');
-    expect(text).toContain('From then, your Pro plan is billed to the card you added.');
+    const { subject, text } = billingStartsEmail('Teams', 'November 15, 2026', 'https://app.whiteroom.tech/settings');
+    expect(subject).toBe('Your WhiteRoom Teams plan starts billing on November 15, 2026');
+    expect(text).toContain('From then, your Teams plan is billed to the card you added.');
     expect(text).toContain('https://app.whiteroom.tech/settings');
     expect(text).not.toContain('Choose a plan');
   });

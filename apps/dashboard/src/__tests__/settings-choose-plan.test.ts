@@ -37,7 +37,7 @@ describe('Choose a plan', () => {
         closing: null, billingResult: null, purchasablePlans: ['starter', 'pro'],
         account: { id: 'u', email: 'a@example.test', name: 'A', image: null, timezone: null, emailVerified: true, methods: [], pendingEmailChange: null, fleetCount: 1 },
         entitlement: {
-          plan: 'starter', planName: 'Starter', limits: limitsFor('starter'), onTrial: false, usage: { fleets: 1, agents: 1 },
+          plan: 'starter', planName: 'Individual', limits: limitsFor('starter'), onTrial: false, usage: { fleets: 1, agents: 1 },
           trialEndsAt: new Date(Date.now() - 40 * DAY).toISOString(), graceEndsAt: new Date(Date.now() + 11 * DAY).toISOString(),
           subscription: { plan: 'starter', status: 'canceled', planOverride: null, stripeCustomerId: 'cus_x', stripeSubscriptionId: 'sub_x', currentPeriodEnd: null, cancelAtPeriodEnd: false, lapsedAt: new Date(Date.now() - 3 * DAY).toISOString() },
         },

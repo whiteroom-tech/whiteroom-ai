@@ -186,7 +186,7 @@ export const PLANS: Record<PlanId, Plan> = {
   },
   starter: {
     id: 'starter',
-    name: 'Starter',
+    name: 'Individual',
     pricing: { sharePercent: 20, shareUnitAmountDecimal: '0.2', feeCents: 1000, feeUnit: 'user', feeAfterTrialDays: 30 },
     priceLine: '20% of what WhiteRoom saves you. 30 days free once you go live; $10 a month per user from your 61st day live.',
     blurb: 'For anyone building agents.',
@@ -195,7 +195,7 @@ export const PLANS: Record<PlanId, Plan> = {
   },
   pro: {
     id: 'pro',
-    name: 'Pro',
+    name: 'Teams',
     pricing: { sharePercent: 10, shareUnitAmountDecimal: '0.1', feeCents: 30000, feeUnit: 'organization', feeAfterTrialDays: 0 },
     priceLine: '10% of what WhiteRoom saves you. 30 days free once you go live; then $300 a month per organization.',
     blurb: 'For teams running agent fleets.',

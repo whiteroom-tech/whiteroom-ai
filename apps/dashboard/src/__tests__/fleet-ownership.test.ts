@@ -245,7 +245,7 @@ describe('server-side fleet ownership', () => {
     it('holds a trial account to the Starter limit, by name', async () => {
       account({ trialEndsAt: future(), fleets: 1 });
       const res = await addUserFleet('test-token', 'owned', 'Fleet', PLACEHOLDER_KEY);
-      expect(res).toEqual({ ok: false, error: expect.stringContaining('Starter plan includes 1 fleet') });
+      expect(res).toEqual({ ok: false, error: expect.stringContaining('Individual plan includes 1 fleet') });
     });
 
     it('tells a Suspended account to pick a plan, not that it has a plan called "Suspended"', async () => {
@@ -298,9 +298,9 @@ describe('server-side fleet ownership', () => {
       expect(mocks.activate).not.toHaveBeenCalled();
     });
 
-    it('a Free account that somehow has no free period to start is told Starter is where fleets begin', async () => {
+    it('a Free account that somehow has no free period to start is told Individual is where fleets begin', async () => {
       account({ trialEndsAt: past(), fleets: 0, trialState: 'not_started' });
-      expect(await addUserFleet('test-token', 'owned', 'Fleet', PLACEHOLDER_KEY)).toEqual({ ok: false, error: 'Production fleets start on Starter. Pick a plan in Settings to link one.' });
+      expect(await addUserFleet('test-token', 'owned', 'Fleet', PLACEHOLDER_KEY)).toEqual({ ok: false, error: 'Production fleets start on Individual. Pick a plan in Settings to link one.' });
     });
 
     it('lets a paying Pro account past the Starter limit, trial or not', async () => {
