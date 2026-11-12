@@ -387,7 +387,7 @@ function PlanSection({
             {subscription?.cancelAtPeriodEnd && <span className="wr-settings-pill" data-tone="warn">ends {subscription.currentPeriodEnd ? shortDay(subscription.currentPeriodEnd) : ''}</span>}
             {subscription?.status === 'past_due' && <span className="wr-settings-pill" data-tone="bad">payment failed</span>}
           </div>
-          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '4px 0 0' }}>{PLANS[plan].blurb}</p>
+          {PLANS[plan].blurb && <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)', margin: '4px 0 0' }}>{PLANS[plan].blurb}</p>}
         </div>
         {/* Only when there's a real Stripe customer behind it. A comped account
             has a `pending_…` placeholder in that column (see setPlanOverride),
