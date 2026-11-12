@@ -2,7 +2,7 @@
 // results, its rule probes and its parts, with the headline counted over them.
 import { describe, expect, it } from 'vitest';
 import { CHECK_IDS, checkStateOf, type CheckState, type CheckStatus, type RuleProbe } from '@/lib/sandbox/checks';
-import { FULL_CHECK_CALLS, nextSteps, practiceBinding, practiceRows, ROWS, rowsHeadline, rowsSummary, sandboxRows, type BoundPractice } from '@/lib/sandbox/sandbox-rows';
+import { EXIT_FIX, FULL_CHECK_CALLS, nextSteps, practiceBinding, practiceRows, ROWS, rowsHeadline, rowsSummary, sandboxRows, type BoundPractice } from '@/lib/sandbox/sandbox-rows';
 
 const ALL_PASSED: Record<string, [CheckStatus, string]> = {
   spend_cap: ['passed', 'We blocked a call → it didn’t retry that call.'],
@@ -102,6 +102,13 @@ describe('the eight rows', () => {
     expect(rowsHeadline(sandboxRows(s))).toMatchObject({ headline: '1 thing to fix before going live', sub: '6 of 8 checked · 2 need practice tasks', tone: 'warn' });
     const early = by(state({ parts: [{ id: 'rate_limit_wait', status: 'failed', detail: 'After a rate limit (429, Retry-After: 5 s), your agent called again after 0.1 s. Fix: wait as long as Retry-After says before retrying.' }] }));
     expect(early['03']).toMatchObject({ state: 'failed', fix: { next: 'Wait as long as the rate limit’s Retry-After says before retrying.' } });
+  });
+
+  it('an agent that exited on the 529 (sent by sandbox run) fails 03 as a crash, not a fast retry', () => {
+    const r = by(state({ checks: { provider_errors: ['failed', 'We returned a provider error (529) → your agent exited (code 1). Fix: catch the error, wait, and try again.'] } }));
+    expect(r['03']).toMatchObject({ state: 'failed', line: 'Exited on a provider error.', fix: { happened: 'We returned a provider error (529) → your agent exited (code 1).', next: EXIT_FIX } });
+    expect(r['03'].parts[0]).toMatchObject({ label: 'Here', state: 'failed', text: 'Exited on a 529 (code 1) · waited as told after a rate limit' });
+    expect(nextSteps(sandboxRows(state({ checks: { provider_errors: ['failed', 'We returned a provider error (529) → your agent exited (code 1). Fix: …'] } })), { few: false, sample: false })[0]).toEqual({ kind: 'fix', num: '03', text: EXIT_FIX });
   });
 
   it('rules: Enforce reads as set; none set up is Not set up; a probe that fails, or an agent that hammered, fails the row', () => {

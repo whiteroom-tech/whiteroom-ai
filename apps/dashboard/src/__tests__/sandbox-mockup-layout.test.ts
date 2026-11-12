@@ -55,6 +55,15 @@ describe('a not-proven result', () => {
   });
 });
 
+describe('an agent that exited on the provider error', () => {
+  it('row 03 says it exited, with its code; Next says to catch the error', async () => {
+    await render('checks-report-exited');
+    expect(document.querySelector('[data-row="03"]')?.textContent).toContain('Exited on a 529 (code 1)');
+    expect(document.querySelector('[data-row="03"]')?.textContent).not.toContain('too fast');
+    expect(document.querySelector('section[aria-label="Next"]')?.textContent).toContain('Make your agent catch a provider error and wait instead of exiting, then check again.');
+  });
+});
+
 describe('the right-hand cards follow the step', () => {
   it('Connect: What we check, open beside the key form on a laptop', async () => {
     await render('sample-offer');
