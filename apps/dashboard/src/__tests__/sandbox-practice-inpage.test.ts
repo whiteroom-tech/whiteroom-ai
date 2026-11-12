@@ -703,7 +703,7 @@ describe('the report and the check, around practice tasks (final review)', () =>
     // Only tests done before the page opened: nothing to go on.
     expect(timeLeft([null, null], t - 60_000, 6, t)).toBeNull();
     await act(async () => { root.render(h(SandboxHome, { fleet: 'prod-eu', preview: SANDBOX_V2_STATES['checks-checking'] })); });
-    expect(text()).toContain('5 of 6 tests · 07 A human can pause and stop it');
+    expect(text()).toContain('5 of 6 live tests · 07 A human can pause and stop it');
     expect(text()).toContain('about 20 s left');
   });
 

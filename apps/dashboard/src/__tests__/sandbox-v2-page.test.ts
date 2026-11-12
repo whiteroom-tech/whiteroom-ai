@@ -80,7 +80,8 @@ describe('Sandbox v2 page', () => {
     expect(text()).not.toContain('Sandbox is separate from your live agents');
     expect(text()).toContain('The key your agent already uses. We keep only the last 4 characters.');
     const links = [...document.querySelectorAll('a')].map((a) => a.getAttribute('href'));
-    expect(links).toContain('/sandbox/practice');
+    // No key connected: nothing to run, so no link to practice tasks (they need a connected Sandbox).
+    expect(links.some((href) => href?.startsWith('/sandbox/practice'))).toBe(false);
     expect(links.some((href) => href?.startsWith('/controls'))).toBe(false);
   });
 

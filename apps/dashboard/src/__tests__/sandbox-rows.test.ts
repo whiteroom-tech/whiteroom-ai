@@ -37,7 +37,7 @@ describe('the eight rows', () => {
       '01:agent:not_run_yet', '02:agent:partly', '03:agent:partly',
       '04:guardrails:passed', '05:guardrails:passed', '06:guardrails:passed', '07:guardrails:passed', '08:guardrails:not_run_yet',
     ]);
-    expect(rowsHeadline(rows)).toEqual({ headline: 'Nothing to fix · 6 of 8 checked', sub: '2 need practice tasks', tone: 'pass' });
+    expect(rowsHeadline(rows)).toEqual({ headline: 'Nothing to fix so far · 6 of 8 checked', sub: '2 need practice tasks', tone: 'pass' });
     const r = by(state());
     expect(r['02'].note).toBe('The long-task result is in the Deep test.');
     expect(r['03'].parts.map((p) => [p.label, p.state])).toEqual([['Here', 'passed'], ['Practice', 'not_run_yet']]);
@@ -66,11 +66,11 @@ describe('the eight rows', () => {
     expect(parsed.checks.filter((c) => c.notProven).map((c) => c.id)).toEqual(['spend_cap', 'pause_stop', 'provider_errors']);
     const r = by(parsed);
     expect(r['03']).toMatchObject({ state: 'not_proven', fix: null });
-    expect(r['03'].parts[0]).toMatchObject({ label: 'Here', state: 'not_proven' });
+    expect(r['03'].parts[0]).toMatchObject({ label: 'Here', state: 'not_proven', text: 'Went quiet after the 529 · waited as told after a rate limit' });
     expect(r['04']).toMatchObject({ state: 'not_proven' });
     expect(r['04'].parts[1]).toMatchObject({ label: 'Your agent', state: 'not_proven', text: np('we blocked a call') });
     expect(r['07']).toMatchObject({ state: 'not_proven', line: np('we stopped your agent and let it go') });
-    expect(rowsHeadline(sandboxRows(parsed))).toEqual({ headline: 'Nothing to fix · 3 of 8 checked', sub: '3 not proven · 2 need practice tasks', tone: 'neutral' });
+    expect(rowsHeadline(sandboxRows(parsed))).toEqual({ headline: 'Nothing to fix so far · 3 of 8 checked', sub: '3 not proven · 2 need practice tasks', tone: 'neutral' });
     // A not-proven wait after a rate limit holds row 03 back too, even with the provider error passed.
     const wait = raw(state({ parts: [{ id: 'rate_limit_wait', status: 'not_checked', detail: 'Not proven: …' }] }));
     wait.parts[0].notProven = true;
@@ -81,6 +81,10 @@ describe('the eight rows', () => {
     const proven = nextSteps(sandboxRows(checkStateOf(raw(state()))!, allPractice), { few: false, sample: false });
     expect(proven.map((x) => x.kind)).toContain('live');
     expect(nextSteps(sandboxRows(parsed, allPractice), { few: false, sample: false }).map((x) => x.kind)).not.toContain('live');
+    // What to do about a not-proven row is a Next step, once; run-again (too few calls) and a restart already say it.
+    expect(nextSteps(sandboxRows(parsed, allPractice), { few: false, sample: false }).map((x) => x.kind)).toEqual(['not_proven']);
+    expect(nextSteps(sandboxRows(parsed, allPractice), { few: true, sample: false }).map((x) => x.kind)).toEqual(['again']);
+    expect(nextSteps(sandboxRows(parsed, allPractice), { few: false, sample: true }).map((x) => x.kind)).toEqual([]);
     // The flag only counts on a not-checked result; an older engine without it reads Not checked.
     const old = raw(state({ checks: { pause_stop: ['not_checked', np('we stopped your agent and let it go')] } }));
     expect(by(checkStateOf(old)!)['07'].state).toBe('not_checked');
@@ -102,7 +106,7 @@ describe('the eight rows', () => {
     const enforce = by(state({ probes: [probe('spend_cap', 'passed', 'blocks')] }));
     expect(enforce['04'].parts[0].text).toBe('Blocks at its limit');
     expect(enforce['05']).toMatchObject({ state: 'not_set_up', line: 'Not set up for this agent.' });
-    expect(rowsHeadline(sandboxRows(state({ probes: [probe('spend_cap')] })))).toMatchObject({ headline: 'Nothing to fix · 4 of 8 checked', sub: '2 need practice tasks · 2 not set up' });
+    expect(rowsHeadline(sandboxRows(state({ probes: [probe('spend_cap')] })))).toMatchObject({ headline: 'Nothing to fix so far · 4 of 8 checked', sub: '2 need practice tasks · 2 not set up' });
     const broken = by(state({ probes: [probe('spend_cap', 'failed')] }));
     expect(broken['04']).toMatchObject({ state: 'failed', fix: { next: 'Check this rule in your Sandbox rules, then check again.' } });
     const hammered = by(state({ checks: { spend_cap: ['failed', 'We blocked a call → your agent retried it 4 times within 5 s. Fix: stop or back off.'] } }));
@@ -149,7 +153,7 @@ describe('the rows’ edges', () => {
     expect(text.endsWith('\n\nAlso called during this check: ops-bot (not checked).')).toBe(true);
   });
 
-  it('how the agent copes with a refusal is shown once: the other rule rows point to it and don’t count it again', () => {
+  it('how the agent copes with a refusal is tested once: the other rule rows repeat it in a few words and don’t count it again', () => {
     const s = state({
       checks: { spend_cap: ['not_triggered', ''], loop_rate: ['not_triggered', ''], allowlists_keywords: ['not_triggered', ''] },
       parts: [{ id: 'test_block', status: 'failed', detail: 'We sent a test block → your agent retried it 5 times. Fix: back off.' }],
@@ -159,7 +163,7 @@ describe('the rows’ edges', () => {
     for (const n of ['05', '06']) {
       expect(r[n].state).toBe('passed');
       expect(r[n].fix).toBeNull();
-      expect(r[n].parts[1]).toMatchObject({ text: 'How it copes with a refusal: see row 04.', seeRow: '04' });
+      expect(r[n].parts[1]).toMatchObject({ text: 'Retried it 5 times · tested once', seeRow: '04' });
     }
     expect(rowsHeadline(sandboxRows(s)).headline).toBe('1 thing to fix before going live');
   });

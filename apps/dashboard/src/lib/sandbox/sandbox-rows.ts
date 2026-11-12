@@ -250,9 +250,11 @@ function ruleRow(state: CheckState, r: (typeof RULE_ROWS)[number], coped: Coped,
   // The row's own check when it decided; else how the agent coped, shown in full on one row and pointed to from the others.
   const own = check?.status === 'passed' || check?.status === 'failed';
   const elsewhere = !own && copingAt !== null && copingAt !== r.num;
+  const copedShort = (num: string) => coped.status === 'passed' && BLOCKED_OR_TEST_BLOCK.test(coped.text) ? PASSED_SHORT[num] : coped.status === 'failed' ? failedShort(coped.text) : coped.text;
+  // Coping is tested once: the other rule rows repeat its result in a few words (seeRow keeps it out of their state and fixes).
   const agent: RowPart = own ? { label: 'Your agent', text: shortText(r.num, check), state: partState(check) }
-    : elsewhere ? { label: 'Your agent', text: `How it copes with a refusal: see row ${copingAt}.`, state: coped.status, seeRow: copingAt }
-    : { label: 'Your agent', text: coped.status === 'passed' && BLOCKED_OR_TEST_BLOCK.test(coped.text) ? PASSED_SHORT[r.num] : coped.status === 'failed' ? failedShort(coped.text) : coped.text, state: coped.status };
+    : elsewhere ? { label: 'Your agent', text: `${copedShort(copingAt).replace(/\.$/, '')} · tested once`, state: coped.status, seeRow: copingAt }
+    : { label: 'Your agent', text: copedShort(r.num), state: coped.status };
   // Every rule row decided its own check, and this one holds the test block's result: shown beside it, so it's never lost.
   const refusal: RowPart | null = own && copingAt === r.num && coped.testBlock ? { label: 'Refused call', text: coped.text, state: coped.status } : null;
   const parts: RowPart[] = [{ label: 'Your rule', text: ruleText, state: failedProbe ? 'failed' : 'passed' }, agent, ...(refusal ? [refusal] : [])];
@@ -316,7 +318,9 @@ export function sandboxRows(state: CheckState, practice?: BoundPractice, limits:
   // The status named is the one the engine says it sent, so these words never name another.
   const peStatus = providerErrorStatus(pe?.detail);
   const peShort = peState === 'passed' ? `Backed off a ${peStatus}` : pe?.status === 'failed'
-    ? failedShort(pe.detail).replace(/^Retried it /, `Retried a ${peStatus} `).replace(' within ', ' in ').replace(/\.$/, '') : liveText(pe);
+    ? failedShort(pe.detail).replace(/^Retried it /, `Retried a ${peStatus} `).replace(' within ', ' in ').replace(/\.$/, '')
+    // Not proven in a few words: what to do is the Next card's (nextSteps), not this line's.
+    : peState === 'not_proven' ? `Went quiet after the ${peStatus}` : liveText(pe);
   const waitShort = !wait ? null : waitState === 'passed' ? 'waited as told after a rate limit' : waitState === 'failed' ? 'called again too soon after a rate limit' : liveText(wait);
   // The same words once: an error and a wait cut short by one cause (a restart) say it once, not twice.
   const here = [...new Set([peShort, waitShort].filter(Boolean))].join(' · ');
@@ -352,7 +356,9 @@ export function rowsHeadline(rows: SandboxRow[]): { headline: string; sub: strin
   const c = rowCounts(rows);
   // Nothing to fix carries its count in the headline (spec T19, mockup Rev 3: "Nothing to fix · 8 of 8 checked"); a fix leaves it to the line under.
   const count = `${c.checked} of ${c.total} checked`;
-  const headline = c.fix ? `${plural(c.fix, 'thing', 'things')} to fix before going live` : c.checked ? `Nothing to fix · ${count}` : 'Nothing was checked this time';
+  // With rows left unchecked, "so far": nothing failed, but not everything was checked.
+  const headline = c.fix ? `${plural(c.fix, 'thing', 'things')} to fix before going live`
+    : c.checked ? `Nothing to fix${c.checked < c.total ? ' so far' : ''} · ${count}` : 'Nothing was checked this time';
   const sub = [!c.fix && c.checked ? null : count, c.notProven && `${c.notProven} not proven`, c.practice && `${c.practice} need practice tasks`, c.notSetUp && `${c.notSetUp} not set up`].filter(Boolean).join(' · ');
   // Green only when nothing failed and nothing that was tried went unchecked: rows for practice tasks or with no rule don't hold it back.
   const clean = !c.fix && c.checked > 0 && !rows.some((r) => r.state === 'not_checked' || r.state === 'not_proven');
@@ -459,6 +465,7 @@ export type NextStep =
   | { kind: 'fix'; num: string; text: string }
   | { kind: 'practice'; rows: string }
   | { kind: 'again' }
+  | { kind: 'not_proven' }
   | { kind: 'restarted' }
   | { kind: 'live' }
   | { kind: 'deep' };
@@ -476,6 +483,8 @@ export function nextSteps(rows: SandboxRow[], o: { few: boolean; sample: boolean
   else if (o.few && !o.sample) out.push({ kind: 'again' });
   for (const r of rows) if (r.state === 'failed' && r.fix) out.push({ kind: 'fix', num: r.num, text: r.fix.next });
   if (o.sample) return out;
+  // The agent went quiet after a test: a longer run settles it (run-again already says so).
+  if (!o.restarted && !o.few && rows.some((r) => r.state === 'not_proven')) out.push({ kind: 'not_proven' });
   const practice = practiceRows(rows);
   if (practice) out.push({ kind: 'practice', rows: practice });
   // Ready for live only when every row tried was proven: a not-proven one may have crashed.

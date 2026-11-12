@@ -217,7 +217,7 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale, open = f
   return (
     <>
       {open && <Panel id={SANDBOX_RULES_ID} title="Sandbox rules" count={loadFailed && !state ? 'Couldn’t load' : rulesSummary(state)}
-        actions={onClose && <Button size={28} variant="ghost" onClick={onClose}>Done</Button>}>
+        actions={onClose && <Button size={28} variant="ghost" className={v.tap} onClick={onClose}>Done</Button>}>
         <div className={v.stack}>
           <p className={v.text}>{SANDBOX_RULES_ONLY} {RULES_DURING_CHECK}</p>
           {loading && <SkeletonCard label="Loading your Sandbox rules…" lines={['60%', '45%']} heights={[12, 12]} />}
@@ -251,7 +251,7 @@ export function SandboxRules({ fleet, sandboxFleetId, preview, onStale, open = f
                   <div className={v.ruleHead}>
                     <span className={v.ruleName}>{RULE_LABELS[r.ruleType]}</span>
                     <Tag tone={r.mode === 'enforce' && r.response !== 'notify' ? 'block' : r.mode === 'off' ? 'muted' : 'warn'}>{modeTagText({ mode: r.mode, response: r.response })}</Tag>
-                    {editing !== r.id && <Button size={28} variant="ghost" className={v.push} onClick={() => { setEditing(r.id); setEditError(null); }} disabled={busy} aria-label={`Edit ${RULE_LABELS[r.ruleType]}`}>Edit</Button>}
+                    {editing !== r.id && <Button size={28} variant="ghost" className={`${v.push} ${v.tap}`} onClick={() => { setEditing(r.id); setEditError(null); }} disabled={busy} aria-label={`Edit ${RULE_LABELS[r.ruleType]}`}>Edit</Button>}
                   </div>
                   {editing === r.id ? (
                     <SandboxRuleEditor key={`${r.id}@${r.version}`} rule={r} agents={agentNames} busy={busy} error={editError}

@@ -217,6 +217,12 @@ export const SANDBOX_V2_STATES = {
   /** The report: the window ended. */
   'checks-report': live({ checks: checkState('done', FINISHED, { ended: true, rules: RULES, calls: 31 }) }),
   'checks-report-pass': live({ checks: checkState('done', { ...FINISHED, loop_rate: ['passed', 'Blocked a repeated call, and your agent changed course.'], provider_errors: ['passed', 'Backed off after a 529 and tried again later.'] }, { ended: true, calls: 42 }) }),
+  // The agent went quiet after the 529 (the Nov 8 run): row 03 not proven, and its Next step.
+  'checks-report-not-proven': live({ checks: (() => {
+    const c = checkState('done', { ...RESUMED, provider_errors: ['not_checked', 'Not proven: we returned a provider error (529), then your agent made no new calls, so we can’t tell if it carried on or crashed. Run a longer task to check this.'] }, { ended: true, rules: RULES, calls: 21 });
+    for (const x of c.state!.checks) if (x.id === 'provider_errors') x.notProven = true;
+    return c;
+  })() }),
   'checks-report-few': live({ checks: checkState('done', {}, { ended: true, calls: 3 }) }),
   /** Practice tasks bound: all eight rows filled, each part's time. */
   'checks-report-practice': live({ checks: { ...ROWS_CHECKS, practice: { bound: { runId: 'r-1', endedAt: new Date(NOW - 3 * 60_000).toISOString(), checks: [

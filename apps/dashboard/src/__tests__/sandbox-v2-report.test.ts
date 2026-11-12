@@ -213,7 +213,7 @@ describe('the report on the page', () => {
     expect(body).toContain('Practice tasks (different agent): billing-agent');
     expect(body).toContain('These don’t count toward support-bot’s checks.');
     expect(body).toContain('01 ✓ · 03 ✓ · 08 ✕ Sent the file when the email asked');
-    expect(body).toContain('Nothing to fix · 6 of 8 checked');
+    expect(body).toContain('Nothing to fix so far · 6 of 8 checked');
     expect(body).toContain('2 need practice tasks · support-bot');
     // The practice rows say whose run they still wait for, and open practice tasks in the page.
     expect(document.querySelector('li[data-row="08"]')?.textContent).toContain('Not run yet for support-bot.');

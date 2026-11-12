@@ -212,7 +212,7 @@ describe('Check your agent', () => {
       .toEqual(['long_task', 'spend_cap', 'allowlists_keywords', 'loop_rate', 'pause_stop', 'provider_errors']);
     // Each test's label and result reach screen readers: a list, with the progressbar beside it (its children would be hidden).
     expect([...document.querySelectorAll('ol[aria-label="Live tests"] li')].map((e) => e.textContent))
-      .toEqual(['✕02 Long task: Failed', '✓04 Spend: Passed', '06 Allowlists: now', '–05 Loops: Not triggered by this run', '07 Pause, stop: Waiting', '03 Fails gracefully: Waiting']);
+      .toEqual(['✕Long task: Failed', '✓Spend: Passed', 'Allowlists: now', '–Loops: Not triggered by this run', 'Pause, stop: Waiting', 'Fails gracefully: Waiting']);
     const bar = document.querySelector('[role="progressbar"]')!;
     expect(bar.getAttribute('aria-valuenow')).toBe('3');
     expect(bar.getAttribute('aria-valuetext')).toBe('3 of 6 tests done');
@@ -221,7 +221,7 @@ describe('Check your agent', () => {
     expect(document.querySelector('[data-row]')).toBeNull();
     expect(row('finishes_correctly')).toBeNull();
     // Which test it's on, and the Now box: what this test does and what a good agent does.
-    expect(text()).toContain('4 of 6 tests · 06 Allowlists and keyword rules');
+    expect(text()).toContain('4 of 6 live tests · 06 Allowlists and keyword rules');
     expect(seg('allowlists_keywords')?.getAttribute('data-status')).toBe('now');
     expect(seg('pause_stop')?.getAttribute('data-status')).toBe('pending');
     const nowBox = document.querySelector('[role="status"]')!;
@@ -438,7 +438,7 @@ describe('Check your agent', () => {
     await click('Finish now');
     expect(calls().some((c) => c.url.endsWith('/checks/stop'))).toBe(true);
     expect(text()).toContain('1 of 8 checked');
-    expect(document.activeElement?.textContent).toBe('Nothing to fix · 1 of 8 checked');
+    expect(document.activeElement?.textContent).toBe('Nothing to fix so far · 1 of 8 checked');
   });
 
   it('sends one sandbox_report_rows for a check that finishes while the page is open, and none for an old report on load', async () => {

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Banner, Button, SegmentedControl } from '@whiteroom/ui';
+import { Banner, Button, CopyButton, SegmentedControl } from '@whiteroom/ui';
 import { ROUTES } from '@/lib/routes';
 import { analytics } from '@/lib/analytics';
 import { fmtWhen } from '@/lib/format';
@@ -349,7 +349,7 @@ export function SandboxPractice({ fleet, agent, provider, sandboxKey, initialPro
             <input id="sbx-pt-adapter" className={`${s.formInput} ${v.mono}`} value={adapter} maxLength={200} spellCheck={false} onChange={(e) => setAdapter(e.target.value)} />
             <p className={v.rsub}>Remembered in this browser. <button type="button" className={v.linkButton} aria-expanded={starter} onClick={() => setStarter((x) => !x)}>New to this? Get a starter adapter</button></p>
             {starter && <>
-              <div className={v.codeRow}><code className={v.codeLine}>{cliCommands(false, 'python').starter}</code></div>
+              <div className={v.codeRow}><code className={v.codeLine}>{cliCommands(false, 'python').starter}</code><CopyButton text={cliCommands(false, 'python').starter ?? ''} label="Copy the starter adapter command" /></div>
               <p className={v.rsub}>It writes wr_adapter.py: replace its marked function with a call to your agent. JavaScript: <code className={v.mono}>--lang js</code>, then <code className={v.mono}>node wr-adapter.mjs</code>.</p>
             </>}
           </div>
