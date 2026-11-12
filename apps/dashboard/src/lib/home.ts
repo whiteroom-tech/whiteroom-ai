@@ -195,6 +195,7 @@ const TAGS: Record<string, { label: string; tone: TagTone }> = {
   unnamed_call_refused: { label: 'Refused', tone: 'warn' },
   unclean_stop: { label: 'Gap', tone: 'warn' },
   possible_gap: { label: 'Gap', tone: 'warn' },
+  calls_not_recorded: { label: 'Gap', tone: 'warn' },
 };
 
 

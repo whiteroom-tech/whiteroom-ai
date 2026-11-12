@@ -73,7 +73,10 @@ describe('controlActionOf', () => {
 
 describe('secretReadOf', () => {
   it('names the fleet for the reads that carry the secret: rule lists and the full audit export', () => {
-    expect([...SECRET_READ_ACTIONS].sort()).toEqual(['export_audit_full', 'governance_list']);
+    expect([...SECRET_READ_ACTIONS].sort()).toEqual(['export_audit_full', 'export_calls', 'governance_list']);
+    expect(secretReadOf(body({ action: 'export_calls', fleet_id: 'f1', run_id: 'lead~7' }))).toEqual({ action: 'export_calls', fleetId: 'f1' });
+    // A read: never recorded as a control action, whose reply the BFF would buffer whole.
+    expect(controlActionOf(body({ action: 'export_calls', fleet_id: 'f1' }))).toBeNull();
     expect(secretReadOf(body({ action: 'export_audit_full', fleet_id: 'f1' }))).toEqual({ action: 'export_audit_full', fleetId: 'f1' });
     expect(secretReadOf(body({ action: 'governance_list', fleet_id: 'f1' }))).toEqual({ action: 'governance_list', fleetId: 'f1' });
     // A read, not a control action: it isn't recorded as a change, and a non-owner still gets governance_list (counts only).
@@ -400,7 +403,7 @@ describe('the engine BFF', () => {
   it('gives the owner the secret for the Keywords lists and the full audit export', async () => {
     mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
     fakeDb([{ token: 'wr_fleet_token', fleetId: 'f1' }]);
-    for (const action of ['governance_list', 'export_audit_full']) {
+    for (const action of ['governance_list', 'export_audit_full', 'export_calls']) {
       fetchMock.mockClear();
       expect((await call({ action, fleet_id: 'f1' })).status).toBe(200);
       expect(sentHeaders()['x-wr-dashboard-secret']).toBe('dash-secret');
@@ -421,6 +424,10 @@ describe('the engine BFF', () => {
     expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ code: 'control_denied', error: expect.stringMatching(/Only this fleet’s owner can export/) });
     expect(fetchMock).not.toHaveBeenCalled();
+    const calls = await call({ action: 'export_calls', fleet_id: 'f1', run_id: 'lead~7' });
+    expect(calls.status).toBe(403);
+    expect(await calls.json()).toEqual({ code: 'control_denied', error: 'Only this fleet’s owner can download its signed log.' });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('gives a fleet cookie alone (no account) Keyword counts and no full export', async () => {
@@ -429,6 +436,7 @@ describe('the engine BFF', () => {
     expect(sentHeaders()['x-wr-dashboard-secret']).toBeUndefined();
     fetchMock.mockClear();
     expect((await call({ action: 'export_audit_full', fleet_id: 'f1' })).status).toBe(403);
+    expect((await call({ action: 'export_calls', fleet_id: 'f1' })).status).toBe(403);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(mocks.query).not.toHaveBeenCalled();
   });

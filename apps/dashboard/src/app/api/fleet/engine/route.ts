@@ -21,13 +21,12 @@ import {
   tokenFromUserFleets,
 } from '@/lib/fleet-session';
 import { CONTROL_DENIED, engineAuthHeaders, PROXY_URL } from '@/lib/whiteroom/client';
-import { CONTROL_SECRET_HEADER, CONTROL_USER_HEADER, controlAccessError, controlActionOf, secretReadOf } from '@/lib/control-auth';
+import { CONTROL_SECRET_HEADER, CONTROL_USER_HEADER, controlAccessError, controlActionOf, OWNER_ONLY_READS, secretReadOf } from '@/lib/control-auth';
 import { rateLimitHeaders } from '@/lib/rate-limit-headers';
 import { recordControlAction } from '@/lib/control-actions';
 import { auth } from '@/auth';
 
 const MAX_BODY_BYTES = 64 * 1024;
-const NOT_OWNER_EXPORT = 'Only this fleet’s owner can export its full audit trail.';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -93,17 +92,18 @@ export async function POST(req: Request) {
     // only a fleet cookie isn't named: the cookie is unchecked here, so naming it would let anyone mint buckets.
     Object.assign(headers, rateLimitHeaders(userId));
     // The fleet's owner reads Keywords lists in full and can export the whole
-    // audit trail. Anyone else holding the token (a teammate's account, an
-    // agent's, a fleet cookie alone) gets Keyword counts, and no full export.
+    // audit trail and the signed call log. Anyone else holding the token (a
+    // teammate's account, an agent's, a fleet cookie alone) gets Keyword
+    // counts, and neither export.
     const read = secretReadOf(body);
     if (read) {
       const denied = await controlAccessError(read.fleetId, token, session);
-      if (denied?.status === 503) console.error('[bff] fleet access lookup failed; keyword lists sent hidden, full export refused');
+      if (denied?.status === 503) console.error('[bff] fleet access lookup failed; keyword lists sent hidden, exports refused');
       if (!denied) {
         const secret = process.env.WR_DASHBOARD_SERVICE_SECRET;
         if (secret) headers[CONTROL_SECRET_HEADER] = secret;
-      } else if (read.action === 'export_audit_full') {
-        const refusal = denied.status === 403 ? { error: NOT_OWNER_EXPORT, code: CONTROL_DENIED } : { error: denied.error };
+      } else if (Object.hasOwn(OWNER_ONLY_READS, read.action)) {
+        const refusal = denied.status === 403 ? { error: OWNER_ONLY_READS[read.action], code: CONTROL_DENIED } : { error: denied.error };
         return Response.json(refusal, { status: denied.status });
       }
     }

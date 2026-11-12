@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button, DataTable, Icon, SegmentedControl, SelectChip, Toast, FONT_MONO } from '@whiteroom/ui';
 import { counted, fmtCount, fmtTime, plural } from '@/lib/format';
-import { fleetReport, isAuthError, listRuns, runDays, runHours } from '@/lib/whiteroom/client';
+import { exportCallsPage, fleetReport, isAuthError, listRuns, runDays, runHours } from '@/lib/whiteroom/client';
 import type { AuditIntegrity, RunDayCount, RunHourCount, RunSummary, VerifyAuditResult } from '@/lib/whiteroom/types';
 import { useFleetAuth } from '@/hooks/useFleetAuth';
 import { usePoll } from '@/hooks/usePoll';
@@ -20,6 +20,8 @@ import { addDays, clampSpan, collectRuns, dayLabel, hourLabel, exportDays, fmtCl
 import { DayStrip } from '@/components/runs/DayStrip';
 import { HourStrip } from '@/components/runs/HourStrip';
 import { AuditCheckDialog, ExportRunsDialog } from '@/components/runs/RunsDialogs';
+import { buildCallExport, CallExportRefused } from '@/lib/call-export';
+import { saveBlob } from '@/lib/download';
 import { safeSessionSet } from '@/lib/safe-storage';
 import { buildWorkbook, downloadWorkbook } from '@/lib/xlsx';
 
@@ -218,6 +220,7 @@ export function RunsTable({ preview, retentionDays }: {
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [signing, setSigning] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const hours = hoursFor?.key === hoursKey ? hoursFor.hours : null;
@@ -445,6 +448,28 @@ export function RunsTable({ preview, retentionDays }: {
     }
   }
 
+  /** The same days and agents as a signed log of their calls. Whole days: the hour and Show filters don't apply. */
+  async function exportSignedLog(choice: { span: ExportSpan; agent: string }) {
+    if (preview) { setExportOpen(false); setToast('Preview: nothing was downloaded.'); return; }
+    if (!fleetId) return;
+    setSigning(true);
+    setExportError(null);
+    try {
+      const { fromDay, toDay } = choice.span === 'shown' ? runsWindow(view) : exportDays(choice.span);
+      const agentId = choice.agent === 'all' ? undefined : choice.agent;
+      const file = await buildCallExport(fleetId, { fromDay, toDay, agentId }, () => {}, { fetchPage: (id, ask) => exportCallsPage(id, ask, authKey) });
+      if (!file) return;
+      saveBlob(file.blob, `whiteroom-calls-${fromDay}-to-${toDay}${agentId ? `-${agentId}` : ''}.json`);
+      setExportOpen(false);
+      setToast(`Downloaded ${counted(file.calls, 'call')}, signed by WhiteRoom.`);
+    } catch (e) {
+      if (isAuthError(e)) { resetSession('Your session expired. Please sign in again.'); return; }
+      setExportError(e instanceof CallExportRefused ? e.plain : 'Couldn’t download the signed log. Try again.');
+    } finally {
+      setSigning(false);
+    }
+  }
+
   const span = runsWindow(view);
   const inSpan = (d: string) => d >= span.fromDay && d <= span.toDay;
   // /dev/runs counts its whole sample, whatever the agent.
@@ -591,7 +616,7 @@ export function RunsTable({ preview, retentionDays }: {
         </p>
       </div>
 
-      <ExportRunsDialog open={exportOpen} agents={agents} initialAgent={agent} shown={exportShown} busy={exporting} error={exportError} onDownload={(c) => void exportRuns(c)} onCancel={() => setExportOpen(false)} />
+      <ExportRunsDialog open={exportOpen} agents={agents} initialAgent={agent} shown={exportShown} busy={exporting} error={exportError} onDownload={(c) => void exportRuns(c)} onDownloadSigned={(c) => void exportSignedLog(c)} signedBusy={signing} onCancel={() => setExportOpen(false)} />
       <AuditCheckDialog open={auditOpen} fleetId={fleetId} authKey={authKey} preview={preview?.audit} onClose={() => setAuditOpen(false)} onDownloaded={() => { setAuditOpen(false); setToast('Downloaded the audit check report.'); }} onAuthError={() => { setAuditOpen(false); resetSession('Your session expired. Please sign in again.'); }} />
       {toast && <Toast message={toast} onClose={() => setToast(null)} />}
     </div>

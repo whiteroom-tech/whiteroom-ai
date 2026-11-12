@@ -855,6 +855,8 @@ export interface RunHeader {
   ruleActionsUnavailable?: boolean;
   /** Distinct models, in order of first use. */
   models?: string[];
+  /** Calls in this run WhiteRoom couldn't record, so its totals may be low. Absent on older engines. */
+  notRecordedCalls?: number;
 }
 
 export interface RunEventsResult {
@@ -922,6 +924,23 @@ export interface AuditExportPage {
   nextFromSeq: number | null;
   manifest?: Record<string, unknown> & { firstSeq: number; headSeq: number; count: number; signature: string };
 }
+
+/**
+ * One page of the signed call log (engine export_calls). Calls are passed
+ * through to the file as they come. Every page but the last has a signed
+ * `state` to send back for the next; the last has the signed manifest.
+ */
+export interface CallExportPage {
+  fleetId: string;
+  calls: Array<Record<string, unknown>>;
+  /** Calls returned so far, this page included. */
+  count: number;
+  state: Record<string, unknown> | null;
+  manifest?: Record<string, unknown> & { count: number; digest: string; signature: string };
+}
+
+/** What a signed call log covers: one run, or a range of the viewer's days (optionally one agent). */
+export type CallExportScope = { runId: string } | { fromDay: string; toDay: string; agentId?: string };
 
 export interface VerifyAuditResult {
   valid: boolean | null;

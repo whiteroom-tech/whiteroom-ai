@@ -7,7 +7,7 @@ import type { TagTone } from '@whiteroom/ui';
 import { activityRow, clock, usd } from '@/lib/home';
 import { REASON_LABELS, RULE_LABELS } from '@/lib/governance';
 import { MODE_LABEL, NOTIFY } from '@/lib/vocab';
-import { counted, fmtTime, plural } from '@/lib/format';
+import { counted, fmtCount, fmtTime, plural } from '@/lib/format';
 import { addDays as addZoneDays, daysBetween as zoneDaysBetween, clockOf, dayKey, formatDayKey, formatInZone, hourOf, offsetLabel, startOfDay, viewerZone, zoneAbbr } from '@/lib/zone-time';
 
 export type RunsPreset = 'today' | '7d' | '30d';
@@ -495,6 +495,9 @@ export function timelineRow(e: RunEvent, prevModel: string | null = null): Timel
       rule,
     };
   }
+  if (e.type === GAP_EVENT) {
+    return { id: e.id, time: clock(e.at), sameTime: false, glyph: 'event', text: notRecordedNote(e.detail?.calls), tag: { label: 'Gap', tone: 'warn' } };
+  }
   const isRule = e.type.startsWith('governance');
   // A rule event's "×N" also counts repeats folded in from before it, which can
   // be the previous run's; the Rule activity card above counts this run exactly.
@@ -503,6 +506,21 @@ export function timelineRow(e: RunEvent, prevModel: string | null = null): Timel
   const row = activityRow({ ...(detail ?? {}), id: e.id, type: e.type, timestamp: e.at } as Parameters<typeof activityRow>[0], Date.now(), { agentShown: true });
   const glyph: TimelineGlyph = START_EVENT.test(e.type) ? 'start' : DONE_EVENT.test(e.type) ? 'done' : BAD_EVENT.test(e.type) ? 'bad' : 'event';
   return { id: e.id, time: row.time, sameTime: false, text: glyph === 'start' ? 'Run started' : row.text, tag: row.tag, glyph };
+}
+
+/** The engine's event for calls in a run it couldn't record. */
+const GAP_EVENT = 'calls_not_recorded';
+
+/** "3 calls weren’t recorded." A run's timeline row for a gap, and the start of the note under its totals. */
+export function notRecordedNote(calls: unknown): string {
+  const n = typeof calls === 'number' && Number.isInteger(calls) && calls > 0 ? calls : null;
+  if (n === null) return 'Some calls weren’t recorded.';
+  return n === 1 ? '1 call wasn’t recorded.' : `${fmtCount(n)} calls weren’t recorded.`;
+}
+
+/** The note under a run's totals when some of its calls weren't recorded. */
+export function notRecordedTotalsNote(calls: number): string {
+  return calls === 1 ? '1 call in this run wasn’t recorded, so the totals may be low.' : `${fmtCount(calls)} calls in this run weren’t recorded, so the totals may be low.`;
 }
 
 /**

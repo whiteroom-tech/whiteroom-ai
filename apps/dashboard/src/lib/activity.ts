@@ -153,6 +153,12 @@ const EVENT_COPY: Record<string, EventCopy> = {
     icon: '⚠', tone: 'wouldBlock', code: 'GAP', who: 'WhiteRoom',
     say: (e) => `restarted unexpectedly; events ${windowText(e)} may be missing`,
   },
+  // Calls made while WhiteRoom couldn't save their records. Fleet-level
+  // wording: the subject is WhiteRoom, and the agent is named when known.
+  calls_not_recorded: {
+    icon: '⚠', tone: 'wouldBlock', code: 'GAP', who: 'WhiteRoom',
+    say: (e) => `couldn’t record ${notRecordedText(e.calls)}${typeof e.agentId === 'string' && e.agentId ? ` from ${e.agentId}` : ''}`,
+  },
   possible_gap: {
     icon: '⚠', tone: 'wouldBlock', code: 'GAP', who: 'WhiteRoom',
     say: (e) => `couldn't confirm every event was saved; some ${windowText(e)} may be missing`,
@@ -173,6 +179,12 @@ const EVENT_COPY: Record<string, EventCopy> = {
 };
 
 /** "between 3:41 and 3:44 pm", or "3:41–3:44 pm", from an event's from/to. */
+/** "3 calls", "1 call", or "some calls" when the count isn't readable. */
+function notRecordedText(calls: unknown): string {
+  const n = positiveCount(calls);
+  return n === null ? 'some calls' : `${fmtCount(n)} ${n === 1 ? 'call' : 'calls'}`;
+}
+
 function windowText(e: AuditEntry, style: 'between' | 'range' = 'between'): string {
   const t = (v: unknown) => {
     const d = new Date(String(v ?? ''));

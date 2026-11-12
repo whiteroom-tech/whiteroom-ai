@@ -51,10 +51,16 @@ export const CLOUD_IDENTITY_PROVIDERS: ReadonlySet<string> = new Set(['foundry-e
  * sent only for the fleet's owner (the same check as control actions):
  * governance_list hides Keywords lists from a bare fleet key, which every
  * agent holds and any account can link, so anyone else gets their counts;
- * export_audit_full (the whole audit history) is the owner's to fetch, and
- * the BFF refuses it to anyone else.
+ * export_audit_full (the whole audit history) and export_calls (the signed
+ * call log) are the owner's to fetch, and the BFF refuses them to anyone else.
  */
-export const SECRET_READ_ACTIONS: ReadonlySet<string> = new Set(['governance_list', 'export_audit_full']);
+export const SECRET_READ_ACTIONS: ReadonlySet<string> = new Set(['governance_list', 'export_audit_full', 'export_calls']);
+
+/** The reads the BFF refuses to anyone but the fleet's owner, with what it tells them. */
+export const OWNER_ONLY_READS: Readonly<Record<string, string>> = {
+  export_audit_full: 'Only this fleet’s owner can export its full audit trail.',
+  export_calls: 'Only this fleet’s owner can download its signed log.',
+};
 
 /** The action and fleet a BFF body reads, when it's one of SECRET_READ_ACTIONS; else null. */
 export function secretReadOf(body: string): { action: string; fleetId: string } | null {
