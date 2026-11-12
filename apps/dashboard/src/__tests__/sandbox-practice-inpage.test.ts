@@ -234,6 +234,18 @@ describe('practice tasks in the page', () => {
     expect(text()).toContain(`echo ${CODE2} |`);
   });
 
+  it('the starter adapter command has its own Copy button, which copies that command', async () => {
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    await act(async () => { root.render(card()); });
+    await flush();
+    await click('New to this? Get a starter adapter');
+    const copy = document.querySelector('button[aria-label="Copy the starter adapter command"]') as HTMLButtonElement;
+    expect(copy).not.toBeNull();
+    await act(async () => { copy.click(); });
+    expect(writeText).toHaveBeenCalledWith(`npx @whiteroom-ai/cli@${CLI_VERSION} practice adapter --lang python > wr_adapter.py`);
+  });
+
   it('typing the adapter never starts a test: the line changes, the code stays', async () => {
     await act(async () => { root.render(card()); });
     await flush();
@@ -703,7 +715,7 @@ describe('the report and the check, around practice tasks (final review)', () =>
     // Only tests done before the page opened: nothing to go on.
     expect(timeLeft([null, null], t - 60_000, 6, t)).toBeNull();
     await act(async () => { root.render(h(SandboxHome, { fleet: 'prod-eu', preview: SANDBOX_V2_STATES['checks-checking'] })); });
-    expect(text()).toContain('5 of 6 tests · 07 A human can pause and stop it');
+    expect(text()).toContain('5 of 6 live tests · 07 A human can pause and stop it');
     expect(text()).toContain('about 20 s left');
   });
 

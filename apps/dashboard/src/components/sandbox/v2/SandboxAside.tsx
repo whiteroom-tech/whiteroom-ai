@@ -63,9 +63,10 @@ export function SandboxRulesCard({ state, loadFailed = false, onEdit }: { state:
 
 /**
  * What we check: the eight rows in their groups, where each is checked, and
- * what it tests (opens per row). Rows checked in practice tasks link to them.
+ * what it tests (opens per row). Rows checked in practice tasks link to them,
+ * except before a key is connected (no practiceHref), when there is nothing to run.
  */
-export function WhatWeCheckCard({ open: byDefault, practiceHref, onPractice }: { open: boolean; practiceHref: string; onPractice?: () => void }) {
+export function WhatWeCheckCard({ open: byDefault, practiceHref, onPractice }: { open: boolean; practiceHref?: string; onPractice?: () => void }) {
   // Open or closed by hand wins over the default (which follows the step and the page's width).
   const [chosen, setChosen] = useState<boolean | null>(null);
   const open = chosen ?? byDefault;
@@ -88,7 +89,7 @@ export function WhatWeCheckCard({ open: byDefault, practiceHref, onPractice }: {
                     </span>
                   </summary>
                   <p>{r.short}</p>
-                  <p>{r.more}{r.where !== 'here' && <> <PracticeLink href={practiceHref} onPractice={onPractice} /></>}</p>
+                  <p>{r.more}{r.where !== 'here' && (practiceHref || onPractice) && <> <PracticeLink href={practiceHref ?? ''} onPractice={onPractice} /></>}</p>
                 </details>
               </li>
             ))}

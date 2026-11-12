@@ -6,7 +6,7 @@ import { FONT_DISPLAY, SegmentedControl } from '@whiteroom/ui';
 import { practiceCapabilities, sourceModel } from '@/lib/sandbox/practice/api';
 import {
   ADAPTER_EXPLAINER, ADAPTER_HELP_URL, callEstimate, CATALOG, choiceOf, CLOUD_MODEL_FIELD, controlCalls, costLine, defaultAgent, directChoice, DISCLAIMER, KEY_REFUSALS, keyLine, keyOptions,
-  planRows, practiceBlock, PRACTICE_SUMMARY, providerKeyLabel, SAMPLE_AGENT, usualMinutes, SAMPLE_MODELS, UNSUPPORTED_FLEET, WILL_CHECK, ROW_STATUS_LABEL, type PracticeKeyChoice,
+  planRows, practiceBlock, PRACTICE_QUICK_SUMMARY, PRACTICE_SUMMARY, providerKeyLabel, SAMPLE_AGENT, usualMinutes, SAMPLE_MODELS, UNSUPPORTED_FLEET, WILL_CHECK, ROW_STATUS_LABEL, type PracticeKeyChoice,
 } from '@/lib/sandbox/practice/model';
 import type { PracticeCapabilities, PracticeControlCheck, PracticeProfile, PracticeSource, PracticeStart } from '@/lib/sandbox/practice/types';
 import { ROUTES } from '@/lib/routes';
@@ -170,8 +170,8 @@ export function PracticeSetup({ fleet, data, busy, preview, previewCapabilities,
 
   return (
     <div className={p.wrap}>
-      <h2 className={s.pageTitle} tabIndex={-1} style={{ fontFamily: FONT_DISPLAY }}>Pre-flight check</h2>
-      <p className={s.pageSub}>{PRACTICE_SUMMARY}. You start it from your computer with one command. <Link href={ROUTES.practiceDemo}>See a sample report</Link></p>
+      <h2 className={s.pageTitle} tabIndex={-1} style={{ fontFamily: FONT_DISPLAY }}>Practice tasks</h2>
+      <p className={s.pageSub}>{sent === 'quick' ? PRACTICE_QUICK_SUMMARY : PRACTICE_SUMMARY}. You start it from your computer with one command. <Link href={ROUTES.practiceDemo}>See a sample report</Link></p>
 
       {blocked && (
         <div className={s.notice} role="status">

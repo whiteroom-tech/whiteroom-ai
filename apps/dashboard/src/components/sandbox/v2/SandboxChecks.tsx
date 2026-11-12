@@ -18,7 +18,7 @@ import {
 } from '@/lib/sandbox/checks';
 import { restartedCheck, restartNote, SCORED_CHECKS, tooFewCalls, tooFewNote } from '@/lib/sandbox/check-report';
 import {
-  callsText, LIVE_TRACK, liveRowName, nextSteps, notRunFor, nowExplained, practiceBinding, ROW_GROUP_NAMES, rowCounts, rowsHeadline, rowsSummary, sandboxRows, STATE_WORDS,
+  callsText, FULL_CHECK_CALLS, LIVE_TRACK, liveRowName, nextSteps, notRunFor, nowExplained, practiceBinding, ROW_GROUP_NAMES, rowCounts, rowsHeadline, rowsSummary, sandboxRows, STATE_WORDS,
   type BoundPractice, type NextStep, type RowLimits, type SandboxRow,
 } from '@/lib/sandbox/sandbox-rows';
 import { getPracticeResult, getPracticeRun, listPracticeRuns } from '@/lib/sandbox/practice/api';
@@ -406,13 +406,13 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
             ) : limitLine ? (
               <div className={v.liveRow}>
                 {limitLine}
-                <Button size={28} variant="ghost" onClick={finish} disabled={busy}>Finish now</Button>
+                <Button size={28} variant="ghost" className={v.tap} onClick={finish} disabled={busy}>Finish now</Button>
               </div>
             ) : (
               <div className={v.liveRow}>
                 {/* Not a live region: it changes on every read, and the Now box below announces what matters. */}
                 <p className={`${v.live} ${live?.calling ? v.liveCalling : ''}`}>{live?.text ?? stageLine(state, isSample)}</p>
-                <Button size={28} variant="ghost" onClick={finish} disabled={busy}>Finish now</Button>
+                <Button size={28} variant="ghost" className={v.tap} onClick={finish} disabled={busy}>Finish now</Button>
               </div>
             )}
             <LiveChecks state={state} agent={agentName} now={now} seenAt={preview?.seenAt} />
@@ -473,6 +473,7 @@ function NextLine({ step, href, onPractice, plan, goLive }: { step: NextStep; hr
   switch (step.kind) {
     case 'again': return <>Run your agent again, with a longer task, so the live checks can run.</>;
     case 'restarted': return <>WhiteRoom restarted during this check. Check again.</>;
+    case 'not_proven': return <>Run a longer task (at least {FULL_CHECK_CALLS} calls), then check again.</>;
     case 'fix': return <>{NEXT_SHORT[step.num] ?? `${step.text} Then check again.`}</>;
     case 'practice': return <><PracticeLink href={href} onPractice={onPractice && (() => onPractice())} /> for {step.rows}. A few minutes.</>;
     case 'live':
@@ -779,7 +780,7 @@ export function LiveChecks({ state, agent = 'your agent', now: clock = Date.now(
   const pending = now?.result.detail;
   return <>
     <p className={v.prog} role="progressbar" aria-label="Tests done" aria-valuemin={0} aria-valuemax={tests.length} aria-valuenow={done.length} aria-valuetext={`${done.length} of ${tests.length} tests done`}>
-      <span><b>{at} of {tests.length} tests</b>{now ? ` · ${now.num} ${now.name}` : ''}</span>
+      <span><b>{at} of {tests.length} live tests</b>{now ? ` · ${now.num} ${now.name}` : ''}</span>
       {left !== null && <span>{left}</span>}
     </p>
     {/* A list, so each test's label and result reach screen readers (a progressbar's children don't). */}
@@ -790,7 +791,7 @@ export function LiveChecks({ state, agent = 'your agent', now: clock = Date.now(
         return (
           <li key={t.check} className={mark ? mark.track : t === now ? v.tNow : undefined} data-check={t.check} data-status={t === now ? 'now' : t.result.status}>
             <i />
-            <span>{mark && <span className={v.tMark} aria-hidden="true">{mark.text}</span>}{t.num} {t.short}<span className={s.srOnly}>: {t === now ? 'now' : STATUS_WORDS[t.result.status]}</span></span>
+            <span>{mark && <span className={v.tMark} aria-hidden="true">{mark.text}</span>}{t.short}<span className={s.srOnly}>: {t === now ? 'now' : STATUS_WORDS[t.result.status]}</span></span>
           </li>
         );
       })}

@@ -44,6 +44,17 @@ const answer = (stage: string, statuses: Record<string, string> = {}, ended = fa
   rules: [],
 })!;
 
+describe('a not-proven result', () => {
+  it('row 03 says the agent went quiet after the 529; the Next card says what to do, once', async () => {
+    await render('checks-report-not-proven');
+    expect(text()).toContain('Nothing to fix so far · 4 of 8 checked');
+    expect(document.querySelector('[data-row="03"]')?.textContent).toContain('Went quiet after the 529');
+    expect(document.querySelector('[data-row="03"]')?.textContent).not.toContain('Not proven: we returned');
+    const next = document.querySelector('section[aria-label="Next"]')?.textContent ?? '';
+    expect(next.split('Run a longer task (at least 12 calls), then check again.')).toHaveLength(2);
+  });
+});
+
 describe('the right-hand cards follow the step', () => {
   it('Connect: What we check, open beside the key form on a laptop', async () => {
     await render('sample-offer');
@@ -51,7 +62,8 @@ describe('the right-hand cards follow the step', () => {
     expect((document.querySelector('aside details') as HTMLDetailsElement).open).toBe(true);
     // Eight rows in their two groups, each saying where it's checked.
     expect(text()).toContain('8 checks · 02–07 run here in about a minute');
-    expect([...document.querySelectorAll('aside li .wr-link, aside li button')].length).toBeGreaterThan(0);
+    // No key yet, so nothing to run: the rows say where they're checked, with no practice link.
+    expect([...document.querySelectorAll('aside li .wr-link, aside li button')]).toHaveLength(0);
   });
 
   it('on a phone What we check starts closed, under the step', async () => {
@@ -76,7 +88,7 @@ describe('the right-hand cards follow the step', () => {
     expect(cards()).toEqual(['Your Sandbox', 'What we check', 'Sandbox rules']);
     expect((document.querySelector('aside details') as HTMLDetailsElement).open).toBe(false);
     expect(text()).toContain('support-bot is calling · last call');
-    expect(text()).toContain('5 of 6 tests · 07 A human can pause and stop it');
+    expect(text()).toContain('5 of 6 live tests · 07 A human can pause and stop it');
     expect(text()).toContain('We paused support-bot for 5 seconds. Next we stop it for 5 seconds. A good agent waits while it’s held, then carries on.');
     expect(text()).toContain('Also called during this check: billing-agent (not checked).');
   });

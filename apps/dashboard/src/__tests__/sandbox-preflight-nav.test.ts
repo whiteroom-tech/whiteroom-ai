@@ -74,12 +74,12 @@ describe('the pre-flight follows the address', () => {
     // The sample report asks the engine nothing.
     expect(engine.list).not.toHaveBeenCalled();
     await go('');
-    expect(text()).toContain('Pre-flight check');
+    expect(text()).toContain('Practice tasks');
     expect(text()).not.toContain('A sample report');
     await go('demo=1');
     expect(text()).toContain('A sample report with made-up results');
     await go('');
-    expect(text()).toContain('Pre-flight check');
+    expect(text()).toContain('Practice tasks');
     expect(engine.list).toHaveBeenCalledTimes(1);
     expect(engine.gov).toHaveBeenCalledTimes(1);
   });
@@ -140,7 +140,7 @@ describe('the pre-flight follows the address', () => {
     expect(text()).toContain("Didn't pass · Fails gracefully");
     // Start a new test: the same page without ?run=.
     await go('');
-    expect(text()).toContain('Pre-flight check');
+    expect(text()).toContain('Practice tasks');
     // Past tests' Open the result: ?run= again.
     await go(`run=${RUN_ID}`);
     expect(text()).toContain("Didn't pass · Fails gracefully");

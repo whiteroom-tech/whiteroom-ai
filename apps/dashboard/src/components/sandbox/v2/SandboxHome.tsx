@@ -429,7 +429,7 @@ export function SandboxHome({ fleet, preview, onUnavailable, planLine }: { fleet
               </section>
             </div>
             <aside className={v.rcol} aria-label="About your Sandbox">
-              <WhatWeCheckCard open={wide} practiceHref={href} />
+              <WhatWeCheckCard open={wide} />
             </aside>
           </div>
         )}

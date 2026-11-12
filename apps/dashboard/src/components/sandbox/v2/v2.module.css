@@ -221,6 +221,8 @@
 /* Back to results: a 44 px hit area on a narrow page. */
 .backLink { min-height:24px; }
 @container (max-width: 560px) { .backLink { min-height:44px; display:inline-flex; align-items:center; } .field :global(.wr-seg__item) { min-height:44px !important; } }
+/* A narrow page: text buttons and the rules editor's Edit and Done get a 44 px hit area (desktop unchanged). */
+@container (max-width: 560px) { .linkButton { min-height:44px; display:inline-flex; align-items:center; } .tap { min-height:44px !important; } }
 .rowMark { text-align:center; font-weight:700; }
 .ptRunning { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:10px 12px; border:1px solid var(--brand); background:var(--brand-dim); border-radius:8px; font-size:var(--fs-sm); color:var(--tx); }
 /* Links in running text are underlined, whether a link or a button (WCAG 1.4.1). */

@@ -19,7 +19,7 @@ vi.mock('@/lib/home-fleet', () => ({ ensureHomeFleet: async () => ({ kind: 'not_
 vi.mock('@/lib/analytics', () => ({ analytics: { capture: () => {} } }));
 
 const {
-  CATALOG, defaultAgent, groupRows, headline, keepsConnectionTest, memberLine, passCaveat, summaryTone, planRows, plainSkip, practiceBlock, PRACTICE_SUMMARY, preflightStep, ROW_GROUPS, ROWS,
+  CATALOG, defaultAgent, groupRows, headline, keepsConnectionTest, memberLine, passCaveat, summaryTone, planRows, plainSkip, practiceBlock, PRACTICE_QUICK_SUMMARY, PRACTICE_SUMMARY, preflightStep, ROW_GROUPS, ROWS,
 } = await import('@/lib/sandbox/practice/model');
 const { DEMO_REPORT, DEMO_RESULT, DEMO_RUN } = await import('@/lib/sandbox/practice/demo');
 const { sandboxDestination } = await import('@/components/sandbox/SandboxEntry');
@@ -46,6 +46,8 @@ describe('the catalog’s eight rows (engine E1, eight checks B3)', () => {
     expect(ROW_GROUPS).toEqual(['The agent', 'The guardrails']);
     expect(CATALOG.rowStatusLabels).toEqual({ passed: 'Passed', failed: "Didn't pass", not_set_up: 'Not set up', not_checked: 'Not checked' });
     expect(PRACTICE_SUMMARY).toBe('8 checks, 3 for your agent and 5 for its guardrails · about 5–10 min for one run');
+    // A quick test leaves the guardrail rows to the Sandbox's live check, so its line counts only what it checks.
+    expect(PRACTICE_QUICK_SUMMARY).toBe('4 checks · the guardrails are checked live in your Sandbox · about 5–10 min for one run');
   });
 });
 

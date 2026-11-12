@@ -320,6 +320,8 @@ export const membersOf = <T extends { id: string }>(row: PreflightRow, checks: r
 /** The row a check belongs to. */
 export const rowOf = (checkId: string) => ROWS.find((r) => r.members.some((m) => isMember(checkId, m)));
 const isGuardrail = (row: PreflightRow) => row.members.every((m) => m.startsWith('ctl.'));
+/** A quick test's line: it leaves the guardrail rows to the Sandbox's live check (notInThisTest), so it counts only the rows it checks. */
+export const PRACTICE_QUICK_SUMMARY = `${ROWS.filter((r) => !isGuardrail(r)).length} checks · the guardrails are checked live in your Sandbox · about ${usualMinutes(1)} for one run`;
 const PAUSE_STOP = 'pause_stop';
 
 /** The rule behind a control check, as the engine says (structured, never read from the label): off, not covering the agent, or set up. */
