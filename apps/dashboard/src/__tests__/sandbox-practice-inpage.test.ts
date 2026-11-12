@@ -259,6 +259,8 @@ describe('practice tasks in the page', () => {
     }
     expect(posts().filter((p) => p.url.endsWith('/start'))).toHaveLength(1);
     expect(text()).toContain(`echo ${CODE} | npx @whiteroom-ai/cli@${CLI_VERSION} practice run --adapter 'node a.mjs'`);
+    // As long as the engine keeps a run code (readiness RUN_CODE_MINUTES, 12 hours).
+    expect(text()).toContain('The code works once and expires in 12 hours.');
   });
 
   it('a draft from before (Back to results and back) isn’t renewed on its own: Get a new code, no start spent', async () => {

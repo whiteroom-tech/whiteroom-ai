@@ -374,7 +374,7 @@ export function SandboxPractice({ fleet, agent, provider, sandboxKey, initialPro
               : <Button size={32} variant="primary" onClick={() => void getCode()} busy={busy} busyLabel="Getting…" disabled={caps === undefined || needsModel || (!sample && !adapter.trim())}>{draftReady ? 'Get a new code' : 'Get the command'}</Button>}
           </div>
           <p className={v.rsub}>
-            {sample ? SAMPLE_KEY_LINE : <>Runs on your own {providerLabel(provider)} key ({keyVar}).</>} The code works once and expires in 30 minutes.
+            {sample ? SAMPLE_KEY_LINE : <>Runs on your own {providerLabel(provider)} key ({keyVar}).</>} The code works once and expires in 12 hours.
             {code && <> <button type="button" className={v.linkButton} onClick={() => void getCode()} disabled={busy}>Get a new code</button></>}
             {!code && !draftReady && ' Getting one uses one of today’s practice starts.'}
           </p>

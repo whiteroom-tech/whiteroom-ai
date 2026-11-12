@@ -95,6 +95,10 @@ const RULE_ROWS = [
 
 /** Our fix for an early retry after a 429. */
 const WAIT_FIX = 'Wait as long as the rate limit’s Retry-After says before retrying.';
+/** Our fix when the agent exited on the provider error (engine: "→ your agent exited (code N)", sent by `whiteroom sandbox run`). */
+export const EXIT_FIX = 'Catch the provider error and wait before trying again, instead of exiting.';
+/** The exit code when the agent exited on the provider error, else null. */
+const exitedOn = (detail: string | undefined): string | null => detail?.match(/→ your agent exited \(code (\d{1,3})\)/)?.[1] ?? null;
 
 type LiveState = 'passed' | 'failed' | 'not_proven' | 'not_checked';
 /** A live result as a part: passed, failed, not proven, or (pending, not triggered, not reached) not checked. */
@@ -317,14 +321,15 @@ export function sandboxRows(state: CheckState, practice?: BoundPractice, limits:
   // In a few words (mockup Rev 3): "Retried a 529 4 times in 5 s · waited as told after a rate limit".
   // The status named is the one the engine says it sent, so these words never name another.
   const peStatus = providerErrorStatus(pe?.detail);
-  const peShort = peState === 'passed' ? `Backed off a ${peStatus}` : pe?.status === 'failed'
+  const exited = pe?.status === 'failed' ? exitedOn(pe.detail) : null;
+  const peShort = peState === 'passed' ? `Backed off a ${peStatus}` : exited ? `Exited on a ${peStatus} (code ${exited})` : pe?.status === 'failed'
     ? failedShort(pe.detail).replace(/^Retried it /, `Retried a ${peStatus} `).replace(' within ', ' in ').replace(/\.$/, '')
     // Not proven in a few words: what to do is the Next card's (nextSteps), not this line's.
     : peState === 'not_proven' ? `Went quiet after the ${peStatus}` : liveText(pe);
   const waitShort = !wait ? null : waitState === 'passed' ? 'waited as told after a rate limit' : waitState === 'failed' ? 'called again too soon after a rate limit' : liveText(wait);
   // The same words once: an error and a wait cut short by one cause (a restart) say it once, not twice.
   const here = [...new Set([peShort, waitShort].filter(Boolean))].join(' · ');
-  const line3 = peState === 'failed' ? 'Retried a provider error too fast.' : waitState === 'failed' ? 'Called again too soon after a rate limit.' : '';
+  const line3 = exited ? 'Exited on a provider error.' : peState === 'failed' ? 'Retried a provider error too fast.' : waitState === 'failed' ? 'Called again too soon after a rate limit.' : '';
   const hereState: RowPart['state'] = peState === 'failed' || waitState === 'failed' ? 'failed' : peState === 'not_proven' || waitState === 'not_proven' ? 'not_proven'
     : peState === 'not_checked' || waitState === 'not_checked' ? 'not_checked' : 'passed';
   const prac3 = practicePart(practice, ['c.timeout', 'c.keeps_failing']);
@@ -333,7 +338,7 @@ export function sandboxRows(state: CheckState, practice?: BoundPractice, limits:
   const s3 = precedence(p3);
   rows.push({
     num: '03', name: nameOf('03'), group: 'agent', state: s3 === 'not_run_yet' && hereState === 'passed' ? 'partly' : s3, line: line3, parts: p3,
-    fix: peState === 'failed' ? { happened: liveText(pe), next: FIX.provider_errors } : waitState === 'failed' ? { happened: liveText(wait), next: WAIT_FIX }
+    fix: peState === 'failed' ? { happened: liveText(pe), next: exited ? EXIT_FIX : FIX.provider_errors } : waitState === 'failed' ? { happened: liveText(wait), next: WAIT_FIX }
       : prac3.failed ? { happened: prac3.failed.summary, next: prac3.failed.fix ?? PRACTICE_FIX } : null,
     note: null,
   });

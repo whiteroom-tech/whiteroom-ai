@@ -18,7 +18,7 @@ import {
 } from '@/lib/sandbox/checks';
 import { restartedCheck, restartNote, SCORED_CHECKS, tooFewCalls, tooFewNote } from '@/lib/sandbox/check-report';
 import {
-  callsText, FULL_CHECK_CALLS, LIVE_TRACK, liveRowName, nextSteps, notRunFor, nowExplained, practiceBinding, ROW_GROUP_NAMES, rowCounts, rowsHeadline, rowsSummary, sandboxRows, STATE_WORDS,
+  callsText, EXIT_FIX, FULL_CHECK_CALLS, LIVE_TRACK, liveRowName, nextSteps, notRunFor, nowExplained, practiceBinding, ROW_GROUP_NAMES, rowCounts, rowsHeadline, rowsSummary, sandboxRows, STATE_WORDS,
   type BoundPractice, type NextStep, type RowLimits, type SandboxRow,
 } from '@/lib/sandbox/sandbox-rows';
 import { getPracticeResult, getPracticeRun, listPracticeRuns } from '@/lib/sandbox/practice/api';
@@ -386,6 +386,7 @@ export function SandboxChecks({ fleet, sandboxFleetId, preview, onStale, onState
               : <h2 className={v.cardTitle}>{isSample ? 'Our sample agent' : 'Run your agent'}</h2>}
             {/* The page always passes setup; SandboxChecks on its own (no setup) still says what to do. */}
             {isSample ? <p className={v.text}>{SAMPLE_RUNNING}</p> : setup ?? <p className={v.text}>{RUN_NOW}</p>}
+            {!isSample && <p className={v.rsub}>A full check needs at least {FULL_CHECK_CALLS} calls from your agent.</p>}
             {limitLine || (live && <p className={`${v.live} ${live.calling ? v.liveCalling : ''}`}>{live.text}</p>)}
             {showTips && <NothingHappening provider={provider} />}
           </>}
@@ -466,6 +467,9 @@ const NEXT_SHORT: Record<string, string> = {
   '07': 'Let your agent wait out a pause and a stop, then check again.',
 };
 
+/** Row 03's fix when the agent exited on the provider error, in a few words. */
+const NEXT_EXITED = 'Make your agent catch a provider error and wait instead of exiting, then check again.';
+
 const nextKey = (x: NextStep) => (x.kind === 'fix' ? `fix-${x.num}` : x.kind);
 
 /** One of the Next card's steps, in plain words, with its link. */
@@ -474,7 +478,7 @@ function NextLine({ step, href, onPractice, plan, goLive }: { step: NextStep; hr
     case 'again': return <>Run your agent again, with a longer task, so the live checks can run.</>;
     case 'restarted': return <>WhiteRoom restarted during this check. Check again.</>;
     case 'not_proven': return <>Run a longer task (at least {FULL_CHECK_CALLS} calls), then check again.</>;
-    case 'fix': return <>{NEXT_SHORT[step.num] ?? `${step.text} Then check again.`}</>;
+    case 'fix': return <>{step.text === EXIT_FIX ? NEXT_EXITED : NEXT_SHORT[step.num] ?? `${step.text} Then check again.`}</>;
     case 'practice': return <><PracticeLink href={href} onPractice={onPractice && (() => onPractice())} /> for {step.rows}. A few minutes.</>;
     case 'live':
       if (plan.plan === 'free') return <TakeItLive preview={goLive} />;

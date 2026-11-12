@@ -223,6 +223,8 @@ export const SANDBOX_V2_STATES = {
     for (const x of c.state!.checks) if (x.id === 'provider_errors') x.notProven = true;
     return c;
   })() }),
+  // Exited on the 529, told by `whiteroom sandbox run` (spec B2).
+  'checks-report-exited': live({ checks: checkState('done', { ...RESUMED, provider_errors: ['failed', 'We returned a provider error (529) → your agent exited (code 1). Fix: catch the error, wait, and try again.'] }, { ended: true, rules: RULES, calls: 21 }) }),
   'checks-report-few': live({ checks: checkState('done', {}, { ended: true, calls: 3 }) }),
   /** Practice tasks bound: all eight rows filled, each part's time. */
   'checks-report-practice': live({ checks: { ...ROWS_CHECKS, practice: { bound: { runId: 'r-1', endedAt: new Date(NOW - 3 * 60_000).toISOString(), checks: [
