@@ -353,7 +353,7 @@ export function sandboxRows(state: CheckState, practice?: BoundPractice, limits:
 /** The headline's counts: checked means Passed, Partly checked or Didn't pass (§7). */
 export function rowCounts(rows: SandboxRow[]) {
   const count = (...s: RowState[]) => rows.filter((r) => s.includes(r.state)).length;
-  return { fix: count('failed'), checked: count('passed', 'partly', 'failed'), notProven: count('not_proven'), practice: count('not_run_yet'), notSetUp: count('not_set_up'), total: rows.length };
+  return { fix: count('failed'), checked: count('passed', 'partly', 'failed'), notProven: count('not_proven'), notChecked: count('not_checked'), practice: count('not_run_yet'), notSetUp: count('not_set_up'), total: rows.length };
 }
 
 /** "1 thing to fix before going live" / "Nothing to fix", and "6 of 8 checked · 2 need practice tasks · 1 not set up". */
@@ -364,7 +364,8 @@ export function rowsHeadline(rows: SandboxRow[]): { headline: string; sub: strin
   // With rows left unchecked, "so far": nothing failed, but not everything was checked.
   const headline = c.fix ? `${plural(c.fix, 'thing', 'things')} to fix before going live`
     : c.checked ? `Nothing to fix${c.checked < c.total ? ' so far' : ''} · ${count}` : 'Nothing was checked this time';
-  const sub = [!c.fix && c.checked ? null : count, c.notProven && `${c.notProven} not proven`, c.practice && `${c.practice} need practice tasks`, c.notSetUp && `${c.notSetUp} not set up`].filter(Boolean).join(' · ');
+  // Every row the count leaves out is named: "4 of 8 checked · 2 not checked · 2 need practice tasks".
+  const sub = [!c.fix && c.checked ? null : count, c.notProven && `${c.notProven} not proven`, c.notChecked && `${c.notChecked} not checked`, c.practice && `${c.practice} need practice tasks`, c.notSetUp && `${c.notSetUp} not set up`].filter(Boolean).join(' · ');
   // Green only when nothing failed and nothing that was tried went unchecked: rows for practice tasks or with no rule don't hold it back.
   const clean = !c.fix && c.checked > 0 && !rows.some((r) => r.state === 'not_checked' || r.state === 'not_proven');
   return { headline, sub, tone: c.fix ? 'warn' : clean ? 'pass' : 'neutral' };

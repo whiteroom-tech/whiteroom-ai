@@ -111,6 +111,11 @@ describe('the eight rows', () => {
     expect(nextSteps(sandboxRows(state({ checks: { provider_errors: ['failed', 'We returned a provider error (529) → your agent exited (code 1). Fix: …'] } })), { few: false, sample: false })[0]).toEqual({ kind: 'fix', num: '03', text: EXIT_FIX });
   });
 
+  it('the line under the headline names every row the count leaves out, not checked ones too (the Nov 12 quit-stop run)', () => {
+    const rows = sandboxRows(state({ checks: { pause_stop: ['not_checked', 'Not checked: your agent stopped calling.'], provider_errors: ['not_checked', 'Not checked: your agent stopped calling.'] } }));
+    expect(rowsHeadline(rows)).toEqual({ headline: 'Nothing to fix so far · 4 of 8 checked', sub: '2 not checked · 2 need practice tasks', tone: 'neutral' });
+  });
+
   it('rules: Enforce reads as set; none set up is Not set up; a probe that fails, or an agent that hammered, fails the row', () => {
     const enforce = by(state({ probes: [probe('spend_cap', 'passed', 'blocks')] }));
     expect(enforce['04'].parts[0].text).toBe('Blocks at its limit');
