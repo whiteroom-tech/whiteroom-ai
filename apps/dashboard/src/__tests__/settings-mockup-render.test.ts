@@ -48,6 +48,15 @@ describe('Settings as in the mockup', () => {
     expect(t).not.toMatch(/\bnotes?\b|summar|break/i);
   });
 
+  it('shows no audience line under Individual or Teams, and keeps it for plans that have one', () => {
+    for (const plan of ['starter', 'pro'] as const) {
+      const html = markup(1, { plan, onTrial: false });
+      expect(html).not.toMatch(/margin:4px 0 0">\s*<\/p>/);
+      expect(text(html)).not.toMatch(/For anyone building agents|For teams running agent fleets/);
+    }
+    expect(view(1, { plan: 'suspended', onTrial: false })).toContain('Your fleets and keys are kept. Pick a plan to switch them back on.');
+  });
+
   it('says when the fleet limit is reached', () => {
     expect(view(1)).toContain('At the limit: another one is refused');
   });
