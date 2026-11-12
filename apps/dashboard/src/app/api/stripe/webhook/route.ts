@@ -92,6 +92,7 @@ async function handle(event: Stripe.Event): Promise<void> {
       // Whose it is comes from the session's customer (recorded when checkout
       // created it); the subscription itself is read under the lock, once.
       await applySubscription({ id: subscriptionId, customer: session.customer, metadata: session.metadata ?? {} } as Stripe.Subscription);
+      await markReverseCharge(session);
       return;
     }
     case 'customer.subscription.created':
@@ -101,6 +102,28 @@ async function handle(event: Stripe.Event): Promise<void> {
       await applySubscription(event.data.object as Stripe.Subscription);
       return;
     }
+  }
+}
+
+/**
+ * A business outside the US that gave a VAT or tax number at checkout accounts
+ * for the VAT itself (the UK and EU reverse charge). Marking its Stripe
+ * customer `reverse` makes every invoice say so. Only ever sets it: a customer
+ * whose tax status was already changed (by hand, say) is left alone. Best
+ * effort: a failure is logged and the subscription still applies, since a
+ * missing invoice note is fixed by hand in Stripe (Customers -> Tax status).
+ */
+async function markReverseCharge(session: Stripe.Checkout.Session): Promise<void> {
+  const details = session.customer_details;
+  const country = details?.address?.country;
+  const customerId = typeof session.customer === 'string' ? session.customer : session.customer?.id;
+  if (!customerId || !country || country === 'US') return;
+  if (!details?.tax_ids?.length) return;
+  if (details.tax_exempt && details.tax_exempt !== 'none') return;
+  try {
+    await stripe().customers.update(customerId, { tax_exempt: 'reverse' });
+  } catch (err) {
+    console.error(`[stripe] couldn't mark customer ${customerId} reverse charge (${country}):`, err instanceof Error ? err.message : err);
   }
 }
 

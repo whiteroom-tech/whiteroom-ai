@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   enqueue: vi.fn(),
   mark: vi.fn(),
   retrieve: vi.fn(),
+  updateCustomer: vi.fn(),
   activate: vi.fn(),
   /** Invoices with no status are paid ones. */
   invoices: [] as Array<{ amount_paid?: number; amount_due?: number; status?: string; attempted?: boolean; attempt_count?: number; status_transitions?: { paid_at: number } }>,
@@ -36,6 +37,7 @@ vi.mock('@/lib/stripe', () => ({
   stripe: () => ({
     webhooks: { constructEventAsync: mocks.constructEvent },
     subscriptions: { retrieve: mocks.retrieve },
+    customers: { update: mocks.updateCustomer },
     invoices: { list: (p: { status?: string }) => (async function* () { yield* mocks.invoices.filter((i) => (i.status ?? 'paid') === p.status); })() },
   }),
 }));
@@ -461,5 +463,37 @@ describe('stripe webhook: order, replacement and delivery', () => {
     expect(mocks.retrieve).toHaveBeenCalledWith('sub_1');
     expect((upserts()[0][1] as unknown[])[0]).toBe('u1');
     expect((upserts()[0][1] as unknown[])[4]).toBe('active');
+  });
+  describe('reverse charge at checkout', () => {
+    const completed = (customer_details: Record<string, unknown>) => {
+      mocks.current = sub('trialing');
+      mocks.query.mockImplementation(async (sql: string) => {
+        const q = String(sql);
+        if (q.includes('WHERE stripe_customer_id = $1')) return { rowCount: 1, rows: [{ user_id: 'u1' }] };
+        return q.includes('RETURNING id') ? { rowCount: 1, rows: [{ id: 41 }] } : { rowCount: 1, rows: [] };
+      });
+      return event('checkout.session.completed', { subscription: 'sub_1', customer: 'cus_1', customer_details });
+    };
+    const vat = [{ type: 'gb_vat', value: 'GB123456789' }];
+
+    it('marks a business outside the US that gave a VAT number', async () => {
+      expect((await completed({ address: { country: 'GB' }, tax_ids: vat, tax_exempt: 'none' })).status).toBe(200);
+      expect(mocks.updateCustomer).toHaveBeenCalledWith('cus_1', { tax_exempt: 'reverse' });
+    });
+
+    it('leaves alone a US customer, one without a tax number, and one whose status was already changed', async () => {
+      await completed({ address: { country: 'US' }, tax_ids: [{ type: 'us_ein', value: '12-3456789' }], tax_exempt: 'none' });
+      await completed({ address: { country: 'DE' }, tax_ids: [], tax_exempt: 'none' });
+      await completed({ address: { country: 'FR' }, tax_ids: vat, tax_exempt: 'exempt' });
+      await completed({ address: null, tax_ids: vat, tax_exempt: 'none' });
+      expect(mocks.updateCustomer).not.toHaveBeenCalled();
+    });
+
+    it('still applies the subscription when the update fails', async () => {
+      mocks.updateCustomer.mockRejectedValue(new Error('stripe down'));
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      expect((await completed({ address: { country: 'GB' }, tax_ids: vat, tax_exempt: 'none' })).status).toBe(200);
+      expect((upserts()[0][1] as unknown[])[0]).toBe('u1');
+    });
   });
 });
