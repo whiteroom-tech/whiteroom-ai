@@ -106,8 +106,20 @@ async function handle(event: Stripe.Event): Promise<void> {
 }
 
 /**
- * A business outside the US that gave a VAT or tax number at checkout accounts
- * for the VAT itself (the UK and EU reverse charge). Marking its Stripe
+ * Where a business customer accounts for VAT itself under the reverse charge:
+ * the UK and the 27 EU member states (Stripe's country codes; Greece is GR).
+ * Other countries with a VAT or GST (Canada, Australia, ...) have their own
+ * rules, so they are left for a person to decide.
+ */
+const REVERSE_CHARGE_COUNTRIES = new Set([
+  'GB',
+  'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE',
+  'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE',
+]);
+
+/**
+ * A UK or EU business that gave a VAT number at checkout accounts for the VAT
+ * itself (the reverse charge). Marking its Stripe
  * customer `reverse` makes every invoice say so. Only ever sets it: a customer
  * whose tax status was already changed (by hand, say) is left alone. Best
  * effort: a failure is logged and the subscription still applies, since a
@@ -117,7 +129,7 @@ async function markReverseCharge(session: Stripe.Checkout.Session): Promise<void
   const details = session.customer_details;
   const country = details?.address?.country;
   const customerId = typeof session.customer === 'string' ? session.customer : session.customer?.id;
-  if (!customerId || !country || country === 'US') return;
+  if (!customerId || !country || !REVERSE_CHARGE_COUNTRIES.has(country)) return;
   if (!details?.tax_ids?.length) return;
   if (details.tax_exempt && details.tax_exempt !== 'none') return;
   try {

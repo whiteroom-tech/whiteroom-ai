@@ -481,8 +481,14 @@ describe('stripe webhook: order, replacement and delivery', () => {
       expect(mocks.updateCustomer).toHaveBeenCalledWith('cus_1', { tax_exempt: 'reverse' });
     });
 
-    it('leaves alone a US customer, one without a tax number, and one whose status was already changed', async () => {
+    it('marks an EU business too', async () => {
+      await completed({ address: { country: 'DE' }, tax_ids: [{ type: 'eu_vat', value: 'DE123456789' }], tax_exempt: 'none' });
+      expect(mocks.updateCustomer).toHaveBeenCalledWith('cus_1', { tax_exempt: 'reverse' });
+    });
+
+    it('leaves alone a US or other non-UK/EU customer, one without a tax number, and one whose status was already changed', async () => {
       await completed({ address: { country: 'US' }, tax_ids: [{ type: 'us_ein', value: '12-3456789' }], tax_exempt: 'none' });
+      await completed({ address: { country: 'CA' }, tax_ids: [{ type: 'ca_bn', value: '123456789' }], tax_exempt: 'none' });
       await completed({ address: { country: 'DE' }, tax_ids: [], tax_exempt: 'none' });
       await completed({ address: { country: 'FR' }, tax_ids: vat, tax_exempt: 'exempt' });
       await completed({ address: null, tax_ids: vat, tax_exempt: 'none' });
