@@ -187,6 +187,15 @@ export async function startCheckout(plan: string): Promise<UrlResult> {
         ...(trialEnd ? { trial_end: trialEnd } : {}),
       },
       allow_promotion_codes: true,
+      // Business customers abroad expect their VAT or tax number, company name
+      // and address on every invoice (a UK or EU business accounts for VAT
+      // itself under the reverse charge). The tax number is optional, so a
+      // customer without one isn't stopped; the billing address is required
+      // of everyone (it decides the reverse charge, see the Stripe webhook).
+      // Both are saved onto the Stripe customer, which is what invoices print.
+      billing_address_collection: 'required',
+      tax_id_collection: { enabled: true },
+      customer_update: { name: 'auto', address: 'auto' },
       // A closing account's session expires soon, so it can't be paid after the
       // fleet closes; everyone else keeps Stripe's usual lifetime.
       ...(closing ? { expires_at: Math.floor(Date.now() / 1000) + CHECKOUT_LIFETIME_S } : {}),

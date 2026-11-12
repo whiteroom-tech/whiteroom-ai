@@ -22,6 +22,9 @@ const HANDLED = new Set([
   'customer.subscription.created',
   'customer.subscription.updated',
   'customer.subscription.deleted',
+  // A VAT number Stripe has finished checking (or one added later in the portal).
+  'customer.tax_id.created',
+  'customer.tax_id.updated',
 ]);
 
 export async function POST(req: Request): Promise<Response> {
@@ -92,6 +95,15 @@ async function handle(event: Stripe.Event): Promise<void> {
       // Whose it is comes from the session's customer (recorded when checkout
       // created it); the subscription itself is read under the lock, once.
       await applySubscription({ id: subscriptionId, customer: session.customer, metadata: session.metadata ?? {} } as Stripe.Subscription);
+      await markReverseCharge(idOf(session.customer));
+      return;
+    }
+    case 'customer.tax_id.created':
+    case 'customer.tax_id.updated': {
+      // Stripe checks a UK or EU VAT number with HMRC or VIES after it's
+      // entered, so it is usually still pending at checkout: this is when a
+      // verified one arrives.
+      await markReverseCharge(idOf((event.data.object as Stripe.TaxId).customer));
       return;
     }
     case 'customer.subscription.created':
@@ -102,6 +114,150 @@ async function handle(event: Stripe.Event): Promise<void> {
       return;
     }
   }
+}
+
+/**
+ * Where a business customer accounts for VAT itself under the reverse charge:
+ * the UK and the 27 EU member states (Stripe's country codes; Greece is GR).
+ * Other countries with a VAT or GST (Canada, Australia, ...) have their own
+ * rules, so they are left for a person to decide.
+ */
+const REVERSE_CHARGE_COUNTRIES = new Set([
+  'GB',
+  'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE',
+  'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE',
+]);
+
+/** A customer reference's id, whether Stripe sent the id or the expanded object. */
+function idOf(customer: string | { id: string } | null | undefined): string | null {
+  return typeof customer === 'string' ? customer : customer?.id ?? null;
+}
+
+/** The tax ID type a reverse-charge country's VAT number has in Stripe. */
+function vatTypeFor(country: string): 'gb_vat' | 'eu_vat' {
+  return country === 'GB' ? 'gb_vat' : 'eu_vat';
+}
+
+/**
+ * The country a VAT number belongs to, from its prefix: EU numbers start with
+ * the member state's code (Greece uses EL, Northern Ireland XI under the EU
+ * rules); a gb_vat number is the UK's. Null when it can't be told.
+ */
+function vatCountry(type: string, value: string): string | null {
+  if (type === 'gb_vat') return 'GB';
+  const prefix = value.trim().slice(0, 2).toUpperCase();
+  if (!/^[A-Z]{2}$/.test(prefix)) return null;
+  return prefix === 'EL' ? 'GR' : prefix === 'XI' ? 'GB' : prefix;
+}
+
+/** Legal-form words that differ between how a company types its name and how the register holds it. */
+const LEGAL_FORMS = new Set([
+  'the', 'and', 'co', 'company', 'ltd', 'limited', 'plc', 'llp', 'llc', 'inc', 'incorporated', 'corp',
+  'gmbh', 'mbh', 'ag', 'kg', 'ug', 'ev', 'se', 'sa', 'sas', 'sarl', 'sl', 'srl', 'spa', 'bv', 'nv',
+  'ab', 'as', 'aps', 'oy', 'oyj', 'sro', 'sp', 'zoo', 'kft', 'ehf', 'ltda', 'lda', 'teoranta', 'cyf',
+]);
+
+/** A company name reduced for comparison: case, accents, punctuation and legal forms removed. */
+function nameKey(name: string): string {
+  return name
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(' ')
+    .filter((w) => w && !LEGAL_FORMS.has(w))
+    .join(' ');
+}
+
+/**
+ * Whether the name the VAT register holds for a number is the company the
+ * customer says it is. Equal once reduced, or the shorter wholly inside the
+ * longer by whole words, but only when the shorter is at least two words
+ * ("Acme Widgets" in "Acme Widgets Europe"): a single word inside a longer
+ * name ("Group" in "Group Holdings") says too little. Anything else,
+ * including a register that returns no name, is for a person.
+ */
+function sameCompany(registered: string | null | undefined, entered: string | null | undefined): boolean {
+  if (!registered || !entered) return false;
+  const a = nameKey(registered);
+  const b = nameKey(entered);
+  if (a.length < 2 || b.length < 2) return false;
+  if (a === b) return true;
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+  return shorter.split(' ').length >= 2 && ` ${longer} `.includes(` ${shorter} `);
+}
+
+/**
+ * Marks a UK or EU business customer reverse charge (tax_exempt "reverse"),
+ * so its invoices say it accounts for the VAT itself. All of these must hold,
+ * or it is left for a person (Stripe: Customers -> Tax status):
+ * - the billing country is the UK or an EU member state;
+ * - the customer holds a VAT number of that country's type (gb_vat / eu_vat)
+ *   whose own country (its prefix) is the billing country;
+ * - Stripe has verified it with HMRC or VIES;
+ * - the name the register holds for it is the company name the customer gave.
+ *
+ * Residual risk: verification proves the number is real and whose it is, not
+ * that the person typing it works there. Someone who enters a real company's
+ * number, its name and an address in its country still passes, and is then
+ * invoiced without VAT for a service they pay for. Stripe and the invoice keep
+ * the number they gave, and every marking is logged.
+ *
+ * Read fresh from Stripe each time, so it is the same whichever event calls
+ * it and however often: a customer already marked, or whose tax status was
+ * changed by hand, is left alone. It only ever sets the flag.
+ *
+ * A temporary Stripe failure (network, Stripe-side, rate limit) is thrown, so the
+ * delivery fails, its claim is released and Stripe redelivers; otherwise a
+ * VAT number verified before checkout completed would never be marked, as no
+ * later tax ID event comes. Redelivery is safe: the subscription is read
+ * fresh too. Anything else (a 4xx such as a customer that is gone, or a bug
+ * of ours) would fail every time, so it is logged and acknowledged.
+ */
+async function markReverseCharge(customerId: string | null): Promise<void> {
+  if (!customerId) return;
+  // Only a customer this region recorded (lib/billing ensureCustomer): the
+  // Stripe account is shared with the other region's dashboard, and with
+  // anything created by hand in Stripe.
+  const { rows } = await db().query(`SELECT 1 FROM subscriptions WHERE stripe_customer_id = $1`, [customerId]);
+  if (rows.length === 0) return;
+  try {
+    const customer = await stripe().customers.retrieve(customerId, { expand: ['tax_ids'] });
+    if ('deleted' in customer && customer.deleted) return;
+    const country = customer.address?.country;
+    if (!country || !REVERSE_CHARGE_COUNTRIES.has(country)) return;
+    if (customer.tax_exempt && customer.tax_exempt !== 'none') return;
+    const vat = vatTypeFor(country);
+    const match = (customer.tax_ids?.data ?? []).find((t) =>
+      t.type === vat
+      && vatCountry(t.type, t.value ?? '') === country
+      && t.verification?.status === 'verified'
+      && sameCompany(t.verification.verified_name, customer.name));
+    if (!match) return;
+    await stripe().customers.update(customerId, { tax_exempt: 'reverse' });
+    console.log(`[stripe] marked customer ${customerId} reverse charge: ${country}, ${match.type} verified for "${match.verification?.verified_name}"`);
+  } catch (err) {
+    if (isTransientStripeError(err)) throw err;
+    console.error(`[stripe] couldn't check or mark customer ${customerId} reverse charge:`, err instanceof Error ? err.message : err);
+  }
+}
+
+/** The Stripe SDK's error types for a failure a retry may get past. */
+const TRANSIENT_STRIPE_ERRORS = new Set(['StripeConnectionError', 'StripeAPIError', 'StripeRateLimitError']);
+
+/**
+ * Whether a Stripe call might succeed if tried again: the SDK's network,
+ * Stripe-side or rate-limit error, or any Stripe error with a 5xx or 429.
+ * Anything else, including a bug of ours (a TypeError, say) and a 4xx that
+ * Stripe would refuse again, is not: redelivering it would only repeat it.
+ */
+function isTransientStripeError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const { type, statusCode } = err as { type?: unknown; statusCode?: unknown };
+  if (typeof type !== 'string' || !type.startsWith('Stripe')) return false;
+  if (TRANSIENT_STRIPE_ERRORS.has(type)) return true;
+  return typeof statusCode === 'number' && (statusCode >= 500 || statusCode === 429);
 }
 
 /**
@@ -120,7 +276,14 @@ function periodEnd(sub: Stripe.Subscription): Date | null {
 
 async function resolveUserId(sub: Stripe.Subscription): Promise<string | null> {
   const fromSub = sub.metadata?.whiteroom_user_id;
-  if (fromSub) return fromSub;
+  if (fromSub) {
+    // The US and EU dashboards share one Stripe account, and each webhook
+    // destination receives every event on it. A user who isn't in this
+    // region's database is the other region's: not ours to apply (saving it
+    // would fail on the users foreign key, and Stripe would retry for days).
+    const { rows } = await db().query(`SELECT 1 FROM users WHERE id = $1`, [fromSub]);
+    return rows.length > 0 ? fromSub : null;
+  }
 
   // Subscriptions created outside our checkout (in the Stripe dashboard, say)
   // carry no metadata, so fall back to the customer we recorded at signup.
