@@ -36,7 +36,7 @@ const RETRYABLE = new Set([429, 502, 503]);
 const RETRIES = 3;
 const RETRY_WAIT_MS = 5_000;
 const WAIT_STEP_MS = 250;
-/** More pages than any file has (50,000 calls at 1 a page would still be refused long before): a guard against a loop. */
+/** A file holds at most 50,000 calls and a page up to 2,000, so a real export is 25 pages; this only stops a loop that never ends. */
 const MAX_PAGES = 1_000;
 
 /**

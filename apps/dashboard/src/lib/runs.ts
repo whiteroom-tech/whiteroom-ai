@@ -476,6 +476,9 @@ const BAD_EVENT = /^governance_(block|blocked|pause|stop)$/;
 // The run's own end; a finished task within the run stays a plain event.
 const DONE_EVENT = /^(watch_end|run_ended|run_finished)$/;
 
+/** The engine's event for calls in a run it couldn't record. */
+const GAP_EVENT = 'calls_not_recorded';
+
 /**
  * One row of What happened. Calls say what the agent called and which tools
  * it asked for; the model shows only when it changes from the call before
@@ -509,19 +512,23 @@ export function timelineRow(e: RunEvent, prevModel: string | null = null): Timel
   return { id: e.id, time: row.time, sameTime: false, text: glyph === 'start' ? 'Run started' : row.text, tag: row.tag, glyph };
 }
 
-/** The engine's event for calls in a run it couldn't record. */
-const GAP_EVENT = 'calls_not_recorded';
-
-/** "3 calls weren’t recorded." A run's timeline row for a gap, and the start of the note under its totals. */
-export function notRecordedNote(calls: unknown): string {
+/** The count as a sentence's subject and verb: ["3 calls", "weren’t"], ["1 call", "wasn’t"], ["Some calls", "weren’t"]. */
+function notRecordedParts(calls: unknown): [string, string] {
+  const one = calls === 1;
   const n = notRecordedText(calls);
-  return `${n.charAt(0).toUpperCase()}${n.slice(1)} ${n === '1 call' ? 'wasn’t' : 'weren’t'} recorded.`;
+  return [n.charAt(0).toUpperCase() + n.slice(1), one ? 'wasn’t' : 'weren’t'];
+}
+
+/** "3 calls weren’t recorded." A run's timeline row for a gap. */
+export function notRecordedNote(calls: unknown): string {
+  const [n, verb] = notRecordedParts(calls);
+  return `${n} ${verb} recorded.`;
 }
 
 /** The note under a run's totals when some of its calls weren't recorded. */
 export function notRecordedTotalsNote(calls: number): string {
-  const n = notRecordedText(calls);
-  return `${n.charAt(0).toUpperCase()}${n.slice(1)} in this run ${n === '1 call' ? 'wasn’t' : 'weren’t'} recorded, so the totals may be low.`;
+  const [n, verb] = notRecordedParts(calls);
+  return `${n} in this run ${verb} recorded, so the totals may be low.`;
 }
 
 /**

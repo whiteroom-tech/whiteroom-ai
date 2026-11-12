@@ -3,7 +3,7 @@
 // done. They must reject so the UI keeps the draft and shows the failure.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { alertsSetHealth, healthHistory, jobOutcomes, alertsSetTeams, alertsTest, ControlDeniedError, controlFailure, governanceUpdateRule, isAuthError, pauseAgent, resumeAgent, updateAgentTaskType } from '@/lib/whiteroom/client';
+import { exportCallsPage, alertsSetHealth, healthHistory, jobOutcomes, alertsSetTeams, alertsTest, ControlDeniedError, controlFailure, governanceUpdateRule, isAuthError, pauseAgent, resumeAgent, updateAgentTaskType } from '@/lib/whiteroom/client';
 
 const fetchMock = vi.fn();
 
@@ -150,5 +150,21 @@ describe('alerts actions', () => {
     expect(sent()).toEqual({ action: 'alerts_test', fleet_id: 'f', channel: 'slack' });
     await alertsTest('f', 'teams');
     expect(sent()).toEqual({ action: 'alerts_test', fleet_id: 'f', channel: 'teams' });
+  });
+});
+
+// The signed call log's three request shapes, as the engine reads them.
+describe('exportCallsPage', () => {
+  const sent = () => JSON.parse(String(fetchMock.mock.calls.at(-1)![1].body));
+  it('posts a run, a range of the viewer’s days, or the state alone', async () => {
+    fetchMock.mockImplementation(async () => jsonResponse({ fleetId: 'f', calls: [], count: 0, state: null }));
+    await exportCallsPage('f', { runId: 'lead~7' }, 'sk-key');
+    expect(sent()).toEqual({ action: 'export_calls', fleet_id: 'f', run_id: 'lead~7' });
+    await exportCallsPage('f', { fromDay: '2026-11-01', toDay: '2026-11-07' }, 'sk-key');
+    expect(sent()).toEqual({ action: 'export_calls', fleet_id: 'f', from_day: '2026-11-01', to_day: '2026-11-07', tz: expect.stringMatching(/^[A-Za-z]/) });
+    await exportCallsPage('f', { fromDay: '2026-11-01', toDay: '2026-11-07', agentId: 'lead' }, 'sk-key');
+    expect(sent()).toMatchObject({ from_day: '2026-11-01', to_day: '2026-11-07', agent_id: 'lead' });
+    await exportCallsPage('f', { state: { kind: 'call-export-state', count: 2 } }, 'sk-key');
+    expect(sent()).toEqual({ action: 'export_calls', fleet_id: 'f', state: { kind: 'call-export-state', count: 2 } });
   });
 });
