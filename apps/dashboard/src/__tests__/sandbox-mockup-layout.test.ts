@@ -86,6 +86,8 @@ describe('the right-hand cards follow the step', () => {
     expect(cards()).toEqual(['Your Sandbox', 'What we check', 'Sandbox rules']);
     expect((document.querySelector('aside details') as HTMLDetailsElement).open).toBe(true);
     expect(text()).toContain('Waiting for your agent’s first call');
+    // What a full check takes, so a short task isn't a surprise.
+    expect(text()).toContain('A full check needs at least 12 calls from your agent.');
     expect(text()).toContain('Nothing after a minute? Usually one of these:');
     // The connected row and the closed settings section are gone: Your Sandbox has both.
     expect(text()).not.toContain('Connected · Anthropic key ending');

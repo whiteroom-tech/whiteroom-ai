@@ -86,8 +86,8 @@ export const BETA_INSTALL = CLI_ON_NPM ? [] : [`shasum -a 256 ${BETA_TGZ}`, `npm
  * `--key-env` names its key's variable, so a computer with several keys set
  * isn't refused. With a run code, the run command carries it on stdin
  * (`--code-stdin`) so the whole test is one paste: owner decision (Oct 28),
- * as a hidden paste failed in practice. The code works once and expires in
- * 30 minutes, so its copy in shell history is spent.
+ * as a hidden paste failed in practice. The code works once (and expires in
+ * 12 hours, engine RUN_CODE_MINUTES), so its copy in shell history is spent.
  */
 export function cliCommands(sample: boolean, lang: StarterLang, provider: PracticeProvider | null = null, code: string | null = null, adapter: string | null = null): { starter: string | null; run: string } {
   const keyEnv = provider ? ` --key-env ${CATALOG.providers[provider].keyVar}` : '';
