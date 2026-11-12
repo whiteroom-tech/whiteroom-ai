@@ -40,17 +40,48 @@ function isStripeCustomerId(id: string | null | undefined): id is string {
   return typeof id === 'string' && id.startsWith('cus_');
 }
 
+/** Stripe's "No such ..." refusal: the id isn't in the account this key belongs to. */
+function isResourceMissing(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 'resource_missing';
+}
+
+/**
+ * Whether a stored customer id exists in the Stripe account the key belongs
+ * to. Ids from another account (prod ran on a different Stripe account until
+ * 2026-11-12, and Checkout records the customer before payment) or deleted
+ * customers are not; anything else Stripe refuses is thrown.
+ */
+async function customerExists(id: string): Promise<boolean> {
+  try {
+    const customer = await stripe().customers.retrieve(id);
+    return !('deleted' in customer && customer.deleted);
+  } catch (err) {
+    if (isResourceMissing(err)) return false;
+    throw err;
+  }
+}
+
+/** Logs why a Stripe call failed: Stripe's code and message, never the request. */
+function logStripeFailure(what: string, userId: string | null, err: unknown): void {
+  const e = (typeof err === 'object' && err !== null ? err : {}) as { type?: unknown; code?: unknown; message?: unknown };
+  console.error(`[billing] ${what} failed for user ${userId ?? 'unknown'}: ${String(e.type ?? 'error')}/${String(e.code ?? '-')}: ${String(e.message ?? err)}`);
+}
+
 /**
  * Finds or creates this user's Stripe customer, and records it.
  *
  * The row is written before Checkout rather than after the webhook, so the
  * customer id exists even if the user abandons payment — otherwise a second
  * attempt would mint a duplicate customer and the two would diverge in the
- * Stripe dashboard.
+ * Stripe dashboard. A stored id Stripe no longer knows is replaced.
  */
 async function ensureCustomer(userId: string, email: string | null): Promise<string> {
   const existing = await getSubscriptionRow(userId);
-  if (isStripeCustomerId(existing?.stripeCustomerId)) return existing!.stripeCustomerId!;
+  const stored = existing?.stripeCustomerId;
+  if (isStripeCustomerId(stored)) {
+    if (await customerExists(stored)) return stored;
+    console.warn(`[billing] user ${userId}'s stored Stripe customer isn't in this Stripe account; creating a new one`);
+  }
 
   const customer = await stripe().customers.create({
     email: email ?? undefined,
@@ -87,8 +118,10 @@ export async function startCheckout(plan: string): Promise<UrlResult> {
   // A fee that starts with the paid period is sold with the share (see below).
   const feeAtCheckout = PLANS[plan].pricing!.feeAfterTrialDays === 0 ? stripePriceId(plan, 'fee') : null;
 
+  let userId: string | null = null;
   try {
     const user = await requireUser();
+    userId = user.id;
     const closing = await getClosing(user.id);
     // Closing is final: once the fleet has closed, paying wouldn't reopen
     // it, so nothing is charged for it.
@@ -162,6 +195,7 @@ export async function startCheckout(plan: string): Promise<UrlResult> {
     if (!session.url) return { ok: false, error: 'Stripe did not return a checkout URL.' };
     return { ok: true, url: session.url };
   } catch (err) {
+    logStripeFailure(`checkout (${plan})`, userId, err);
     return { ok: false, error: 'Could not start checkout.' };
   }
 }
@@ -174,8 +208,10 @@ export async function startCheckout(plan: string): Promise<UrlResult> {
  * surface that comes with them, is ours to own.
  */
 export async function openBillingPortal(): Promise<UrlResult> {
+  let userId: string | null = null;
   try {
     const user = await requireUser();
+    userId = user.id;
     const sub = await getSubscriptionRow(user.id);
     if (!isStripeCustomerId(sub?.stripeCustomerId)) {
       return { ok: false, error: 'No billing account yet — subscribe to a plan first.' };
@@ -187,6 +223,9 @@ export async function openBillingPortal(): Promise<UrlResult> {
     });
     return { ok: true, url: session.url };
   } catch (err) {
+    // A customer from another Stripe account (or deleted) has no billing here yet.
+    if (isResourceMissing(err)) return { ok: false, error: 'No billing account yet — subscribe to a plan first.' };
+    logStripeFailure('billing portal', userId, err);
     return { ok: false, error: 'Could not open the billing portal.' };
   }
 }
