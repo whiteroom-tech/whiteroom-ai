@@ -5,6 +5,8 @@
 // The command runs as typed, without a shell; nothing from WhiteRoom is put
 // into it. Refuses to start while another base URL in the environment points
 // at WhiteRoom, so the agent's calls can't go to production by mistake.
+// When the agent exits, its exit code is sent to the Sandbox (reportExit), so
+// the page's check ends then instead of waiting for more calls.
 
 import { spawn } from "node:child_process";
 import { constants } from "node:os";
@@ -79,6 +81,34 @@ export function sandboxUrlOf(raw: string, env: NodeJS.ProcessEnv = {}): { url: s
   return { url: `${new URL(m[1]).origin}/${m[2]}` };
 }
 
+/** What the Sandbox is told when the agent exits: its own exit code (null when a signal ended it), and how long it ran. */
+export interface AgentExit { code: number | null; signal: boolean; ranMs: number }
+/** How long the exit report may take before the CLI exits anyway. */
+export const EXIT_REPORT_MS = 3_000;
+/** Sends an exit report; tests pass their own. */
+export type ExitReporter = (sandboxUrl: string, exit: AgentExit) => Promise<void>;
+
+/**
+ * Tells the Sandbox the agent exited (POST /api/sandbox/exit on the WhiteRoom
+ * address the URL was checked against, with its Sandbox key), so its check
+ * ends now. Best effort: no redirects, EXIT_REPORT_MS at most, and nothing is
+ * printed or changed when it fails.
+ */
+export async function reportExit(sandboxUrl: string, exit: AgentExit): Promise<void> {
+  const { origin, pathname } = new URL(sandboxUrl);
+  try {
+    await fetch(`${origin}/api/sandbox/exit`, {
+      method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(EXIT_REPORT_MS),
+      headers: { "Content-Type": "application/json", "X-WhiteRoom-Key": pathname.slice(1) },
+      body: JSON.stringify({ code: exit.code, signal: exit.signal, ran_ms: exit.ranMs }),
+    });
+  } catch {
+    // An older WhiteRoom, no network, too slow: the page's check ends on its own.
+  }
+}
+
 export interface RunArgs {
   provider: RunProvider;
   command: string[];
@@ -90,7 +120,7 @@ const fail = (line: string) => (warn(line), 2);
 export interface Asker { terminal: boolean; ask: (question: string) => Promise<string> }
 const TERMINAL: Asker = { get terminal() { return !!process.stdin.isTTY; }, ask: (q) => hiddenPrompt(q) };
 
-export async function run(a: RunArgs, env: NodeJS.ProcessEnv = process.env, asker: Asker = TERMINAL): Promise<number> {
+export async function run(a: RunArgs, env: NodeJS.ProcessEnv = process.env, asker: Asker = TERMINAL, report: ExitReporter = reportExit): Promise<number> {
   const old = nodeTooOld();
   if (old) return fail(old);
   let raw = env.WHITEROOM_SANDBOX_URL ?? "";
@@ -126,6 +156,7 @@ export async function run(a: RunArgs, env: NodeJS.ProcessEnv = process.env, aske
       resolve(code);
     };
     let child: ReturnType<typeof spawn>;
+    const started = Date.now();
     try {
       child = spawn(cmd, args, { stdio: "inherit", env: childEnv });
     } catch (err) {
@@ -139,6 +170,12 @@ export async function run(a: RunArgs, env: NodeJS.ProcessEnv = process.env, aske
     }
     child.on("error", (err: NodeJS.ErrnoException) => done(fail(err.code === "ENOENT" ? runCopy.notFound(cmd) : runCopy.couldntStart(cmd, err.message))));
     // The agent's own exit code; killed by a signal, 128 + its number, as a shell reports it.
-    child.on("exit", (code, signal) => done(code ?? 128 + (signal ? constants.signals[signal] ?? 0 : 0)));
+    // The Sandbox hears the exit first (WHITEROOM_NO_EXIT_REPORT=1 turns that off); it never changes the code.
+    child.on("exit", (code, signal) => {
+      const exitCode = code ?? 128 + (signal ? constants.signals[signal] ?? 0 : 0);
+      const told = env.WHITEROOM_NO_EXIT_REPORT === "1" ? Promise.resolve()
+        : report(checked.url, { code: signal ? null : code, signal: !!signal, ranMs: Date.now() - started }).catch(() => undefined);
+      void told.then(() => done(exitCode));
+    });
   });
 }
