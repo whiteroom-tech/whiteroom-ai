@@ -178,13 +178,13 @@ const EVENT_COPY: Record<string, EventCopy> = {
   fleet_sequenced: { icon: '•', tone: 'idle', code: 'NEW', who: 'WhiteRoom', say: () => 'started tracking history' },
 };
 
-/** "between 3:41 and 3:44 pm", or "3:41–3:44 pm", from an event's from/to. */
-/** "3 calls", "1 call", or "some calls" when the count isn't readable. */
-function notRecordedText(calls: unknown): string {
+/** How many calls an event says weren't recorded: "3 calls", "1 call", or "some calls" when the count isn't readable. */
+export function notRecordedText(calls: unknown): string {
   const n = positiveCount(calls);
   return n === null ? 'some calls' : `${fmtCount(n)} ${n === 1 ? 'call' : 'calls'}`;
 }
 
+/** "between 3:41 and 3:44 pm", or "3:41–3:44 pm", from an event's from/to. */
 function windowText(e: AuditEntry, style: 'between' | 'range' = 'between'): string {
   const t = (v: unknown) => {
     const d = new Date(String(v ?? ''));

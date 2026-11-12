@@ -26,6 +26,7 @@ export function ExportRunsDialog({ open, agents, initialAgent, shown, busy, erro
   onDownload: (choice: { span: ExportSpan; agent: string }) => void;
   /** The same days and agents as a signed log of their calls (.json). Left out, the button isn't shown. */
   onDownloadSigned?: (choice: { span: ExportSpan; agent: string }) => void;
+  /** A signed log is being fetched. Cancel still works: it stops the download. */
   signedBusy?: boolean;
   onCancel: () => void;
 }) {
@@ -44,7 +45,7 @@ export function ExportRunsDialog({ open, agents, initialAgent, shown, busy, erro
     { value: '30d', label: 'Last 30 days', sub: `${md(m.fromDay)} – ${md(m.toDay)}` },
   ];
   return (
-    <DialogFrame open={open} busy={busy || signedBusy} onCancel={onCancel} onOpen={() => { setSpan(first); setAgent(initialAgent); }} labelledBy="export-runs-title">
+    <DialogFrame open={open} busy={busy} onCancel={onCancel} onOpen={() => { setSpan(first); setAgent(initialAgent); }} labelledBy="export-runs-title">
       <form method="dialog" className="wr-runs-dialog" onSubmit={(e) => { e.preventDefault(); onDownload({ span, agent }); }}>
         <h2 id="export-runs-title" className="wr-runs-dialog__title">Export runs</h2>
         <fieldset className="wr-runs-dialog__set">
@@ -70,7 +71,7 @@ export function ExportRunsDialog({ open, agents, initialAgent, shown, busy, erro
         )}
         {error && <p role="alert" style={{ margin: 0, color: 'var(--bad)', fontSize: 'var(--fs-sm)' }}>{error}</p>}
         <div className="wr-dialog-actions wr-runs-dialog__actions">
-          <Button onClick={onCancel} disabled={busy || signedBusy}>Cancel</Button>
+          <Button onClick={onCancel} disabled={busy}>Cancel</Button>
           <Button type="submit" variant="primary" busy={busy} busyLabel="Preparing…" disabled={signedBusy}>Download .xlsx</Button>
         </div>
       </form>

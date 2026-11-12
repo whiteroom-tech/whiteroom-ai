@@ -68,6 +68,16 @@ describe('signed call log', () => {
     expect(await refusal(new WhiteRoomApiError('HTTP 500', 500))).not.toBeInstanceOf(CallExportRefused);
   });
 
+  it('says why when a later page is refused', async () => {
+    const { fetchPage } = engine(5);
+    const real = fetchPage.getMockImplementation()!;
+    fetchPage.mockImplementation(async (f, ask) => {
+      if ('state' in ask) throw new ControlDeniedError('Only this fleet’s owner can download its signed log.');
+      return real(f, ask);
+    });
+    await expect(buildCallExport('f1', scope, () => {}, { fetchPage })).rejects.toMatchObject({ name: 'CallExportRefused', plain: 'Only this fleet’s owner can download its signed log.' });
+  });
+
   it('saves nothing when the pages don’t add up to what was signed', async () => {
     const short = engine(4);
     const real = short.fetchPage.getMockImplementation()!;

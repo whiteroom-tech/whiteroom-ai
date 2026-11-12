@@ -65,6 +65,9 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
   const [totals, setTotals] = useState<RunTotals | null>(previewTotals ?? null);
   const [exporting, setExporting] = useState(false);
   const [signing, setSigning] = useState(false);
+  // Leaving the page stops a signed download's fetch loop.
+  const gone = useRef(false);
+  useEffect(() => { gone.current = false; return () => { gone.current = true; }; }, []);
   const [toast, setToast] = useState<string | null>(null);
   // The deep link applies to the first load only; paging after it is normal.
   const pendingEvent = useRef(eventId ?? null);
@@ -206,7 +209,7 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
     if (preview) { setToast('Preview: nothing was downloaded.'); return; }
     setSigning(true);
     try {
-      const file = await buildCallExport(fleetId, { runId: data.run.runId }, () => {}, { fetchPage: (id, ask) => exportCallsPage(id, ask, authKey) });
+      const file = await buildCallExport(fleetId, { runId: data.run.runId }, () => {}, { fetchPage: (id, ask) => exportCallsPage(id, ask, authKey), isCancelled: () => gone.current });
       if (!file) return;
       saveBlob(file.blob, `whiteroom-run-${data.run.agentId}-${data.run.shift}-signed.json`);
       setToast(`Downloaded run ${data.run.shift}’s record, signed by WhiteRoom.`);

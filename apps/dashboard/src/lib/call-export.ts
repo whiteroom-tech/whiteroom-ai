@@ -20,6 +20,17 @@ export class CallExportRefused extends Error {
 export const CALL_EXPORT_UNAVAILABLE = 'Signed log isn’t available yet.';
 const TOO_MANY = /^That[’']s too many calls/;
 
+/** Why the engine or the dashboard refused, when it's one of the reasons to show as is; else null. */
+function refusalOf(e: unknown): string | null {
+  if (e instanceof ControlDeniedError) return e.message;
+  if (!(e instanceof WhiteRoomApiError)) return null;
+  // An older engine doesn't know the action (400), or wants the service
+  // secret before this dashboard sends one (403).
+  if ((e.status === 400 && e.reason === 'Unknown action.') || (e.status === 403 && e.reason === DASHBOARD_ONLY_REASON)) return CALL_EXPORT_UNAVAILABLE;
+  if (e.status === 400 && e.reason && TOO_MANY.test(e.reason)) return e.reason;
+  return null;
+}
+
 /** Busy, rate-limited or briefly unreachable: worth a short wait and another try. */
 const RETRYABLE = new Set([429, 502, 503]);
 const RETRIES = 3;
@@ -52,6 +63,9 @@ export async function buildCallExport(
       try {
         return await fetchPage(fleetId, ask);
       } catch (e) {
+        // A refusal on any page (the first, or one part-way through) is told as it is.
+        const plain = refusalOf(e);
+        if (plain) throw new CallExportRefused(plain);
         if (attempt >= RETRIES || !(e instanceof WhiteRoomApiError) || !RETRYABLE.has(e.status ?? 0)) throw e;
         // Waited in short steps, so a cancel stops it straight away.
         for (let left = RETRY_WAIT_MS * (attempt + 1); left > 0; left -= WAIT_STEP_MS) {
@@ -62,19 +76,7 @@ export async function buildCallExport(
     }
   };
 
-  let page: CallExportPage | null;
-  try {
-    page = await get(scope);
-  } catch (e) {
-    if (e instanceof ControlDeniedError) throw new CallExportRefused(e.message);
-    if (e instanceof WhiteRoomApiError) {
-      // An older engine doesn't know the action (400), or wants the service
-      // secret before this dashboard sends one (403).
-      if ((e.status === 400 && e.reason === 'Unknown action.') || (e.status === 403 && e.reason === DASHBOARD_ONLY_REASON)) throw new CallExportRefused(CALL_EXPORT_UNAVAILABLE);
-      if (e.status === 400 && e.reason && TOO_MANY.test(e.reason)) throw new CallExportRefused(e.reason);
-    }
-    throw e;
-  }
+  let page = await get(scope);
   if (!page) return null;
 
   const parts: BlobPart[] = [`{"format":"whiteroom-call-export","version":1,"fleetId":${JSON.stringify(fleetId)},"calls":[\n`];

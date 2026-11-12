@@ -221,6 +221,9 @@ export function RunsTable({ preview, retentionDays }: {
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [signing, setSigning] = useState(false);
+  // Each signed download is one run of this counter: Cancel, or leaving the page, moves it on and the fetch loop stops.
+  const signRun = useRef(0);
+  useEffect(() => () => { signRun.current++; }, []);
   const [auditOpen, setAuditOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const hours = hoursFor?.key === hoursKey ? hoursFor.hours : null;
@@ -452,21 +455,24 @@ export function RunsTable({ preview, retentionDays }: {
   async function exportSignedLog(choice: { span: ExportSpan; agent: string }) {
     if (preview) { setExportOpen(false); setToast('Preview: nothing was downloaded.'); return; }
     if (!fleetId) return;
+    const run = ++signRun.current;
+    const current = () => signRun.current === run;
     setSigning(true);
     setExportError(null);
     try {
       const { fromDay, toDay } = choice.span === 'shown' ? runsWindow(view) : exportDays(choice.span);
       const agentId = choice.agent === 'all' ? undefined : choice.agent;
-      const file = await buildCallExport(fleetId, { fromDay, toDay, agentId }, () => {}, { fetchPage: (id, ask) => exportCallsPage(id, ask, authKey) });
-      if (!file) return;
+      const file = await buildCallExport(fleetId, { fromDay, toDay, agentId }, () => {}, { fetchPage: (id, ask) => exportCallsPage(id, ask, authKey), isCancelled: () => !current() });
+      if (!file || !current()) return;
       saveBlob(file.blob, `whiteroom-calls-${fromDay}-to-${toDay}${agentId ? `-${agentId}` : ''}.json`);
       setExportOpen(false);
       setToast(`Downloaded ${counted(file.calls, 'call')}, signed by WhiteRoom.`);
     } catch (e) {
+      if (!current()) return;
       if (isAuthError(e)) { resetSession('Your session expired. Please sign in again.'); return; }
       setExportError(e instanceof CallExportRefused ? e.plain : 'Couldn’t download the signed log. Try again.');
     } finally {
-      setSigning(false);
+      if (current()) setSigning(false);
     }
   }
 
@@ -616,7 +622,7 @@ export function RunsTable({ preview, retentionDays }: {
         </p>
       </div>
 
-      <ExportRunsDialog open={exportOpen} agents={agents} initialAgent={agent} shown={exportShown} busy={exporting} error={exportError} onDownload={(c) => void exportRuns(c)} onDownloadSigned={(c) => void exportSignedLog(c)} signedBusy={signing} onCancel={() => setExportOpen(false)} />
+      <ExportRunsDialog open={exportOpen} agents={agents} initialAgent={agent} shown={exportShown} busy={exporting} error={exportError} onDownload={(c) => void exportRuns(c)} onDownloadSigned={(c) => void exportSignedLog(c)} signedBusy={signing} onCancel={() => { signRun.current++; setSigning(false); setExportOpen(false); }} />
       <AuditCheckDialog open={auditOpen} fleetId={fleetId} authKey={authKey} preview={preview?.audit} onClose={() => setAuditOpen(false)} onDownloaded={() => { setAuditOpen(false); setToast('Downloaded the audit check report.'); }} onAuthError={() => { setAuditOpen(false); resetSession('Your session expired. Please sign in again.'); }} />
       {toast && <Toast message={toast} onClose={() => setToast(null)} />}
     </div>
