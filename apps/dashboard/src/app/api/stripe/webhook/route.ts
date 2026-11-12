@@ -139,12 +139,66 @@ function vatTypeFor(country: string): 'gb_vat' | 'eu_vat' {
 }
 
 /**
+ * The country a VAT number belongs to, from its prefix: EU numbers start with
+ * the member state's code (Greece uses EL, Northern Ireland XI under the EU
+ * rules); a gb_vat number is the UK's. Null when it can't be told.
+ */
+function vatCountry(type: string, value: string): string | null {
+  if (type === 'gb_vat') return 'GB';
+  const prefix = value.trim().slice(0, 2).toUpperCase();
+  if (!/^[A-Z]{2}$/.test(prefix)) return null;
+  return prefix === 'EL' ? 'GR' : prefix === 'XI' ? 'GB' : prefix;
+}
+
+/** Legal-form words that differ between how a company types its name and how the register holds it. */
+const LEGAL_FORMS = new Set([
+  'the', 'and', 'co', 'company', 'ltd', 'limited', 'plc', 'llp', 'llc', 'inc', 'incorporated', 'corp',
+  'gmbh', 'mbh', 'ag', 'kg', 'ug', 'ev', 'se', 'sa', 'sas', 'sarl', 'sl', 'srl', 'spa', 'bv', 'nv',
+  'ab', 'as', 'aps', 'oy', 'oyj', 'sro', 'sp', 'zoo', 'kft', 'ehf', 'ltda', 'lda', 'teoranta', 'cyf',
+]);
+
+/** A company name reduced for comparison: case, accents, punctuation and legal forms removed. */
+function nameKey(name: string): string {
+  return name
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(' ')
+    .filter((w) => w && !LEGAL_FORMS.has(w))
+    .join(' ');
+}
+
+/**
+ * Whether the name the VAT register holds for a number is the company the
+ * customer says it is: equal once reduced, or one wholly inside the other by
+ * whole words ("Acme" and "Acme Widgets"), so a trading name still matches.
+ * Anything else, including a register that returns no name, is for a person.
+ */
+function sameCompany(registered: string | null | undefined, entered: string | null | undefined): boolean {
+  if (!registered || !entered) return false;
+  const a = nameKey(registered);
+  const b = nameKey(entered);
+  if (a.length < 2 || b.length < 2) return false;
+  return a === b || ` ${a} `.includes(` ${b} `) || ` ${b} `.includes(` ${a} `);
+}
+
+/**
  * Marks a UK or EU business customer reverse charge (tax_exempt "reverse"),
- * so its invoices say it accounts for the VAT itself, but only on Stripe's
- * word, never on what was typed: the customer's billing country must be the UK
- * or an EU member state, and it must hold a VAT number of that country's type
- * (gb_vat or eu_vat) that Stripe has verified with HMRC or VIES. Pending,
- * unverified or unavailable leaves it for a person (Customers -> Tax status).
+ * so its invoices say it accounts for the VAT itself. All of these must hold,
+ * or it is left for a person (Stripe: Customers -> Tax status):
+ * - the billing country is the UK or an EU member state;
+ * - the customer holds a VAT number of that country's type (gb_vat / eu_vat)
+ *   whose own country (its prefix) is the billing country;
+ * - Stripe has verified it with HMRC or VIES;
+ * - the name the register holds for it is the company name the customer gave.
+ *
+ * Residual risk: verification proves the number is real and whose it is, not
+ * that the person typing it works there. Someone who enters a real company's
+ * number, its name and an address in its country still passes, and is then
+ * invoiced without VAT for a service they pay for. Stripe and the invoice keep
+ * the number they gave, and every marking is logged.
  *
  * Read fresh from Stripe each time, so it is the same whichever event calls
  * it and however often: a customer already marked, or whose tax status was
@@ -166,9 +220,14 @@ async function markReverseCharge(customerId: string | null): Promise<void> {
     if (!country || !REVERSE_CHARGE_COUNTRIES.has(country)) return;
     if (customer.tax_exempt && customer.tax_exempt !== 'none') return;
     const vat = vatTypeFor(country);
-    const verified = (customer.tax_ids?.data ?? []).some((t) => t.type === vat && t.verification?.status === 'verified');
-    if (!verified) return;
+    const match = (customer.tax_ids?.data ?? []).find((t) =>
+      t.type === vat
+      && vatCountry(t.type, t.value ?? '') === country
+      && t.verification?.status === 'verified'
+      && sameCompany(t.verification.verified_name, customer.name));
+    if (!match) return;
     await stripe().customers.update(customerId, { tax_exempt: 'reverse' });
+    console.log(`[stripe] marked customer ${customerId} reverse charge: ${country}, ${match.type} verified for "${match.verification?.verified_name}"`);
   } catch (err) {
     if (isTransientStripeError(err)) throw err;
     console.error(`[stripe] couldn't check or mark customer ${customerId} reverse charge:`, err instanceof Error ? err.message : err);

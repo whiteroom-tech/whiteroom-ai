@@ -469,11 +469,26 @@ describe('stripe webhook: order, replacement and delivery', () => {
     expect((upserts()[0][1] as unknown[])[4]).toBe('active');
   });
   describe('reverse charge', () => {
-    /** The customer as Stripe holds it now: billing country, tax status and tax IDs. */
-    const stripeCustomer = (country: string | null, ids: Array<[string, string]>, tax_exempt = 'none') => {
+    /**
+     * The customer as Stripe holds it now: billing country, tax status, the
+     * company name given at checkout, and its tax IDs. A VAT number's prefix
+     * follows the country unless a test gives the value; the register's name
+     * is the company's unless a test gives another.
+     */
+    const stripeCustomer = (
+      country: string | null,
+      ids: Array<[string, string] | [string, string, { value?: string; verified_name?: string | null }]>,
+      tax_exempt = 'none',
+      name: string | null = 'Acme Widgets Limited',
+    ) => {
+      const prefix = country === 'GR' ? 'EL' : country ?? 'GB';
       mocks.retrieveCustomer.mockResolvedValue({
-        id: 'cus_1', tax_exempt, address: country ? { country } : null,
-        tax_ids: { data: ids.map(([type, status]) => ({ type, verification: { status } })) },
+        id: 'cus_1', tax_exempt, name, address: country ? { country } : null,
+        tax_ids: { data: ids.map(([type, status, o = {}]) => ({
+          type,
+          value: o.value ?? (type === 'gb_vat' ? 'GB123456789' : `${prefix}123456789`),
+          verification: { status, verified_name: 'verified_name' in o ? o.verified_name : 'ACME WIDGETS LTD', verified_address: null },
+        })) },
       });
     };
     const completed = (customer: unknown = 'cus_1') => {
@@ -491,6 +506,25 @@ describe('stripe webhook: order, replacement and delivery', () => {
       expect((await completed()).status).toBe(200);
       expect(mocks.retrieveCustomer).toHaveBeenCalledWith('cus_1', { expand: ['tax_ids'] });
       expect(mocks.updateCustomer).toHaveBeenCalledWith('cus_1', { tax_exempt: 'reverse' });
+    });
+
+    it('matches the registered name however it is written (case, punctuation, legal form, accents)', async () => {
+      stripeCustomer('DE', [['eu_vat', 'verified', { verified_name: 'Müller Maschinenbau GmbH' }]], 'none', 'Muller Maschinenbau');
+      await completed();
+      stripeCustomer('GR', [['eu_vat', 'verified', { verified_name: 'ACME WIDGETS S.A.' }]]);
+      await completed();
+      expect(mocks.updateCustomer).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([
+      ['the register holds another company', 'GB', [['gb_vat', 'verified', { verified_name: 'Globex Corporation Ltd' }]], 'Acme Widgets Limited'],
+      ['the register returns no name', 'FR', [['eu_vat', 'verified', { verified_name: null }]], 'Acme Widgets Limited'],
+      ['the customer gave no company name', 'GB', [['gb_vat', 'verified']], null],
+      ['the number belongs to another EU country (a German number, a French address)', 'FR', [['eu_vat', 'verified', { value: 'DE123456789' }]], 'Acme Widgets Limited'],
+    ] as Array<[string, string, Array<[string, string, { value?: string; verified_name?: string | null }]>, string | null]>)('leaves it to a person when %s', async (_why, country, ids, name) => {
+      stripeCustomer(country, ids, 'none', name);
+      await completed();
+      expect(mocks.updateCustomer).not.toHaveBeenCalled();
     });
 
     it('marks an EU business too, with the customer sent as an object', async () => {
