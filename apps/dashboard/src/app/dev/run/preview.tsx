@@ -44,15 +44,25 @@ const OLD: RunEventsResult = {
   events: EVENTS.map(({ ruleActions: _ra, ...e }) => e),
 };
 
+/** ?gap=1: three of the run's calls weren't recorded. */
+const GAP: RunEventsResult = {
+  ...DATA,
+  run: { ...DATA.run, notRecordedCalls: 3 },
+  events: [...EVENTS.slice(0, 6), { id: 'e-gap', kind: 'event', at: t(12), type: 'calls_not_recorded', detail: { agentId: 'code-reviewer', watchNumber: 4, calls: 3, attempts: 3, cause: 'queue_full' } }, ...EVENTS.slice(6)],
+  total: EVENTS.length + 1,
+};
+
 export function RunPreview() {
-  const old = useSearchParams().get('engine') === 'old';
+  const params = useSearchParams();
+  const old = params.get('engine') === 'old';
+  const gap = params.get('gap') === '1';
   // The sample's times are relative to now, so it renders in the browser only (no server/client mismatch).
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   return (
     <AppShell>
       {mounted && <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, flex: 1 }}>
-        <RunDetail fleetId="demo-fleet" runId="code-reviewer~4" preview={old ? OLD : DATA}
+        <RunDetail fleetId="demo-fleet" runId="code-reviewer~4" preview={old ? OLD : gap ? GAP : DATA}
           previewTotals={old ? { calls: 7, failedCalls: 1, blockedCalls: 1, spendMicros: 52_000, unpricedAttempts: 0, wouldActCalls: 4 } : undefined} />
       </div>}
     </AppShell>

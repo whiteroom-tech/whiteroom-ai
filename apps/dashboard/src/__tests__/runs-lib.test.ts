@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { addDays, flagText, ignoresFlagged, ignoresRuleActivity, unusualSummary, collectRuns, dayLabel, eventFeedSheets, localDay, runsWindow, stripDays, validDay, TIME_ZONE_NAME, clampSpan, oldestKept, stripEndFor, MAX_SPAN_DAYS, fmtLength, fmtStarted, loadRunPage, parseRunId, runHref, runsTitle, runsExportHeader, runsDays, runsExportRow, standOut, timelineRow, timelineRows, runSummary, ruleActivityRow, ruleActivityFooter, ruleActivityLink, runSheets, collectRunEvents, flagsNote, fmtClockLength, spanLabel, exportDays, runName, type RunPageQuery } from '@/lib/runs';
+import { activityRow } from '@/lib/home';
+import { addDays, flagText, ignoresFlagged, ignoresRuleActivity, unusualSummary, collectRuns, dayLabel, eventFeedSheets, localDay, runsWindow, stripDays, validDay, TIME_ZONE_NAME, clampSpan, oldestKept, stripEndFor, MAX_SPAN_DAYS, fmtLength, fmtStarted, loadRunPage, parseRunId, runHref, runsTitle, runsExportHeader, runsDays, runsExportRow, standOut, timelineRow, timelineRows, runSummary, ruleActivityRow, ruleActivityFooter, ruleActivityLink, runSheets, collectRunEvents, flagsNote, fmtClockLength, spanLabel, exportDays, runName, notRecordedTotalsNote, type RunPageQuery } from '@/lib/runs';
 import { startsNewGroup } from '@whiteroom/ui';
 import type { AuditEntry, RunEventsResult, RunFlag, RunSummary } from '@/lib/whiteroom/types';
 
@@ -102,6 +103,18 @@ describe('what stood out', () => {
 });
 
 describe('run detail rows', () => {
+  it('shows calls that weren’t recorded as a Gap row, and says so under the totals', () => {
+    const gap = (calls: unknown) => timelineRow({ id: 'evt_1', kind: 'event', at: '2026-10-01T14:00:00Z', type: 'calls_not_recorded', detail: { agentId: 'lead-agent', watchNumber: 7, calls, cause: 'queue_full' } });
+    expect(gap(3)).toMatchObject({ text: '3 calls weren’t recorded.', tag: { label: 'Gap', tone: 'warn' }, glyph: 'event' });
+    expect(gap(1).text).toBe('1 call wasn’t recorded.');
+    expect(gap('many').text).toBe('Some calls weren’t recorded.');
+    expect(notRecordedTotalsNote(3)).toBe('3 calls in this run weren’t recorded, so the totals may be low.');
+    expect(notRecordedTotalsNote(1)).toBe('1 call in this run wasn’t recorded, so the totals may be low.');
+    // The fleet's feed names WhiteRoom, and the agent when the event has one.
+    expect(activityRow({ id: 'e', type: 'calls_not_recorded', timestamp: '2026-10-01T14:00:00Z', agentId: 'lead-agent', calls: 3 } as Parameters<typeof activityRow>[0]).text).toBe('WhiteRoom couldn’t record 3 calls from lead-agent');
+    expect(activityRow({ id: 'e', type: 'calls_not_recorded', timestamp: '2026-10-01T14:00:00Z', calls: 1 } as Parameters<typeof activityRow>[0])).toMatchObject({ text: 'WhiteRoom couldn’t record 1 call', tag: { label: 'Gap' } });
+  });
+
   it('describes a call by model and tools, tagging a non-complete outcome', () => {
     const row = timelineRow({ id: 'call:1', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'upstream_error', model: 'claude-haiku-4-5', requestedTools: ['search', 'read_file'] });
     expect(row.text).toBe('Model call · claude-haiku-4-5 · asked for search, read_file');

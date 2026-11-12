@@ -4,7 +4,9 @@ import { MODE_LABEL, RULE_ACTIVITY } from '@/lib/vocab';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Button, Icon, Panel, SegmentedControl, Tag, Toast, FONT_MONO } from '@whiteroom/ui';
-import { getRunEvents, isAuthError, listRuns, WhiteRoomApiError } from '@/lib/whiteroom/client';
+import { exportCallsPage, getRunEvents, isAuthError, listRuns, WhiteRoomApiError } from '@/lib/whiteroom/client';
+import { buildCallExport, CallExportRefused } from '@/lib/call-export';
+import { saveBlob } from '@/lib/download';
 import type { RunEventsResult } from '@/lib/whiteroom/types';
 import { LiveStatus, PageHeader } from '@/components/citadel/PageChrome';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
@@ -12,7 +14,7 @@ import { ROUTES } from '@/lib/routes';
 import { clock } from '@/lib/home';
 import { fmtCount } from '@/lib/format';
 import { buildWorkbook, downloadWorkbook } from '@/lib/xlsx';
-import { collectRunEvents, collectRuns, flagsNote, wouldActText, flagText, GLYPH, loadRunPage, localDay, parseRunId, ruleActivityFooter, ruleActivityLink, ruleActivityRow, runSheets, runSummary, RUNS_LIST_URL_KEY, timelineRows, type RunKind, type RunTotals, type TimelineGlyph } from '@/lib/runs';
+import { collectRunEvents, collectRuns, flagsNote, wouldActText, flagText, GLYPH, loadRunPage, localDay, notRecordedTotalsNote, parseRunId, ruleActivityFooter, ruleActivityLink, ruleActivityRow, runSheets, runSummary, RUNS_LIST_URL_KEY, timelineRows, type RunKind, type RunTotals, type TimelineGlyph } from '@/lib/runs';
 import { usePoll } from '@/hooks/usePoll';
 import { safeSessionGet } from '@/lib/safe-storage';
 
@@ -62,6 +64,10 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
   // Older engines send no totals with the run: the runs list has them.
   const [totals, setTotals] = useState<RunTotals | null>(previewTotals ?? null);
   const [exporting, setExporting] = useState(false);
+  const [signing, setSigning] = useState(false);
+  // Leaving the page stops a signed download's fetch loop.
+  const gone = useRef(false);
+  useEffect(() => { gone.current = false; return () => { gone.current = true; }; }, []);
   const [toast, setToast] = useState<string | null>(null);
   // The deep link applies to the first load only; paging after it is normal.
   const pendingEvent = useRef(eventId ?? null);
@@ -197,6 +203,24 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
     }
   }
 
+  /** The run's call records as a file signed by WhiteRoom. */
+  async function exportSigned() {
+    if (!data) return;
+    if (preview) { setToast('Preview: nothing was downloaded.'); return; }
+    setSigning(true);
+    try {
+      const file = await buildCallExport(fleetId, { runId: data.run.runId }, () => {}, { fetchPage: (id, ask) => exportCallsPage(id, ask, authKey), isCancelled: () => gone.current });
+      if (!file) return;
+      saveBlob(file.blob, `whiteroom-run-${data.run.agentId}-${data.run.shift}-signed.json`);
+      setToast(`Downloaded run ${data.run.shift}’s record, signed by WhiteRoom.`);
+    } catch (e) {
+      if (isAuthError(e)) { onAuthError?.('Your session expired. Please sign in again.'); return; }
+      setToast(e instanceof CallExportRefused ? e.plain : 'Couldn’t download the signed record. Try again.');
+    } finally {
+      setSigning(false);
+    }
+  }
+
   const parsed = parseRunId(runId);
   const agentId = data?.run.agentId ?? parsed?.agentId ?? runId;
   const shift = data?.run.shift ?? parsed?.shift ?? null;
@@ -234,6 +258,7 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
       <PageHeader title={title} fleetId={fleetId} badge={<LiveStatus at={updatedAt} failing={failing && !!data} ended={ended} />}>
         <CopyLinkButton />
         <Button onClick={() => void exportRun()} busy={exporting} busyLabel="Exporting…" disabled={!data}>Export this run</Button>
+        <Button onClick={() => void exportSigned()} busy={signing} busyLabel="Preparing…" disabled={!data}>Signed record</Button>
         <Link href={`/agents/${encodeURIComponent(agentId)}?from=runs`} className="wr-btn wr-btn--secondary wr-btn--h32">Open agent</Link>
       </PageHeader>
       <div className="wr-page-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, display: 'grid', gap: 16, alignContent: 'start' }}>
@@ -248,6 +273,12 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
             {s.wouldAct !== undefined && <> · {wouldActText(s.wouldAct)}</>}
             {s.models.map((m) => <span key={m}> · <span className="wr-run-summary__model">{m}</span></span>)}
             {s.outcome && <> · Job <strong>{s.outcome.toLowerCase()}</strong>, as your system reported</>}
+          </p>
+        )}
+        {!!run?.notRecordedCalls && run.notRecordedCalls > 0 && (
+          <p className="wr-run-flags">
+            <span style={{ display: 'flex', color: 'var(--warn)' }}><Icon name="alert" size={14} /></span>
+            <span>{notRecordedTotalsNote(run.notRecordedCalls)}</span>
           </p>
         )}
         {!!run?.flags?.length && (

@@ -7,6 +7,8 @@
 
 import type {
   AuditExportPage,
+  CallExportPage,
+  CallExportScope,
   AuditIntegrity,
   VerifyAuditResult,
   AuditSummaryResult,
@@ -901,6 +903,21 @@ export function exportAuditFullPage(
     action: 'export_audit_full', fleet_id: fleetId,
     ...(cursor ? { from_seq: cursor.fromSeq, to_seq: cursor.toSeq } : {}),
   }, key);
+}
+
+/**
+ * One page of the signed call log (engine export_calls). The first call names
+ * the scope; later calls send back the `state` the page before returned.
+ */
+export function exportCallsPage(
+  fleetId: string,
+  ask: CallExportScope | { state: Record<string, unknown> },
+  key?: string,
+): Promise<CallExportPage> {
+  const body = 'state' in ask ? { state: ask.state }
+    : 'runId' in ask ? { run_id: ask.runId }
+    : { from_day: ask.fromDay, to_day: ask.toDay, tz: viewerTimeZone(), ...(ask.agentId ? { agent_id: ask.agentId } : {}) };
+  return apiCall({ action: 'export_calls', fleet_id: fleetId, ...body }, key);
 }
 
 /** Totals over the stored audit trail since `from` (engine audit_summary): savings inputs per agent-day, governance decisions. */

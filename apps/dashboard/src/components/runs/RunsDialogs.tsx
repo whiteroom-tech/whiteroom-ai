@@ -14,7 +14,7 @@ import { dayLabel, exportDays, zoneName, type ExportSpan } from '@/lib/runs';
  * and the time zone the file uses. Download hands the choice back; the page
  * builds the file and says how it went.
  */
-export function ExportRunsDialog({ open, agents, initialAgent, shown, busy, error, onDownload, onCancel }: {
+export function ExportRunsDialog({ open, agents, initialAgent, shown, busy, error, onDownload, onDownloadSigned, signedBusy = false, onCancel }: {
   open: boolean;
   /** When the page shows something narrower than a preset (a day, an hour, a filter): what it shows, offered first. */
   shown?: string | null;
@@ -24,6 +24,10 @@ export function ExportRunsDialog({ open, agents, initialAgent, shown, busy, erro
   /** Why the last try failed, shown in the dialog. */
   error: string | null;
   onDownload: (choice: { span: ExportSpan; agent: string }) => void;
+  /** The same days and agents as a signed log of their calls (.json). Left out, the button isn't shown. */
+  onDownloadSigned?: (choice: { span: ExportSpan; agent: string }) => void;
+  /** A signed log is being fetched. Cancel still works: it stops the download. */
+  signedBusy?: boolean;
   onCancel: () => void;
 }) {
   const first: ExportSpan = shown ? 'shown' : '7d';
@@ -59,10 +63,16 @@ export function ExportRunsDialog({ open, agents, initialAgent, shown, busy, erro
           <SelectChip label="Agents" value={agent} onChange={setAgent} options={[{ value: 'all', label: 'All agents' }, ...agents.map((a) => ({ value: a, label: a }))]} />
         </div>
         <p className="wr-runs-dialog__sub" style={{ margin: 0 }}>Times are in your time zone ({zoneName()}). Each row is one run, with its spend and anything your rules caught.</p>
+        {onDownloadSigned && (
+          <div style={{ display: 'grid', gap: 6, justifyItems: 'start' }}>
+            <Button onClick={() => onDownloadSigned({ span, agent })} busy={signedBusy} busyLabel="Preparing…" disabled={busy}>Download signed log (.json)</Button>
+            <span className="wr-runs-dialog__sub">Every call for these days, signed by WhiteRoom.</span>
+          </div>
+        )}
         {error && <p role="alert" style={{ margin: 0, color: 'var(--bad)', fontSize: 'var(--fs-sm)' }}>{error}</p>}
         <div className="wr-dialog-actions wr-runs-dialog__actions">
           <Button onClick={onCancel} disabled={busy}>Cancel</Button>
-          <Button type="submit" variant="primary" busy={busy} busyLabel="Preparing…">Download .xlsx</Button>
+          <Button type="submit" variant="primary" busy={busy} busyLabel="Preparing…" disabled={signedBusy}>Download .xlsx</Button>
         </div>
       </form>
     </DialogFrame>
