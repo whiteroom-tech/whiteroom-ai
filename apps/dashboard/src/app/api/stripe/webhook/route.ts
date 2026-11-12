@@ -150,12 +150,12 @@ function vatTypeFor(country: string): 'gb_vat' | 'eu_vat' {
  * it and however often: a customer already marked, or whose tax status was
  * changed by hand, is left alone. It only ever sets the flag.
  *
- * A temporary Stripe failure (network, 5xx, rate limit) is thrown, so the
+ * A temporary Stripe failure (network, Stripe-side, rate limit) is thrown, so the
  * delivery fails, its claim is released and Stripe redelivers; otherwise a
  * VAT number verified before checkout completed would never be marked, as no
  * later tax ID event comes. Redelivery is safe: the subscription is read
- * fresh too. A permanent refusal (a 4xx: the customer is gone, say) would
- * fail every time, so it is logged and the delivery acknowledged.
+ * fresh too. Anything else (a 4xx such as a customer that is gone, or a bug
+ * of ours) would fail every time, so it is logged and acknowledged.
  */
 async function markReverseCharge(customerId: string | null): Promise<void> {
   if (!customerId) return;
@@ -175,15 +175,21 @@ async function markReverseCharge(customerId: string | null): Promise<void> {
   }
 }
 
+/** The Stripe SDK's error types for a failure a retry may get past. */
+const TRANSIENT_STRIPE_ERRORS = new Set(['StripeConnectionError', 'StripeAPIError', 'StripeRateLimitError']);
+
 /**
- * Whether a Stripe call might succeed if tried again: no HTTP status at all
- * (a network failure), a 5xx, or a 429. A 4xx other than 429 is Stripe
- * refusing the request itself, which a retry would only repeat.
+ * Whether a Stripe call might succeed if tried again: the SDK's network,
+ * Stripe-side or rate-limit error, or any Stripe error with a 5xx or 429.
+ * Anything else, including a bug of ours (a TypeError, say) and a 4xx that
+ * Stripe would refuse again, is not: redelivering it would only repeat it.
  */
 function isTransientStripeError(err: unknown): boolean {
-  const status = typeof err === 'object' && err !== null ? (err as { statusCode?: unknown }).statusCode : undefined;
-  if (typeof status !== 'number') return true;
-  return status >= 500 || status === 429;
+  if (typeof err !== 'object' || err === null) return false;
+  const { type, statusCode } = err as { type?: unknown; statusCode?: unknown };
+  if (typeof type !== 'string' || !type.startsWith('Stripe')) return false;
+  if (TRANSIENT_STRIPE_ERRORS.has(type)) return true;
+  return typeof statusCode === 'number' && (statusCode >= 500 || statusCode === 429);
 }
 
 /**

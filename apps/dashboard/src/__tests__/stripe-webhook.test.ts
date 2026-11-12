@@ -563,6 +563,16 @@ describe('stripe webhook: order, replacement and delivery', () => {
       expect(released()).toBe(true);
     });
 
+    it.each([
+      ['a bug of ours (not a Stripe error)', new TypeError("Cannot read properties of undefined (reading 'country')")],
+      ['a plain error with no Stripe type', new Error('something odd')],
+    ])('logs and acknowledges %s instead of having Stripe redeliver it for days', async (_why, err) => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      mocks.retrieveCustomer.mockRejectedValue(err);
+      expect((await completed()).status).toBe(200);
+      expect(released()).toBe(false);
+    });
+
     it('logs and acknowledges a permanent refusal, which a retry would only repeat', async () => {
       const log = vi.spyOn(console, 'error').mockImplementation(() => {});
       stripeCustomer('GB', [['gb_vat', 'verified']]);
