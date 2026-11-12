@@ -48,6 +48,15 @@ describe('Settings as in the mockup', () => {
     expect(t).not.toMatch(/\bnotes?\b|summar|break/i);
   });
 
+  it('shows no audience line under Individual or Teams, and keeps it for plans that have one', () => {
+    for (const plan of ['starter', 'pro'] as const) {
+      const html = markup(1, { plan, onTrial: false });
+      expect(html).not.toMatch(/margin:4px 0 0">\s*<\/p>/);
+      expect(text(html)).not.toMatch(/For anyone building agents|For teams running agent fleets/);
+    }
+    expect(view(1, { plan: 'suspended', onTrial: false })).toContain('Your fleets and keys are kept. Pick a plan to switch them back on.');
+  });
+
   it('says when the fleet limit is reached', () => {
     expect(view(1)).toContain('At the limit: another one is refused');
   });
@@ -58,16 +67,16 @@ describe('Settings plan: savings share and soft agent counts', () => {
     expect(view(2)).toContain('Agents 2 of 3 included');
     expect(view(2)).not.toContain('keep running');
     const over = view(9, { plan: 'pro', onTrial: false });
-    expect(over).toContain('Agents 9 7 included in Pro. All 9 keep running. Talk to us about larger fleets');
+    expect(over).toContain('Agents 9 7 included in Teams. All 9 keep running. Talk to us about larger fleets');
     // Agents are never "at the limit".
     expect(over).not.toContain('At the limit');
-    expect(over).not.toMatch(/over the Pro limit/);
+    expect(over).not.toMatch(/over the Teams limit/);
   });
 
   it('shows the three plans with their prices, and Enterprise as talk to us', () => {
     const t = view(1);
-    expect(t).toContain('Starter 20% of what WhiteRoom saves you. 30 days free once you go live; $10 a month per user from your 61st day live.');
-    expect(t).toContain('Pro 10% of what WhiteRoom saves you. 30 days free once you go live; then $300 a month per organization.');
+    expect(t).toContain('Individual 20% of what WhiteRoom saves you. 30 days free once you go live; $10 a month per user from your 61st day live.');
+    expect(t).toContain('Teams 10% of what WhiteRoom saves you. 30 days free once you go live; then $300 a month per organization.');
     expect(t).toContain('Enterprise Custom. Talk to us.');
     expect(t).toContain('Up to 7 agents; larger fleets: talk to us');
     expect(t).not.toMatch(/\$200|per agent|90 days|5 agents included/);
@@ -78,7 +87,7 @@ describe('Settings plan: savings share and soft agent counts', () => {
     const t = text(renderToStaticMarkup(h(SettingsView, {
       closing: null, billingResult: null, purchasablePlans: ['starter', 'pro'],
       account: { id: 'u', email: 'a@example.test', name: 'A', image: null, timezone: null, emailVerified: true, methods: [], pendingEmailChange: null, fleetCount: 1 },
-      entitlement: { plan: 'pro', planName: 'Pro', limits: limitsFor('pro'), subscription: { plan: 'pro', status: 'trialing', planOverride: null, stripeCustomerId: 'cus_x', stripeSubscriptionId: 'sub_x', currentPeriodEnd: null, cancelAtPeriodEnd: false, lapsedAt: null }, trialEndsAt: new Date(Date.now() + 10 * 86_400_000).toISOString(), onTrial: false, usage: { fleets: 1, agents: 1 } },
+      entitlement: { plan: 'pro', planName: 'Teams', limits: limitsFor('pro'), subscription: { plan: 'pro', status: 'trialing', planOverride: null, stripeCustomerId: 'cus_x', stripeSubscriptionId: 'sub_x', currentPeriodEnd: null, cancelAtPeriodEnd: false, lapsedAt: null }, trialEndsAt: new Date(Date.now() + 10 * 86_400_000).toISOString(), onTrial: false, usage: { fleets: 1, agents: 1 } },
     })));
     expect(t).toMatch(/Free until [A-Z][a-z]{2} \d+/);
     expect(t).not.toContain('This month:');
@@ -125,7 +134,7 @@ describe('Settings plan: savings share and soft agent counts', () => {
   it('offers no Subscribe or Switch on Enterprise or a comped plan', () => {
     expect(view(1, { plan: 'enterprise', onTrial: false })).not.toMatch(/Subscribe|Switch to/);
     expect(view(1, { plan: 'pro', onTrial: false, comped: true })).not.toMatch(/Subscribe|Switch to/);
-    expect(view(1, { plan: 'pro', onTrial: false })).toContain('Switch to Starter');
+    expect(view(1, { plan: 'pro', onTrial: false })).toContain('Switch to Individual');
   });
 
   it('offers no Subscribe button until the share prices are set', () => {
@@ -152,7 +161,7 @@ describe('plan dates and card headings', () => {
 const graceView = (status: string, purchasable: Array<'starter' | 'pro'>) => text(renderToStaticMarkup(h(SettingsView, {
   closing: null, billingResult: null, purchasablePlans: purchasable,
   account: { id: 'u', email: 'a@example.test', name: 'A', image: null, timezone: null, emailVerified: true, methods: [], pendingEmailChange: null, fleetCount: 1 },
-  entitlement: { plan: 'pro', planName: 'Pro', limits: limitsFor('pro'), subscription: { plan: 'pro', status, planOverride: null, stripeCustomerId: 'cus_x', stripeSubscriptionId: 'sub_x', currentPeriodEnd: null, cancelAtPeriodEnd: false, lapsedAt: new Date().toISOString() }, trialEndsAt: new Date(Date.now() - 86_400_000).toISOString(), onTrial: false, graceEndsAt: new Date(Date.now() + 10 * 86_400_000).toISOString(), usage: { fleets: 1, agents: 1 } },
+  entitlement: { plan: 'pro', planName: 'Teams', limits: limitsFor('pro'), subscription: { plan: 'pro', status, planOverride: null, stripeCustomerId: 'cus_x', stripeSubscriptionId: 'sub_x', currentPeriodEnd: null, cancelAtPeriodEnd: false, lapsedAt: new Date().toISOString() }, trialEndsAt: new Date(Date.now() - 86_400_000).toISOString(), onTrial: false, graceEndsAt: new Date(Date.now() + 10 * 86_400_000).toISOString(), usage: { fleets: 1, agents: 1 } },
 })));
 
 describe('Settings plan: a lapsed plan in its grace', () => {
@@ -160,8 +169,8 @@ describe('Settings plan: a lapsed plan in its grace', () => {
     const t = view(2, { plan: 'pro', onTrial: false, graceEndsAt: new Date(Date.now() + 10 * 86_400_000).toISOString() });
     expect(t).toMatch(/Your plan switches off on [A-Z][a-z]{2} \d+(, \d{4})? because a payment failed\. Update your card to keep it\. Update card/);
     expect(t).not.toContain('pauses on');
-    expect(t).toContain('Subscribe to Pro again');
-    expect(t).toContain('Switch to Starter');
+    expect(t).toContain('Subscribe to Teams again');
+    expect(t).toContain('Switch to Individual');
   });
 
   it('once Stripe has cancelled the subscription: Choose a plan (Talk to us when nothing can be bought), not Update card', () => {
@@ -170,7 +179,7 @@ describe('Settings plan: a lapsed plan in its grace', () => {
     expect(buy).not.toContain('Update card');
     // Invoices and the saved card stay reachable.
     expect(buy).toContain('Manage billing');
-    expect(buy).toContain('Subscribe to Pro again');
+    expect(buy).toContain('Subscribe to Teams again');
     expect(graceView('canceled', [])).toContain('because a payment failed. Talk to us to keep it. Talk to us');
     expect(graceView('paused', ['starter', 'pro'])).toContain('Choose a plan to keep it.');
   });
@@ -178,7 +187,7 @@ describe('Settings plan: a lapsed plan in its grace', () => {
   it('while the subscription still exists (unpaid): Update card, and no second Checkout for the same plan', () => {
     const t = graceView('unpaid', ['starter', 'pro']);
     expect(t).toContain('Update your card to keep it. Update card');
-    expect(t).not.toContain('Subscribe to Pro again');
+    expect(t).not.toContain('Subscribe to Teams again');
     expect(t).not.toContain('Manage billing');
   });
 
@@ -186,7 +195,7 @@ describe('Settings plan: a lapsed plan in its grace', () => {
     const t = view(2, { plan: 'pro', onTrial: false });
     expect(t).not.toContain('switches off on');
     expect(t).not.toContain('Update card');
-    expect(t).not.toContain('Subscribe to Pro again');
+    expect(t).not.toContain('Subscribe to Teams again');
   });
 });
 
@@ -195,7 +204,7 @@ describe('Settings plan: a plan cancelled on purpose, in its grace', () => {
     const t = text(renderToStaticMarkup(h(SettingsView, {
       closing: null, billingResult: null, purchasablePlans: ['starter', 'pro'],
       account: { id: 'u', email: 'a@example.test', name: 'A', image: null, timezone: null, emailVerified: true, methods: [], pendingEmailChange: null, fleetCount: 1 },
-      entitlement: { plan: 'pro', planName: 'Pro', limits: limitsFor('pro'), subscription: { plan: 'pro', status: 'canceled', planOverride: null, stripeCustomerId: 'cus_x', stripeSubscriptionId: 'sub_x', currentPeriodEnd: null, cancelAtPeriodEnd: true, lapsedAt: new Date().toISOString() }, trialEndsAt: new Date(Date.now() - 86_400_000).toISOString(), onTrial: false, graceEndsAt: new Date(Date.now() + 10 * 86_400_000).toISOString(), usage: { fleets: 1, agents: 1 } },
+      entitlement: { plan: 'pro', planName: 'Teams', limits: limitsFor('pro'), subscription: { plan: 'pro', status: 'canceled', planOverride: null, stripeCustomerId: 'cus_x', stripeSubscriptionId: 'sub_x', currentPeriodEnd: null, cancelAtPeriodEnd: true, lapsedAt: new Date().toISOString() }, trialEndsAt: new Date(Date.now() - 86_400_000).toISOString(), onTrial: false, graceEndsAt: new Date(Date.now() + 10 * 86_400_000).toISOString(), usage: { fleets: 1, agents: 1 } },
     })));
     expect(t).toMatch(/Your plan pauses on [A-Z][a-z]{2} \d+(, \d{4})?\. Subscribe again to keep it\./);
     expect(t).not.toContain('payment failed');
@@ -208,7 +217,7 @@ describe('Settings plan: a card that failed (past_due)', () => {
   const pastDue = (status: string) => text(renderToStaticMarkup(h(SettingsView, {
     closing: null, billingResult: null, purchasablePlans: ['starter', 'pro'],
     account: { id: 'u', email: 'a@example.test', name: 'A', image: null, timezone: null, emailVerified: true, methods: [], pendingEmailChange: null, fleetCount: 1 },
-    entitlement: { plan: 'pro', planName: 'Pro', limits: limitsFor('pro'), subscription: sub(status), trialEndsAt: new Date(Date.now() - 86_400_000).toISOString(), onTrial: false, usage: { fleets: 1, agents: 1 } },
+    entitlement: { plan: 'pro', planName: 'Teams', limits: limitsFor('pro'), subscription: sub(status), trialEndsAt: new Date(Date.now() - 86_400_000).toISOString(), onTrial: false, usage: { fleets: 1, agents: 1 } },
   })));
 
   it('keeps the pill, says it in the banner words, and Update card takes the place of Manage billing', () => {
@@ -293,7 +302,7 @@ describe('Settings: jump links, Text size, and the plan cards folding', () => {
     const ending = renderToStaticMarkup(h(SettingsView, {
       closing: null, billingResult: null, purchasablePlans: ['starter', 'pro'],
       account: { id: 'u', email: 'a@example.test', name: 'A', image: null, timezone: null, emailVerified: true, methods: [], pendingEmailChange: null, fleetCount: 1 },
-      entitlement: { plan: 'pro', planName: 'Pro', limits: limitsFor('pro'), subscription: { plan: 'pro', status: 'active', planOverride: null, stripeCustomerId: 'cus_x', stripeSubscriptionId: 'sub_x', currentPeriodEnd: new Date(Date.now() + 9 * 86_400_000).toISOString(), cancelAtPeriodEnd: true, lapsedAt: null }, trialEndsAt: new Date(Date.now() - 40 * 86_400_000).toISOString(), onTrial: false, usage: { fleets: 1, agents: 1 } },
+      entitlement: { plan: 'pro', planName: 'Teams', limits: limitsFor('pro'), subscription: { plan: 'pro', status: 'active', planOverride: null, stripeCustomerId: 'cus_x', stripeSubscriptionId: 'sub_x', currentPeriodEnd: new Date(Date.now() + 9 * 86_400_000).toISOString(), cancelAtPeriodEnd: true, lapsedAt: null }, trialEndsAt: new Date(Date.now() - 40 * 86_400_000).toISOString(), onTrial: false, usage: { fleets: 1, agents: 1 } },
     }));
     expect(unfolded(ending)).toBe(true);
     // Folded or not, the cards and their scroll target are on the page.
