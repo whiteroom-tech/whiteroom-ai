@@ -13,7 +13,7 @@ import { TokensCompare } from '@/components/performance/SavingsPanels';
 import { fmtCost, fmtCount, partialMark } from '@/lib/format';
 import { spendSummary } from '@/lib/spend-completeness';
 import { HELP } from '@/lib/metric-definitions';
-import type { GovernanceRule, PerformanceIndexResult, RecommendationDetail, FleetHourlyResult, RuleActionCounts } from '@/lib/whiteroom/types';
+import type { GovernanceRule, PerformanceIndexResult, RecommendationDetail, FleetHourlyResult, RuleActionCounts, UnknownGovernanceRule } from '@/lib/whiteroom/types';
 import type { GovernanceCounts } from '@/lib/governance';
 import { countTrend, inRange, latencyTrend, pctChange, perCallTrend, priorLabel, pricesFrom, inputByLocalDay, inputTokensOf, rangeContextCard, savedCaption, trendText } from '@/lib/performance-overview';
 import { SectionHeader } from '@/components/citadel/PageChrome';
@@ -39,7 +39,7 @@ const REC_PAGE_SIZE = 15;
 const REC_FILTER_DEBOUNCE_MS = 300;
 
 export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, govSavings, govCounts, savingsDays, agentIds, rangeLabel, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError,
-  workingHour = null, rules = null, byRuleId, usdByDay = null, cacheSaved = null, predictionApi }: {
+  workingHour = null, rules = null, unknownRules, byRuleId, usdByDay = null, cacheSaved = null, predictionApi }: {
   data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null;
   /** The last 7 days by hour, for By day's input per day; null when it couldn't be read. */
   weekHourly?: FleetHourlyResult | null;
@@ -61,6 +61,8 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
   workingHour?: WorkingHourRate | null;
   /** The fleet's rules, for the Control section; null when unknown. */
   rules?: GovernanceRule[] | null;
+  /** Rules of a type this build doesn't know. */
+  unknownRules?: UnknownGovernanceRule[];
   /** Rule activity per rule id (newer engines). */
   byRuleId?: Record<string, RuleActionCounts>;
   /** Dollars saved per local day (engine savingsByDay), micros; null on older engines. */
@@ -306,7 +308,7 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
 
       <section aria-labelledby="perf-rules">
         <SectionHeader id="perf-rules" title="Rules" sub="What your rules caught." meta={<>{rangeLabel} · <Link href={ROUTES.controls} className="wr-link">Manage in Controls →</Link></>} />
-        <RulesSummary counts={govCounts ? { ...govCounts, blocks: blocked } : null} byRuleId={byRuleId} rules={rules} unavailable={auditFailed} />
+        <RulesSummary counts={govCounts ? { ...govCounts, blocks: blocked } : null} byRuleId={byRuleId} rules={rules} unknownRules={unknownRules} unavailable={auditFailed} />
       </section>
 
       <hr className="wr-perf-rule" />

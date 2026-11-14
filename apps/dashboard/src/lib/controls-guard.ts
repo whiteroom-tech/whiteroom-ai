@@ -3,6 +3,7 @@
 // for a day, and turning that on means typing who it applies to.
 
 import { keywordTotal } from '@/lib/controls-view';
+import { unhandledType } from '@/lib/governance';
 import type { GovernanceHistoryEntry, GovernanceParams, GovernanceResponse, GovernanceRule, GovernanceScope, KeywordParams, ModelAllowlistParams, ToolListParams } from '@/lib/whiteroom/types';
 import { plural, HOUR_MS } from '@/lib/format';
 
@@ -15,10 +16,13 @@ import { plural, HOUR_MS } from '@/lib/format';
 export function canAct(rule: Pick<GovernanceRule, 'mode' | 'ruleType' | 'params' | 'response'>): boolean {
   if (rule.mode !== 'enforce') return false;
   if (rule.response === 'notify') return false;
-  if (rule.ruleType === 'model_allowlist' && (rule.params as ModelAllowlistParams).allowedModels.length === 0) return false;
-  if (rule.ruleType === 'tool_list' && (rule.params as ToolListParams).blockedTools.length === 0) return false;
-  if (rule.ruleType === 'keyword' && keywordTotal(rule.params as KeywordParams) === 0) return false;
-  return true;
+  switch (rule.ruleType) {
+    case 'model_allowlist': return (rule.params as ModelAllowlistParams).allowedModels.length > 0;
+    case 'tool_list': return (rule.params as ToolListParams).blockedTools.length > 0;
+    case 'keyword': return keywordTotal(rule.params as KeywordParams) > 0;
+    case 'spend_cap': case 'loop_breaker': case 'call_rate': return true;
+    default: return unhandledType(rule.ruleType, true);
+  }
 }
 
 export const STOP_WATCH_HOURS = 24;

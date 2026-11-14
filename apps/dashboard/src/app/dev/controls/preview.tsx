@@ -10,7 +10,8 @@ import type { GovernanceRule } from '@/lib/whiteroom/types';
 // blocking, two overlapping spend caps, two identical loop breakers, an
 // allowlist missing a model one agent uses, a Keywords rule for one agent,
 // and a Tool list with nothing picked. ?state=empty (no rules), ?state=fail
-// (the rules can't be read) and ?state=loading show the other states.
+// (the rules can't be read) and ?state=loading show the other states;
+// ?state=unknown adds a rule of a type this build doesn't know.
 const state = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('state') : null;
 const day = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
 const base = { fleetId: 'acme-claims-prod', changedBy: 'preview', changedAt: day(2) };
@@ -26,6 +27,7 @@ let rules: GovernanceRule[] = state === 'empty' ? [] : [
   { ...base, id: 'r5', version: 1, ruleType: 'keyword', mode: 'watch', response: 'block', appliesTo: ['lead-agent'], params: { keywords: ['password'], where: 'incoming', wholeWord: true } },
   { ...base, id: 'r6', version: 1, ruleType: 'call_rate', mode: 'off', response: 'block', appliesTo: ['lead-agent'], params: { maxCalls: 60 } },
   { ...base, id: 'r7', version: 1, ruleType: 'tool_list', mode: 'off', response: 'block', appliesTo: 'all', params: { blockedTools: [] } },
+  ...(state === 'unknown' ? [{ ...base, id: 'r12', version: 1, ruleType: 'made_up_type', mode: 'enforce', response: 'block', appliesTo: 'all', params: {} } as unknown as GovernanceRule] : []),
 ];
 const AGENTS = ['code-reviewer', 'contract-summarizer', 'invoice-reconciler', 'lead-agent', 'market-researcher', 'ops-scheduler', 'support-triage'];
 const history = state === 'empty' ? [] : [

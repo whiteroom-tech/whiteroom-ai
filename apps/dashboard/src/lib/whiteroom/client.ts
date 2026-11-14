@@ -59,6 +59,7 @@ import type {
 import { viewerTimeZone } from '@/lib/runs';
 import { activeHold, activeHolds } from '@/lib/holds';
 import { platform429Delay, withEngineReadRetry } from './engine-retry';
+import { knownRulesOnly } from '@/lib/governance';
 
 export const PROXY_URL = process.env.NEXT_PUBLIC_PROXY_URL || 'https://proxy.whiteroom.tech';
 
@@ -772,8 +773,9 @@ export async function agentBudgetSet(fleetId: string, agentId: string, budgetUsd
 
 // -- Fleet governance rules (Controls page) --
 
-export function governanceList(fleetId: string, key?: string): Promise<GovernanceListResult> {
-  return apiCall<GovernanceListResult>({ action: 'governance_list', fleet_id: fleetId }, key);
+/** The fleet's rules. A rule type this build doesn't know comes back in unknownRules (knownRulesOnly). */
+export async function governanceList(fleetId: string, key?: string): Promise<GovernanceListResult> {
+  return knownRulesOnly(await apiCall<GovernanceListResult>({ action: 'governance_list', fleet_id: fleetId }, key));
 }
 
 export function governanceCreateRule(

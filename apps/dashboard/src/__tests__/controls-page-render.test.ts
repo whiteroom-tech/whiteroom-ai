@@ -6,7 +6,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { act, createElement as h } from 'react';
 import { createRoot } from 'react-dom/client';
-import type { GovernanceRule } from '@/lib/whiteroom/types';
+import type { GovernanceListResult, GovernanceRule } from '@/lib/whiteroom/types';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -70,12 +70,19 @@ const api = vi.hoisted(() => ({
   /** What Settings › Alerts has; null: an engine without alerts. */
   alerts: { slack: null, teams: null } as { slack: { ending: string } | null; teams?: { ending: string } | null } | null,
   history: [] as Array<{ id: string; ruleId: string; ruleType: string; description: string; by: string; time: string; before?: unknown; after?: unknown }>,
+  /** Rules of a type this build doesn't know, as a newer engine would list them. */
+  unknown: [] as Array<Record<string, unknown>>,
   /** rule_actions' fleet-wide totals this week (default: 2 blocked, 5 would have acted). */
   totals: null as { blocked: number; paused: number; stopped: number; toldYou: number; wouldAct: number } | null,
 }));
+const { knownRulesOnly } = await import('@/lib/governance');
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
-  governanceList: async () => { api.lists++; if (api.listFail) throw new Error('down'); if (api.listGate) await api.listGate; return { fleetId: 'f1', rules: api.empty ? [] : [...RULES.map((r) => api.saved[r.id] ?? r), ...api.created], history: api.history, agents: ['lead-agent', 'market-researcher'], govV1: api.govV1 }; },
+  // Read as the real governanceList reads the engine's reply (knownRulesOnly).
+  governanceList: async () => {
+    api.lists++; if (api.listFail) throw new Error('down'); if (api.listGate) await api.listGate;
+    return knownRulesOnly({ fleetId: 'f1', rules: api.empty ? [] : [...RULES.map((r) => api.saved[r.id] ?? r), ...api.created, ...(api.unknown as unknown as GovernanceRule[])], history: api.history as GovernanceListResult['history'], agents: ['lead-agent', 'market-researcher'], govV1: api.govV1 });
+  },
   performanceRecommendationGet: () => new Promise(() => {}),
   alertsGet: async () => api.alerts,
   ruleWouldAct: async (_f: string, ruleId: string) => { api.wouldSingle++; return { fleetId: 'f1', ruleId, byAgent: api.would[ruleId] ?? {}, unversioned: false, since: '2026-10-21T00:00:00Z' }; },
@@ -136,7 +143,7 @@ beforeEach(() => {
   // An unsaved edit is kept in sessionStorage across visits (controls-draft): each test starts with none.
   sessionStorage.clear();
   nav.params = new URLSearchParams(); nav.replace.mockClear(); nav.push.mockClear();
-  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.hourly = []; api.listGate = null; api.listFail = false; api.empty = false; api.would = {}; api.agentCalls = {}; api.history = []; api.totals = null;
+  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.hourly = []; api.listGate = null; api.listFail = false; api.empty = false; api.would = {}; api.agentCalls = {}; api.history = []; api.totals = null; api.unknown = [];
   api.oldEngine = false; api.wouldBatches = []; api.wouldSingle = 0; resetBatchSupport();
   document.body.innerHTML = '';
 });
@@ -436,6 +443,30 @@ describe('Controls page', () => {
     await m.click([...dialogs.at(-1)!.querySelectorAll('button')].find((b) => b.textContent === 'Remove rule'));
     expect(api.remove).toHaveBeenCalledWith('f1', 'r1', 'k');
     m.root.unmount();
+  });
+
+  it('lists a rule of a type it doesn’t know as a plain row: not opened, not counted, its history left out', async () => {
+    api.unknown = [{ ...base, id: 'rx', ruleType: 'made_up_type', mode: 'enforce', response: 'block', appliesTo: 'all', params: { somethingNew: ['x'] } }];
+    api.history = [{ id: 'hx', ruleId: 'rx', ruleType: 'made_up_type', description: 'Removed Made up rule', by: 'user:u1', time: '2026-10-20T00:00:00Z',
+      before: { mode: 'enforce', response: 'block', alsoNotify: false, appliesTo: 'all', params: { somethingNew: ['x'] } }, after: null }];
+    nav.params = new URLSearchParams('rule=rx');
+    const m = await mount();
+    const card = [...m.el.querySelectorAll('.ctl-card')].find((c) => c.querySelector('.ctl-card__title')?.textContent === 'Other rules 1')!;
+    expect(card.querySelector('.ctl-row')!.textContent).toBe('A rule this version can’t showAll agentsEnforce');
+    // A plain row, never a button that opens the editor; the link to it neither opens it nor calls it removed.
+    expect(card.querySelector('button')).toBeNull();
+    expect(m.el.querySelector('aside[aria-label="Edit rule"]')).toBeNull();
+    expect(m.text()).not.toContain('isn’t here any more');
+    // Not counted as any rule this build knows, and its change isn't offered to undo.
+    expect(m.text()).toContain('5 rules · 2 Enforce · 3 Watch');
+    expect(m.text()).not.toContain('Removed Made up rule');
+    // It covers every agent, so it shows for one agent too.
+    nav.params = new URLSearchParams('agent=lead-agent');
+    m.root.unmount();
+    const one = await mount();
+    expect(one.text()).toContain('A rule this version can’t show');
+    nav.params = new URLSearchParams();
+    one.root.unmount();
   });
 });
 

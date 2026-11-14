@@ -125,7 +125,7 @@ export function findingSentence(detector: DiagnosisDetectorId, m: DiagnosisMeasu
         : [code(m.requestedModel), t(' is now answered by '), code(m.newModel), ...(has(m, 'previousModel') ? [t(' (was '), code(m.previousModel), t(')')] : []), ...since, t(', for '), v(m.sharePct), t('% of its calls this week. The provider changed the model behind the name, so its results may change.')];
     }
     case 'review_block_workaround': {
-      const rule = m.ruleType === 'keyword' ? 'a Keywords rule' : 'a Tool list rule';
+      const rule = m.ruleType === 'keyword' ? 'a Keywords rule' : m.ruleType === undefined || m.ruleType === 'tool_list' ? 'a Tool list rule' : 'a rule';
       const parts = [t(`After ${rule} blocked a call, it used `), code(m.toolName), t(', a tool it hadn’t used before this week.')];
       if (Number(m.workarounds) > 1) parts.push(t(' This happened '), ...count(m.workarounds, 'time', 'times'), t('.'));
       parts.push(t(' Worth a look: it may be getting around the rule.'));

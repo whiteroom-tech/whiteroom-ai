@@ -149,7 +149,7 @@ export function PerformancePage({ retentionDays }: {
       const holdsWeek = rangeHoldsWeek(w, weekStart);
       const cachedWeek = weekRead.current?.fleetId === fleetId && Date.now() - weekRead.current.at < WEEK_READ_TTL_MS ? weekRead.current.data : null;
       const weekHourlyRead = holdsWeek || cachedWeek ? null : performanceFleetHourly(fleetId, WEEK_HOURS, authKey).catch(() => null);
-      const [idx, hourly, audit, week, forecast, rules, weekHourlyOwn] = await Promise.all([
+      const [idx, hourly, audit, week, forecast, gov, weekHourlyOwn] = await Promise.all([
         // An engine older than explicit windows refuses 30 days with its own reason.
         performanceIndex(fleetId, undefined, authKey, w).catch((e: unknown) => { if (windowUnsupported({ error: e }, w.to)) return null; throw e; }),
         // Extra like the reads below: a failure leaves the chart out, not the page. A rejected
@@ -160,7 +160,7 @@ export function PerformancePage({ retentionDays }: {
         // Hourly cost: the fleet's rate per working hour, last 14 days.
         performanceCostForecast(fleetId, undefined, authKey).catch(() => null),
         // Control: the rules, for their modes and names.
-        governanceList(fleetId, authKey).then((r) => r.rules ?? null, () => null),
+        governanceList(fleetId, authKey).catch(() => null),
         weekHourlyRead,
       ]);
       if (stale()) return;
@@ -181,7 +181,8 @@ export function PerformancePage({ retentionDays }: {
       const extras: OverviewExtras = {
         workingHour: forecast && !forecast.error && typeof forecast.burnRateUsdPerHour === 'number'
           ? { usdPerHour: forecast.burnRateUsdPerHour, lookbackHours: forecast.burnLookbackHours ?? null, unpriced: !!forecast.costUnavailable } : null,
-        rules,
+        rules: gov?.rules ?? null,
+        unknownRules: gov?.unknownRules,
         byRuleId: undefined,
         weekHourly: weekHourlyFrom(holdsWeek, hourlyShown, weekHourlyRead ? weekHourlyOwn : cachedWeek),
         usdByDay: week?.savingsByDay ? savedByDay(week.savingsByDay, week.cacheByDay) : null,
@@ -416,7 +417,7 @@ export function PerformancePage({ retentionDays }: {
         {loading && !overviewShown && view === 'index' && <LoadingLine padded={false}>Loading performance&hellip;</LoadingLine>}
 
         {overviewShown && <IndexView data={indexData} hourlyData={hourlyData} auditFailed={auditFailed} govSavings={govSavings} govCounts={govCounts} savingsDays={savingsDays} agentIds={agentIds} rangeLabel={rangeLabel} fleetId={fleetId!} authKey={authKey}
-          workingHour={extra.workingHour} rules={extra.rules} byRuleId={extra.byRuleId} weekHourly={extra.weekHourly} usdByDay={extra.usdByDay} cacheSaved={extra.cacheSaved ?? null}
+          workingHour={extra.workingHour} rules={extra.rules} unknownRules={extra.unknownRules} byRuleId={extra.byRuleId} weekHourly={extra.weekHourly} usdByDay={extra.usdByDay} cacheSaved={extra.cacheSaved ?? null}
           onSelectAgent={openAgent} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} feedbackError={feedbackError} />}
         {view === 'evidence' && evidenceData && <EvidenceView data={evidenceData} fleetId={fleetId} recommendationId={selectedRecId} authKey={authKey} />}
       </div>

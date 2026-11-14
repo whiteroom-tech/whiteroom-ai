@@ -24,9 +24,9 @@ import {
 } from "@/lib/whiteroom/client";
 import { wouldActsFor } from "@/lib/batched-reads";
 import type {
-  GovernanceHistoryEntry, GovernanceResponse, GovernanceRule, GovernanceRuleType, KeywordParams, ModelAllowlistParams, RuleActionCounts, RuleActionsResult, RuleWouldActResult, SpendCapParams,
+  GovernanceHistoryEntry, GovernanceResponse, GovernanceRule, GovernanceRuleType, KeywordParams, ModelAllowlistParams, RuleActionCounts, RuleActionsResult, RuleWouldActResult, SpendCapParams, UnknownGovernanceRule,
 } from "@/lib/whiteroom/types";
-import { computeSuggestions, RESPONSE_EFFECT, RESPONSE_LABEL, RULE_LABELS, tallyFromRuleActions, tallyTotal, type GovernanceSuggestions } from "@/lib/governance";
+import { computeSuggestions, RESPONSE_EFFECT, RESPONSE_LABEL, RULE_LABELS, tallyFromRuleActions, tallyTotal, UNKNOWN_RULE, type GovernanceSuggestions } from "@/lib/governance";
 import { FleetLogin } from "@/components/citadel/FleetLogin";
 import { ConfirmDialog } from "@/components/citadel/ConfirmDialog";
 import { fetchControlActors, oldestTime, type ControlActor } from "@/lib/control-actors";
@@ -89,6 +89,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const ruleParam = searchParams.get("rule");
 
   const [rules, setRules] = useState<GovernanceRule[]>([]);
+  // Rules of a type this build doesn't know: listed, never opened.
+  const [unknownRules, setUnknownRules] = useState<UnknownGovernanceRule[]>([]);
   const [history, setHistory] = useState<GovernanceHistoryEntry[]>([]);
   const [agents, setAgents] = useState<string[]>([]);
   const [govV1, setGovV1] = useState(false);
@@ -118,8 +120,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     // A run can name a rule that's since been removed: say so rather than land silently.
     // Through openRule, so an unsaved edit to another rule is asked about first.
     if (rules.some((r) => r.id === ruleParam)) openRuleRef.current(ruleParam);
-    else setNotice("That rule isn’t here any more; it may have been removed. Its changes are in Recent changes.");
-  }, [ruleParam, rules, listed]);
+    else if (!unknownRules.some((r) => r.id === ruleParam)) setNotice("That rule isn’t here any more; it may have been removed. Its changes are in Recent changes.");
+  }, [ruleParam, rules, unknownRules, listed]);
   const [draft, setDraft] = useState<RuleDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [dialog, setDialog] = useState<Dialog | null>(null);
@@ -233,6 +235,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       void wouldActsFor(fleetId, d.rules.filter((r) => r.mode === "watch"), authKey)
         .then((counts) => { if (req === wouldReq.current) setWouldActs(counts); });
       setRules(d.rules);
+      setUnknownRules(d.unknownRules ?? []);
       setHistory(d.history);
       void loadActors(d.history);
       setAgents(d.agents);
@@ -833,6 +836,19 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     offCount ? <Button size={32} onClick={() => setOffOpen((v) => !v)} aria-expanded={offOpen}>{offOpen ? "Hide" : "Show"}</Button> : undefined,
   );
 
+  const unknownShown = rulesFor(unknownRules, agentFilter);
+  const unknownCard = unknownShown.length > 0 && card(
+    <>Other rules <span className="wr-panel__count">{unknownShown.length}</span></>,
+    null,
+    <div>{unknownShown.map((r) => (
+      <div key={r.id} className="ctl-row ctl-row--static">
+        <span className="ctl-row__main"><span>{UNKNOWN_RULE}</span></span>
+        <span className="ctl-cap">{r.appliesTo === "all" ? "All agents" : r.appliesTo.join(", ")}</span>
+        <span className={`ctl-mtag${r.mode === "off" ? " is-off" : ""}`}>{MODE_LABEL[r.mode]}</span>
+      </div>
+    ))}</div>,
+  );
+
   const lists = !agentFilter ? (
     <>
       {card("Rules for all agents", groups.all.length ? "New agents get these too." : "No rules cover every agent.", <div>{groups.all.map((r) => row(r))}</div>)}
@@ -961,13 +977,13 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                   </section>
                 )}
 
-                {rules.length === 0 ? (
+                {rules.length === 0 && unknownShown.length === 0 ? (
                   <section className="wr-panel ctl-card ctl-state">
                     <h2 className="wr-panel__title ctl-card__title">No rules yet</h2>
                     <p className="ctl-cap" style={{ margin: 0 }}>Add a rule to record what your agents do. New rules start in Watch, so nothing is blocked until you say so.</p>
                     <Button variant="primary" onClick={() => guard(() => setAdding("open"))} style={{ alignSelf: "flex-start" }}>Add rule</Button>
                   </section>
-                ) : lists}
+                ) : <>{lists}{unknownCard}</>}
               </>
             )}
 

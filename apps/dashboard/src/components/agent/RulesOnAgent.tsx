@@ -4,11 +4,12 @@ import { useCallback, useState } from 'react';
 import Link from 'next/link';
 import { FONT_MONO, Hint, Panel } from '@whiteroom/ui';
 import { governanceList } from '@/lib/whiteroom/client';
-import type { GovernanceRule } from '@/lib/whiteroom/types';
+import type { GovernanceRule, UnknownGovernanceRule } from '@/lib/whiteroom/types';
 import { usePoll } from '@/hooks/usePoll';
 import { HELP } from '@/lib/metric-definitions';
 import { ROUTES } from '@/lib/routes';
-import { RULE_LABELS } from '@/lib/governance';
+import { RULE_LABELS, UNKNOWN_RULE } from '@/lib/governance';
+import { MODE_LABEL } from '@/lib/vocab';
 import { notSetUp, ruleCondition, rulesFor } from '@/lib/controls-view';
 import { RuleDoesTag } from '@/components/RuleDoesTag';
 import { plural } from '@/lib/format';
@@ -27,6 +28,7 @@ export function RulesOnAgent({ fleetId, authKey, agentId, preview }: {
   preview?: GovernanceRule[];
 }) {
   const [rules, setRules] = useState<GovernanceRule[] | null>(preview ?? null);
+  const [unknownRules, setUnknownRules] = useState<UnknownGovernanceRule[]>([]);
   const [failed, setFailed] = useState(false);
   const load = useCallback(async (stale: () => boolean) => {
     try {
@@ -34,6 +36,7 @@ export function RulesOnAgent({ fleetId, authKey, agentId, preview }: {
       if (stale()) return;
       if (!Array.isArray(res.rules)) throw new Error('rules unavailable');
       setRules(res.rules);
+      setUnknownRules(res.unknownRules ?? []);
       setFailed(false);
     } catch {
       if (!stale()) setFailed(true);
@@ -43,12 +46,14 @@ export function RulesOnAgent({ fleetId, authKey, agentId, preview }: {
 
   const covering = rules ? rulesFor(rules, agentId) : [];
   const on = covering.filter((r) => r.mode !== 'off' && !notSetUp(r));
+  // A newer engine's rule this build can't read: named as such, not linked.
+  const unknownOn = rulesFor(unknownRules, agentId).filter((r) => r.mode !== 'off');
   const rest = restLine(covering.filter((r) => r.mode === 'off' && !notSetUp(r)).length, covering.filter(notSetUp).length);
   const controlsLink = `${ROUTES.controls}?agent=${encodeURIComponent(agentId)}`;
   return (
     <Panel
       title={<>Rules on this agent<Hint text={HELP.rulesThatApply} /></>}
-      count={rules ? on.length : undefined}
+      count={rules ? on.length + unknownOn.length : undefined}
       actions={<Link href={controlsLink} className="wr-link" style={{ fontSize: 'var(--fs-sm)' }}>Open in Controls &rarr;</Link>}
       bodyPadding={0}
     >
@@ -56,7 +61,7 @@ export function RulesOnAgent({ fleetId, authKey, agentId, preview }: {
         <p role={failed ? 'status' : undefined} style={{ margin: 0, padding: '14px 18px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
           {failed ? 'Couldn’t load the rules. Retrying…' : 'Loading rules…'}
         </p>
-      ) : on.length === 0 ? (
+      ) : on.length + unknownOn.length === 0 ? (
         <p style={{ margin: 0, padding: '14px 18px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
           No rules are on for this agent.{rest ? ` ${rest}` : ''}
         </p>
@@ -78,6 +83,14 @@ export function RulesOnAgent({ fleetId, authKey, agentId, preview }: {
                 </li>
               );
             })}
+            {unknownOn.map((r) => (
+              <li key={r.id} style={{ borderTop: '1px solid var(--line)' }}>
+                <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, padding: '12px 18px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
+                  {UNKNOWN_RULE}
+                  <span className="ctl-mtag">{MODE_LABEL[r.mode]}</span>
+                </span>
+              </li>
+            ))}
           </ul>
           {rest && (
             <p style={{ margin: 0, padding: '10px 18px', borderTop: '1px solid var(--line)', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>

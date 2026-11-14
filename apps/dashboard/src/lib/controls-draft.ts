@@ -7,6 +7,8 @@
 
 import { safeSessionGet, safeSessionRemove, safeSessionSet } from '@/lib/safe-storage';
 import type { RuleDraft } from '@/lib/controls-view';
+import { isKnownRuleType } from '@/lib/governance';
+import type { GovernanceRuleType } from '@/lib/whiteroom/types';
 
 const PREFIX = 'wr_controls_draft:';
 
@@ -37,7 +39,7 @@ const strings = (v: unknown) => Array.isArray(v) && v.every((s) => typeof s === 
 const scope = (v: unknown) => v === 'run' || v === 'day';
 
 /** Per rule type, the params the editor reads, of the right kinds (lib/whiteroom/types). Numbers it edits as text (`number`). */
-const PARAMS_FIT: Record<string, (p: Record<string, unknown>) => boolean> = {
+const PARAMS_FIT: Record<GovernanceRuleType, (p: Record<string, unknown>) => boolean> = {
   spend_cap: (p) => scope(p.scope) && (p.unit === 'dollars' || p.unit === 'tokens'),
   loop_breaker: (p) => scope(p.scope) && strings(p.ignoreTools),
   call_rate: () => true,
@@ -52,7 +54,7 @@ function isRuleDraft(d: unknown): d is RuleDraft {
   const x = d as Record<string, unknown>;
   const params = x.params;
   if (!params || typeof params !== 'object' || Array.isArray(params)) return false;
-  const fits = typeof x.ruleType === 'string' ? PARAMS_FIT[x.ruleType] : undefined;
+  const fits = isKnownRuleType(x.ruleType) ? PARAMS_FIT[x.ruleType] : undefined;
   return !!fits && fits(params as Record<string, unknown>)
     && typeof x.mode === 'string' && typeof x.response === 'string'
     && typeof x.alsoNotify === 'boolean' && typeof x.number === 'string'

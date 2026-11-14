@@ -736,9 +736,14 @@ export interface GovernanceHistoryEntry {
   after?: GovernanceRuleSnapshot | null;
 }
 
+/** A rule of a type this build doesn't know (a newer engine's): shown as a plain row, never edited or counted. */
+export interface UnknownGovernanceRule { id: string; mode: GovernanceMode; appliesTo: GovernanceScope }
+
 export interface GovernanceListResult {
   fleetId: string;
+  /** Only the rule types this build knows; governanceList moves the rest to unknownRules. */
   rules: GovernanceRule[];
+  unknownRules?: UnknownGovernanceRule[];
   history: GovernanceHistoryEntry[];
   agents: string[];
   /** When each agent was last active (null: never); absent from older engines. */
