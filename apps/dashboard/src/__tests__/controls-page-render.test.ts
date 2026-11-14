@@ -105,6 +105,8 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
 
 const { default: ControlsPage } = await import('@/app/(citadel)/controls/page');
 const { resetBatchSupport } = await import('@/lib/batched-reads');
+const { RULE_CATEGORY, RULE_LABELS } = await import('@/lib/governance');
+const { RULE_TEMPLATES } = await import('@/lib/controls-view');
 const { WhiteRoomApiError } = await import('@/lib/whiteroom/client');
 
 const flush = () => act(async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); });
@@ -1340,11 +1342,11 @@ describe('Keywords in the editor', () => {
     m.root.unmount();
   });
 
-  it('Add a rule offers Flag keywords, marked New', async () => {
+  it('Add a rule offers Flag keywords, with its category and no New tag', async () => {
     const m = await mount();
     const option = [...m.el.querySelectorAll('button.gov-template')].find((b) => b.textContent?.includes('Flag keywords'));
-    expect(option?.textContent).toContain('Keywords');
-    expect(option?.querySelector('.wr-tag')?.textContent).toBe('New');
+    expect(option?.querySelector('.ctl-cat')?.textContent).toBe('Data protection');
+    expect(option?.querySelector('.wr-tag')).toBeNull();
     m.root.unmount();
   });
 });
@@ -1967,5 +1969,57 @@ describe('Controls: Watch counts in one read (engine PR 345)', () => {
     expect(api.wouldBatches).toEqual([3]);
     expect(api.wouldSingle).toBe(6);
     old.m.root.unmount();
+  });
+});
+
+// Data-protection spec, phase 2: each rule's category label on its row, in the
+// editor and in Add a rule. The Add a rule choices lose the rule name beside the title.
+describe('Controls: category labels', () => {
+  const keyword: GovernanceRule = { ...base, id: 'k1', ruleType: 'keyword', mode: 'watch', response: 'notify', appliesTo: 'all', params: { keywords: ['Project Falcon'], where: 'incoming', wholeWord: true } };
+  // The six types, each with a row in view (the fleet's Tool list is off, in a closed card).
+  const sixTypes = () => { api.created.push(keyword); api.saved.r6 = { ...RULES[5], mode: 'watch', params: { blockedTools: ['delete_file'] } }; };
+  const nameToCat = Object.fromEntries(Object.entries(RULE_LABELS).map(([t, name]) => [name, RULE_CATEGORY[t as keyof typeof RULE_CATEGORY]]));
+
+  it('shows each row’s category above its count and mode tag, for all six types', async () => {
+    sixTypes();
+    const m = await mount();
+    const rows = [...m.el.querySelectorAll('button.ctl-row')];
+    const seen = rows.map((r) => {
+      const name = r.querySelector('.ctl-row__main .ctl-cap')!.textContent!;
+      const side = r.querySelector('.ctl-row__side')!;
+      expect(side.firstElementChild?.className).toBe('ctl-cat');
+      expect(side.querySelector('.ctl-row__state .ctl-mtag')).toBeTruthy();
+      expect(side.querySelector('.ctl-cat')!.textContent).toBe(nameToCat[name]);
+      return name;
+    });
+    expect(new Set(seen)).toEqual(new Set(Object.values(RULE_LABELS)));
+    m.root.unmount();
+  });
+
+  it('shows the category in the editor beside Close, with the name under it and again in the body for a phone', async () => {
+    sixTypes();
+    const m = await mount();
+    const names = [...m.el.querySelectorAll('button.ctl-row .ctl-row__main .ctl-cap')].map((c) => c.textContent!);
+    const opened = new Set<string>();
+    for (const name of names) {
+      await m.click([...m.el.querySelectorAll('button.ctl-row')].find((r) => r.querySelector('.ctl-row__main .ctl-cap')?.textContent === name));
+      const head = m.el.querySelector('.gov-edhead')!;
+      expect([...head.children].map((c) => c.className.split(' ')[0])).toEqual(['gov-edhead__back', 'ctl-cat', 'wr-btn', 'gov-edhead__title', 'gov-edhead__mode']);
+      expect(head.querySelector('.ctl-cat')!.textContent).toBe(nameToCat[name]);
+      expect(head.querySelector('h2')!.textContent).toBe(name);
+      expect(m.el.querySelector('.gov-edhead__full')!.textContent).toBe(nameToCat[name] + name);
+      opened.add(name);
+    }
+    expect(opened.size).toBe(6);
+    m.root.unmount();
+  });
+
+  it('Add a rule shows each choice’s title, category and description, and no rule name', async () => {
+    const m = await mount();
+    await m.click(m.button('Add rule'));
+    const options = [...m.el.querySelectorAll('button.gov-template')];
+    expect(options.map((o) => o.textContent)).toEqual(RULE_TEMPLATES.map((t) => t.title + RULE_CATEGORY[t.type] + t.desc));
+    expect(options.map((o) => o.querySelector('.gov-template__top > .ctl-cat')?.textContent)).toEqual(RULE_TEMPLATES.map((t) => RULE_CATEGORY[t.type]));
+    m.root.unmount();
   });
 });

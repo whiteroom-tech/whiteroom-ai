@@ -99,9 +99,12 @@ function ruleOrder(a: GovernanceRule, b: GovernanceRule): number {
   return pa.scope.localeCompare(pb.scope) || pa.unit.localeCompare(pb.unit) || pa.dailyCap - pb.dailyCap;
 }
 
+/** The order rules are listed in on Controls, by type. Its own list, so the Add-a-rule choices can change without moving rows. */
+export const RULE_ROW_ORDER: readonly GovernanceRuleType[] = ['spend_cap', 'call_rate', 'model_allowlist', 'loop_breaker', 'tool_list', 'keyword'];
+
 function typeRank(t: GovernanceRuleType): number {
-  const i = RULE_TEMPLATES.findIndex((r) => r.type === t);
-  return i < 0 ? RULE_TEMPLATES.length : i;
+  const i = RULE_ROW_ORDER.indexOf(t);
+  return i < 0 ? RULE_ROW_ORDER.length : i;
 }
 
 // ── Overlap ─────────────────────────────────────────────────────────
@@ -320,14 +323,14 @@ export function draftProblem(d: RuleDraft): string | null {
 
 // ── Add a rule ──────────────────────────────────────────────────────
 
-/** "Add a rule" choices, by goal, each naming its rule. Also the order rules are listed in on Controls (ruleGroups). */
-export const RULE_TEMPLATES: { type: GovernanceRuleType; title: string; desc: string; isNew?: boolean }[] = [
+/** "Add a rule" choices, by goal. Rows on Controls follow RULE_ROW_ORDER, not this. */
+export const RULE_TEMPLATES: { type: GovernanceRuleType; title: string; desc: string }[] = [
   { type: 'spend_cap', title: 'Cap spending', desc: 'Block calls once an agent spends more than you set in a run or a day.' },
   { type: 'call_rate', title: 'Limit calls per minute', desc: 'Block calls once an agent makes too many in a minute.' },
   { type: 'model_allowlist', title: 'Allow only certain models', desc: 'Block calls to any model you haven’t picked.' },
   { type: 'loop_breaker', title: 'Break loops', desc: 'Catch an agent making the same call over and over.' },
   { type: 'tool_list', title: 'Block tools', desc: 'Keep agents from running tools you name.' },
-  { type: 'keyword', title: 'Flag keywords', desc: 'Get an alert, or block the call, when words you pick show up.', isNew: true },
+  { type: 'keyword', title: 'Flag keywords', desc: 'Get an alert, or block the call, when words you pick show up.' },
 ];
 
 // ── Groups: who a rule covers ───────────────────────────────────────
