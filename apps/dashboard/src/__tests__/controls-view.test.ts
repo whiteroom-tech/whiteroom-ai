@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   agentGets, appliesNow, changeResponse, changeUnit, draftChanges, draftParams, typedNumber, draftFrom, draftProblem, isDirty, ruleSentence, rulesFor, ruleSentenceText, spendOverlap,
   blocksWhen, duplicateRules, keywordGaps, keywordsShort, leadCounts, modeCount, ruleCondition, ruleConditionText, ruleGroups, rowCount, ruleStatus, whoFor,
+  RULE_ROW_ORDER, RULE_TEMPLATES,
 } from '@/lib/controls-view';
+import { RULE_CATEGORY, RULE_LABELS } from '@/lib/governance';
 import type { GovernanceRule } from '@/lib/whiteroom/types';
 
 let n = 0;
@@ -94,7 +96,7 @@ describe('the agent filter and groups', () => {
     expect(leadCounts([alerts, blocks, watch])).toMatchObject({ total: 3, enforce: 1, alert: 1, watch: 1 });
   });
 
-  it('lists a group in the Add a rule order, spend caps of a kind smallest first', () => {
+  it('lists a group in the row order, spend caps of a kind smallest first', () => {
     const kw = rule({ ruleType: 'keyword', params: { where: 'incoming', keywords: ['x'], wholeWord: true } });
     const allow = rule({ ruleType: 'model_allowlist', params: { allowedModels: ['m'] } });
     const loop = rule({ ruleType: 'loop_breaker', params: { threshold: 100, scope: 'run', ignoreTools: [] } });
@@ -103,6 +105,36 @@ describe('the agent filter and groups', () => {
     const day190 = rule({ params: { dailyCap: 190, scope: 'day', unit: 'dollars' } });
     const run50k = rule({ params: { dailyCap: 50000, scope: 'run', unit: 'tokens' } });
     expect(ruleGroups([kw, allow, day200, loop, run50k, rate, day190]).all).toEqual([day190, day200, run50k, rate, allow, loop, kw]);
+  });
+
+  it('keeps rows in today’s order whatever order the Add a rule choices are in', () => {
+    expect(RULE_ROW_ORDER).toEqual(['spend_cap', 'call_rate', 'model_allowlist', 'loop_breaker', 'tool_list', 'keyword']);
+    expect([...RULE_ROW_ORDER].sort()).toEqual(Object.keys(RULE_LABELS).sort());
+    const params = {
+      spend_cap: { dailyCap: 190, scope: 'day', unit: 'dollars' }, call_rate: { maxCalls: 60 }, model_allowlist: { allowedModels: ['m'] },
+      loop_breaker: { threshold: 100, scope: 'run', ignoreTools: [] }, tool_list: { blockedTools: ['x'] }, keyword: { where: 'incoming', keywords: ['x'], wholeWord: true },
+    } as const;
+    const rules = RULE_ROW_ORDER.map((t) => rule({ ruleType: t, params: params[t] as GovernanceRule['params'] }));
+    RULE_TEMPLATES.reverse();
+    try {
+      expect(ruleGroups([...rules].reverse()).all.map((r) => r.ruleType)).toEqual(RULE_ROW_ORDER);
+    } finally {
+      RULE_TEMPLATES.reverse();
+    }
+  });
+
+  it('offers today’s six choices in today’s order', () => {
+    expect(RULE_TEMPLATES.map((t) => [t.type, t.title])).toEqual([
+      ['spend_cap', 'Cap spending'], ['call_rate', 'Limit calls per minute'], ['model_allowlist', 'Allow only certain models'],
+      ['loop_breaker', 'Break loops'], ['tool_list', 'Block tools'], ['keyword', 'Flag keywords'],
+    ]);
+  });
+
+  it('puts every rule type in one of two categories', () => {
+    expect(RULE_CATEGORY).toEqual({
+      spend_cap: 'Cost & reliability', call_rate: 'Cost & reliability', model_allowlist: 'Cost & reliability', loop_breaker: 'Cost & reliability',
+      tool_list: 'Data protection', keyword: 'Data protection',
+    });
   });
 
   it('says when the one rule that blocks acts', () => {

@@ -5,6 +5,7 @@
 // when enforced, one action; Oct 28). Nothing reaches the engine until Save.
 
 import { HistoryLine } from './HistoryLine';
+import { RuleCategory } from './RuleCategory';
 import type { Undo } from '@/lib/rule-history';
 import { MODE_LABEL, modeTagText } from '@/lib/vocab';
 import { useEffect, useState } from 'react';
@@ -143,13 +144,17 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, flex: '1 0 auto' }}>
-      <div className="gov-edhead" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-        {/* On a phone the editor is its own page: back to the list on the left, the mode on the right. */}
+      <div className="gov-edhead">
+        {/* On a phone the editor is its own page: back to the list on the left, the mode on the right.
+            On a wide screen the category and Close share the top line, the rule name under them. */}
         <button type="button" className="gov-edhead__back" onClick={onClose}>‹ Controls</button>
+        <RuleCategory type={rule.ruleType} />
+        <Button variant="ghost" size={28} onClick={onClose} className="gov-edhead__close">Close</Button>
         <h2 id="ctl-ed-title" tabIndex={-1} className="gov-edhead__title ctl-ed-title">{RULE_LABELS[rule.ruleType]}</h2>
         <span className={`gov-edhead__mode${draft.mode === 'enforce' && draft.response !== 'notify' ? ' is-on' : ''}`}>{modeTagText(draft)}{dirty ? ' · unsaved' : ''}</span>
-        <Button variant="ghost" size={28} onClick={onClose} className="gov-edhead__close">Close</Button>
       </div>
+      {/* Phone only: the header cuts the name short and has no room for the category. */}
+      <p className="gov-edhead__full"><RuleCategory type={rule.ruleType} /><span aria-hidden="true">{RULE_LABELS[rule.ruleType]}</span></p>
       <p className="ctl-status">{status}</p>
       {rule.sourceRecommendationId && (
         <p style={{ margin: '-12px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>

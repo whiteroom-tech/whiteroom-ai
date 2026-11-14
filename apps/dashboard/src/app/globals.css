@@ -30,9 +30,10 @@
    these, in rem, so Text size (sidebar, Settings › Profile) can scale all
    text at once by changing the root size. Nothing people read is set smaller
    than --fs-sm (15.5px) except --fs-label, for the sidebar's uppercase group
-   labels. */
+   labels, and --fs-cat, for the Controls category label. */
 :root {
   --fs-label: 0.875rem;   /* 14px   only the sidebar's uppercase group labels */
+  --fs-cat: 0.75rem;      /* 12px   only the Controls category label (.ctl-cat) */
   --fs-sm: 0.96875rem;    /* 15.5px captions, secondary text, table meta */
   --fs-md: 1.0625rem;     /* 17px   body text, table cells, controls */
   --fs-card: 1.1875rem;   /* 19px   card and panel titles */
@@ -249,11 +250,18 @@
 .gov-template { text-align: left; background: var(--sunk); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 3px; color: var(--tx); font: inherit; cursor: pointer; }
 .gov-template:hover:not(:disabled) { border-color: var(--line2); }
 .gov-template:disabled { cursor: progress; }
+/* Title and category share a line; when the title won't fit beside it, the category goes above, still on the right. */
+.gov-template__top { display: flex; flex-wrap: wrap-reverse; align-items: baseline; gap: 2px 12px; }
+.gov-template__title { flex: 1 0 auto; max-width: 100%; font-size: var(--fs-md); font-weight: 600; }
+.gov-template__top > .ctl-cat { margin-left: auto; }
 .gov-eyebrow { margin: 0; font-size: var(--fs-sm); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--tx3); }
 .gov-details { border-top: 1px solid var(--line); padding-top: 14px; }
 .gov-details summary { cursor: pointer; font-size: var(--fs-sm); font-weight: 600; color: var(--tx); }
 .gov-edhead, .gov-actbar { background: var(--card); }
-.gov-edhead__back, .gov-edhead__mode, .gov-remove-row { display: none; }
+/* Wide screens: the category and Close on the top line, the rule name under them at full width. */
+.gov-edhead { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 12px; }
+.gov-edhead__title { flex: 1 1 100%; }
+.gov-edhead__back, .gov-edhead__mode, .gov-edhead__full, .gov-remove-row { display: none; }
 /* Editor selects: the shared select look (sunk well, chevron), sized like the editor's fields. */
 .gov-select select { min-height: 1.875rem; }
 /* "+ Add tool": a button over an invisible native menu, so picking still uses the real control. */
@@ -268,7 +276,10 @@
 @media (max-width: 720px) {
   .citadel-page-header__main { padding: 8px 16px; flex-wrap: wrap; row-gap: 8px; }
   .citadel-page-header__side { display: none; }
-  .gov-edhead { position: sticky; top: 0; z-index: 2; height: 56px; margin: 0 -16px; padding: 0 16px 0 4px; gap: 8px !important; border-bottom: 1px solid var(--line); border-radius: 16px 16px 0 0; }
+  .gov-edhead { position: sticky; top: 0; z-index: 2; height: 56px; margin: 0 -16px; padding: 0 16px 0 4px; flex-wrap: nowrap; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--line); border-radius: 16px 16px 0 0; }
+  .gov-edhead .ctl-cat { display: none; }
+  /* The header cuts the name short, so the body starts with the category and the full name. */
+  .gov-edhead__full { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0; font-size: var(--fs-md); font-weight: 600; color: var(--tx); overflow-wrap: anywhere; }
   .gov-edhead__back { display: flex; align-items: center; height: 44px; padding: 0 10px; border: 0; background: none; color: var(--brand); font: inherit; font-size: var(--fs-md); font-weight: 500; cursor: pointer; flex: none; }
   .gov-edhead__title { flex: 1; min-width: 0; font-size: var(--fs-md) !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .gov-edhead__mode { display: inline-block; }
@@ -747,7 +758,11 @@ button.ctl-row:focus-visible, .ctl-disc:focus-visible, .ctl-ed-title:focus-visib
 button.ctl-row.is-on, button.ctl-row.is-on:hover { background: var(--brand-dim); }
 .ctl-row.is-block { box-shadow: inset 3px 0 0 var(--brand); }
 .ctl-row__main { flex: 1 1 360px; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+.ctl-row__side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; margin-left: auto; }
+.ctl-row__state { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; }
 .ctl-row__count { font-size: var(--fs-sm); color: var(--tx2); }
+/* A rule's category: 12px by the owner's choice (Nov 14), so it reads as a tag above the row's state. */
+.ctl-cat { font-family: var(--font-display); font-size: var(--fs-cat); line-height: 1.2; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--brand); white-space: nowrap; }
 .ctl-row__count.is-hot { color: var(--tx); font-weight: 600; }
 .ctl-row__count.is-warn { color: var(--warn-tx); }
 .ctl-sugg__text { flex: 1 1 300px; min-width: 0; overflow-wrap: anywhere; }

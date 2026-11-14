@@ -16,6 +16,7 @@ import { LiveStatus, PageHeader } from "@/components/citadel/PageChrome";
 import { SuggestionDraft } from "./_components/SuggestionDraft";
 import { RuleEditor } from "./_components/RuleEditor";
 import { AddRuleDialog } from "./_components/AddRuleDialog";
+import { RuleCategory } from "./_components/RuleCategory";
 import { ChoiceDialog } from "./_components/ChoiceDialog";
 import { useFleetAuth } from "@/hooks/useFleetAuth";
 import {
@@ -806,10 +807,15 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
           <span>{c.pre}{c.val && <span style={{ fontFamily: FONT_MONO }}>{c.val}</span>}{c.post}</span>
         </span>
         {showScope && <span className="ctl-cap">{r.appliesTo === "all" ? "All agents" : r.appliesTo.join(", ")}</span>}
-        {count.text && (count.label
-          ? <span className={`ctl-row__count is-${count.tone}`} title={count.label}><span aria-hidden="true">{count.text}</span><span className="wr-sr-only">{count.label}</span></span>
-          : <span className={`ctl-row__count is-${count.tone}`}>{count.text}</span>)}
-        {modeTag(r)}
+        <span className="ctl-row__side">
+          <RuleCategory type={r.ruleType} />
+          <span className="ctl-row__state">
+            {count.text && (count.label
+              ? <span className={`ctl-row__count is-${count.tone}`} title={count.label}><span aria-hidden="true">{count.text}</span><span className="wr-sr-only">{count.label}</span></span>
+              : <span className={`ctl-row__count is-${count.tone}`}>{count.text}</span>)}
+            {modeTag(r)}
+          </span>
+        </span>
       </button>
     );
   };

@@ -1,12 +1,11 @@
 'use client';
 
-// "Add a rule": what to control, by goal, each naming its rule. Shares the
+// "Add a rule": what to control, by goal, each with its category. Shares the
 // dialog frame with ConfirmDialog; new rules start in Watch.
 
-import { Tag } from '@whiteroom/ui';
 import type { GovernanceRuleType } from '@/lib/whiteroom/types';
-import { RULE_LABELS } from '@/lib/governance';
 import { RULE_TEMPLATES } from '@/lib/controls-view';
+import { RuleCategory } from './RuleCategory';
 import { DialogFrame, dialogCancelStyle } from '@/components/citadel/DialogFrame';
 
 export function AddRuleDialog({ open, busy, onPick, onCancel }: {
@@ -23,8 +22,9 @@ export function AddRuleDialog({ open, busy, onPick, onCancel }: {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {RULE_TEMPLATES.map((t) => (
             <button key={t.type} type="button" disabled={busy} onClick={() => onPick(t.type)} className="gov-template">
-              <span style={{ display: 'flex', alignItems: 'baseline', gap: 8, fontSize: 'var(--fs-md)', fontWeight: 600 }}>
-                {t.title}<span style={{ fontSize: 'var(--fs-sm)', fontWeight: 400, color: 'var(--tx2)' }}>{RULE_LABELS[t.type]}</span>{t.isNew && <Tag tone="brand">New</Tag>}
+              <span className="gov-template__top">
+                <span className="gov-template__title">{t.title}</span>
+                <RuleCategory type={t.type} />
               </span>
               <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{t.desc}</span>
             </button>

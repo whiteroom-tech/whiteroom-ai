@@ -161,6 +161,8 @@ describe('Sandbox rules', () => {
     await flush();
     expect(document.querySelector('select[aria-label="When enforced"]')).not.toBeNull();
     expect(text()).toContain('Also alert me');
+    // The Sandbox's own rows and editor carry no category label; its Add a rule dialog (shared with Controls) does.
+    expect([...document.querySelectorAll('.ctl-cat')].filter((c) => !c.closest('dialog'))).toEqual([]);
     await click('Save');
     const update = calls().find((c) => c.url.endsWith('/rules/update'))!;
     expect(update.body).toMatchObject({ fleet: 'prod-eu', sandboxFleetId: SANDBOX_ID, ruleId: READY[0].id, mode: 'enforce', ifVersion: 1 });
@@ -168,6 +170,7 @@ describe('Sandbox rules', () => {
     // The engine's list after the add: it includes the new rule (the page re-reads it quietly).
     listAnswer = state({ rules: [...READY, { ...READY[2], id: 'gr_new', ruleType: 'tool_list', params: { blockedTools: [] } }], source: 'custom' });
     await click('Add a rule');
+    expect([...document.querySelectorAll('button.gov-template .ctl-cat')]).toHaveLength(6);
     await act(async () => { ([...document.querySelectorAll('button.gov-template')].find((b) => b.textContent?.includes('Block tools')) as HTMLButtonElement).click(); });
     await flush();
     expect(calls().find((c) => c.url.endsWith('/rules/create'))!.body).toMatchObject({ ruleType: 'tool_list', mode: 'watch' });

@@ -28,6 +28,16 @@ export const RULE_LABELS: Record<GovernanceRuleType, string> = {
   keyword: 'Keywords',
 };
 
+/** Each rule's category label on Controls, in sentence case (.ctl-cat upper-cases it). */
+export const RULE_CATEGORY: Record<GovernanceRuleType, string> = {
+  spend_cap: 'Cost & reliability',
+  loop_breaker: 'Cost & reliability',
+  model_allowlist: 'Cost & reliability',
+  tool_list: 'Data protection',
+  call_rate: 'Cost & reliability',
+  keyword: 'Data protection',
+};
+
 /** What a rule of a type this build doesn't know shows as, wherever rules are listed. */
 export const UNKNOWN_RULE = 'A rule this version can’t show';
 

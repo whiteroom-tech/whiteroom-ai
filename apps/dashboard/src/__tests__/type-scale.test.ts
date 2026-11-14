@@ -51,12 +51,23 @@ describe('type scale', () => {
     expect(small).toEqual([]);
   });
 
-  it('keeps every token at 15.5px or more, except the 14px group label', () => {
+  // The owner chose a 12px category label on Controls (Nov 14).
+  it('keeps every token at 15.5px or more, except the 14px group label and the 12px category label', () => {
     const css = readFileSync(join(__dirname, '../app/globals.css'), 'utf8');
     const sizes = [...css.matchAll(/--fs-([a-z]+):\s*([\d.]+)rem/g)].map((m) => [m[1], Number(m[2]) * 16] as const);
     expect(sizes.length).toBeGreaterThanOrEqual(8);
-    expect(sizes.filter(([, px]) => px < 15.5).map(([name]) => name)).toEqual(['label']);
+    expect(sizes.filter(([, px]) => px < 15.5).map(([name]) => name)).toEqual(['label', 'cat']);
     expect(Object.fromEntries(sizes).label).toBe(14);
+    expect(Object.fromEntries(sizes).cat).toBe(12);
+  });
+
+  it('uses --fs-cat only for the Controls category label', () => {
+    const css = readFileSync(join(__dirname, '../app/globals.css'), 'utf8');
+    const users = css.split('\n').filter((l) => l.includes('var(--fs-cat)')).map((l) => l.trim().split(' ')[0]);
+    expect(users).toEqual(['.ctl-cat']);
+    for (const root of ROOTS) {
+      for (const f of files(root)) if (!f.endsWith('globals.css')) expect(readFileSync(f, 'utf8')).not.toContain('--fs-cat');
+    }
   });
 
   // The 14px label is only for the sidebar's uppercase group labels.
