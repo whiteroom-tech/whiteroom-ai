@@ -25,6 +25,8 @@ const HANDLED = new Set([
   // A VAT number Stripe has finished checking (or one added later in the portal).
   'customer.tax_id.created',
   'customer.tax_id.updated',
+  // A VAT number removed: a reverse charge set on it is taken back.
+  'customer.tax_id.deleted',
 ]);
 
 export async function POST(req: Request): Promise<Response> {
@@ -95,15 +97,16 @@ async function handle(event: Stripe.Event): Promise<void> {
       // Whose it is comes from the session's customer (recorded when checkout
       // created it); the subscription itself is read under the lock, once.
       await applySubscription({ id: subscriptionId, customer: session.customer, metadata: session.metadata ?? {} } as Stripe.Subscription);
-      await markReverseCharge(idOf(session.customer));
+      await syncReverseCharge(idOf(session.customer));
       return;
     }
     case 'customer.tax_id.created':
-    case 'customer.tax_id.updated': {
+    case 'customer.tax_id.updated':
+    case 'customer.tax_id.deleted': {
       // Stripe checks a UK or EU VAT number with HMRC or VIES after it's
       // entered, so it is usually still pending at checkout: this is when a
       // verified one arrives.
-      await markReverseCharge(idOf((event.data.object as Stripe.TaxId).customer));
+      await syncReverseCharge(idOf((event.data.object as Stripe.TaxId).customer));
       return;
     }
     case 'customer.subscription.created':
@@ -140,15 +143,20 @@ function vatTypeFor(country: string): 'gb_vat' | 'eu_vat' {
 
 /**
  * The country a VAT number belongs to, from its prefix: EU numbers start with
- * the member state's code (Greece uses EL, Northern Ireland XI under the EU
- * rules); a gb_vat number is the UK's. Null when it can't be told.
+ * the member state's code (Greece uses EL); a gb_vat number is the UK's. Null
+ * when it can't be told. A Northern Ireland XI number (the EU scheme for
+ * goods) matches no billing country, so it is left for a person: a business
+ * there buying services uses its GB number.
  */
 function vatCountry(type: string, value: string): string | null {
   if (type === 'gb_vat') return 'GB';
   const prefix = value.trim().slice(0, 2).toUpperCase();
   if (!/^[A-Z]{2}$/.test(prefix)) return null;
-  return prefix === 'EL' ? 'GR' : prefix === 'XI' ? 'GB' : prefix;
+  return prefix === 'EL' ? 'GR' : prefix;
 }
+
+/** Customer metadata key recording that this webhook, not a person, set the reverse charge. */
+const AUTO_REVERSE_KEY = 'wr_reverse_charge';
 
 /** Legal-form words that differ between how a company types its name and how the register holds it. */
 const LEGAL_FORMS = new Set([
@@ -189,24 +197,29 @@ function sameCompany(registered: string | null | undefined, entered: string | nu
 }
 
 /**
- * Marks a UK or EU business customer reverse charge (tax_exempt "reverse"),
- * so its invoices say it accounts for the VAT itself. All of these must hold,
- * or it is left for a person (Stripe: Customers -> Tax status):
+ * Keeps a UK or EU business customer's reverse charge (tax_exempt "reverse")
+ * in step with its VAT number, so its invoices say it accounts for the VAT
+ * itself. Eligible when all of these hold:
  * - the billing country is the UK or an EU member state;
  * - the customer holds a VAT number of that country's type (gb_vat / eu_vat)
  *   whose own country (its prefix) is the billing country;
  * - Stripe has verified it with HMRC or VIES;
  * - the name the register holds for it is the company name the customer gave.
+ * An eligible customer is marked, recorded as set by this webhook
+ * (AUTO_REVERSE_KEY in its metadata). One this webhook marked that stops
+ * being eligible (the number fails verification later, is removed, or the
+ * address moves) is unmarked. A tax status a person set is never touched.
  *
- * Residual risk: verification proves the number is real and whose it is, not
- * that the person typing it works there. Someone who enters a real company's
- * number, its name and an address in its country still passes, and is then
- * invoiced without VAT for a service they pay for. Stripe and the invoice keep
- * the number they gave, and every marking is logged.
+ * What the flag decides: WhiteRoom charges no VAT to anyone today (Stripe Tax
+ * is off), so the flag only adds the reverse-charge note to invoices. Residual
+ * risk: verification proves a number is real and whose it is, not that the
+ * person typing it works there; someone who copies a real company's number,
+ * name and country is marked. Harmless while Stripe Tax is off. If Stripe Tax
+ * is turned on, the flag would also stop VAT being added: revisit this then
+ * (hold markings for review, say). Every change is logged.
  *
  * Read fresh from Stripe each time, so it is the same whichever event calls
- * it and however often: a customer already marked, or whose tax status was
- * changed by hand, is left alone. It only ever sets the flag.
+ * it and however often. Only customers this region recorded are touched.
  *
  * A temporary Stripe failure (network, Stripe-side, rate limit) is thrown, so the
  * delivery fails, its claim is released and Stripe redelivers; otherwise a
@@ -215,7 +228,7 @@ function sameCompany(registered: string | null | undefined, entered: string | nu
  * fresh too. Anything else (a 4xx such as a customer that is gone, or a bug
  * of ours) would fail every time, so it is logged and acknowledged.
  */
-async function markReverseCharge(customerId: string | null): Promise<void> {
+async function syncReverseCharge(customerId: string | null): Promise<void> {
   if (!customerId) return;
   // Only a customer this region recorded (lib/billing ensureCustomer): the
   // Stripe account is shared with the other region's dashboard, and with
@@ -225,18 +238,28 @@ async function markReverseCharge(customerId: string | null): Promise<void> {
   try {
     const customer = await stripe().customers.retrieve(customerId, { expand: ['tax_ids'] });
     if ('deleted' in customer && customer.deleted) return;
-    const country = customer.address?.country;
-    if (!country || !REVERSE_CHARGE_COUNTRIES.has(country)) return;
-    if (customer.tax_exempt && customer.tax_exempt !== 'none') return;
-    const vat = vatTypeFor(country);
-    const match = (customer.tax_ids?.data ?? []).find((t) =>
-      t.type === vat
-      && vatCountry(t.type, t.value ?? '') === country
-      && t.verification?.status === 'verified'
-      && sameCompany(t.verification.verified_name, customer.name));
-    if (!match) return;
-    await stripe().customers.update(customerId, { tax_exempt: 'reverse' });
-    console.log(`[stripe] marked customer ${customerId} reverse charge: ${country}, ${match.type} verified for "${match.verification?.verified_name}"`);
+    const status = customer.tax_exempt ?? 'none';
+    const ours = customer.metadata?.[AUTO_REVERSE_KEY] === 'auto';
+    // Exempt, or reverse set by a person: theirs to keep.
+    if (status === 'exempt' || (status === 'reverse' && !ours)) return;
+
+    const country = customer.address?.country ?? null;
+    const match = country && REVERSE_CHARGE_COUNTRIES.has(country)
+      ? (customer.tax_ids?.data ?? []).find((t) =>
+          t.type === vatTypeFor(country)
+          && vatCountry(t.type, t.value ?? '') === country
+          && t.verification?.status === 'verified'
+          && sameCompany(t.verification.verified_name, customer.name))
+      : undefined;
+
+    if (match && status !== 'reverse') {
+      await stripe().customers.update(customerId, { tax_exempt: 'reverse', metadata: { [AUTO_REVERSE_KEY]: 'auto' } });
+      console.log(`[stripe] marked customer ${customerId} reverse charge: ${country}, ${match.type} verified for "${match.verification?.verified_name}"`);
+    } else if (!match && status === 'reverse' && ours) {
+      // Stripe deletes a metadata key set to an empty string.
+      await stripe().customers.update(customerId, { tax_exempt: 'none', metadata: { [AUTO_REVERSE_KEY]: '' } });
+      console.log(`[stripe] unmarked customer ${customerId} reverse charge: no longer a verified ${country ?? 'unknown-country'} VAT number matching its name`);
+    }
   } catch (err) {
     if (isTransientStripeError(err)) throw err;
     console.error(`[stripe] couldn't check or mark customer ${customerId} reverse charge:`, err instanceof Error ? err.message : err);

@@ -503,10 +503,11 @@ describe('stripe webhook: order, replacement and delivery', () => {
       ids: Array<[string, string] | [string, string, { value?: string; verified_name?: string | null }]>,
       tax_exempt = 'none',
       name: string | null = 'Acme Widgets Limited',
+      metadata: Record<string, string> = {},
     ) => {
       const prefix = country === 'GR' ? 'EL' : country ?? 'GB';
       mocks.retrieveCustomer.mockResolvedValue({
-        id: 'cus_1', tax_exempt, name, address: country ? { country } : null,
+        id: 'cus_1', tax_exempt, name, metadata, address: country ? { country } : null,
         tax_ids: { data: ids.map(([type, status, o = {}]) => ({
           type,
           value: o.value ?? (type === 'gb_vat' ? 'GB123456789' : `${prefix}123456789`),
@@ -514,6 +515,11 @@ describe('stripe webhook: order, replacement and delivery', () => {
         })) },
       });
     };
+    /** What marking (and unmarking) sends: the flag, and who set it. */
+    const MARK = { tax_exempt: 'reverse', metadata: { wr_reverse_charge: 'auto' } };
+    const UNMARK = { tax_exempt: 'none', metadata: { wr_reverse_charge: '' } };
+    const AUTO = { wr_reverse_charge: 'auto' };
+
     const completed = (customer: unknown = 'cus_1') => {
       mocks.current = sub('trialing');
       mocks.query.mockImplementation(async (sql: string) => {
@@ -528,7 +534,7 @@ describe('stripe webhook: order, replacement and delivery', () => {
       stripeCustomer('GB', [['gb_vat', 'verified']]);
       expect((await completed()).status).toBe(200);
       expect(mocks.retrieveCustomer).toHaveBeenCalledWith('cus_1', { expand: ['tax_ids'] });
-      expect(mocks.updateCustomer).toHaveBeenCalledWith('cus_1', { tax_exempt: 'reverse' });
+      expect(mocks.updateCustomer).toHaveBeenCalledWith('cus_1', MARK);
     });
 
     it('matches the registered name however it is written (case, punctuation, legal form, accents)', async () => {
@@ -553,7 +559,7 @@ describe('stripe webhook: order, replacement and delivery', () => {
     it('marks an EU business too, with the customer sent as an object', async () => {
       stripeCustomer('DE', [['eu_vat', 'verified']]);
       await completed({ id: 'cus_1', object: 'customer' });
-      expect(mocks.updateCustomer).toHaveBeenCalledWith('cus_1', { tax_exempt: 'reverse' });
+      expect(mocks.updateCustomer).toHaveBeenCalledWith('cus_1', MARK);
     });
 
     it.each([
@@ -583,10 +589,10 @@ describe('stripe webhook: order, replacement and delivery', () => {
     it('marks the customer when Stripe verifies the number after checkout (or it is added in the portal)', async () => {
       stripeCustomer('IE', [['eu_vat', 'verified']]);
       expect((await event('customer.tax_id.updated', { object: 'tax_id', customer: 'cus_1', type: 'eu_vat' })).status).toBe(200);
-      expect(mocks.updateCustomer).toHaveBeenCalledWith('cus_1', { tax_exempt: 'reverse' });
+      expect(mocks.updateCustomer).toHaveBeenCalledWith('cus_1', MARK);
       mocks.updateCustomer.mockClear();
       await event('customer.tax_id.created', { object: 'tax_id', customer: { id: 'cus_1' }, type: 'eu_vat' });
-      expect(mocks.updateCustomer).toHaveBeenCalledWith('cus_1', { tax_exempt: 'reverse' });
+      expect(mocks.updateCustomer).toHaveBeenCalledWith('cus_1', MARK);
       expect(upserts()).toHaveLength(0);
     });
 
@@ -612,6 +618,30 @@ describe('stripe webhook: order, replacement and delivery', () => {
       expect(mocks.updateCustomer).toHaveBeenCalledTimes(marks ? 1 : 0);
     });
 
+    it.each([
+      ['its VAT number later fails verification', 'GB', [['gb_vat', 'unverified']]],
+      ['its VAT number is removed', 'GB', []],
+      ['its billing address moves outside the UK and EU', 'US', [['gb_vat', 'verified']]],
+    ] as Array<[string, string, Array<[string, string]>]>)('unmarks a customer this webhook marked when %s', async (_why, country, ids) => {
+      stripeCustomer(country, ids, 'reverse', 'Acme Widgets Limited', AUTO);
+      expect((await event('customer.tax_id.deleted', { object: 'tax_id', customer: 'cus_1', type: 'gb_vat' })).status).toBe(200);
+      expect(mocks.updateCustomer).toHaveBeenCalledWith('cus_1', UNMARK);
+    });
+
+    it('never unmarks a reverse charge a person set, and leaves one it set alone while still eligible', async () => {
+      stripeCustomer('GB', [], 'reverse');
+      await event('customer.tax_id.deleted', { object: 'tax_id', customer: 'cus_1', type: 'gb_vat' });
+      stripeCustomer('GB', [['gb_vat', 'verified']], 'reverse', 'Acme Widgets Limited', AUTO);
+      await event('customer.tax_id.updated', { object: 'tax_id', customer: 'cus_1', type: 'gb_vat' });
+      expect(mocks.updateCustomer).not.toHaveBeenCalled();
+    });
+
+    it('leaves a Northern Ireland XI number to a person (a UK address needs a GB VAT number)', async () => {
+      stripeCustomer('GB', [['eu_vat', 'verified', { value: 'XI123456789' }]]);
+      await completed();
+      expect(mocks.updateCustomer).not.toHaveBeenCalled();
+    });
+
     it('skips a deleted customer, and a tax ID event with no customer', async () => {
       mocks.retrieveCustomer.mockResolvedValue({ id: 'cus_1', deleted: true });
       expect((await completed()).status).toBe(200);
@@ -631,7 +661,7 @@ describe('stripe webhook: order, replacement and delivery', () => {
       stripeCustomer('GB', [['gb_vat', 'verified']]);
       mocks.updateCustomer.mockRejectedValue(err);
       expect((await completed()).status).toBe(500);
-      expect(mocks.updateCustomer).toHaveBeenCalledWith('cus_1', { tax_exempt: 'reverse' });
+      expect(mocks.updateCustomer).toHaveBeenCalledWith('cus_1', MARK);
       expect(released()).toBe(true);
       expect((upserts()[0][1] as unknown[])[0]).toBe('u1');
     });
@@ -657,7 +687,7 @@ describe('stripe webhook: order, replacement and delivery', () => {
       stripeCustomer('GB', [['gb_vat', 'verified']]);
       mocks.updateCustomer.mockRejectedValue(Object.assign(new Error('No such customer'), { type: 'StripeInvalidRequestError', statusCode: 404 }));
       expect((await completed()).status).toBe(200);
-      expect(mocks.updateCustomer).toHaveBeenCalledWith('cus_1', { tax_exempt: 'reverse' });
+      expect(mocks.updateCustomer).toHaveBeenCalledWith('cus_1', MARK);
       expect(released()).toBe(false);
       expect(log).toHaveBeenCalledWith(expect.stringContaining("couldn't check or mark customer cus_1"), 'No such customer');
       expect((upserts()[0][1] as unknown[])[0]).toBe('u1');
