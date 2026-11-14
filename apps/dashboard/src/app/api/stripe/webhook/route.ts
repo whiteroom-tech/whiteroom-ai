@@ -155,7 +155,12 @@ function vatCountry(type: string, value: string): string | null {
   return prefix === 'EL' ? 'GR' : prefix;
 }
 
-/** Customer metadata key recording that this webhook, not a person, set the reverse charge. */
+/**
+ * Customer metadata key recording who decided the reverse charge: `auto` when
+ * this webhook set it, `declined` once a person took an automatic one off
+ * (seen as status none with the marker still `auto`). A declined customer is
+ * never marked again automatically.
+ */
 const AUTO_REVERSE_KEY = 'wr_reverse_charge';
 
 /** Legal-form words that differ between how a company types its name and how the register holds it. */
@@ -239,9 +244,17 @@ async function syncReverseCharge(customerId: string | null): Promise<void> {
     const customer = await stripe().customers.retrieve(customerId, { expand: ['tax_ids'] });
     if ('deleted' in customer && customer.deleted) return;
     const status = customer.tax_exempt ?? 'none';
-    const ours = customer.metadata?.[AUTO_REVERSE_KEY] === 'auto';
-    // Exempt, or reverse set by a person: theirs to keep.
-    if (status === 'exempt' || (status === 'reverse' && !ours)) return;
+    const marker = customer.metadata?.[AUTO_REVERSE_KEY];
+    const ours = marker === 'auto';
+    // Exempt, or reverse set by a person, or a person said no before: theirs to keep.
+    if (status === 'exempt' || (status === 'reverse' && !ours) || marker === 'declined') return;
+    if (status === 'none' && ours) {
+      // This webhook marked it and a person has since taken it off in Stripe:
+      // record that, so it is never put back automatically.
+      await stripe().customers.update(customerId, { metadata: { [AUTO_REVERSE_KEY]: 'declined' } });
+      console.log(`[stripe] customer ${customerId}: reverse charge taken off by a person; not marking it again automatically`);
+      return;
+    }
 
     const country = customer.address?.country ?? null;
     const match = country && REVERSE_CHARGE_COUNTRIES.has(country)

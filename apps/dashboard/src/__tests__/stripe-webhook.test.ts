@@ -20,7 +20,7 @@ const mocks = vi.hoisted(() => ({
    * Users and Stripe customers that belong to the other region's dashboard
    * (the Stripe account is shared). Everything else is this region's.
    */
-  foreign: { users: new Set<string>(), customers: new Set<string>() },
+  foreign: { users: new Set<string>(), customers: new Set<string>(), down: false },
   /** What Stripe says the subscription is now (deliver() sets it to the payload unless a test says otherwise). */
   current: null as Record<string, unknown> | null,
 }));
@@ -29,7 +29,10 @@ const mocks = vi.hoisted(() => ({
 async function dbQuery(sql: string, params?: unknown[]) {
   const q = String(sql);
   const ours = (set: Set<string>) => (set.has(String(params?.[0])) ? { rowCount: 0, rows: [] } : { rowCount: 1, rows: [{ '?column?': 1 }] });
-  if (q.includes('SELECT 1 FROM users WHERE id = $1')) return ours(mocks.foreign.users);
+  if (q.includes('SELECT 1 FROM users WHERE id = $1')) {
+    if (mocks.foreign.down) throw new Error('connection refused');
+    return ours(mocks.foreign.users);
+  }
   if (q.includes('SELECT 1 FROM subscriptions WHERE stripe_customer_id = $1')) return ours(mocks.foreign.customers);
   return mocks.query(sql, params);
 }
@@ -101,6 +104,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.foreign.users.clear();
   mocks.foreign.customers.clear();
+  mocks.foreign.down = false;
   process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
   process.env.STRIPE_PRICE_STARTER = 'price_starter';
   process.env.STRIPE_PRICE_PRO = 'price_pro';
@@ -472,6 +476,22 @@ describe('stripe webhook: order, replacement and delivery', () => {
     expect(mocks.query.mock.calls.some((c) => String(c[0]).includes('DELETE FROM stripe_events WHERE id = $1'))).toBe(false);
   });
 
+  it("skips another region's checkout too: nothing written, and its customer left alone", async () => {
+    mocks.foreign.users.add('u1');
+    mocks.foreign.customers.add('cus_1');
+    mocks.current = sub('trialing');
+    expect((await event('checkout.session.completed', { subscription: 'sub_1', customer: 'cus_1', metadata: { whiteroom_user_id: 'u1' } })).status).toBe(200);
+    expect(upserts()).toHaveLength(0);
+    expect(mocks.retrieveCustomer).not.toHaveBeenCalled();
+  });
+
+  it('fails the delivery, so Stripe retries, when the database cannot say whose the user is', async () => {
+    mocks.foreign.down = true;
+    expect((await event('customer.subscription.updated', sub('active'))).status).toBe(500);
+    expect(mocks.query.mock.calls.some((c) => String(c[0]).includes('DELETE FROM stripe_events WHERE id = $1'))).toBe(true);
+    expect(upserts()).toHaveLength(0);
+  });
+
   it('past_due and trialing count as active for the replacement rule', async () => {
     await event('customer.subscription.updated', sub('past_due'));
     expect((upserts()[0][1] as unknown[])[7]).toEqual(['active', 'trialing', 'past_due']);
@@ -633,6 +653,19 @@ describe('stripe webhook: order, replacement and delivery', () => {
       await event('customer.tax_id.deleted', { object: 'tax_id', customer: 'cus_1', type: 'gb_vat' });
       stripeCustomer('GB', [['gb_vat', 'verified']], 'reverse', 'Acme Widgets Limited', AUTO);
       await event('customer.tax_id.updated', { object: 'tax_id', customer: 'cus_1', type: 'gb_vat' });
+      expect(mocks.updateCustomer).not.toHaveBeenCalled();
+    });
+
+    it('respects a person taking an automatic reverse charge off: records it, and never marks again', async () => {
+      stripeCustomer('GB', [['gb_vat', 'verified']], 'none', 'Acme Widgets Limited', AUTO);
+      await event('customer.tax_id.updated', { object: 'tax_id', customer: 'cus_1', type: 'gb_vat' });
+      expect(mocks.updateCustomer).toHaveBeenCalledTimes(1);
+      expect(mocks.updateCustomer).toHaveBeenCalledWith('cus_1', { metadata: { wr_reverse_charge: 'declined' } });
+
+      mocks.updateCustomer.mockClear();
+      stripeCustomer('GB', [['gb_vat', 'verified']], 'none', 'Acme Widgets Limited', { wr_reverse_charge: 'declined' });
+      await event('customer.tax_id.updated', { object: 'tax_id', customer: 'cus_1', type: 'gb_vat' });
+      await completed();
       expect(mocks.updateCustomer).not.toHaveBeenCalled();
     });
 
