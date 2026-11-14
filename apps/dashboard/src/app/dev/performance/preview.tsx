@@ -121,7 +121,10 @@ const RULES: GovernanceRule[] = [
   rule('gr_kw', 'keyword', 'watch', { keywords: ['password'], where: 'incoming' }),
 ];
 const acts = (blocked: number, wouldAct: number) => ({ blocked, paused: 0, stopped: 0, toldYou: 0, wouldAct });
-const BY_RULE_ID = { gr_allow: acts(0, 60), gr_sc190: acts(0, 59), gr_gone: acts(0, 1) };
+// ?state=unknown: a rule of a type this build doesn't know, which caught the most.
+const unknownState = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('state') === 'unknown';
+const UNKNOWN_RULES = unknownState ? [{ id: 'gr_future', mode: 'watch' as const, appliesTo: 'all' as const }] : [];
+const BY_RULE_ID = { gr_allow: acts(0, 60), gr_sc190: acts(0, 59), gr_gone: acts(0, 1), ...(unknownState && { gr_future: acts(0, 80) }) };
 const tally = (blocks: number, wouldBlocks: number) => ({ blocks, wouldBlocks });
 const COUNTS: GovernanceCounts = {
   blocks: 0, wouldBlocks: 120,
@@ -187,7 +190,7 @@ export function PerformancePreview() {
             <hr className="wr-perf-rule" />
             <section aria-labelledby="pv-control">
               <SectionHeader id="pv-control" title="Rules" sub="What your rules caught." meta={<>{label} · <a href="#" className="wr-link">Manage in Controls →</a></>} />
-              <RulesSummary counts={COUNTS} byRuleId={sample === 'quiet' ? BY_RULE_ID : undefined} rules={RULES} unavailable={false} />
+              <RulesSummary counts={COUNTS} byRuleId={sample === 'quiet' ? BY_RULE_ID : undefined} rules={RULES} unknownRules={UNKNOWN_RULES} unavailable={false} />
             </section>
             <hr className="wr-perf-rule" />
             <section aria-labelledby="pv-performance">

@@ -6,7 +6,7 @@ import type {
   CallRateParams, GovernanceMode, GovernanceParams, GovernanceResponse, GovernanceRule, GovernanceRuleType,
   GovernanceScope, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, RuleActionCounts, SpendCapParams, ToolListParams,
 } from '@/lib/whiteroom/types';
-import { convertSpendCap } from '@/lib/governance';
+import { convertSpendCap, UNKNOWN_RULE, unhandledType } from '@/lib/governance';
 import { MODE_LABEL, NOTIFY } from '@/lib/vocab';
 import { DAY_MS, fmtCount, ordinal } from '@/lib/format';
 
@@ -42,35 +42,40 @@ export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 
   const response = rule.response ?? 'block';
   const does = response === 'block' && rule.alsoNotify ? `block the call and ${NOTIFY.verb}` : VERB[response];
   const v = rule.mode === undefined || rule.mode === 'enforce' ? does : `it would ${does}`;
-  if (rule.ruleType === 'spend_cap') {
-    const p = rule.params as SpendCapParams;
-    return { pre: 'When an agent spends more than ', val: money(p), post: ` in a ${p.scope}, ${v}.` };
-  }
-  if (rule.ruleType === 'loop_breaker') {
-    const p = rule.params as LoopBreakerParams;
-    return { pre: 'When an agent makes the same call ', val: fmtCount(p.threshold), post: ` times in a ${p.scope}, ${v}.` };
-  }
-  if (rule.ruleType === 'call_rate') {
-    return { pre: 'When an agent makes more than ', val: fmtCount((rule.params as CallRateParams).maxCalls), post: ` calls in a minute, ${v}.` };
-  }
-  if (rule.ruleType === 'keyword') {
-    const p = rule.params as KeywordParams;
-    // Without the dashboard's secret the engine sends only how many there are.
-    if (!p.keywords.length && p.keywordCount) {
-      return p.keywordCount === 1
-        ? { pre: `When ${KEYWORD_WHERE[p.where]} contains `, val: 'a hidden keyword', post: `, ${v}.` }
-        : { pre: `When ${KEYWORD_WHERE[p.where]} contains any of `, val: `${p.keywordCount} hidden keywords`, post: `, ${v}.` };
+  switch (rule.ruleType) {
+    case 'spend_cap': {
+      const p = rule.params as SpendCapParams;
+      return { pre: 'When an agent spends more than ', val: money(p), post: ` in a ${p.scope}, ${v}.` };
     }
-    return p.keywords.length
-      ? { pre: `When ${KEYWORD_WHERE[p.where]} contains ${p.keywords.length > 1 ? 'any of ' : ''}`, val: p.keywords.map((k) => `“${k}”`).join(', '), post: `, ${v}.` }
-      : { pre: 'No keywords picked yet.', val: '', post: '' };
+    case 'loop_breaker': {
+      const p = rule.params as LoopBreakerParams;
+      return { pre: 'When an agent makes the same call ', val: fmtCount(p.threshold), post: ` times in a ${p.scope}, ${v}.` };
+    }
+    case 'call_rate':
+      return { pre: 'When an agent makes more than ', val: fmtCount((rule.params as CallRateParams).maxCalls), post: ` calls in a minute, ${v}.` };
+    case 'keyword': {
+      const p = rule.params as KeywordParams;
+      // Without the dashboard's secret the engine sends only how many there are.
+      if (!p.keywords.length && p.keywordCount) {
+        return p.keywordCount === 1
+          ? { pre: `When ${KEYWORD_WHERE[p.where]} contains `, val: 'a hidden keyword', post: `, ${v}.` }
+          : { pre: `When ${KEYWORD_WHERE[p.where]} contains any of `, val: `${p.keywordCount} hidden keywords`, post: `, ${v}.` };
+      }
+      return p.keywords.length
+        ? { pre: `When ${KEYWORD_WHERE[p.where]} contains ${p.keywords.length > 1 ? 'any of ' : ''}`, val: p.keywords.map((k) => `“${k}”`).join(', '), post: `, ${v}.` }
+        : { pre: 'No keywords picked yet.', val: '', post: '' };
+    }
+    case 'tool_list': {
+      const tools = (rule.params as ToolListParams).blockedTools;
+      return tools.length ? { pre: 'When an agent is about to run ', val: tools.join(', '), post: `, ${v}.` } : { pre: 'No tools picked yet.', val: '', post: '' };
+    }
+    case 'model_allowlist': {
+      const models = (rule.params as ModelAllowlistParams).allowedModels;
+      return models.length ? { pre: 'Only allow ', val: models.join(', '), post: `. For any other model, ${v}.` } : { pre: 'No models picked yet.', val: '', post: '' };
+    }
+    default:
+      return unhandledType(rule.ruleType, { pre: UNKNOWN_RULE, val: '', post: '' });
   }
-  if (rule.ruleType === 'tool_list') {
-    const tools = (rule.params as ToolListParams).blockedTools;
-    return tools.length ? { pre: 'When an agent is about to run ', val: tools.join(', '), post: `, ${v}.` } : { pre: 'No tools picked yet.', val: '', post: '' };
-  }
-  const models = (rule.params as ModelAllowlistParams).allowedModels;
-  return models.length ? { pre: 'Only allow ', val: models.join(', '), post: `. For any other model, ${v}.` } : { pre: 'No models picked yet.', val: '', post: '' };
 }
 
 export const ruleSentenceText = (rule: Parameters<typeof ruleSentence>[0]) => { const s = ruleSentence(rule); return s.pre + s.val + s.post; };
@@ -83,7 +88,7 @@ export function appliesNow(scope: GovernanceScope): string {
 // ── Grouping and the agent filter ───────────────────────────────────
 
 /** The rules that govern an agent: the fleet-wide ones and its own. `null`: every rule. */
-export function rulesFor(rules: readonly GovernanceRule[], agent: string | null): GovernanceRule[] {
+export function rulesFor<R extends Pick<GovernanceRule, 'appliesTo'>>(rules: readonly R[], agent: string | null): R[] {
   return agent === null ? [...rules] : rules.filter((r) => r.appliesTo === 'all' || r.appliesTo.includes(agent));
 }
 
@@ -138,11 +143,14 @@ export const NO_ACTIONS: RuleActionCounts = { blocked: 0, paused: 0, stopped: 0,
 
 /** A Keywords or Tool list rule with nothing picked can never act: what it still needs. */
 export function emptyPick(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): string | null {
-  if (rule.ruleType === 'keyword') return keywordTotal(rule.params as KeywordParams) ? null : 'a keyword';
-  if (rule.ruleType === 'tool_list') return (rule.params as ToolListParams).blockedTools.length ? null : 'a tool';
-  // The engine skips an allowlist with no models (it would refuse every call), so it does nothing yet.
-  if (rule.ruleType === 'model_allowlist') return (rule.params as ModelAllowlistParams).allowedModels.length ? null : 'a model';
-  return null;
+  switch (rule.ruleType) {
+    case 'keyword': return keywordTotal(rule.params as KeywordParams) ? null : 'a keyword';
+    case 'tool_list': return (rule.params as ToolListParams).blockedTools.length ? null : 'a tool';
+    // The engine skips an allowlist with no models (it would refuse every call), so it does nothing yet.
+    case 'model_allowlist': return (rule.params as ModelAllowlistParams).allowedModels.length ? null : 'a model';
+    case 'spend_cap': case 'loop_breaker': case 'call_rate': return null;
+    default: return unhandledType(rule.ruleType, null);
+  }
 }
 
 // ── What the agent gets ─────────────────────────────────────────────
@@ -157,11 +165,17 @@ export function agentGets(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 're
   const response = rule.response ?? 'block';
   if (response === 'notify') return 'Nothing: the call goes through.\nYou get an alert; the agent doesn’t.';
   const held = response === 'pause' || response === 'stop';
-  const resets = held ? 'when someone resumes it'
-    : rule.ruleType === 'call_rate' ? 'once the last minute is back under the limit'
-    : rule.ruleType === 'model_allowlist' || rule.ruleType === 'tool_list' || rule.ruleType === 'keyword' ? 'never'
-    : (rule.params as SpendCapParams | LoopBreakerParams).scope === 'day' ? 'next day (00:00 UTC)' : 'next run';
+  const resets = held ? 'when someone resumes it' : resetsWhen(rule);
   return `403 governance_block\nresponse: ${response}\nreason: ${REASON[rule.ruleType]}\nretryable: ${!held && rule.ruleType === 'call_rate'}\nresets: ${resets}`;
+}
+
+function resetsWhen(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): string {
+  switch (rule.ruleType) {
+    case 'call_rate': return 'once the last minute is back under the limit';
+    case 'model_allowlist': case 'tool_list': case 'keyword': return 'never';
+    case 'spend_cap': case 'loop_breaker': return (rule.params as SpendCapParams | LoopBreakerParams).scope === 'day' ? 'next day (00:00 UTC)' : 'next run';
+    default: return unhandledType(rule.ruleType, 'never');
+  }
 }
 
 export const AGENT_NOTE: Record<GovernanceRuleType, string> = {
@@ -197,10 +211,13 @@ export interface RuleDraft {
 }
 
 const numberOf = (rule: Pick<GovernanceRule, 'ruleType' | 'params'>): string => {
-  if (rule.ruleType === 'spend_cap') return String((rule.params as SpendCapParams).dailyCap);
-  if (rule.ruleType === 'loop_breaker') return String((rule.params as LoopBreakerParams).threshold);
-  if (rule.ruleType === 'call_rate') return String((rule.params as CallRateParams).maxCalls);
-  return '';
+  switch (rule.ruleType) {
+    case 'spend_cap': return String((rule.params as SpendCapParams).dailyCap);
+    case 'loop_breaker': return String((rule.params as LoopBreakerParams).threshold);
+    case 'call_rate': return String((rule.params as CallRateParams).maxCalls);
+    case 'model_allowlist': case 'tool_list': case 'keyword': return '';
+    default: return unhandledType(rule.ruleType, '');
+  }
 };
 
 export function draftFrom(rule: GovernanceRule): RuleDraft {
@@ -212,7 +229,8 @@ export function draftFrom(rule: GovernanceRule): RuleDraft {
   };
 }
 
-const hasNumber = (t: GovernanceRuleType) => t === 'spend_cap' || t === 'loop_breaker' || t === 'call_rate';
+const HAS_NUMBER: Record<GovernanceRuleType, boolean> = { spend_cap: true, loop_breaker: true, call_rate: true, model_allowlist: false, tool_list: false, keyword: false };
+const hasNumber = (t: GovernanceRuleType) => HAS_NUMBER[t] === true;
 
 /**
  * A typed number: digits and a decimal point, with commas only between
@@ -289,10 +307,15 @@ export function draftProblem(d: RuleDraft): string | null {
   const p = draftParams(d);
   if ('error' in p) return p.error;
   if (d.appliesTo !== 'all' && d.appliesTo.length === 0) return 'Pick at least one agent, or choose All agents.';
-  if (d.mode === 'enforce' && d.ruleType === 'model_allowlist' && (p.params as ModelAllowlistParams).allowedModels.length === 0) return 'Pick at least one model before you turn on Enforce.';
-  if (d.mode === 'enforce' && d.ruleType === 'tool_list' && (p.params as ToolListParams).blockedTools.length === 0) return 'Pick at least one tool before you turn on Enforce.';
-  if (d.mode === 'enforce' && d.ruleType === 'keyword' && keywordTotal(p.params as KeywordParams) === 0) return 'Pick at least one keyword before you turn on Enforce.';
-  return null;
+  if (d.mode !== 'enforce') return null;
+  switch (d.ruleType) {
+    case 'model_allowlist': return (p.params as ModelAllowlistParams).allowedModels.length === 0 ? 'Pick at least one model before you turn on Enforce.' : null;
+    case 'tool_list': return (p.params as ToolListParams).blockedTools.length === 0 ? 'Pick at least one tool before you turn on Enforce.' : null;
+    case 'keyword': return keywordTotal(p.params as KeywordParams) === 0 ? 'Pick at least one keyword before you turn on Enforce.' : null;
+    case 'spend_cap': case 'loop_breaker': case 'call_rate': return null;
+    // Never saved: the editor doesn't open a rule of a type it doesn't know.
+    default: return unhandledType(d.ruleType, UNKNOWN_RULE);
+  }
 }
 
 // ── Add a rule ──────────────────────────────────────────────────────
@@ -391,7 +414,7 @@ function looser(prev: GovernanceRule, next: GovernanceRule): string[] {
       return out;
     }
     default:
-      return [];
+      return unhandledType(prev.ruleType, []);
   }
 }
 
@@ -423,29 +446,35 @@ export function sameValue(a: unknown, b: unknown): boolean {
  * "Over $190 a day"), split so the value can be set in mono.
  */
 export function ruleCondition(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): { pre: string; val: string; post: string } {
-  if (rule.ruleType === 'spend_cap') {
-    const p = rule.params as SpendCapParams;
-    const per = p.scope === 'day' ? ' a day' : ' in a run';
-    return p.unit === 'dollars' ? { pre: 'Over ', val: money(p), post: per } : { pre: 'Over ', val: fmtCount(p.dailyCap), post: ` tokens${per}` };
+  switch (rule.ruleType) {
+    case 'spend_cap': {
+      const p = rule.params as SpendCapParams;
+      const per = p.scope === 'day' ? ' a day' : ' in a run';
+      return p.unit === 'dollars' ? { pre: 'Over ', val: money(p), post: per } : { pre: 'Over ', val: fmtCount(p.dailyCap), post: ` tokens${per}` };
+    }
+    case 'loop_breaker': {
+      const p = rule.params as LoopBreakerParams;
+      return { pre: 'Same call ', val: fmtCount(p.threshold), post: `× in a ${p.scope}` };
+    }
+    case 'call_rate': return { pre: 'Over ', val: fmtCount((rule.params as CallRateParams).maxCalls), post: ' calls a minute' };
+    case 'keyword': {
+      const p = rule.params as KeywordParams;
+      const where = KEYWORD_WHERE[p.where];
+      const lead = `${where[0].toUpperCase()}${where.slice(1)} contains `;
+      if (!p.keywords.length && p.keywordCount) return { pre: lead, val: p.keywordCount === 1 ? 'a hidden keyword' : `${p.keywordCount} hidden keywords`, post: '' };
+      return p.keywords.length ? { pre: lead, val: p.keywords.map((k) => `"${k}"`).join(', '), post: '' } : { pre: 'No keywords picked yet', val: '', post: '' };
+    }
+    case 'tool_list': {
+      const tools = (rule.params as ToolListParams).blockedTools;
+      return tools.length ? { pre: 'Tools: ', val: tools.join(', '), post: '' } : { pre: 'No tools picked yet', val: '', post: '' };
+    }
+    case 'model_allowlist': {
+      const models = (rule.params as ModelAllowlistParams).allowedModels;
+      return models.length ? { pre: 'Only ', val: models.join(', '), post: '' } : { pre: 'No models picked yet', val: '', post: '' };
+    }
+    default:
+      return unhandledType(rule.ruleType, { pre: UNKNOWN_RULE, val: '', post: '' });
   }
-  if (rule.ruleType === 'loop_breaker') {
-    const p = rule.params as LoopBreakerParams;
-    return { pre: 'Same call ', val: fmtCount(p.threshold), post: `× in a ${p.scope}` };
-  }
-  if (rule.ruleType === 'call_rate') return { pre: 'Over ', val: fmtCount((rule.params as CallRateParams).maxCalls), post: ' calls a minute' };
-  if (rule.ruleType === 'keyword') {
-    const p = rule.params as KeywordParams;
-    const where = KEYWORD_WHERE[p.where];
-    const lead = `${where[0].toUpperCase()}${where.slice(1)} contains `;
-    if (!p.keywords.length && p.keywordCount) return { pre: lead, val: p.keywordCount === 1 ? 'a hidden keyword' : `${p.keywordCount} hidden keywords`, post: '' };
-    return p.keywords.length ? { pre: lead, val: p.keywords.map((k) => `"${k}"`).join(', '), post: '' } : { pre: 'No keywords picked yet', val: '', post: '' };
-  }
-  if (rule.ruleType === 'tool_list') {
-    const tools = (rule.params as ToolListParams).blockedTools;
-    return tools.length ? { pre: 'Tools: ', val: tools.join(', '), post: '' } : { pre: 'No tools picked yet', val: '', post: '' };
-  }
-  const models = (rule.params as ModelAllowlistParams).allowedModels;
-  return models.length ? { pre: 'Only ', val: models.join(', '), post: '' } : { pre: 'No models picked yet', val: '', post: '' };
 }
 
 export const ruleConditionText = (rule: Pick<GovernanceRule, 'ruleType' | 'params'>) => { const c = ruleCondition(rule); return c.pre + c.val + c.post; };
@@ -503,7 +532,8 @@ export function blocksWhen(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'a
     case 'call_rate': return `only over ${fmtCount((rule.params as CallRateParams).maxCalls)} calls a minute${only}`;
     case 'model_allowlist': return `only for models not on its list${only}`;
     case 'tool_list': return `only for the tools it names${only}`;
-    default: return `only when its keywords show up${only}`;
+    case 'keyword': return `only when its keywords show up${only}`;
+    default: return unhandledType(rule.ruleType, `only in some cases${only}`);
   }
 }
 
@@ -654,25 +684,28 @@ export function keywordsShort(p: KeywordParams): string {
 
 /** The rule's condition as one plain sentence, for When before Change: "Spends more than $190 in a day". */
 export function whenSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): { pre: string; val: string; post: string } {
-  if (rule.ruleType === 'spend_cap') {
-    const p = rule.params as SpendCapParams;
-    return { pre: 'Spends more than ', val: money(p), post: ` in a ${p.scope}` };
+  switch (rule.ruleType) {
+    case 'spend_cap': {
+      const p = rule.params as SpendCapParams;
+      return { pre: 'Spends more than ', val: money(p), post: ` in a ${p.scope}` };
+    }
+    case 'loop_breaker': {
+      const p = rule.params as LoopBreakerParams;
+      const ignore = p.ignoreTools.length ? `, not counting ${p.ignoreTools.join(', ')}` : '';
+      return { pre: 'Makes the same call ', val: fmtCount(p.threshold), post: ` times in a ${p.scope}${ignore}` };
+    }
+    case 'call_rate': return { pre: 'Makes more than ', val: fmtCount((rule.params as CallRateParams).maxCalls), post: ' calls in a minute' };
+    case 'model_allowlist': {
+      const models = (rule.params as ModelAllowlistParams).allowedModels;
+      return models.length ? { pre: 'Uses a model other than ', val: models.join(', '), post: '' } : { pre: 'No models picked yet', val: '', post: '' };
+    }
+    case 'tool_list': {
+      const tools = (rule.params as ToolListParams).blockedTools;
+      return tools.length ? { pre: 'Is about to run ', val: tools.join(', '), post: '' } : { pre: 'No tools picked yet', val: '', post: '' };
+    }
+    case 'keyword': return ruleCondition(rule);
+    default: return unhandledType(rule.ruleType, { pre: UNKNOWN_RULE, val: '', post: '' });
   }
-  if (rule.ruleType === 'loop_breaker') {
-    const p = rule.params as LoopBreakerParams;
-    const ignore = p.ignoreTools.length ? `, not counting ${p.ignoreTools.join(', ')}` : '';
-    return { pre: 'Makes the same call ', val: fmtCount(p.threshold), post: ` times in a ${p.scope}${ignore}` };
-  }
-  if (rule.ruleType === 'call_rate') return { pre: 'Makes more than ', val: fmtCount((rule.params as CallRateParams).maxCalls), post: ' calls in a minute' };
-  if (rule.ruleType === 'model_allowlist') {
-    const models = (rule.params as ModelAllowlistParams).allowedModels;
-    return models.length ? { pre: 'Uses a model other than ', val: models.join(', '), post: '' } : { pre: 'No models picked yet', val: '', post: '' };
-  }
-  if (rule.ruleType === 'tool_list') {
-    const tools = (rule.params as ToolListParams).blockedTools;
-    return tools.length ? { pre: 'Is about to run ', val: tools.join(', '), post: '' } : { pre: 'No tools picked yet', val: '', post: '' };
-  }
-  return ruleCondition(rule);
 }
 
 /** "What happens": Off · Watch · Enforce, in that order. */

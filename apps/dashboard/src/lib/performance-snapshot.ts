@@ -2,7 +2,7 @@
 // the page shows it at once while a fresh copy loads (instead of a loading line
 // on every visit). Memory only: it lasts until the tab reloads, and never
 // outlives the figures' own refresh, which always runs.
-import type { PerformanceIndexResult, FleetHourlyResult, GovernanceRule, RuleActionCounts } from '@/lib/whiteroom/types';
+import type { PerformanceIndexResult, FleetHourlyResult, GovernanceRule, RuleActionCounts, UnknownGovernanceRule } from '@/lib/whiteroom/types';
 import type { DaySavings, GovSavings } from '@/lib/analytics-metrics';
 import type { GovernanceCounts } from '@/lib/governance';
 
@@ -11,6 +11,8 @@ export interface OverviewExtras {
   /** Hourly cost: the fleet's spend per working hour. */
   workingHour: { usdPerHour: number; lookbackHours: number | null; unpriced?: boolean } | null;
   rules: GovernanceRule[] | null;
+  /** Rules of a type this build doesn't know (governanceList). */
+  unknownRules?: UnknownGovernanceRule[];
   /** Rule activity per rule id (engine rule_actions, newer engines). */
   byRuleId: Record<string, RuleActionCounts> | undefined;
   /** The last 7 days by hour (By day's input per day); null when it couldn't be read. */

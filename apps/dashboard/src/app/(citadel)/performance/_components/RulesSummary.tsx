@@ -8,26 +8,28 @@
  */
 import { useId, useState } from 'react';
 import Link from 'next/link';
-import type { GovernanceRule, RuleActionCounts } from '@/lib/whiteroom/types';
+import type { GovernanceRule, RuleActionCounts, UnknownGovernanceRule } from '@/lib/whiteroom/types';
 import type { GovernanceCounts } from '@/lib/governance';
 import { ruleModeCounts, topCaught } from '@/lib/performance-overview';
 import { fmtCount } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
 import { Disclosure, ModeTag } from './primitives';
 
-export function RulesSummary({ counts, byRuleId, rules, unavailable }: {
+export function RulesSummary({ counts, byRuleId, rules, unknownRules, unavailable }: {
   /** Null while unknown. */
   counts: GovernanceCounts | null;
   /** Per rule id, from the same rows as the totals (newer engines). */
   byRuleId?: Record<string, RuleActionCounts>;
   /** The fleet's rules; null when they couldn't be read. */
   rules: GovernanceRule[] | null;
+  /** Rules of a type this build doesn't know: named as such, never counted as another type. */
+  unknownRules?: UnknownGovernanceRule[];
   /** The counts couldn't be read: unknown, never zero. */
   unavailable: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const bodyId = useId();
-  const top = topCaught(counts, byRuleId, rules);
+  const top = topCaught(counts, byRuleId, rules, unknownRules);
   const extra = counts ? [
     counts.paused ? `${fmtCount(counts.paused)} paused` : '',
     counts.stopped ? `${fmtCount(counts.stopped)} stopped` : '',
@@ -50,7 +52,7 @@ export function RulesSummary({ counts, byRuleId, rules, unavailable }: {
           <div className="wr-rules-top">
             {top.length === 0 ? (
               <p className="wr-cap" style={{ margin: 0 }}>Nothing caught in this range.</p>
-            ) : top.map((r) => {
+            ) : top.map((r, i) => {
               const inner = (
                 <>
                   <span className="wr-ctrl__name">{r.label}</span>
@@ -62,8 +64,8 @@ export function RulesSummary({ counts, byRuleId, rules, unavailable }: {
                 </>
               );
               return r.ruleId
-                ? <Link key={r.label} href={`${ROUTES.controls}?rule=${encodeURIComponent(r.ruleId)}`} className="wr-ctrl__row">{inner}</Link>
-                : <div key={r.label} className="wr-ctrl__row">{inner}</div>;
+                ? <Link key={r.ruleId} href={`${ROUTES.controls}?rule=${encodeURIComponent(r.ruleId)}`} className="wr-ctrl__row">{inner}</Link>
+                : <div key={`${r.label}:${i}`} className="wr-ctrl__row">{inner}</div>;
             })}
           </div>
         </Disclosure>

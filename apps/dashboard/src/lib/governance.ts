@@ -11,6 +11,7 @@ import type {
   RuleActionsResult,
   FleetHourlyResult,
   GovernanceRuleType,
+  GovernanceListResult,
   PerformanceIndexResult,
 } from './whiteroom/types';
 import { MODE_LABEL, NOTIFY } from './vocab';
@@ -27,6 +28,34 @@ export const RULE_LABELS: Record<GovernanceRuleType, string> = {
   keyword: 'Keywords',
 };
 
+/** What a rule of a type this build doesn't know shows as, wherever rules are listed. */
+export const UNKNOWN_RULE = 'A rule this version can’t show';
+
+export const isKnownRuleType = (t: unknown): t is GovernanceRuleType => typeof t === 'string' && Object.hasOwn(RULE_LABELS, t);
+
+/** The default of a switch over rule types: compiles only once every type has its case. */
+export function unhandledType<T>(type: never, fallback: T): T {
+  void type;
+  return fallback;
+}
+
+/**
+ * The engine's rule list with only the types this build knows in `rules`.
+ * A newer engine's other rules go to `unknownRules`, and their history is
+ * left out, so nothing reads their params or offers to undo them.
+ */
+export function knownRulesOnly(res: GovernanceListResult): GovernanceListResult {
+  if (!Array.isArray(res.rules)) return res;
+  const known = res.rules.filter((r) => isKnownRuleType(r.ruleType));
+  if (known.length === res.rules.length && (res.history ?? []).every((h) => isKnownRuleType(h.ruleType))) return res;
+  return {
+    ...res,
+    rules: known,
+    unknownRules: res.rules.filter((r) => !isKnownRuleType(r.ruleType)).map((r) => ({ id: r.id, mode: r.mode, appliesTo: r.appliesTo })),
+    history: Array.isArray(res.history) ? res.history.filter((h) => isKnownRuleType(h.ruleType)) : res.history,
+  };
+}
+
 export const REASON_LABELS: Record<string, string> = {
   budget_exceeded: 'budget exceeded',
   loop_detected: 'loop detected',
@@ -37,12 +66,13 @@ export const REASON_LABELS: Record<string, string> = {
 };
 
 /** Each rule's own reason: said after its name, it only repeats it ("the spend cap (budget exceeded)"). */
-const OWN_REASON: Partial<Record<GovernanceRuleType, string>> = {
+const OWN_REASON: Record<GovernanceRuleType, string> = {
   spend_cap: 'budget_exceeded',
   loop_breaker: 'loop_detected',
   model_allowlist: 'model_not_allowed',
   tool_list: 'tool_not_allowed',
   call_rate: 'rate_exceeded',
+  keyword: 'keyword_found',
 };
 
 /**

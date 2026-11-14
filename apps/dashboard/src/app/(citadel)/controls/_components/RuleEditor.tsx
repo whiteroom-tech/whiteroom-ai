@@ -36,8 +36,10 @@ const KEYWORD_ACTS: Record<KeywordWhere, string> = {
 };
 const WHERE_OPTIONS = (Object.keys(KEYWORD_WHERE) as KeywordWhere[]).map((value) => ({ value, label: KEYWORD_WHERE[value][0].toUpperCase() + KEYWORD_WHERE[value].slice(1) }));
 /** Fine print for When, behind its ⓘ. */
-const WHEN_NOTES: Partial<Record<GovernanceRule['ruleType'], string>> = {
+const WHEN_NOTES: Record<GovernanceRule['ruleType'], string | null> = {
   spend_cap: 'Dollar limits are estimates.',
+  model_allowlist: null,
+  call_rate: null,
   loop_breaker: 'Calls to the tools listed under Not counting never count as a loop.',
   keyword: 'Whole words, any case. Images and PDFs aren’t checked. The matched text is never stored, and the agent isn’t told which keyword matched.',
   tool_list: 'In Enforce, a streamed call is checked before it streams, so its text arrives all at once. In Watch, streamed calls aren’t checked.',

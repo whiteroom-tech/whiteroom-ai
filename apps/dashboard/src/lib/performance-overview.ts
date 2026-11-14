@@ -2,10 +2,10 @@
 // trends, the tokens with/without totals, the Control section's figures and
 // Agent health's checks grouped by check. Pure, so the wording is tested
 // without rendering.
-import type { FleetDiagnosis, GovernanceRule, GovernanceRuleType, PerformanceModelSummary, RuleActionCounts } from '@/lib/whiteroom/types';
+import type { FleetDiagnosis, GovernanceRule, GovernanceRuleType, PerformanceModelSummary, RuleActionCounts, UnknownGovernanceRule } from '@/lib/whiteroom/types';
 import type { DaySavings } from '@/lib/analytics-metrics';
 import type { GovernanceCounts, GovernanceTally } from '@/lib/governance';
-import { RULE_LABELS } from '@/lib/governance';
+import { RULE_LABELS, UNKNOWN_RULE } from '@/lib/governance';
 import { DIAGNOSIS_DETECTORS, notMeasuredShort } from '@/lib/diagnosis/copy';
 import { checkTitle } from '@/lib/diagnosis/model';
 import { alertOnly, notSetUp, ruleSentence } from '@/lib/controls-view';
@@ -163,14 +163,17 @@ const caught = (c: { blocked: number; wouldAct: number }) => c.blocked + c.would
  * The three rules that caught the most. Per rule id when the engine sends it;
  * else per rule type, with the rules of that type counted ("Spend caps (3 rules)").
  */
-export function topCaught(counts: GovernanceCounts | null, byRuleId: Record<string, RuleActionCounts> | undefined, rules: GovernanceRule[] | null, limit = 3): CaughtRow[] {
+export function topCaught(counts: GovernanceCounts | null, byRuleId: Record<string, RuleActionCounts> | undefined, rules: GovernanceRule[] | null, unknownRules: readonly UnknownGovernanceRule[] = [], limit = 3): CaughtRow[] {
   if (byRuleId) {
     const byId = new Map((rules ?? []).map((r) => [r.id, r]));
+    const unknown = new Map(unknownRules.map((r) => [r.id, r]));
     return Object.entries(byRuleId)
       .filter(([, c]) => caught(c) > 0)
       .sort(([a, x], [b, y]) => caught(y) - caught(x) || a.localeCompare(b))
       .slice(0, limit)
       .map(([id, c]) => {
+        const other = unknown.get(id);
+        if (other) return { label: UNKNOWN_RULE, blocked: c.blocked, wouldBlock: c.wouldAct, mode: other.mode, ruleId: null };
         const rule = byId.get(id);
         const type = (rule?.ruleType ?? id.split(':')[0]) as GovernanceRuleType;
         const name = RULE_LABELS[type];
