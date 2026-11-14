@@ -96,4 +96,13 @@ and the password in the `whiteroom-dashboard-db-password` secret in `whiteroom-e
 
 - **Fold the EU deploy into the workflows.** `deploy-staging.yml` would build the EU image too, and `promote-prod.yml` would ship the verified image to both regions, with Workload Identity Federation for `whiteroom-eu`. That would retire this exception.
 - **A migration runner**, so migrations stop being a manual step in three databases.
-- **Stripe.** When billing goes live, the EU dashboard needs the live key, its own live webhook secret and the `STRIPE_PRICE_*` variables.
+- **Billing jobs.** Cloud Scheduler isn't enabled in `whiteroom-eu`, so `billing-sync` (hourly) and `entitlement-sweep` (every 2 minutes) don't run in the EU yet: free periods don't end on time, no trial reminders go out and savings aren't reported to Stripe. Create both jobs as in `whiteroom-prod`, with the EU's `whiteroom-entitlement-sync-secret` in the `x-wr-sync-secret` header.
+
+## Stripe
+
+The EU dashboard bills through the same WhiteRoom Tech live Stripe account as the US, with its own credentials:
+
+- **Key and webhook secret:** `whiteroom-dashboard-stripe-secret-key` and `whiteroom-dashboard-stripe-webhook-secret` in `whiteroom-eu`'s Secret Manager (a separate live key from the US one).
+- **Webhook destination:** `whiteroom-dashboard-eu` -> `https://eu.app.whiteroom.tech/api/stripe/webhook`, API version `2026-08-26.dahlia`, the same 7 events as the US destination.
+- **Meter and prices:** the US ones, set in `cloudbuild-dashboard-eu.yaml`. The meter's event name is `whiteroom_saving_cents` (singular, the live meter's exact name).
+- **Shared account:** each webhook destination receives the other region's events too. The webhook skips users and customers that aren't in its own region's database.

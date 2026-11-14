@@ -35,6 +35,8 @@
 # (https://eu.app.whiteroom.tech/api/stripe/webhook). The meter and prices
 # below are the US ones: one catalogue, two dashboards. Set here, not by
 # hand, because --set-env-vars replaces every variable on each deploy.
+# STRIPE_SAVINGS_METER_EVENT is whiteroom_saving_cents (singular "saving") on
+# purpose: it is the live meter's exact event name, which Stripe can't rename.
 
 substitutions:
   _IMAGE: europe-west1-docker.pkg.dev/whiteroom-eu/whiteroom/whiteroom-dashboard
