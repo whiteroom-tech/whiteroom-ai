@@ -74,6 +74,13 @@ describe('startCheckout', () => {
     expect(sent().line_items).toEqual([{ price: 'price_starter_share' }]);
   });
 
+  it('asks for a VAT or tax number, company name and billing address, and saves them for invoices', async () => {
+    await startCheckout('pro');
+    expect(sent().tax_id_collection).toEqual({ enabled: true });
+    expect(sent().billing_address_collection).toBe('required');
+    expect(sent().customer_update).toEqual({ name: 'auto', address: 'auto' });
+  });
+
   it('sells Pro its share alone while no fee price is configured', async () => {
     delete process.env.STRIPE_PRICE_PRO_FEE;
     await startCheckout('pro');
