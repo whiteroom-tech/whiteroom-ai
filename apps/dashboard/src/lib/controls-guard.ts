@@ -26,7 +26,9 @@ export function canAct(rule: Pick<GovernanceRule, 'mode' | 'ruleType' | 'params'
     case 'outside_then_send': return false;
     // Edits the request and lets it through: it never stops a call, whatever is saved.
     case 'trim_results': return false;
-    case 'spend_cap': case 'loop_breaker': case 'call_rate': case 'block_streak': return true;
+    // Acts only after another rule in Enforce blocked, and that rule already counts here (the engine's own reason).
+    case 'block_streak': return false;
+    case 'spend_cap': case 'loop_breaker': case 'call_rate': return true;
     default: return unhandledType(rule.ruleType, true);
   }
 }

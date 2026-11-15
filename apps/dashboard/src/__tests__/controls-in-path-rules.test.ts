@@ -204,11 +204,13 @@ describe('an Old tool results rule in Enforce never reads as an alert or a block
     expect(modeTagText(streak({ mode: 'enforce' }))).toBe('Enforce · pauses');
   });
 
-  it('never stops a call; Repeated blocks can stop an agent', () => {
+  // Like the engine's fleetHasEnforcingRule: Repeated blocks acts only after
+  // another rule blocked, so on its own it never makes the proxy refuse unnamed calls.
+  it('never stops a call; Repeated blocks can stop an agent but refuses no call itself', () => {
     expect(canAct(on)).toBe(false);
     expect(canAct({ ...on, response: 'block' })).toBe(false);
     expect(isStopping(on)).toBe(false);
-    expect(canAct(streak({ mode: 'enforce' }))).toBe(true);
+    expect(canAct(streak({ mode: 'enforce' }))).toBe(false);
     expect(canAct(streak({ mode: 'enforce', response: 'notify' }))).toBe(false);
     expect(canAct(streak())).toBe(false);
     expect(isStopping(streak({ mode: 'enforce' }))).toBe(true);

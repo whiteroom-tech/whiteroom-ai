@@ -834,6 +834,7 @@ export function blocksWhen(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'a
     case 'send_limit': return `only for sends to domains not on its list${only}`;
     // Never blocks (canAct is false), so never the one rule that does: kept for the exhaustive switch.
     case 'outside_then_send': return `only for sends after outside content${only}`;
+    // Never the one rule that blocks either (canAct is false): it needs another rule to block first.
     case 'block_streak': return `only after ${fmtCount((rule.params as BlockStreakParams).threshold)} blocked calls in a row${only}`;
     // Never blocks (canAct is false): kept for the exhaustive switch.
     case 'trim_results': return `only for old tool results${only}`;
