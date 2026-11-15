@@ -2450,8 +2450,6 @@ describe('Controls: Where tools can send data', () => {
     const shown = await mount();
     expect(shown.button('Add it back')).toBeTruthy();
     shown.root.unmount();
-    return;
-    m.root.unmount();
   });
 
   it('a caller without the secret sees the count, read only, with no Seen list, and never saves the list', async () => {
