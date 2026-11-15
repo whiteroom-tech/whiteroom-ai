@@ -276,14 +276,19 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
 
   // The fleet's own tools for the tool pickers: read once a picker shows (or "Block tools" is added), not on load.
   const [seenTools, setSeenTools] = useState<{ fleetId: string; tools: string[] } | null>(null);
-  const toolsRead = useRef<{ fleetId: string; tools: Promise<string[]> } | null>(null);
+  const toolsRead = useRef<{ fleetId: string; authKey: string | undefined; tools: Promise<string[]> } | null>(null);
   const fleetTools = useMemo(() => (seenTools?.fleetId === fleetId ? seenTools.tools : []), [seenTools, fleetId]);
   const readFleetTools = useCallback(() => {
-    if (toolsRead.current?.fleetId !== fleetId) {
+    if (toolsRead.current?.fleetId !== fleetId || toolsRead.current.authKey !== authKey) {
       const forFleet = fleetId;
-      const tools = toolsSeen(fleetId, authKey);
-      toolsRead.current = { fleetId, tools };
-      void tools.then((t) => setSeenTools({ fleetId: forFleet, tools: t }));
+      const read = { fleetId, authKey, tools: Promise.resolve<string[]>([]) };
+      // A failed read leaves the pickers as they are, and the next picker shown asks again.
+      read.tools = toolsSeen(fleetId, authKey).catch(() => {
+        if (toolsRead.current === read) toolsRead.current = null;
+        return [];
+      });
+      toolsRead.current = read;
+      void read.tools.then((t) => setSeenTools({ fleetId: forFleet, tools: t }));
     }
     return toolsRead.current.tools;
   }, [fleetId, authKey]);

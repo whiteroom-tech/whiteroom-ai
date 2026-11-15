@@ -77,6 +77,8 @@ const api = vi.hoisted(() => ({
   /** What tools_seen gives ([]: an older engine, a failure or no data), and how often it was asked. */
   tools: [] as string[],
   toolsAsked: 0,
+  /** tools_seen fails (an engine blip). */
+  toolsFail: false,
 }));
 const { knownRulesOnly } = await import('@/lib/governance');
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
@@ -104,7 +106,7 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
   governanceUpdateRule: api.update,
   governanceDeleteRule: api.remove,
   governanceCreateRule: api.create,
-  toolsSeen: async () => { api.toolsAsked++; return api.tools; },
+  toolsSeen: async () => { api.toolsAsked++; if (api.toolsFail) throw new Error('down'); return api.tools; },
 }));
 
 const { default: ControlsPage } = await import('@/app/(citadel)/controls/page');
@@ -149,7 +151,7 @@ beforeEach(() => {
   // An unsaved edit is kept in sessionStorage across visits (controls-draft): each test starts with none.
   sessionStorage.clear();
   nav.params = new URLSearchParams(); nav.replace.mockClear(); nav.push.mockClear();
-  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.hourly = []; api.listGate = null; api.listFail = false; api.empty = false; api.would = {}; api.agentCalls = {}; api.history = []; api.totals = null; api.unknown = []; api.tools = []; api.toolsAsked = 0;
+  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.hourly = []; api.listGate = null; api.listFail = false; api.empty = false; api.would = {}; api.agentCalls = {}; api.history = []; api.totals = null; api.unknown = []; api.tools = []; api.toolsAsked = 0; api.toolsFail = false;
   api.oldEngine = false; api.wouldBatches = []; api.wouldSingle = 0; resetBatchSupport();
   document.body.innerHTML = '';
 });
@@ -630,6 +632,24 @@ describe('Controls page, editing', () => {
     await m.click(m.button('Close'));
     await m.open('Same call 100');
     expect(api.toolsAsked).toBe(1);
+    expect(m.el.querySelector('select[aria-label="Add a tool"] optgroup')!.getAttribute('label')).toBe('Your fleet’s tools');
+    m.root.unmount();
+  });
+
+  it('a failed read leaves the picker as it is, and the next picker shown asks again', async () => {
+    api.toolsFail = true;
+    api.tools = ['update_claim'];
+    const m = await mount();
+    await m.click(m.button('Show'));
+    await m.open('No tools picked yet');
+    await flush();
+    expect(api.toolsAsked).toBe(1);
+    expect((m.el.querySelector('select[aria-label="Add a tool"]') as HTMLSelectElement).options[0].textContent).toBe('+ Add tool');
+    api.toolsFail = false;
+    await m.click(m.button('Close'));
+    await m.open('Same call 100');
+    await flush();
+    expect(api.toolsAsked).toBe(2);
     expect(m.el.querySelector('select[aria-label="Add a tool"] optgroup')!.getAttribute('label')).toBe('Your fleet’s tools');
     m.root.unmount();
   });

@@ -66,12 +66,13 @@ export function Chip({ label, onRemove, removeLabel = `Remove ${label}` }: { lab
 /** A Keywords marker: labelled Marker, the code cut to one line, and Copy for all of it. If the browser won't copy, the whole code shows to select. */
 export function MarkerChip({ code, onRemove }: { code: string; onRemove: () => void }) {
   const { copied, failed, copy } = useCopy(code);
+  const short = markerShort(code);
   return (
     <span className="gov-chip gov-chip--marker" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%', minHeight: '1.625rem', padding: '0 2px 0 9px', borderRadius: 6, border: '1px solid var(--brand)', background: 'var(--sunk)', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx)' }}>
       <b style={{ fontFamily: 'var(--font-sans)', fontWeight: 600, color: 'var(--brand)' }}>Marker</b>
-      {failed ? <span style={{ userSelect: 'all', overflowWrap: 'anywhere' }}>{code}</span> : <span style={{ whiteSpace: 'nowrap' }}>{markerShort(code)}</span>}
-      <button type="button" className="gov-chip__copy" onClick={copy} aria-label={copied ? undefined : 'Copy marker'}>{copied ? 'Copied' : 'Copy'}</button>
-      <button type="button" onClick={onRemove} aria-label="Remove marker" style={{ background: 'none', border: 0, color: 'var(--tx2)', width: 24, height: 24, cursor: 'pointer', fontSize: 'var(--fs-md)' }}>&times;</button>
+      {failed ? <span style={{ userSelect: 'all', overflowWrap: 'anywhere' }}>{code}</span> : <span style={{ whiteSpace: 'nowrap' }}>{short}</span>}
+      <button type="button" className="gov-chip__copy" onClick={copy} aria-label={copied ? undefined : `Copy marker ${short}`}>{copied ? 'Copied' : 'Copy'}</button>
+      <button type="button" onClick={onRemove} aria-label={`Remove marker ${short}`} style={{ background: 'none', border: 0, color: 'var(--tx2)', width: 24, height: 24, cursor: 'pointer', fontSize: 'var(--fs-md)' }}>&times;</button>
       <span className="wr-sr-only" aria-live="polite">{copied ? 'Copied' : failed ? 'Couldn’t copy. Select the code to copy it.' : ''}</span>
     </span>
   );

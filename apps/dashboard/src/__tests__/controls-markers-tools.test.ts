@@ -2,7 +2,7 @@
 // tool pickers (tools_seen) and "Block tools" starting with delete-looking
 // tools picked.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { deleteLookingTools, isMarker, keywordsShort, markerShort, newMarker, ruleConditionText, ruleSentenceText } from '@/lib/controls-view';
+import { deleteLookingTools, isMarker, keywordsShort, markerShort, newMarker, ruleConditionText, ruleSentenceText, weakenings } from '@/lib/controls-view';
 import { toolsSeen } from '@/lib/whiteroom/client';
 import type { GovernanceRule, KeywordParams } from '@/lib/whiteroom/types';
 
@@ -34,6 +34,12 @@ describe('markers', () => {
     expect(keywordsShort(kw(['a', 'b', MARKER]).params as KeywordParams)).toBe('"a", "b" + 1 more');
     expect(keywordsShort(kw(['a', 'b', 'c']).params as KeywordParams)).toBe('"a", "b" + 1 more');
     expect(keywordsShort(kw([]).params as KeywordParams)).toBe('');
+  });
+
+  it('a removed marker reads as a count when Save asks before loosening the rule', () => {
+    const before = kw(['Orion', MARKER, 'wrmk00000000000000ff']);
+    expect(weakenings(before, kw(['Orion', 'wrmk00000000000000ff']))).toEqual(['No longer looks for 1 marker']);
+    expect(weakenings(before, kw([]))).toEqual(['No longer looks for “Orion”, 2 markers']);
   });
 });
 
@@ -104,13 +110,13 @@ describe('toolsSeen', () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ action: 'tools_seen', fleet_id: 'f1' });
   });
 
-  it('gives no tools for an engine without it, a failure or an odd reply', async () => {
+  it('gives no tools for an engine without it or an odd reply, and throws on a failure so it can be asked again', async () => {
     fetchMock.mockResolvedValue(reply({ error: 'Unknown action: tools_seen' }, 400));
     await expect(toolsSeen('f1', 'k')).resolves.toEqual([]);
     fetchMock.mockResolvedValue(reply({ error: 'boom' }, 500));
-    await expect(toolsSeen('f1', 'k')).resolves.toEqual([]);
-    fetchMock.mockRejectedValue(new TypeError('network down'));
-    await expect(toolsSeen('f1', 'k')).resolves.toEqual([]);
+    await expect(toolsSeen('f1', 'k')).rejects.toThrow();
+    fetchMock.mockResolvedValue(reply({ error: 'not yours' }, 403));
+    await expect(toolsSeen('f1', 'k')).rejects.toThrow();
     fetchMock.mockResolvedValue(reply({}));
     await expect(toolsSeen('f1', 'k')).resolves.toEqual([]);
     fetchMock.mockResolvedValue(reply({ tools: 'update_claim' }));

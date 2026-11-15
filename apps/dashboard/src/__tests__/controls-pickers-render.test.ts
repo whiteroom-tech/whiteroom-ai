@@ -197,10 +197,10 @@ describe('MarkerChip', () => {
     expect(el.textContent).toContain('Marker');
     expect(el.textContent).toContain('wrmk3f9a…d8a6');
     expect(el.textContent).not.toContain(CODE);
-    await act(async () => { (el.querySelector('button[aria-label="Copy marker"]') as HTMLButtonElement).click(); });
+    await act(async () => { (el.querySelector('button[aria-label="Copy marker wrmk3f9a…d8a6"]') as HTMLButtonElement).click(); });
     expect(writeText).toHaveBeenCalledWith(CODE);
     expect(el.textContent).toContain('Copied');
-    await act(async () => { (el.querySelector('button[aria-label="Remove marker"]') as HTMLButtonElement).click(); });
+    await act(async () => { (el.querySelector('button[aria-label="Remove marker wrmk3f9a…d8a6"]') as HTMLButtonElement).click(); });
     expect(onRemove).toHaveBeenCalled();
     root.unmount();
   });
@@ -208,7 +208,7 @@ describe('MarkerChip', () => {
   it('when the browser refuses to copy, shows the whole code to select', async () => {
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: vi.fn(async () => { throw new Error('denied'); }) } });
     const { el, root } = await mount(h(MarkerChip, { code: CODE, onRemove: () => {} }));
-    await act(async () => { (el.querySelector('button[aria-label="Copy marker"]') as HTMLButtonElement).click(); });
+    await act(async () => { (el.querySelector('button[aria-label="Copy marker wrmk3f9a…d8a6"]') as HTMLButtonElement).click(); });
     expect(el.textContent).toContain(CODE);
     expect(el.textContent).toContain('Couldn’t copy. Select the code to copy it.');
     root.unmount();
