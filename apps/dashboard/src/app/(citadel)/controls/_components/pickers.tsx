@@ -140,17 +140,19 @@ export function GroupPicker({ values, onChange, groups, addLabel, otherLabel, pl
  * (`onShow`); once known they're a first group and the menu opens on "Choose a
  * tool…". Until then, and without them, it's the plain tool picker.
  */
-export function ToolPicker({ values, onChange, fleetTools, onShow, first }: {
+export function ToolPicker({ values, onChange, fleetTools, onShow, first, ariaLabel = 'Add a tool' }: {
   values: string[];
   onChange: (next: string[]) => void;
   fleetTools: readonly string[];
   onShow: () => void;
   first?: (tool: string) => boolean;
+  /** Its name for a screen reader, when an editor has two pickers. */
+  ariaLabel?: string;
 }) {
   useEffect(() => { onShow(); }, [onShow]);
   return (
     <GroupPicker values={values} onChange={onChange} groups={toolGroups(fleetTools, first)} chooseLabel={fleetTools.length ? 'Choose a tool…' : undefined}
-      addLabel="+ Add tool" ariaLabel="Add a tool" otherLabel="Other (type tool name)…" placeholder="tool name" />
+      addLabel="+ Add tool" ariaLabel={ariaLabel} otherLabel="Other (type tool name)…" placeholder="tool name" />
   );
 }
 

@@ -4,7 +4,7 @@
 
 import type {
   CallRateParams, GovernanceMode, GovernanceParams, GovernanceResponse, GovernanceRule, GovernanceRuleType,
-  GovernanceScope, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, RuleActionCounts, SendLimitParams, SendSeenRow, SpendCapParams, ToolListParams,
+  GovernanceScope, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, OutsideThenSendParams, RuleActionCounts, SendLimitParams, SendSeenRow, SpendCapParams, ToolListParams,
 } from '@/lib/whiteroom/types';
 import { convertSpendCap, engineTakes, UNKNOWN_RULE, unhandledType } from '@/lib/governance';
 import { MODE_LABEL, NOTIFY } from '@/lib/vocab';
@@ -178,6 +178,25 @@ export function looksLikeSender(tool: string): boolean {
 /** The fleet's tools that look like they send data out, as many as the rule holds. */
 export const sendLookingTools = (tools: readonly string[]) => tools.filter(looksLikeSender).slice(0, SEND_TOOLS_MAX);
 
+// ── Outside content, then send data (DLP spec 3.3, 5.3) ────────────
+
+/** The engine's limit on each of an Outside content, then send data rule's two lists. */
+export const FLOW_TOOLS_MAX = 50;
+
+/** The rule as one sentence, the same in the row and under When. */
+const FLOW_WHEN = 'An agent reads outside content, then tries to send data out in the same run';
+
+/** Name parts of a tool that reads outside content. Used only to order and pre-pick tools, never to decide a call. */
+const READS = new Set(['fetch', 'fetches', 'inbox', 'browse', 'browses', 'browser', 'scrape', 'scrapes']);
+
+/** Whether a tool's name has a part like fetch, inbox, browse or scrape: `web_fetch` and `read_inbox` do, `fetcher_config` doesn't. */
+export function looksLikeReader(tool: string): boolean {
+  return nameParts(tool).some((p) => READS.has(p));
+}
+
+/** The fleet's tools that look like they read outside content, as many as the rule holds. */
+export const readLookingTools = (tools: readonly string[]) => tools.filter(looksLikeReader).slice(0, FLOW_TOOLS_MAX);
+
 /**
  * The rule as one sentence, split so the values can be set in mono. Only a
  * rule in Enforce does what it says; in Watch or Off it "would", so the
@@ -224,6 +243,10 @@ export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 
       const t = sendTools(tools);
       return { pre: `When ${t.pre ? t.pre.toLowerCase() : ''}`, val: t.val, post: `${OFF_LIST}, ${v}.` };
     }
+    case 'outside_then_send':
+      return (rule.params as OutsideThenSendParams).sendTools.length
+        ? { pre: `When ${FLOW_WHEN[0].toLowerCase()}${FLOW_WHEN.slice(1)}, ${v}.`, val: '', post: '' }
+        : { pre: 'No send tools picked yet.', val: '', post: '' };
     default:
       return unhandledType(rule.ruleType, { pre: UNKNOWN_RULE, val: '', post: '' });
   }
@@ -251,7 +274,7 @@ function ruleOrder(a: GovernanceRule, b: GovernanceRule): number {
 }
 
 /** The order rules are listed in on Controls, by type. Its own list, so the Add-a-rule choices can change without moving rows. */
-export const RULE_ROW_ORDER: readonly GovernanceRuleType[] = ['spend_cap', 'call_rate', 'model_allowlist', 'loop_breaker', 'tool_list', 'keyword', 'send_limit'];
+export const RULE_ROW_ORDER: readonly GovernanceRuleType[] = ['spend_cap', 'call_rate', 'model_allowlist', 'loop_breaker', 'tool_list', 'keyword', 'send_limit', 'outside_then_send'];
 
 function typeRank(t: GovernanceRuleType): number {
   const i = RULE_ROW_ORDER.indexOf(t);
@@ -304,6 +327,8 @@ export function emptyPick(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): st
     case 'model_allowlist': return (rule.params as ModelAllowlistParams).allowedModels.length ? null : 'a model';
     // No tools is "Not set up" (DLP spec 5.2). No domains is a real rule: everything those tools send is off the list.
     case 'send_limit': return (rule.params as SendLimitParams).tools.length ? null : 'a tool';
+    // No send tools is "Not set up" (DLP spec 5.3). No read tools is a real rule: the provider's web search and fetch always count.
+    case 'outside_then_send': return (rule.params as OutsideThenSendParams).sendTools.length ? null : 'a send tool';
     case 'spend_cap': case 'loop_breaker': case 'call_rate': return null;
     default: return unhandledType(rule.ruleType, null);
   }
@@ -313,7 +338,7 @@ export function emptyPick(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): st
 
 const REASON: Record<GovernanceRuleType, string> = {
   spend_cap: 'budget_exceeded', loop_breaker: 'loop_detected', model_allowlist: 'model_not_allowed', tool_list: 'tool_not_allowed', call_rate: 'rate_exceeded',
-  keyword: 'keyword_found', send_limit: 'destination_not_allowed',
+  keyword: 'keyword_found', send_limit: 'destination_not_allowed', outside_then_send: 'outside_then_send',
 };
 
 /** The engine's 403 for this rule (blockResponseBody); nothing for Only alert me. */
@@ -330,7 +355,7 @@ export function agentGets(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 're
 function resetsWhen(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): string {
   switch (rule.ruleType) {
     case 'call_rate': return 'once the last minute is back under the limit';
-    case 'model_allowlist': case 'tool_list': case 'keyword': case 'send_limit': return 'never';
+    case 'model_allowlist': case 'tool_list': case 'keyword': case 'send_limit': case 'outside_then_send': return 'never';
     case 'spend_cap': case 'loop_breaker': return (rule.params as SpendCapParams | LoopBreakerParams).scope === 'day' ? 'next day (00:00 UTC)' : 'next run';
     default: return unhandledType(rule.ruleType, 'never');
   }
@@ -344,6 +369,8 @@ export const AGENT_NOTE: Record<GovernanceRuleType, string> = {
   tool_list: 'Stops the model’s reply before the agent gets it, so the tool never runs. The model call itself is already spent.',
   keyword: 'Stops the call before the model sees it, or the reply before the agent does. The agent isn’t told which keyword matched.',
   send_limit: 'Stops the model’s reply before the agent gets it, so the tool never sends. The agent isn’t told the list.',
+  // Only alerts (DLP spec 5.3), so this never shows: What the agent sees is "Nothing".
+  outside_then_send: 'It never stops a call.',
 };
 
 // ── The edit model behind Save ──────────────────────────────────────
@@ -374,7 +401,7 @@ const numberOf = (rule: Pick<GovernanceRule, 'ruleType' | 'params'>): string => 
     case 'spend_cap': return String((rule.params as SpendCapParams).dailyCap);
     case 'loop_breaker': return String((rule.params as LoopBreakerParams).threshold);
     case 'call_rate': return String((rule.params as CallRateParams).maxCalls);
-    case 'model_allowlist': case 'tool_list': case 'keyword': case 'send_limit': return '';
+    case 'model_allowlist': case 'tool_list': case 'keyword': case 'send_limit': case 'outside_then_send': return '';
     default: return unhandledType(rule.ruleType, '');
   }
 };
@@ -388,7 +415,7 @@ export function draftFrom(rule: GovernanceRule): RuleDraft {
   };
 }
 
-const HAS_NUMBER: Record<GovernanceRuleType, boolean> = { spend_cap: true, loop_breaker: true, call_rate: true, model_allowlist: false, tool_list: false, keyword: false, send_limit: false };
+const HAS_NUMBER: Record<GovernanceRuleType, boolean> = { spend_cap: true, loop_breaker: true, call_rate: true, model_allowlist: false, tool_list: false, keyword: false, send_limit: false, outside_then_send: false };
 const hasNumber = (t: GovernanceRuleType) => HAS_NUMBER[t] === true;
 
 /**
@@ -471,6 +498,12 @@ export function draftProblem(d: RuleDraft): string | null {
     if (s.tools.length > SEND_TOOLS_MAX) return `A rule holds up to ${SEND_TOOLS_MAX} tools. Remove one to save.`;
     if (s.domains.length > SEND_DOMAINS_MAX) return `A rule allows up to ${SEND_DOMAINS_MAX} domains. Remove one to save.`;
   }
+  if (d.ruleType === 'outside_then_send') {
+    const f = p.params as OutsideThenSendParams;
+    if (f.readTools.length > FLOW_TOOLS_MAX || f.sendTools.length > FLOW_TOOLS_MAX) return `A rule holds up to ${FLOW_TOOLS_MAX} tools in each list. Remove one to save.`;
+    // The engine refuses any other response for this type (DLP spec 5.3).
+    if (d.response !== 'notify') return 'This rule can only alert you.';
+  }
   if (d.appliesTo !== 'all' && d.appliesTo.length === 0) return 'Pick at least one agent, or choose All agents.';
   if (d.mode !== 'enforce') return null;
   switch (d.ruleType) {
@@ -478,6 +511,7 @@ export function draftProblem(d: RuleDraft): string | null {
     case 'tool_list': return (p.params as ToolListParams).blockedTools.length === 0 ? 'Pick at least one tool before you turn on Enforce.' : null;
     case 'keyword': return keywordTotal(p.params as KeywordParams) === 0 ? 'Pick at least one keyword before you turn on Enforce.' : null;
     case 'send_limit': return (p.params as SendLimitParams).tools.length === 0 ? 'Pick at least one tool before you turn on Enforce.' : null;
+    case 'outside_then_send': return (p.params as OutsideThenSendParams).sendTools.length === 0 ? 'Pick at least one tool under Sends data out before you turn on Enforce.' : null;
     case 'spend_cap': case 'loop_breaker': case 'call_rate': return null;
     // Never saved: the editor doesn't open a rule of a type it doesn't know.
     default: return unhandledType(d.ruleType, UNKNOWN_RULE);
@@ -495,9 +529,10 @@ export const RULE_TEMPLATES: { type: GovernanceRuleType; title: string; desc: st
   { type: 'tool_list', title: 'Block tools', desc: 'Keep agents from running tools you name.' },
   { type: 'keyword', title: 'Flag keywords', desc: 'Get an alert, or block the call, when words you pick show up.' },
   { type: 'send_limit', title: 'Limit where tools can send data', desc: 'For example, email only to your own domain.' },
+  { type: 'outside_then_send', title: 'Flag sends after outside content', desc: 'Get an alert when an agent reads a web page, email or file, then tries to send data out.' },
 ];
 
-/** The Add a rule choices this engine takes (governance_list ruleTypes): an engine without send_limit never gets offered it. */
+/** The Add a rule choices this engine takes (governance_list ruleTypes): an engine without a new type never gets offered it. */
 export const offeredTemplates = (ruleTypes: readonly string[] | undefined) => RULE_TEMPLATES.filter((t) => engineTakes(t.type, ruleTypes));
 
 // ── Groups: who a rule covers ───────────────────────────────────────
@@ -594,6 +629,17 @@ function looser(prev: GovernanceRule, next: GovernanceRule): string[] {
       if (freed.length) out.push(`No longer checks ${freed.join(', ')}`);
       return out;
     }
+    case 'outside_then_send': {
+      // It only alerts: fewer tools means fewer alerts, which matters only once it sends them (Enforce).
+      if (prev.mode !== 'enforce') return [];
+      const p = a as OutsideThenSendParams, n = b as OutsideThenSendParams;
+      const out: string[] = [];
+      const unread = p.readTools.filter((t) => !n.readTools.includes(t));
+      if (unread.length) out.push(`No longer counts ${unread.join(', ')} as outside content`);
+      const unsent = p.sendTools.filter((t) => !n.sendTools.includes(t));
+      if (unsent.length) out.push(`No longer checks ${unsent.join(', ')}`);
+      return out;
+    }
     default:
       return unhandledType(prev.ruleType, []);
   }
@@ -659,6 +705,8 @@ export function ruleCondition(rule: Pick<GovernanceRule, 'ruleType' | 'params'>)
       const t = sendTools(tools);
       return { pre: t.pre, val: t.val, post: OFF_LIST };
     }
+    case 'outside_then_send':
+      return (rule.params as OutsideThenSendParams).sendTools.length ? { pre: FLOW_WHEN, val: '', post: '' } : { pre: 'No send tools picked yet', val: '', post: '' };
     default:
       return unhandledType(rule.ruleType, { pre: UNKNOWN_RULE, val: '', post: '' });
   }
@@ -721,6 +769,8 @@ export function blocksWhen(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'a
     case 'tool_list': return `only for the tools it names${only}`;
     case 'keyword': return `only when its keywords show up${only}`;
     case 'send_limit': return `only for sends to domains not on its list${only}`;
+    // Never blocks (canAct is false), so never the one rule that does: kept for the exhaustive switch.
+    case 'outside_then_send': return `only for sends after outside content${only}`;
     default: return unhandledType(rule.ruleType, `only in some cases${only}`);
   }
 }
@@ -921,6 +971,7 @@ export function whenSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params'>):
     }
     case 'keyword': return ruleCondition(rule);
     case 'send_limit': return ruleCondition(rule);
+    case 'outside_then_send': return ruleCondition(rule);
     default: return unhandledType(rule.ruleType, { pre: UNKNOWN_RULE, val: '', post: '' });
   }
 }
@@ -956,6 +1007,8 @@ const TYPE_RESPONSES: Record<GovernanceRuleType, readonly GovernanceResponse[]> 
   spend_cap: ['block', 'pause', 'stop', 'notify'], loop_breaker: ['block', 'pause', 'stop', 'notify'], model_allowlist: ['block', 'pause', 'stop', 'notify'],
   tool_list: ['block', 'pause', 'stop', 'notify'], call_rate: ['block', 'pause', 'stop', 'notify'], keyword: ['block', 'pause', 'stop', 'notify'],
   send_limit: ['notify', 'block'],
+  // Only alerts (DLP spec 5.3): the editor shows "When enforced: Only alert me" as fixed text.
+  outside_then_send: ['notify'],
 };
 
 /**

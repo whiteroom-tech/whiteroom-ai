@@ -47,6 +47,7 @@ const PARAMS_FIT: Record<GovernanceRuleType, (p: Record<string, unknown>) => boo
   tool_list: (p) => strings(p.blockedTools),
   keyword: (p) => strings(p.keywords) && (p.where === 'incoming' || p.where === 'replies' || p.where === 'both'),
   send_limit: (p) => strings(p.tools) && strings(p.domains),
+  outside_then_send: (p) => strings(p.readTools) && strings(p.sendTools),
 };
 
 /** The fields the rule editor reads, of the right kinds, with params that fit the rule type. */

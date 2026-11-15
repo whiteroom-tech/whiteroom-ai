@@ -426,6 +426,7 @@ const REASON_TEXT: Record<string, string> = {
   rate_exceeded: 'too many calls',
   keyword_found: 'a keyword was found',
   destination_not_allowed: 'a domain not on the list',
+  outside_then_send: 'a send after outside content',
 };
 export function reasonText(reason: string | null | undefined): string | null {
   return reason ? REASON_TEXT[reason] ?? REASON_LABELS[reason] ?? null : null;

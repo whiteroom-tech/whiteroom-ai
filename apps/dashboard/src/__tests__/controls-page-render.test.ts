@@ -2194,8 +2194,9 @@ describe('Controls: Watch counts in one read (engine PR 345)', () => {
 describe('Controls: category labels', () => {
   const keyword: GovernanceRule = { ...base, id: 'k1', ruleType: 'keyword', mode: 'watch', response: 'notify', appliesTo: 'all', params: { keywords: ['Project Falcon'], where: 'incoming', wholeWord: true } };
   const send: GovernanceRule = { ...base, id: 's1', ruleType: 'send_limit', mode: 'watch', response: 'notify', appliesTo: 'all', params: { tools: ['send_email'], domains: ['acme.com'] } };
+  const flow: GovernanceRule = { ...base, id: 'o1', ruleType: 'outside_then_send', mode: 'watch', response: 'notify', appliesTo: 'all', params: { readTools: ['web_fetch'], sendTools: ['send_email'] } };
   // Every type, each with a row in view (the fleet's Tool list is off, in a closed card).
-  const everyType = () => { api.created.push(keyword, send); api.saved.r6 = { ...RULES[5], mode: 'watch', params: { blockedTools: ['delete_file'] } }; };
+  const everyType = () => { api.created.push(keyword, send, flow); api.saved.r6 = { ...RULES[5], mode: 'watch', params: { blockedTools: ['delete_file'] } }; };
   const nameToCat = Object.fromEntries(Object.entries(RULE_LABELS).map(([t, name]) => [name, RULE_CATEGORY[t as keyof typeof RULE_CATEGORY]]));
 
   it('shows each row’s category above its count and mode tag, for every type', async () => {
@@ -2228,7 +2229,7 @@ describe('Controls: category labels', () => {
       expect(m.el.querySelector('.gov-edhead__full')!.textContent).toBe(nameToCat[name] + name);
       opened.add(name);
     }
-    expect(opened.size).toBe(7);
+    expect(opened.size).toBe(8);
     m.root.unmount();
   });
 
@@ -2481,6 +2482,152 @@ describe('Controls: Where tools can send data', () => {
     await type(input, 'Gmail.com');
     await m.click(m.button('Add'));
     expect([...m.el.querySelectorAll('.gov-chip')].map((c) => c.firstChild?.textContent)).toContain('gmail.com');
+    m.root.unmount();
+  });
+});
+
+// Data-protection spec, phase 4 (D6): Outside content, then send data.
+describe('Controls: Outside content, then send data', () => {
+  const ALL_TYPES = ['spend_cap', 'loop_breaker', 'model_allowlist', 'tool_list', 'call_rate', 'keyword', 'send_limit', 'outside_then_send'];
+  const flowRule = (over: Partial<GovernanceRule> = {}, params: Record<string, unknown> = {}): GovernanceRule => ({
+    ...base, id: 'o1', ruleType: 'outside_then_send', mode: 'watch', response: 'notify', appliesTo: 'all',
+    params: { readTools: ['web_fetch', 'read_inbox'], sendTools: ['send_email', 'post_message'], ...params } as GovernanceRule['params'], ...over,
+  });
+  const WHEN = 'An agent reads outside content, then tries to send data out in the same run';
+
+  it('is offered in Add a rule only when the engine’s ruleTypes has it', async () => {
+    const titles = async () => {
+      const m = await mount();
+      await m.click(m.button('Add rule'));
+      const t = [...m.el.querySelectorAll('button.gov-template .gov-template__title')].map((b) => b.textContent);
+      m.root.unmount();
+      document.body.innerHTML = '';
+      return t;
+    };
+    expect(await titles()).not.toContain('Flag sends after outside content');
+    api.ruleTypes = ALL_TYPES.filter((t) => t !== 'outside_then_send');
+    expect(await titles()).not.toContain('Flag sends after outside content');
+    api.ruleTypes = ALL_TYPES;
+    expect(await titles()).toContain('Flag sends after outside content');
+  });
+
+  it('is a data protection choice with its own words, and no New tag', async () => {
+    api.ruleTypes = ALL_TYPES;
+    const m = await mount();
+    await m.click(m.button('Add rule'));
+    const choice = [...m.el.querySelectorAll('button.gov-template')].find((b) => b.textContent?.includes('Flag sends after outside content'))!;
+    expect(choice.textContent).toBe('Flag sends after outside contentData protectionGet an alert when an agent reads a web page, email or file, then tries to send data out.');
+    expect(choice.textContent).not.toMatch(/\bNew\b/);
+    m.root.unmount();
+  });
+
+  it('is added in Watch on Only alert me, with likely readers and senders picked', async () => {
+    api.ruleTypes = ALL_TYPES;
+    api.tools = ['search_docs', 'web_fetch', 'send_email', 'read_inbox', 'http_request', 'delete_record'];
+    api.create.mockImplementation(async (_f: string, r: { ruleType: GovernanceRule['ruleType']; mode: GovernanceRule['mode']; response?: GovernanceRule['response']; params?: GovernanceRule['params'] }) => {
+      const rule: GovernanceRule = { ...base, id: 'new', ruleType: r.ruleType, mode: r.mode, response: r.response, appliesTo: 'all', params: r.params! };
+      api.created.push(rule);
+      return { rule };
+    });
+    const m = await mount();
+    await m.click(m.button('Add rule'));
+    await m.click([...m.el.querySelectorAll('button.gov-template')].find((b) => b.textContent?.includes('Flag sends after outside content')));
+    expect(api.create).toHaveBeenCalledWith('f1', { ruleType: 'outside_then_send', mode: 'watch', response: 'notify', params: { readTools: ['web_fetch', 'read_inbox'], sendTools: ['send_email', 'http_request'] } }, 'k');
+    expect(m.text()).toContain('Outside content, then send data rule added in Watch. Check its tools.');
+    // A new rule opens with When expanded: both pickers and their help.
+    expect(m.text()).toContain('Reads outside content');
+    expect(m.text()).toContain('The provider’s web search and web fetch always count.');
+    expect(m.text()).toContain('Sends data out');
+    m.root.unmount();
+  });
+
+  it('shows its sentence in the row and under When; Change opens both tool pickers, fleet tools first', async () => {
+    api.created.push(flowRule());
+    api.tools = ['search_docs', 'web_fetch', 'read_inbox', 'browse_page', 'send_email'];
+    const m = await mount();
+    expect(m.row(WHEN).textContent).toContain(WHEN);
+    expect(m.row(WHEN).querySelector('.ctl-cat')!.textContent).toBe('Data protection');
+    await m.click(m.row(WHEN));
+    expect(m.el.querySelector('.ctl-when')!.textContent).toBe(WHEN + 'Change');
+    await m.click(m.button('Change'));
+    await flush();
+    expect(m.text()).toContain(WHEN + '.');
+    expect(m.text()).toContain('A web page, email or file can carry hidden instructions. An agent that reads mail and replies will match on most runs.');
+    const reads = m.el.querySelector('select[aria-label="Add a tool that reads outside content"]') as HTMLSelectElement;
+    const sends = m.el.querySelector('select[aria-label="Add a tool that sends data out"]') as HTMLSelectElement;
+    // Each opens on "Choose a tool…", never on a tool; the fleet's own tools come first.
+    for (const sel of [reads, sends]) {
+      expect(sel.options[0].textContent).toBe('Choose a tool…');
+      expect(sel.querySelector('optgroup')!.getAttribute('label')).toBe('Your fleet’s tools');
+    }
+    // Likely readers first under Reads; likely senders first under Sends. Tools already picked aren't offered.
+    expect([...reads.querySelector('optgroup')!.querySelectorAll('option')].map((o) => o.textContent)).toEqual(['browse_page', 'search_docs', 'send_email']);
+    expect([...sends.querySelector('optgroup')!.querySelectorAll('option')].map((o) => o.textContent)).toEqual(['search_docs', 'web_fetch', 'read_inbox', 'browse_page']);
+    m.root.unmount();
+  });
+
+  it('has no When enforced dropdown: Only alert me as fixed text, and its own effect line', async () => {
+    api.created.push(flowRule());
+    const m = await mount();
+    await m.click(m.row(WHEN));
+    expect(m.text()).not.toContain('You get one alert per run.');
+    await m.click(m.seg('Enforce'));
+    expect(m.action()).toBeNull();
+    expect(m.el.querySelector('select[aria-label="When enforced"]')).toBeNull();
+    expect(m.text()).toContain('When enforced: Only alert me');
+    expect(m.text()).toContain('You get one alert per run. The agent keeps going.');
+    expect(m.text()).not.toContain('Also alert me');
+    m.root.unmount();
+  });
+
+  it('saves Enforce on Only alert me', async () => {
+    api.created.push(flowRule());
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...api.created.find((r) => r.id === id)!, ...ch, version: 2 } }));
+    const m = await mount();
+    await m.click(m.row(WHEN));
+    await m.click(m.seg('Enforce'));
+    await m.click(m.button('Save'));
+    const turnOn = m.button('Turn on alerts');
+    if (turnOn) await m.click(turnOn);
+    expect(api.update).toHaveBeenCalledWith('f1', 'o1', { mode: 'enforce', ifVersion: 1 }, 'k');
+    m.root.unmount();
+  });
+
+  it('a rule holding another response saves as Only alert me', async () => {
+    api.created.push(flowRule({ mode: 'enforce', response: 'block' }));
+    const m = await mount();
+    await m.click(m.row(WHEN));
+    expect(m.action()).toBeNull();
+    await m.click(m.seg('Watch'));
+    await m.click(m.seg('Enforce'));
+    // Back in Enforce it takes Only alert me, the one response this type has, and Save sends it.
+    expect(m.text()).toContain('When enforced: Only alert me');
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...api.created.find((r) => r.id === id)!, ...ch, version: 2 } }));
+    await m.click(m.button('Save'));
+    const confirm = m.button('Save the change');
+    if (confirm) await m.click(confirm);
+    expect(api.update).toHaveBeenCalledWith('f1', 'o1', { response: 'notify', ifVersion: 1 }, 'k');
+    m.root.unmount();
+  });
+
+  it('with no send tools it is Not set up and does nothing', async () => {
+    api.created.push(flowRule({}, { sendTools: [] }));
+    const m = await mount();
+    await m.click(m.button('Show'));
+    const r = m.row('No send tools picked yet');
+    expect(r.textContent).toContain('Not set up');
+    expect(r.textContent).toContain('Does nothing until you add a send tool');
+    await m.click(r);
+    // It opens with When expanded, so the empty picker is in view.
+    expect(m.el.querySelector('select[aria-label="Add a tool that sends data out"]')).toBeTruthy();
+    m.root.unmount();
+  });
+
+  it('tells the agent nothing: the call goes through', async () => {
+    api.created.push(flowRule({ mode: 'enforce' }));
+    const m = await mount();
+    await m.click(m.row(WHEN));
+    expect(m.el.querySelector('details.gov-details pre')!.textContent).toBe('Nothing: the call goes through.\nYou get an alert; the agent doesn’t.');
     m.root.unmount();
   });
 });

@@ -58,7 +58,7 @@ describe('Performance › Rules with a rule type this build doesn’t know', () 
     const el = document.createElement('div');
     document.body.appendChild(el);
     const root = createRoot(el);
-    const counts = { blocks: 3, wouldBlocks: 141, byAgent: {}, byRule: { spend_cap: { blocks: 0, wouldBlocks: 0 }, loop_breaker: { blocks: 0, wouldBlocks: 0 }, model_allowlist: { blocks: 0, wouldBlocks: 60 }, tool_list: { blocks: 0, wouldBlocks: 0 }, call_rate: { blocks: 0, wouldBlocks: 0 }, keyword: { blocks: 0, wouldBlocks: 0 }, send_limit: { blocks: 0, wouldBlocks: 0 } } };
+    const counts = { blocks: 3, wouldBlocks: 141, byAgent: {}, byRule: { spend_cap: { blocks: 0, wouldBlocks: 0 }, loop_breaker: { blocks: 0, wouldBlocks: 0 }, model_allowlist: { blocks: 0, wouldBlocks: 60 }, tool_list: { blocks: 0, wouldBlocks: 0 }, call_rate: { blocks: 0, wouldBlocks: 0 }, keyword: { blocks: 0, wouldBlocks: 0 }, send_limit: { blocks: 0, wouldBlocks: 0 }, outside_then_send: { blocks: 0, wouldBlocks: 0 } } };
     await act(async () => { root.render(h(RulesSummary, { counts, byRuleId, rules: [KNOWN], unknownRules: unknown, unavailable: false })); });
     expect(el.textContent).toContain('1 rule: 0 Enforce · 1 Watch · 0 Off');
     await act(async () => { (el.querySelector('button[aria-expanded]') as HTMLButtonElement).click(); });

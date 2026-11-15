@@ -22,6 +22,8 @@ export function canAct(rule: Pick<GovernanceRule, 'mode' | 'ruleType' | 'params'
     case 'keyword': return keywordTotal(rule.params as KeywordParams) > 0;
     // With no tools it judges nothing; with tools and an empty list, every call to them is off the list.
     case 'send_limit': return (rule.params as SendLimitParams).tools.length > 0;
+    // Only ever alerts (DLP spec 5.3): it never stops a call, whatever is saved.
+    case 'outside_then_send': return false;
     case 'spend_cap': case 'loop_breaker': case 'call_rate': return true;
     default: return unhandledType(rule.ruleType, true);
   }
