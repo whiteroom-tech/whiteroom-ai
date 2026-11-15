@@ -36,6 +36,8 @@ import type {
   GovernanceRule,
   GovernanceRuleType,
   GovernanceScope,
+  SendSeenListResult,
+  SendSeenRow,
   ListFleetsResult,
   ListKeysResult,
   PerformanceEvidenceResult,
@@ -164,7 +166,7 @@ const READ_ACTIONS: ReadonlySet<string> = new Set([
   'performance_live_feed', 'performance_recommendations_export', 'performance_cost_forecast',
   'agent_budgets_get', 'governance_list', 'get_diagnosis', 'audit_integrity', 'verify_audit', 'audit_summary',
   'rule_would_act', 'list_runs', 'rule_actions', 'run_days', 'get_run_events', 'alerts_get', 'health_history', 'job_outcomes',
-  'fleet_data_settings_get', 'compression_preview', 'tools_seen',
+  'fleet_data_settings_get', 'compression_preview', 'tools_seen', 'send_seen_list',
 ]);
 
 async function postRaw(
@@ -795,6 +797,19 @@ export async function toolsSeen(fleetId: string, key?: string): Promise<string[]
   }
   if (!Array.isArray(tools)) return [];
   return [...new Set(tools.filter((t): t is string => typeof t === 'string' && t.trim() === t && t.length > 0 && t.length <= 64))];
+}
+
+/**
+ * A Where tools can send data rule's "Seen, not on the list" (engine
+ * send_seen_list, DLP spec 5.2). Dashboard only: the BFF sends the secret for
+ * the fleet's owner, and refuses anyone else. Rows that don't read are left
+ * out; any failure throws, so the editor can say so and ask again.
+ */
+export async function sendSeenList(fleetId: string, ruleId: string, key?: string): Promise<SendSeenListResult> {
+  const res = await apiCall<Partial<SendSeenListResult>>({ action: 'send_seen_list', fleet_id: fleetId, rule_id: ruleId }, key);
+  const rows = (Array.isArray(res.rows) ? res.rows : []).filter((r): r is SendSeenRow => !!r && typeof r === 'object'
+    && typeof r.tool === 'string' && typeof r.domain === 'string' && typeof r.firstSeen === 'string');
+  return { ruleId, rows, full: res.full === true, fleetFull: res.fleetFull === true };
 }
 
 export function governanceCreateRule(

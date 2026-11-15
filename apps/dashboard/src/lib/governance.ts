@@ -26,6 +26,7 @@ export const RULE_LABELS: Record<GovernanceRuleType, string> = {
   tool_list: 'Tool list',
   call_rate: 'Call rate',
   keyword: 'Keywords',
+  send_limit: 'Where tools can send data',
 };
 
 /** Each rule's category label on Controls, in sentence case (.ctl-cat upper-cases it). */
@@ -36,10 +37,19 @@ export const RULE_CATEGORY: Record<GovernanceRuleType, string> = {
   tool_list: 'Data protection',
   call_rate: 'Cost & reliability',
   keyword: 'Data protection',
+  send_limit: 'Data protection',
 };
 
 /** What a rule of a type this build doesn't know shows as, wherever rules are listed. */
 export const UNKNOWN_RULE = 'A rule this version can’t show';
+
+/** The types every engine takes: an engine that doesn't report ruleTypes is offered only these. */
+export const BASE_RULE_TYPES: readonly GovernanceRuleType[] = ['spend_cap', 'loop_breaker', 'model_allowlist', 'tool_list', 'call_rate', 'keyword'];
+
+/** Whether Add a rule may offer a type: only those the engine says it takes (governance_list ruleTypes), else the first six. */
+export function engineTakes(type: GovernanceRuleType, ruleTypes: readonly string[] | undefined): boolean {
+  return Array.isArray(ruleTypes) ? ruleTypes.includes(type) : BASE_RULE_TYPES.includes(type);
+}
 
 export const isKnownRuleType = (t: unknown): t is GovernanceRuleType => typeof t === 'string' && Object.hasOwn(RULE_LABELS, t);
 
@@ -73,6 +83,7 @@ export const REASON_LABELS: Record<string, string> = {
   tool_not_allowed: 'tool not allowed',
   rate_exceeded: 'too many calls',
   keyword_found: 'keyword found',
+  destination_not_allowed: 'domain not on the list',
 };
 
 /** Each rule's own reason: said after its name, it only repeats it ("the spend cap (budget exceeded)"). */
@@ -83,6 +94,7 @@ const OWN_REASON: Record<GovernanceRuleType, string> = {
   tool_list: 'tool_not_allowed',
   call_rate: 'rate_exceeded',
   keyword: 'keyword_found',
+  send_limit: 'destination_not_allowed',
 };
 
 /**
@@ -160,6 +172,7 @@ export function governanceFromSummary(g: { blocks: number; wouldBlocks: number; 
       tool_list: g.byRule.tool_list ?? emptyTally(),
       call_rate: g.byRule.call_rate ?? emptyTally(),
       keyword: g.byRule.keyword ?? emptyTally(),
+      send_limit: g.byRule.send_limit ?? emptyTally(),
     },
   };
 }
@@ -170,7 +183,7 @@ export function governanceCounts(entries: AuditEntry[], sinceMs = 0): Governance
     blocks: 0,
     wouldBlocks: 0,
     byAgent: {},
-    byRule: { spend_cap: emptyTally(), loop_breaker: emptyTally(), model_allowlist: emptyTally(), tool_list: emptyTally(), call_rate: emptyTally(), keyword: emptyTally() },
+    byRule: { spend_cap: emptyTally(), loop_breaker: emptyTally(), model_allowlist: emptyTally(), tool_list: emptyTally(), call_rate: emptyTally(), keyword: emptyTally(), send_limit: emptyTally() },
   };
   for (const e of entries) {
     if (!isGovernanceDecision(e)) continue;

@@ -674,11 +674,11 @@ export interface CustomControlInput {
 
 // -- Fleet governance rules (Controls page) --
 
-export type GovernanceRuleType = 'spend_cap' | 'loop_breaker' | 'model_allowlist' | 'tool_list' | 'call_rate' | 'keyword';
+export type GovernanceRuleType = 'spend_cap' | 'loop_breaker' | 'model_allowlist' | 'tool_list' | 'call_rate' | 'keyword' | 'send_limit';
 export type GovernanceMode = 'off' | 'watch' | 'enforce';
 /** What Enforce does (engine P2.3): notify, block, pause or stop. */
 export type GovernanceResponse = 'notify' | 'block' | 'pause' | 'stop';
-export type GovernanceReason = 'budget_exceeded' | 'loop_detected' | 'model_not_allowed' | 'tool_not_allowed' | 'rate_exceeded' | 'keyword_found';
+export type GovernanceReason = 'budget_exceeded' | 'loop_detected' | 'model_not_allowed' | 'tool_not_allowed' | 'rate_exceeded' | 'keyword_found' | 'destination_not_allowed';
 export type GovernanceScope = 'all' | string[];
 
 export interface SpendCapParams { dailyCap: number; scope: 'run' | 'day'; unit: 'tokens' | 'dollars' }
@@ -695,7 +695,16 @@ export interface KeywordParams {
   /** Sent instead of the list to a caller without the dashboard's secret (keywords is then empty). */
   keywordCount?: number;
 }
-export type GovernanceParams = SpendCapParams | LoopBreakerParams | ModelAllowlistParams | ToolListParams | CallRateParams | KeywordParams;
+/**
+ * Where tools can send data (DLP spec 5.2): calls to these tools may send only
+ * to these domains. An entry covers itself and every subdomain.
+ */
+export interface SendLimitParams {
+  tools: string[]; domains: string[];
+  /** Sent instead of the list to a caller without the dashboard's secret (domains is then empty). */
+  domainCount?: number;
+}
+export type GovernanceParams = SpendCapParams | LoopBreakerParams | ModelAllowlistParams | ToolListParams | CallRateParams | KeywordParams | SendLimitParams;
 
 export interface GovernanceRule {
   id: string;
@@ -750,6 +759,34 @@ export interface GovernanceListResult {
   lastActiveAt?: Record<string, string | null>;
   /** Pause and Stop responses are offered (Gov v1 fleets). */
   govV1?: boolean;
+  /** The rule types this engine accepts (engine E1); absent from older engines, which take the first six. */
+  ruleTypes?: string[];
+}
+
+/**
+ * One row of a Where tools can send data rule's "Seen, not on the list"
+ * (engine send_seen_list, DLP spec 5.2). `domain` is after the storage
+ * cleaner, cut to 80 characters; `(none)` and `(unreadable)` are reserved.
+ */
+export interface SendSeenRow {
+  tool: string;
+  domain: string;
+  agentId: string | null;
+  firstSeen: string;
+  lastSeen?: string;
+  sends?: number;
+  alertedAt?: string | null;
+  /** False for (none), (unreadable), and a domain the storage cleaner or the 80-character cut changed: it can't be added as it is. */
+  canAdd?: boolean;
+}
+
+export interface SendSeenListResult {
+  ruleId: string;
+  rows: SendSeenRow[];
+  /** The rule has 500 rows: no more are added. */
+  full?: boolean;
+  /** The fleet has 15,000 rows across its rules: no more are added. */
+  fleetFull?: boolean;
 }
 
 /** Rule actions in words (engine rule_actions). */

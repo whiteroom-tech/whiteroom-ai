@@ -108,11 +108,13 @@ describe('the agent filter and groups', () => {
   });
 
   it('keeps rows in today’s order whatever order the Add a rule choices are in', () => {
-    expect(RULE_ROW_ORDER).toEqual(['spend_cap', 'call_rate', 'model_allowlist', 'loop_breaker', 'tool_list', 'keyword']);
+    // Today's six in today's order, then the new types (DLP spec 6).
+    expect(RULE_ROW_ORDER).toEqual(['spend_cap', 'call_rate', 'model_allowlist', 'loop_breaker', 'tool_list', 'keyword', 'send_limit']);
     expect([...RULE_ROW_ORDER].sort()).toEqual(Object.keys(RULE_LABELS).sort());
     const params = {
       spend_cap: { dailyCap: 190, scope: 'day', unit: 'dollars' }, call_rate: { maxCalls: 60 }, model_allowlist: { allowedModels: ['m'] },
       loop_breaker: { threshold: 100, scope: 'run', ignoreTools: [] }, tool_list: { blockedTools: ['x'] }, keyword: { where: 'incoming', keywords: ['x'], wholeWord: true },
+      send_limit: { tools: ['send_email'], domains: [] },
     } as const;
     const rules = RULE_ROW_ORDER.map((t) => rule({ ruleType: t, params: params[t] as GovernanceRule['params'] }));
     RULE_TEMPLATES.reverse();
@@ -123,17 +125,18 @@ describe('the agent filter and groups', () => {
     }
   });
 
-  it('offers today’s six choices in today’s order', () => {
+  it('offers today’s six choices in today’s order, then the new data rule', () => {
     expect(RULE_TEMPLATES.map((t) => [t.type, t.title])).toEqual([
       ['spend_cap', 'Cap spending'], ['call_rate', 'Limit calls per minute'], ['model_allowlist', 'Allow only certain models'],
       ['loop_breaker', 'Break loops'], ['tool_list', 'Block tools'], ['keyword', 'Flag keywords'],
+      ['send_limit', 'Limit where tools can send data'],
     ]);
   });
 
   it('puts every rule type in one of two categories', () => {
     expect(RULE_CATEGORY).toEqual({
       spend_cap: 'Cost & reliability', call_rate: 'Cost & reliability', model_allowlist: 'Cost & reliability', loop_breaker: 'Cost & reliability',
-      tool_list: 'Data protection', keyword: 'Data protection',
+      tool_list: 'Data protection', keyword: 'Data protection', send_limit: 'Data protection',
     });
   });
 
@@ -455,17 +458,20 @@ describe('What happens: Off · Watch · Enforce, and the action when enforced', 
   it('Enforce takes the first action that can be picked now when the rule’s own has to wait', () => {
     const saved = rule({ mode: 'watch', response: 'stop' });
     const noStop = (r: string) => r !== 'stop';
-    expect(shape(chooseMode(draftFrom(saved), 'enforce', saved, responseChoices(true), noStop))).toEqual(['enforce', 'block', false]);
+    expect(shape(chooseMode(draftFrom(saved), 'enforce', saved, responseChoices(true, 'spend_cap'), noStop))).toEqual(['enforce', 'block', false]);
     // Keywords on incoming data: Block, Pause and Stop wait; Only alert me never does.
     const onlyAlert = (r: string) => r === 'notify';
-    expect(shape(chooseMode(draftFrom(saved), 'enforce', saved, responseChoices(true), onlyAlert))).toEqual(['enforce', 'notify', false]);
+    expect(shape(chooseMode(draftFrom(saved), 'enforce', saved, responseChoices(true, 'spend_cap'), onlyAlert))).toEqual(['enforce', 'notify', false]);
   });
 
   it('offers Pause and Stop only where the fleet has them, but always the rule’s own; Only alert me always', () => {
-    expect(responseChoices(false, 'block')).toEqual(['block', 'notify']);
-    expect(responseChoices(true, 'block')).toEqual(['block', 'pause', 'stop', 'notify']);
-    expect(responseChoices(false, 'stop')).toEqual(['block', 'stop', 'notify']);
-    expect(responseChoices(false, 'pause', 'block')).toEqual(['block', 'pause', 'notify']);
+    expect(responseChoices(false, 'spend_cap', 'block')).toEqual(['block', 'notify']);
+    expect(responseChoices(true, 'spend_cap', 'block')).toEqual(['block', 'pause', 'stop', 'notify']);
+    expect(responseChoices(false, 'spend_cap', 'stop')).toEqual(['block', 'stop', 'notify']);
+    expect(responseChoices(false, 'spend_cap', 'pause', 'block')).toEqual(['block', 'pause', 'notify']);
+    // Where tools can send data only alerts or blocks, Only alert me first (DLP spec 3.2), on any fleet.
+    expect(responseChoices(true, 'send_limit', 'notify')).toEqual(['notify', 'block']);
+    expect(responseChoices(false, 'send_limit', 'notify')).toEqual(['notify', 'block']);
   });
 
   it('says what the pick does in one plain line', () => {

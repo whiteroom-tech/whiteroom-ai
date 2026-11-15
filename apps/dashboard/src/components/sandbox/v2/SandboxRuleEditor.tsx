@@ -38,7 +38,7 @@ export function SandboxRuleEditor({ rule, agents, busy, error, onSave, onCancel,
   const set = (patch: Partial<RuleDraft>) => { setProblem(null); setDraft((d) => ({ ...d, ...patch })); };
   const setParams = (patch: object) => set({ params: { ...draft.params, ...patch } as RuleDraft['params'] });
   const p = draft.params;
-  const actions = responseChoices(true, rule.response ?? 'block');
+  const actions = responseChoices(true, rule.ruleType, rule.response ?? 'block');
   const changes = draftChanges(draft, rule);
 
   const keywords = rule.ruleType === 'keyword' ? (p as KeywordParams).keywords : [];

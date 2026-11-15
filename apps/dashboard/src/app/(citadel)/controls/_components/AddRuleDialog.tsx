@@ -1,16 +1,19 @@
 'use client';
 
 // "Add a rule": what to control, by goal, each with its category. Shares the
-// dialog frame with ConfirmDialog; new rules start in Watch.
+// dialog frame with ConfirmDialog; new rules start in Watch. Offers only the
+// rule types the engine takes.
 
 import type { GovernanceRuleType } from '@/lib/whiteroom/types';
-import { RULE_TEMPLATES } from '@/lib/controls-view';
+import { offeredTemplates } from '@/lib/controls-view';
 import { RuleCategory } from './RuleCategory';
 import { DialogFrame, dialogCancelStyle } from '@/components/citadel/DialogFrame';
 
-export function AddRuleDialog({ open, busy, onPick, onCancel }: {
+export function AddRuleDialog({ open, busy, ruleTypes, onPick, onCancel }: {
   open: boolean;
   busy: boolean;
+  /** The rule types the engine takes (governance_list ruleTypes): only those are offered. Undefined: an older engine, the first six. */
+  ruleTypes?: readonly string[];
   onPick: (type: GovernanceRuleType) => void;
   onCancel: () => void;
 }) {
@@ -20,7 +23,7 @@ export function AddRuleDialog({ open, busy, onPick, onCancel }: {
         <h2 id="add-rule-title" style={{ margin: 0, fontSize: 'var(--fs-md)', fontWeight: 700 }}>Add a rule</h2>
         <p style={{ margin: 0, fontSize: 'var(--fs-md)', lineHeight: 1.55, color: 'var(--tx2)' }}>New rules start in Watch, so nothing is blocked until you say so.</p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {RULE_TEMPLATES.map((t) => (
+          {offeredTemplates(ruleTypes).map((t) => (
             <button key={t.type} type="button" disabled={busy} onClick={() => onPick(t.type)} className="gov-template">
               <span className="gov-template__top">
                 <span className="gov-template__title">{t.title}</span>

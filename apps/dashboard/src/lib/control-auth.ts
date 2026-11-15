@@ -39,6 +39,8 @@ export const DASHBOARD_ONLY_ACTIONS: ReadonlySet<string> = new Set([
   'purge_fleet',
   // The tool names the fleet's agents call, for the Controls pickers: the owner's to read.
   'tools_seen',
+  // Where a Where tools can send data rule's tools sent, for its Seen list (DLP spec 5.5): the owner's too.
+  'send_seen_list',
 ]);
 
 /**

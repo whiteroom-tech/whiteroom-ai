@@ -4,9 +4,9 @@
 
 import type {
   CallRateParams, GovernanceMode, GovernanceParams, GovernanceResponse, GovernanceRule, GovernanceRuleType,
-  GovernanceScope, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, RuleActionCounts, SpendCapParams, ToolListParams,
+  GovernanceScope, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, RuleActionCounts, SendLimitParams, SendSeenRow, SpendCapParams, ToolListParams,
 } from '@/lib/whiteroom/types';
-import { convertSpendCap, UNKNOWN_RULE, unhandledType } from '@/lib/governance';
+import { convertSpendCap, engineTakes, UNKNOWN_RULE, unhandledType } from '@/lib/governance';
 import { MODE_LABEL, NOTIFY } from '@/lib/vocab';
 import { DAY_MS, fmtCount, ordinal } from '@/lib/format';
 
@@ -55,6 +55,127 @@ const VERB: Record<GovernanceResponse, string> = { notify: NOTIFY.verb, block: '
 
 export const money = (p: SpendCapParams) => (p.unit === 'dollars' ? `$${fmtCount(p.dailyCap)}` : `${fmtCount(p.dailyCap)} tokens`);
 
+// ── Where tools can send data (DLP spec 3.2, 5.2) ──────────────────
+
+/** The engine's limits on a Where tools can send data rule: 50 tools, 100 allowed domains. */
+export const SEND_TOOLS_MAX = 50;
+export const SEND_DOMAINS_MAX = 100;
+const SEEN_FULL_AT = 500;
+
+/** How many domains a rule allows, counting a list the engine hid (domainCount). */
+export function domainTotal(p: SendLimitParams): number {
+  return p.domains.length || (p.domainCount ?? 0);
+}
+
+/**
+ * The engine sent the domain count, not the list: a caller without the
+ * dashboard's secret (anyone but the fleet's owner). The editor is then read
+ * only, and the list is never written back.
+ */
+export function domainsHidden(r: Pick<GovernanceRule, 'ruleType' | 'params'>): boolean {
+  return r.ruleType === 'send_limit' && typeof (r.params as SendLimitParams).domainCount === 'number';
+}
+
+/** The send_limit sentence's tools: "send_email", "send_email or http_request", or "One of 3 tools". */
+function sendTools(tools: readonly string[]): { pre: string; val: string } {
+  return tools.length <= 2 ? { pre: '', val: tools.join(' or ') } : { pre: 'One of ', val: `${tools.length} tools` };
+}
+const OFF_LIST = ' sends to a domain that isn’t on the list';
+
+/** The two reserved Seen values (engine send_seen): never a domain, never added. */
+export const SEEN_NONE = '(none)';
+export const SEEN_UNREADABLE = '(unreadable)';
+export const SEEN_RESERVED_TEXT: Record<string, string> = { [SEEN_NONE]: 'No domain found', [SEEN_UNREADABLE]: 'Couldn’t read the domain' };
+
+/** Whether an allowed entry covers a host: the same, or a subdomain of it (DLP spec 5.1). */
+export function domainAllows(entry: string, host: string): boolean {
+  return host === entry || host.endsWith(`.${entry}`);
+}
+
+/** A Seen row that can go on the list: a real domain, not one the cleaner rewrote (the engine's canAdd). */
+export const canAddSeen = (row: SendSeenRow) => row.canAdd !== false && !Object.hasOwn(SEEN_RESERVED_TEXT, row.domain);
+
+/** The Seen rows still to show under a list being edited: those it doesn't allow yet. Reserved rows always stay. */
+export function seenNotOnList(rows: readonly SendSeenRow[], domains: readonly string[]): SendSeenRow[] {
+  return rows.filter((r) => !canAddSeen(r) || !domains.some((d) => domainAllows(d, r.domain)));
+}
+
+/** Listed tools that made calls with no domain the engine could read: Block would stop every call they make. */
+export function toolsWithNoDomain(rows: readonly SendSeenRow[], tools: readonly string[]): string[] {
+  return [...new Set(rows.filter((r) => r.domain === SEEN_NONE && tools.includes(r.tool)).map((r) => r.tool))];
+}
+
+/** The line under Seen when no more rows are added; null while there's room. */
+export function seenFullLine(res: { rows: readonly unknown[]; full?: boolean; fleetFull?: boolean }): string | null {
+  if (res.full || res.rows.length >= SEEN_FULL_AT) return `More than ${SEEN_FULL_AT} domains seen. Showing the first ${SEEN_FULL_AT}.`;
+  if (res.fleetFull) return 'Your fleet has seen too many domains to list more. New ones aren’t shown.';
+  return null;
+}
+
+/** A typed domain as the list stores it: trimmed, lower case, without one trailing dot. */
+export const domainEntry = (typed: string) => typed.trim().toLowerCase().replace(/\.$/, '');
+
+const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
+
+/**
+ * Why a typed entry can't go on the list, in plain words, or null. The same
+ * refusals as the engine's save check (DLP spec 5.2): a scheme, port, path,
+ * `*`, `@`, `%` or an IP address. A public suffix (`co.uk`) is the engine's to
+ * refuse; its words come back through domainRefusal.
+ */
+export function domainProblem(typed: string, list: readonly string[]): string | null {
+  const d = domainEntry(typed);
+  if (!d) return null;
+  if (list.includes(d)) return 'That domain is already on the list.';
+  if (list.length >= SEND_DOMAINS_MAX) return `A rule allows up to ${SEND_DOMAINS_MAX} domains. Remove one to add another.`;
+  if (/^[a-z][a-z0-9+.-]*:\/\//.test(d) || /^(https?|mailto):/.test(d)) return 'Type just the domain, like acme.com, without https://.';
+  if (d.includes('@')) return 'Type the domain, not an address: acme.com, not bob@acme.com.';
+  if (d.includes('*')) return 'Leave out the *. acme.com already covers mail.acme.com.';
+  if (d.includes('%')) return 'A domain can’t have a % in it.';
+  if (IPV4.test(d) || d.includes('[') || (d.match(/:/g) ?? []).length > 1) return 'Use a domain name, not an IP address.';
+  if (/:\d*$/.test(d) || /:\d+[/?#]/.test(d)) return 'Leave out the port. Type just the domain, like acme.com.';
+  if (/[/?#\\]/.test(d)) return 'Leave out the path. Type just the domain, like acme.com.';
+  if (/\s/.test(d) || !/^[a-z0-9_.-]+$/.test(d) && !/[^\x00-\x7f]/.test(d)) return 'That isn’t a domain. Type one like acme.com.';
+  return null;
+}
+
+/**
+ * The engine's refusal of a domain on save, in the editor's plain words; the
+ * engine's own words when it's about something else.
+ */
+export function domainRefusal(reason: string): string {
+  // The engine names the entry first: `"co.uk": that ending is shared by many sites…`.
+  const named = /^"([^"]{1,80})":\s*([\s\S]*)$/.exec(reason);
+  const plain = refusalWords(named ? named[2] : reason);
+  return plain && named ? `${named[1]}: ${plain}` : plain ?? reason;
+}
+
+function refusalWords(reason: string): string | null {
+  const r = reason.toLowerCase();
+  if (/hidden here/.test(r)) return null;
+  if (/isn’t a domain|isn't a domain/.test(r)) return 'That isn’t a domain. Type one like acme.com.';
+  if (/public suffix|shared by many sites/.test(r)) return 'That ending is shared by many sites, like co.uk. Type the full domain, like acme.co.uk.';
+  if (/\bip\b|ip address/.test(r)) return 'Use a domain name, not an IP address.';
+  if (/scheme|https?:\/\//.test(r)) return 'Type just the domain, like acme.com, without https://.';
+  if (/\bport\b/.test(r)) return 'Leave out the port. Type just the domain, like acme.com.';
+  if (/\bpath\b/.test(r)) return 'Leave out the path. Type just the domain, like acme.com.';
+  if (/wildcard|\*/.test(r)) return 'Leave out the *. acme.com already covers mail.acme.com.';
+  if (/@|email address/.test(r)) return 'Type the domain, not an address: acme.com, not bob@acme.com.';
+  if (/%/.test(r)) return 'A domain can’t have a % in it.';
+  return null;
+}
+
+/** Name parts of a tool that sends data out. Used only to order and pre-pick tools, never to decide a call. */
+const SENDS = new Set(['send', 'sends', 'post', 'posts', 'http', 'https', 'email', 'emails', 'upload', 'uploads']);
+
+/** Whether a tool's name has a part like send, post, http, email or upload: `send_email` and `http_request` do, `postgres_query` doesn't. */
+export function looksLikeSender(tool: string): boolean {
+  return nameParts(tool).some((p) => SENDS.has(p));
+}
+
+/** The fleet's tools that look like they send data out, as many as the rule holds. */
+export const sendLookingTools = (tools: readonly string[]) => tools.filter(looksLikeSender).slice(0, SEND_TOOLS_MAX);
+
 /**
  * The rule as one sentence, split so the values can be set in mono. Only a
  * rule in Enforce does what it says; in Watch or Off it "would", so the
@@ -95,6 +216,12 @@ export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 
       const models = (rule.params as ModelAllowlistParams).allowedModels;
       return models.length ? { pre: 'Only allow ', val: models.join(', '), post: `. For any other model, ${v}.` } : { pre: 'No models picked yet.', val: '', post: '' };
     }
+    case 'send_limit': {
+      const tools = (rule.params as SendLimitParams).tools;
+      if (!tools.length) return { pre: 'No tools picked yet.', val: '', post: '' };
+      const t = sendTools(tools);
+      return { pre: `When ${t.pre ? t.pre.toLowerCase() : ''}`, val: t.val, post: `${OFF_LIST}, ${v}.` };
+    }
     default:
       return unhandledType(rule.ruleType, { pre: UNKNOWN_RULE, val: '', post: '' });
   }
@@ -122,7 +249,7 @@ function ruleOrder(a: GovernanceRule, b: GovernanceRule): number {
 }
 
 /** The order rules are listed in on Controls, by type. Its own list, so the Add-a-rule choices can change without moving rows. */
-export const RULE_ROW_ORDER: readonly GovernanceRuleType[] = ['spend_cap', 'call_rate', 'model_allowlist', 'loop_breaker', 'tool_list', 'keyword'];
+export const RULE_ROW_ORDER: readonly GovernanceRuleType[] = ['spend_cap', 'call_rate', 'model_allowlist', 'loop_breaker', 'tool_list', 'keyword', 'send_limit'];
 
 function typeRank(t: GovernanceRuleType): number {
   const i = RULE_ROW_ORDER.indexOf(t);
@@ -173,6 +300,8 @@ export function emptyPick(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): st
     case 'tool_list': return (rule.params as ToolListParams).blockedTools.length ? null : 'a tool';
     // The engine skips an allowlist with no models (it would refuse every call), so it does nothing yet.
     case 'model_allowlist': return (rule.params as ModelAllowlistParams).allowedModels.length ? null : 'a model';
+    // No tools is "Not set up" (DLP spec 5.2). No domains is a real rule: everything those tools send is off the list.
+    case 'send_limit': return (rule.params as SendLimitParams).tools.length ? null : 'a tool';
     case 'spend_cap': case 'loop_breaker': case 'call_rate': return null;
     default: return unhandledType(rule.ruleType, null);
   }
@@ -182,7 +311,7 @@ export function emptyPick(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): st
 
 const REASON: Record<GovernanceRuleType, string> = {
   spend_cap: 'budget_exceeded', loop_breaker: 'loop_detected', model_allowlist: 'model_not_allowed', tool_list: 'tool_not_allowed', call_rate: 'rate_exceeded',
-  keyword: 'keyword_found',
+  keyword: 'keyword_found', send_limit: 'destination_not_allowed',
 };
 
 /** The engine's 403 for this rule (blockResponseBody); nothing for Only alert me. */
@@ -191,13 +320,15 @@ export function agentGets(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 're
   if (response === 'notify') return 'Nothing: the call goes through.\nYou get an alert; the agent doesn’t.';
   const held = response === 'pause' || response === 'stop';
   const resets = held ? 'when someone resumes it' : resetsWhen(rule);
-  return `403 governance_block\nresponse: ${response}\nreason: ${REASON[rule.ruleType]}\nretryable: ${!held && rule.ruleType === 'call_rate'}\nresets: ${resets}`;
+  // A data rule's body says only that it blocked: no list, no limit (DLP spec 5.2).
+  const message = rule.ruleType === 'send_limit' ? '\nmessage: A data rule blocked this call.' : '';
+  return `403 governance_block${message}\nresponse: ${response}\nreason: ${REASON[rule.ruleType]}\nretryable: ${!held && rule.ruleType === 'call_rate'}\nresets: ${resets}`;
 }
 
 function resetsWhen(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): string {
   switch (rule.ruleType) {
     case 'call_rate': return 'once the last minute is back under the limit';
-    case 'model_allowlist': case 'tool_list': case 'keyword': return 'never';
+    case 'model_allowlist': case 'tool_list': case 'keyword': case 'send_limit': return 'never';
     case 'spend_cap': case 'loop_breaker': return (rule.params as SpendCapParams | LoopBreakerParams).scope === 'day' ? 'next day (00:00 UTC)' : 'next run';
     default: return unhandledType(rule.ruleType, 'never');
   }
@@ -210,6 +341,7 @@ export const AGENT_NOTE: Record<GovernanceRuleType, string> = {
   call_rate: 'Stops the call that goes over the limit. Refused calls count too, so an agent that keeps retrying stays over until it slows down.',
   tool_list: 'Stops the model’s reply before the agent gets it, so the tool never runs. The model call itself is already spent.',
   keyword: 'Stops the call before the model sees it, or the reply before the agent does. The agent isn’t told which keyword matched.',
+  send_limit: 'Stops the model’s reply before the agent gets it, so the tool never sends. The agent isn’t told the list.',
 };
 
 // ── The edit model behind Save ──────────────────────────────────────
@@ -240,7 +372,7 @@ const numberOf = (rule: Pick<GovernanceRule, 'ruleType' | 'params'>): string => 
     case 'spend_cap': return String((rule.params as SpendCapParams).dailyCap);
     case 'loop_breaker': return String((rule.params as LoopBreakerParams).threshold);
     case 'call_rate': return String((rule.params as CallRateParams).maxCalls);
-    case 'model_allowlist': case 'tool_list': case 'keyword': return '';
+    case 'model_allowlist': case 'tool_list': case 'keyword': case 'send_limit': return '';
     default: return unhandledType(rule.ruleType, '');
   }
 };
@@ -254,7 +386,7 @@ export function draftFrom(rule: GovernanceRule): RuleDraft {
   };
 }
 
-const HAS_NUMBER: Record<GovernanceRuleType, boolean> = { spend_cap: true, loop_breaker: true, call_rate: true, model_allowlist: false, tool_list: false, keyword: false };
+const HAS_NUMBER: Record<GovernanceRuleType, boolean> = { spend_cap: true, loop_breaker: true, call_rate: true, model_allowlist: false, tool_list: false, keyword: false, send_limit: false };
 const hasNumber = (t: GovernanceRuleType) => HAS_NUMBER[t] === true;
 
 /**
@@ -323,7 +455,8 @@ export function draftChanges(d: RuleDraft, rule: GovernanceRule): {
   if (d.response !== (rule.response ?? 'block')) out.response = d.response;
   if (d.alsoNotify !== !!rule.alsoNotify) out.alsoNotify = d.alsoNotify;
   if (!same(d.appliesTo, rule.appliesTo)) out.appliesTo = d.appliesTo;
-  if (!same(p.params, rule.params)) out.params = p.params;
+  // A list the engine hid (domainCount) is never written back: it would save an empty list over the real one.
+  if (!same(p.params, rule.params) && !domainsHidden(rule)) out.params = p.params;
   return Object.keys(out).length ? out : null;
 }
 
@@ -337,6 +470,7 @@ export function draftProblem(d: RuleDraft): string | null {
     case 'model_allowlist': return (p.params as ModelAllowlistParams).allowedModels.length === 0 ? 'Pick at least one model before you turn on Enforce.' : null;
     case 'tool_list': return (p.params as ToolListParams).blockedTools.length === 0 ? 'Pick at least one tool before you turn on Enforce.' : null;
     case 'keyword': return keywordTotal(p.params as KeywordParams) === 0 ? 'Pick at least one keyword before you turn on Enforce.' : null;
+    case 'send_limit': return (p.params as SendLimitParams).tools.length === 0 ? 'Pick at least one tool before you turn on Enforce.' : null;
     case 'spend_cap': case 'loop_breaker': case 'call_rate': return null;
     // Never saved: the editor doesn't open a rule of a type it doesn't know.
     default: return unhandledType(d.ruleType, UNKNOWN_RULE);
@@ -353,7 +487,11 @@ export const RULE_TEMPLATES: { type: GovernanceRuleType; title: string; desc: st
   { type: 'loop_breaker', title: 'Break loops', desc: 'Catch an agent making the same call over and over.' },
   { type: 'tool_list', title: 'Block tools', desc: 'Keep agents from running tools you name.' },
   { type: 'keyword', title: 'Flag keywords', desc: 'Get an alert, or block the call, when words you pick show up.' },
+  { type: 'send_limit', title: 'Limit where tools can send data', desc: 'For example, email only to your own domain.' },
 ];
+
+/** The Add a rule choices this engine takes (governance_list ruleTypes): an engine without send_limit never gets offered it. */
+export const offeredTemplates = (ruleTypes: readonly string[] | undefined) => RULE_TEMPLATES.filter((t) => engineTakes(t.type, ruleTypes));
 
 // ── Groups: who a rule covers ───────────────────────────────────────
 
@@ -438,6 +576,17 @@ function looser(prev: GovernanceRule, next: GovernanceRule): string[] {
       for (const gone of places(p.where).filter((x) => !places(n.where).includes(x))) out.push(`No longer looks in ${gone === 'incoming' ? 'incoming data' : 'model replies'}`);
       return out;
     }
+    case 'send_limit': {
+      // Building the list in Watch changes what nobody's calls do: it's asked about only in Enforce (DLP spec 3.2).
+      if (prev.mode !== 'enforce' || domainsHidden(prev)) return [];
+      const p = a as SendLimitParams, n = b as SendLimitParams;
+      const out: string[] = [];
+      const added = n.domains.filter((d) => !p.domains.includes(d));
+      if (added.length) out.push(`Also allows ${added.join(', ')}`);
+      const freed = p.tools.filter((t) => !n.tools.includes(t));
+      if (freed.length) out.push(`No longer checks ${freed.join(', ')}`);
+      return out;
+    }
     default:
       return unhandledType(prev.ruleType, []);
   }
@@ -496,6 +645,12 @@ export function ruleCondition(rule: Pick<GovernanceRule, 'ruleType' | 'params'>)
     case 'model_allowlist': {
       const models = (rule.params as ModelAllowlistParams).allowedModels;
       return models.length ? { pre: 'Only ', val: models.join(', '), post: '' } : { pre: 'No models picked yet', val: '', post: '' };
+    }
+    case 'send_limit': {
+      const tools = (rule.params as SendLimitParams).tools;
+      if (!tools.length) return { pre: 'No tools picked yet', val: '', post: '' };
+      const t = sendTools(tools);
+      return { pre: t.pre, val: t.val, post: OFF_LIST };
     }
     default:
       return unhandledType(rule.ruleType, { pre: UNKNOWN_RULE, val: '', post: '' });
@@ -558,6 +713,7 @@ export function blocksWhen(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'a
     case 'model_allowlist': return `only for models not on its list${only}`;
     case 'tool_list': return `only for the tools it names${only}`;
     case 'keyword': return `only when its keywords show up${only}`;
+    case 'send_limit': return `only for sends to domains not on its list${only}`;
     default: return unhandledType(rule.ruleType, `only in some cases${only}`);
   }
 }
@@ -664,7 +820,7 @@ export function duplicateRules(rules: readonly GovernanceRule[]): { keep: Govern
   const scopeKey = (s: GovernanceScope) => (s === 'all' ? 'all' : [...s].sort());
   for (const r of rules) {
     // A Keywords list the engine hid can't be compared: two such rules may look alike and differ.
-    if (notSetUp(r) || keywordsHidden(r)) continue;
+    if (notSetUp(r) || listHidden(r)) continue;
     const g = out.find(({ keep: k }) => k.ruleType === r.ruleType && k.mode === r.mode && (k.response ?? 'block') === (r.response ?? 'block')
       && !!k.alsoNotify === !!r.alsoNotify && sameValue(scopeKey(k.appliesTo), scopeKey(r.appliesTo)) && sameValue(k.params, r.params));
     if (g) g.extra.push(r); else out.push({ keep: r, extra: [] });
@@ -699,6 +855,12 @@ export function keywordsHidden(r: Pick<GovernanceRule, 'ruleType' | 'params'>): 
   return r.ruleType === 'keyword' && !(r.params as KeywordParams).keywords.length && !!(r.params as KeywordParams).keywordCount;
 }
 
+/** What the engine hid from this read, so the rule can't be copied or added back from here: its keywords or its domains; null when nothing. */
+export function hiddenList(r: Pick<GovernanceRule, 'ruleType' | 'params'>): 'keywords' | 'domains' | null {
+  return keywordsHidden(r) ? 'keywords' : domainsHidden(r) ? 'domains' : null;
+}
+export const listHidden = (r: Pick<GovernanceRule, 'ruleType' | 'params'>) => hiddenList(r) !== null;
+
 /** A Keywords rule's words for a sentence: "password", or "password", "SSN" + 2 more; markers only count. */
 export function keywordsShort(p: KeywordParams): string {
   const words = p.keywords.filter((k) => !isMarker(k));
@@ -716,8 +878,12 @@ const DELETE_OR_CHANGE = new Set([
 
 /** Whether a tool's name has a part (split at non-letters and camelCase) like delete, remove, drop, purge, update or write: `bulk-update` does, `dropdown_options` doesn't. */
 export function looksLikeDeleteOrChange(tool: string): boolean {
-  const parts = tool.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2').toLowerCase().split(/[^a-z]+/);
-  return parts.some((p) => DELETE_OR_CHANGE.has(p));
+  return nameParts(tool).some((p) => DELETE_OR_CHANGE.has(p));
+}
+
+/** A tool name's parts, split at non-letters and camelCase, lower case: `sendEmail` → send, email. */
+function nameParts(tool: string): string[] {
+  return tool.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2').toLowerCase().split(/[^a-z]+/);
 }
 
 /** The fleet's tools that look like they delete or change data, as many as a Tool list holds (the engine's limit is 100). */
@@ -747,6 +913,7 @@ export function whenSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params'>):
       return tools.length ? { pre: 'Is about to run ', val: tools.join(', '), post: '' } : { pre: 'No tools picked yet', val: '', post: '' };
     }
     case 'keyword': return ruleCondition(rule);
+    case 'send_limit': return ruleCondition(rule);
     default: return unhandledType(rule.ruleType, { pre: UNKNOWN_RULE, val: '', post: '' });
   }
 }
@@ -762,7 +929,7 @@ export const MODE_CHOICES: readonly GovernanceMode[] = ['off', 'watch', 'enforce
  */
 export function chooseMode(
   d: RuleDraft, mode: GovernanceMode, saved: Pick<GovernanceRule, 'response' | 'alsoNotify'>,
-  actions: readonly GovernanceResponse[] = responseChoices(true), canPick: (r: GovernanceResponse) => boolean = () => true,
+  actions: readonly GovernanceResponse[] = responseChoices(true, d.ruleType), canPick: (r: GovernanceResponse) => boolean = () => true,
 ): RuleDraft {
   if (mode !== 'enforce') {
     return d.mode === 'enforce' ? { ...d, mode, response: saved.response ?? 'block', alsoNotify: !!saved.alsoNotify } : { ...d, mode };
@@ -777,9 +944,19 @@ export function chooseAction(d: RuleDraft, response: GovernanceResponse): RuleDr
   return changeResponse({ ...d, mode: 'enforce' }, response);
 }
 
-/** The actions this fleet has, in the "When enforced" order: Pause and Stop only on Gov v1 fleets, but always the ones the rule uses. */
-export function responseChoices(govV1: boolean, ...keep: GovernanceResponse[]): GovernanceResponse[] {
-  return (['block', 'pause', 'stop', 'notify'] as const).filter((r) => govV1 || r === 'notify' || r === 'block' || keep.includes(r));
+/** What each rule type can do when enforced (the engine's per-type map, DLP spec 5.4): Where tools can send data only alerts or blocks. */
+const TYPE_RESPONSES: Record<GovernanceRuleType, readonly GovernanceResponse[]> = {
+  spend_cap: ['block', 'pause', 'stop', 'notify'], loop_breaker: ['block', 'pause', 'stop', 'notify'], model_allowlist: ['block', 'pause', 'stop', 'notify'],
+  tool_list: ['block', 'pause', 'stop', 'notify'], call_rate: ['block', 'pause', 'stop', 'notify'], keyword: ['block', 'pause', 'stop', 'notify'],
+  send_limit: ['notify', 'block'],
+};
+
+/**
+ * The actions this rule type has on this fleet, in its "When enforced" order:
+ * Pause and Stop only on Gov v1 fleets, but always the ones the rule uses.
+ */
+export function responseChoices(govV1: boolean, ruleType: GovernanceRuleType, ...keep: GovernanceResponse[]): GovernanceResponse[] {
+  return TYPE_RESPONSES[ruleType].filter((r) => govV1 || r === 'notify' || r === 'block' || keep.includes(r));
 }
 
 /** What an enforced rule does, after "Enforce: ". */

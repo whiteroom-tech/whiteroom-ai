@@ -14,14 +14,14 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Banner, Button, FONT_MONO, Toast } from "@whiteroom/ui";
 import { LiveStatus, PageHeader } from "@/components/citadel/PageChrome";
 import { SuggestionDraft } from "./_components/SuggestionDraft";
-import { RuleEditor } from "./_components/RuleEditor";
+import { RuleEditor, type SeenState } from "./_components/RuleEditor";
 import { AddRuleDialog } from "./_components/AddRuleDialog";
 import { RuleCategory } from "./_components/RuleCategory";
 import { ChoiceDialog } from "./_components/ChoiceDialog";
 import { useFleetAuth } from "@/hooks/useFleetAuth";
 import {
   WhiteRoomApiError, alertsGet, controlFailure, governanceCreateRule, governanceDeleteRule, governanceList, governanceUpdateRule, isAuthError,
-  performanceAgent, performanceFleetHourly, performanceIndex, ruleActions as fetchRuleActions, toolsSeen,
+  performanceAgent, performanceFleetHourly, performanceIndex, ruleActions as fetchRuleActions, sendSeenList, toolsSeen,
 } from "@/lib/whiteroom/client";
 import { wouldActsFor } from "@/lib/batched-reads";
 import type {
@@ -43,7 +43,7 @@ import {
   weakenings,
   averageDailySpend,
   sameValue,
-  blocksWhen, duplicateRules, keywordsHidden, keywordGaps, keywordsShort, leadCounts, modeCount, notSetUp, ruleCondition, ruleConditionText, ruleGroups, rowCount, ruleStatus, whoFor,
+  blocksWhen, domainRefusal, domainsHidden, duplicateRules, hiddenList, listHidden, keywordGaps, sendLookingTools, keywordsShort, leadCounts, modeCount, notSetUp, ruleCondition, ruleConditionText, ruleGroups, rowCount, ruleStatus, whoFor,
 } from "@/lib/controls-view";
 import { readDraft, removeDraft, writeDraft } from "@/lib/controls-draft";
 
@@ -104,6 +104,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const [history, setHistory] = useState<GovernanceHistoryEntry[]>([]);
   const [agents, setAgents] = useState<string[]>([]);
   const [govV1, setGovV1] = useState(false);
+  /** The rule types the engine takes (governance_list ruleTypes); undefined from an older engine. */
+  const [ruleTypes, setRuleTypes] = useState<string[] | undefined>(undefined);
   const [actors, setActors] = useState<ControlActor[]>([]);
   const [loaded, setLoaded] = useState(false);
   // True once the rules have actually been read (a failed read sets `loaded` too, with no rules).
@@ -227,12 +229,12 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     return fetchControlActors(fleetId, oldestTime(h)).then((a) => { if (id === actorsReq.current) setActors(a); });
   }, [fleetId]);
 
-  const handleError = useCallback((e: unknown, what: string) => {
+  const handleError = useCallback((e: unknown, what: string, plain: (reason: string) => string = (r) => r) => {
     const failure = controlFailure(e);
     if (failure === "sign-out") { onAuthError(); return; }
     if (failure === "refused") { setError((e as Error).message); return; }
     // The engine said why: show that, so the person knows what to change.
-    if (e instanceof WhiteRoomApiError && e.reason) { setError(`Couldn’t ${what}. ${e.reason[0].toUpperCase()}${e.reason.slice(1)}`); return; }
+    if (e instanceof WhiteRoomApiError && e.reason) { const why = plain(e.reason); setError(`Couldn’t ${what}. ${why[0].toUpperCase()}${why.slice(1)}`); return; }
     setError(`Couldn’t ${what}. Your last change may not have been saved — refreshed from the server.`);
   }, [onAuthError]);
 
@@ -250,6 +252,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       void loadActors(d.history);
       setAgents(d.agents);
       setGovV1(!!d.govV1);
+      setRuleTypes(Array.isArray(d.ruleTypes) ? d.ruleTypes : undefined);
       setLoaded(true);
       setListed(true);
       setListedAt(Date.now());
@@ -306,6 +309,26 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     }
     return toolsRead.current.tools;
   }, [fleetId, authKey]);
+
+  // A Where tools can send data rule's Seen list, read when it's opened and after each save (the
+  // engine drops rows its list now allows). Only for the owner: a reader without the list gets none.
+  const seenKey = selected && selected.ruleType === "send_limit" && !domainsHidden(selected) ? `${fleetId}\n${selected.id}` : null;
+  const seenVersion = selected?.version ?? 0;
+  const [seen, setSeen] = useState<{ key: string; state: SeenState } | null>(null);
+  const [seenTry, setSeenTry] = useState(0);
+  useEffect(() => {
+    if (!seenKey) return;
+    let cancelled = false;
+    const [forFleet, ruleId] = seenKey.split("\n");
+    // A re-read of the same rule keeps its rows on screen until the new ones arrive.
+    setSeen((cur) => (cur?.key === seenKey && cur.state.status === "ok" ? cur : { key: seenKey, state: { status: "loading" } }));
+    sendSeenList(forFleet, ruleId, authKey).then(
+      (r) => { if (!cancelled) setSeen({ key: seenKey, state: { status: "ok", rows: r.rows, full: r.full, fleetFull: r.fleetFull } }); },
+      () => { if (!cancelled) setSeen({ key: seenKey, state: { status: "failed" } }); },
+    );
+    return () => { cancelled = true; };
+  }, [seenKey, seenVersion, seenTry, authKey]);
+  const seenState = seenKey && seen?.key === seenKey ? seen.state : seenKey ? ({ status: "loading" } as const) : undefined;
 
   // Suggested rules come from real traffic; the performance store is optional, so a failure just means none.
   useEffect(() => {
@@ -454,7 +477,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const [restored, setRestored] = useState<Set<string>>(() => new Set());
   const undoOf = (h: GovernanceHistoryEntry) => {
     const u = restored.has(h.id) ? null : undoFor(h, rules, history);
-    return u?.kind === "restore" && keywordsHidden(u.rule) ? null : u;
+    return u?.kind === "restore" && listHidden(u.rule) ? null : u;
   };
   const undo = (u: Undo, entryId?: string) => {
     if (u.kind === "update") {
@@ -493,8 +516,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
           ...((before.response ?? "block") !== (saved.response ?? "block") && { response: before.response ?? "block" }),
           ...(!!before.alsoNotify !== !!saved.alsoNotify && { alsoNotify: !!before.alsoNotify }),
           ...(!sameValue(before.appliesTo, saved.appliesTo) && { appliesTo: before.appliesTo }),
-          // A Keywords list the engine hid can't be written back: the editor can't change it either.
-          ...(!sameValue(before.params, saved.params) && !keywordsHidden(before) && { params: before.params }),
+          // A Keywords or domain list the engine hid can't be written back: the editor can't change it either.
+          ...(!sameValue(before.params, saved.params) && !listHidden(before) && { params: before.params }),
         };
         const { rule: back } = await governanceUpdateRule(fleetId, r.id, { ...changes, ifVersion: saved.version, description: "Undid the last change" }, authKey);
         setRules((rs) => rs.map((x) => (x.id === back.id && back.version >= x.version ? back : x)));
@@ -540,7 +563,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
 
   const restore = async (rule: Extract<Undo, { kind: "restore" }>["rule"], entryId?: string) => {
     // A Keywords list the engine hid can't be added back: it would come back with no words.
-    if (keywordsHidden(rule)) { setError("This rule’s keywords are hidden here, so it can’t be added back from this page. Reload the page and try again."); return; }
+    const hidden = hiddenList(rule);
+    if (hidden) { setError(`This rule’s ${hidden} are hidden here, so it can’t be added back from this page. Reload the page and try again.`); return; }
     if (undoBusy.current) return;
     undoBusy.current = true;
     setSaving(true);
@@ -571,9 +595,10 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   // only like any new rule. The original is left as it was.
   const copyFor = async (rule: GovernanceRule, agentsPicked: string[]) => {
     if (!agentsPicked.length || saving) return;
-    if (keywordsHidden(rule)) {
+    const hidden = hiddenList(rule);
+    if (hidden) {
       setDialog(null);
-      setError("This rule’s keywords are hidden here, so it can’t be copied. Reload the page and try again.");
+      setError(`This rule’s ${hidden} are hidden here, so it can’t be copied. Reload the page and try again.`);
       return;
     }
     const next = { ...rule, appliesTo: agentsPicked };
@@ -634,7 +659,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         setError("This rule changed somewhere else, so your edit wasn’t saved. It’s been reloaded: make your change again.");
         void fetchData().then((ok) => { if (ok && selectedRef.current === rule.id) { setDraft(null); dropKept(); } });
       } else {
-        handleError(e, "save the rule");
+        // A domain the engine refused (a public suffix, an IP address…), in the editor's plain words.
+        handleError(e, "save the rule", rule.ruleType === "send_limit" ? domainRefusal : undefined);
         void fetchData();
       }
     } finally {
@@ -652,8 +678,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       await governanceDeleteRule(fleetId, rule.id, authKey);
       setRules((rs) => rs.filter((r) => r.id !== rule.id));
       if (selectedRef.current === rule.id) { setSelectedId(null); setDraft(null); }
-      // A hidden Keywords list can't be added back, so there's no Undo for it.
-      showToast(message, keywordsHidden(rule) ? undefined : () => live.current.restore(rule));
+      // A hidden Keywords or domain list can't be added back, so there's no Undo for it.
+      showToast(message, listHidden(rule) ? undefined : () => live.current.restore(rule));
       void fetchData();
     } catch (e) { handleError(e, "remove the rule"); void fetchData(); }
     finally { setSaving(false); }
@@ -665,10 +691,14 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     try {
       // "Block tools" starts with the fleet's delete-looking tools picked, when its tools are known.
       // Tools already read are used as they are; else the read gets 2 s, then the rule is added as before.
-      const picked = ruleType === "tool_list" ? deleteLookingTools(fleetTools.length ? fleetTools : await within(TOOLS_WAIT_MS, readFleetTools(), [])) : [];
-      // New rules start in Watch; while viewing one agent, they start for that agent.
+      // "Limit where tools can send data" starts the same way, with the tools that look like they send.
+      const likely = ruleType === "tool_list" ? deleteLookingTools : ruleType === "send_limit" ? sendLookingTools : null;
+      const picked = likely ? likely(fleetTools.length ? fleetTools : await within(TOOLS_WAIT_MS, readFleetTools(), [])) : [];
+      const params = ruleType === "tool_list" && picked.length > 0 ? { blockedTools: picked } : ruleType === "send_limit" ? { tools: picked, domains: [] } : undefined;
+      // New rules start in Watch; while viewing one agent, they start for that agent. A data rule
+      // starts on Only alert me, the engine's default for it (DLP spec 5.2).
       const { rule } = await governanceCreateRule(fleetId, {
-        ruleType, mode: "watch", ...(picked.length > 0 && { params: { blockedTools: picked } }), ...(agentFilter && { appliesTo: [agentFilter] }),
+        ruleType, mode: "watch", ...(ruleType === "send_limit" && { response: "notify" as const }), ...(params && { params }), ...(agentFilter && { appliesTo: [agentFilter] }),
       }, authKey);
       setRules((rs) => [...rs, rule]);
       setAdding("closed");
@@ -678,7 +708,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       setSelectedId(rule.id);
       setDraft(draftFrom(rule));
       setNotice(null);
-      if (picked.length) showToast(`${RULE_LABELS.tool_list} rule added in Watch. Check its tools.`);
+      if (picked.length) showToast(`${RULE_LABELS[ruleType]} rule added in Watch. Check its tools.`);
       void fetchData();
     } catch (e) { setAdding("closed"); handleError(e, "add the rule"); void fetchData(); }
   };
@@ -1083,6 +1113,9 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                   onDiscard={() => { setDraft(draftFrom(edited)); setError(null); dropKept(); }}
                   onClose={() => openRule(null)}
                   onRemove={() => setDialog({ kind: "remove", rule: edited })}
+                  seen={seenState}
+                  onSeenRetry={() => setSeenTry((n) => n + 1)}
+                  onStaged={(message) => showToast(message)}
                 />
               </aside>
             </>
@@ -1105,7 +1138,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
 
       {toast && <Toast key={toast.id} message={toast.message} action={toast.undo ? { label: "Undo", onClick: toast.undo } : undefined} onClose={() => setToastState((t) => (t?.id === toast.id ? null : t))} />}
 
-      <AddRuleDialog open={adding !== "closed"} busy={adding === "busy"} onPick={(t) => void add(t)} onCancel={() => setAdding("closed")} />
+      <AddRuleDialog open={adding !== "closed"} busy={adding === "busy"} ruleTypes={ruleTypes} onPick={(t) => void add(t)} onCancel={() => setAdding("closed")} />
 
       <ChoiceDialog
         open={dialog?.kind === "enforce"}
@@ -1274,6 +1307,7 @@ const ACT_WORDS: Record<GovernanceResponse, { title: string; start: string; woul
 /** "Two identical loop breakers": each kind of rule, more than one. */
 const RULE_PLURAL: Record<GovernanceRuleType, string> = {
   spend_cap: "spend caps", loop_breaker: "loop breakers", call_rate: "call rate rules", model_allowlist: "model allowlists", tool_list: "tool lists", keyword: "Keywords rules",
+  send_limit: "Where tools can send data rules",
 };
 
 /** "6 agents will lose this rule", for moving a rule from all agents to some. */

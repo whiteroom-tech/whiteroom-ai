@@ -51,13 +51,15 @@ export type Undo =
  * - an update: only what this change touched, and only while the rule still
  *   looks exactly as the change left it (otherwise a later change would be
  *   overwritten);
- * - an add, an older entry with no snapshots, or a Keywords list the engine
- *   hid: nothing (Remove is the way to undo an add).
+ * - an add, an older entry with no snapshots, or a Keywords or domain list
+ *   the engine hid: nothing (Remove is the way to undo an add).
  */
 export function undoFor(entry: GovernanceHistoryEntry, rules: GovernanceRule[], history: GovernanceHistoryEntry[] = []): Undo | null {
   const { before, after } = entry;
   if (!before) return null;
-  const hidden = (s: GovernanceRuleSnapshot) => entry.ruleType === 'keyword' && !(s.params as { keywords?: string[] }).keywords?.length && Boolean((s.params as { keywordCount?: number }).keywordCount);
+  // A list the engine hid (no dashboard secret): undoing would write it back empty.
+  const hidden = (s: GovernanceRuleSnapshot) => (entry.ruleType === 'keyword' && !(s.params as { keywords?: string[] }).keywords?.length && Boolean((s.params as { keywordCount?: number }).keywordCount))
+    || (entry.ruleType === 'send_limit' && typeof (s.params as { domainCount?: unknown }).domainCount === 'number');
   if (hidden(before)) return null;
   if (after === null) {
     if (rules.some((r) => r.id === entry.ruleId)) return null;

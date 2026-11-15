@@ -84,6 +84,12 @@ const api = vi.hoisted(() => ({
   toolsHang: false,
   /** When set, each tools_seen read waits here until the test answers it. */
   toolsReplies: null as Array<(tools: string[]) => void> | null,
+  /** governance_list's ruleTypes (undefined: an older engine that doesn't say). */
+  ruleTypes: undefined as string[] | undefined,
+  /** send_seen_list's rows per rule id, and the rule ids it was asked for. */
+  seenRows: {} as Record<string, Array<{ tool: string; domain: string; agentId: string | null; firstSeen: string; canAdd?: boolean }>>,
+  seenFull: false,
+  seenAsked: [] as string[],
 }));
 const { knownRulesOnly } = await import('@/lib/governance');
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
@@ -91,7 +97,7 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
   // Read as the real governanceList reads the engine's reply (knownRulesOnly).
   governanceList: async () => {
     api.lists++; if (api.listFail) throw new Error('down'); if (api.listGate) await api.listGate;
-    return knownRulesOnly({ fleetId: 'f1', rules: api.empty ? [] : [...RULES.map((r) => api.saved[r.id] ?? r), ...api.created, ...(api.unknown as unknown as GovernanceRule[])], history: api.history as GovernanceListResult['history'], agents: ['lead-agent', 'market-researcher'], govV1: api.govV1 });
+    return knownRulesOnly({ fleetId: 'f1', rules: api.empty ? [] : [...RULES.map((r) => api.saved[r.id] ?? r), ...api.created, ...(api.unknown as unknown as GovernanceRule[])], history: api.history as GovernanceListResult['history'], agents: ['lead-agent', 'market-researcher'], govV1: api.govV1, ...(api.ruleTypes && { ruleTypes: api.ruleTypes }) });
   },
   performanceRecommendationGet: () => new Promise(() => {}),
   alertsGet: async () => api.alerts,
@@ -111,6 +117,7 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
   governanceUpdateRule: api.update,
   governanceDeleteRule: api.remove,
   governanceCreateRule: api.create,
+  sendSeenList: async (_f: string, ruleId: string) => { api.seenAsked.push(ruleId); return { ruleId, rows: api.seenRows[ruleId] ?? [], full: api.seenFull }; },
   toolsSeen: async () => { api.toolsAsked++; if (api.toolsHang) await new Promise(() => {}); if (api.toolsReplies) return new Promise<string[]>((r) => api.toolsReplies!.push(r)); if (api.toolsFail) throw new Error('down'); return api.tools; },
 }));
 
@@ -157,6 +164,7 @@ beforeEach(() => {
   sessionStorage.clear();
   nav.params = new URLSearchParams(); nav.replace.mockClear(); nav.push.mockClear();
   api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.hourly = []; api.listGate = null; api.listFail = false; api.empty = false; api.would = {}; api.agentCalls = {}; api.history = []; api.totals = null; api.unknown = []; api.tools = []; api.toolsAsked = 0; api.toolsFail = false; api.toolsHang = false; api.toolsReplies = null; session.key = 'k';
+  api.ruleTypes = undefined; api.seenRows = {}; api.seenFull = false; api.seenAsked = [];
   api.oldEngine = false; api.wouldBatches = []; api.wouldSingle = 0; resetBatchSupport();
   document.body.innerHTML = '';
 });
@@ -2183,11 +2191,12 @@ describe('Controls: Watch counts in one read (engine PR 345)', () => {
 // editor and in Add a rule. The Add a rule choices lose the rule name beside the title.
 describe('Controls: category labels', () => {
   const keyword: GovernanceRule = { ...base, id: 'k1', ruleType: 'keyword', mode: 'watch', response: 'notify', appliesTo: 'all', params: { keywords: ['Project Falcon'], where: 'incoming', wholeWord: true } };
-  // The six types, each with a row in view (the fleet's Tool list is off, in a closed card).
-  const sixTypes = () => { api.created.push(keyword); api.saved.r6 = { ...RULES[5], mode: 'watch', params: { blockedTools: ['delete_file'] } }; };
+  const send: GovernanceRule = { ...base, id: 's1', ruleType: 'send_limit', mode: 'watch', response: 'notify', appliesTo: 'all', params: { tools: ['send_email'], domains: ['acme.com'] } };
+  // Every type, each with a row in view (the fleet's Tool list is off, in a closed card).
+  const sixTypes = () => { api.created.push(keyword, send); api.saved.r6 = { ...RULES[5], mode: 'watch', params: { blockedTools: ['delete_file'] } }; };
   const nameToCat = Object.fromEntries(Object.entries(RULE_LABELS).map(([t, name]) => [name, RULE_CATEGORY[t as keyof typeof RULE_CATEGORY]]));
 
-  it('shows each row’s category above its count and mode tag, for all six types', async () => {
+  it('shows each row’s category above its count and mode tag, for every type', async () => {
     sixTypes();
     const m = await mount();
     const rows = [...m.el.querySelectorAll('button.ctl-row')];
@@ -2217,16 +2226,178 @@ describe('Controls: category labels', () => {
       expect(m.el.querySelector('.gov-edhead__full')!.textContent).toBe(nameToCat[name] + name);
       opened.add(name);
     }
-    expect(opened.size).toBe(6);
+    expect(opened.size).toBe(7);
     m.root.unmount();
   });
 
   it('Add a rule shows each choice’s title, category and description, and no rule name', async () => {
+    api.ruleTypes = RULE_TEMPLATES.map((t) => t.type);
     const m = await mount();
     await m.click(m.button('Add rule'));
     const options = [...m.el.querySelectorAll('button.gov-template')];
     expect(options.map((o) => o.textContent)).toEqual(RULE_TEMPLATES.map((t) => t.title + RULE_CATEGORY[t.type] + t.desc));
     expect(options.map((o) => o.querySelector('.gov-template__top > .ctl-cat')?.textContent)).toEqual(RULE_TEMPLATES.map((t) => RULE_CATEGORY[t.type]));
+    // No "New" tag on the new rule (owner, Nov 14).
+    expect(options.at(-1)!.textContent).not.toMatch(/\bNew\b/);
+    m.root.unmount();
+  });
+});
+
+// Data-protection spec, phase 3 (D5): Where tools can send data.
+describe('Controls: Where tools can send data', () => {
+  const ALL_TYPES = ['spend_cap', 'loop_breaker', 'model_allowlist', 'tool_list', 'call_rate', 'keyword', 'send_limit'];
+  const sendRule = (over: Partial<GovernanceRule> = {}, params: Record<string, unknown> = {}): GovernanceRule => ({
+    ...base, id: 's1', ruleType: 'send_limit', mode: 'watch', response: 'notify', appliesTo: 'all', params: { tools: ['send_email', 'post_message'], domains: ['acme.com'], ...params } as GovernanceRule['params'], ...over,
+  });
+  const seenRows = [
+    { tool: 'send_email', domain: 'gmail.com', agentId: 'support-agent', firstSeen: '2026-11-12T10:00:00Z' },
+    { tool: 'post_message', domain: '(none)', agentId: 'support-agent', firstSeen: '2026-11-11T10:00:00Z' },
+    { tool: 'send_email', domain: '(unreadable)', agentId: 'support-agent', firstSeen: '2026-11-11T09:00:00Z' },
+    { tool: 'send_email', domain: 'x-[cleaned].example', agentId: 'support-agent', firstSeen: '2026-11-10T09:00:00Z', canAdd: false },
+  ];
+  const seenRow = (m: Awaited<ReturnType<typeof mount>>, needle: string) => [...m.el.querySelectorAll('.ctl-seen__row')].find((r) => r.textContent?.includes(needle));
+  const dlg = (m: Awaited<ReturnType<typeof mount>>) => [...m.el.querySelectorAll('dialog[open]')].at(-1);
+  const saving = () => api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...api.created.find((r) => r.id === id)!, ...ch, version: 2 } }));
+
+  it('is offered in Add a rule only when the engine’s ruleTypes has it', async () => {
+    const titles = async () => {
+      const m = await mount();
+      await m.click(m.button('Add rule'));
+      const t = [...m.el.querySelectorAll('button.gov-template .gov-template__title')].map((b) => b.textContent);
+      m.root.unmount();
+      document.body.innerHTML = '';
+      return t;
+    };
+    expect(await titles()).not.toContain('Limit where tools can send data');
+    api.ruleTypes = ALL_TYPES.filter((t) => t !== 'send_limit');
+    expect(await titles()).not.toContain('Limit where tools can send data');
+    api.ruleTypes = ALL_TYPES;
+    expect(await titles()).toContain('Limit where tools can send data');
+  });
+
+  it('is added in Watch on Only alert me, with likely senders picked', async () => {
+    api.ruleTypes = ALL_TYPES;
+    api.tools = ['search_docs', 'send_email', 'http_request', 'delete_record'];
+    api.create.mockImplementation(async (_f: string, r: { ruleType: GovernanceRule['ruleType']; mode: GovernanceRule['mode']; response?: GovernanceRule['response']; params?: GovernanceRule['params'] }) => {
+      const rule: GovernanceRule = { ...base, id: 'new', ruleType: r.ruleType, mode: r.mode, response: r.response, appliesTo: 'all', params: r.params! };
+      api.created.push(rule);
+      return { rule };
+    });
+    const m = await mount();
+    await m.click(m.button('Add rule'));
+    await m.click([...m.el.querySelectorAll('button.gov-template')].find((b) => b.textContent?.includes('Limit where tools can send data')));
+    expect(api.create).toHaveBeenCalledWith('f1', { ruleType: 'send_limit', mode: 'watch', response: 'notify', params: { tools: ['send_email', 'http_request'], domains: [] } }, 'k');
+    expect(m.text()).toContain('Where tools can send data rule added in Watch. Check its tools.');
+    // A new rule opens with When expanded: the empty list says how to build it.
+    expect(m.text()).toContain('Nothing is allowed yet. Leave this in Watch to see where these tools send data, then add what’s fine.');
+    m.root.unmount();
+  });
+
+  it('shows Seen with When collapsed; reserved and cleaned rows have no Add to list', async () => {
+    api.created.push(sendRule());
+    api.seenRows = { s1: seenRows };
+    const m = await mount();
+    expect(m.row('sends to a domain').textContent).toContain('send_email or post_message sends to a domain that isn’t on the list');
+    await m.click(m.row('sends to a domain'));
+    expect(api.seenAsked).toEqual(['s1']);
+    expect(m.button('Change')).toBeTruthy();
+    expect(m.text()).toContain('Seen, not on the list');
+    expect(seenRow(m, 'gmail.com')!.textContent).toContain('support-agent · send_email');
+    expect(seenRow(m, 'gmail.com')!.querySelector('button')?.textContent).toBe('Add to list');
+    for (const n of ['No domain found', 'Couldn’t read the domain', 'x-[cleaned].example']) expect(seenRow(m, n)!.querySelector('button'), n).toBeNull();
+    expect(m.text()).toContain('Only the domain is stored, never what was sent.');
+    // The no-domain note shows once the tool has made such a call, under When.
+    await m.click(m.button('Change'));
+    expect(m.text()).toContain('post_message: no domain found. Block would stop every call it makes.');
+    m.root.unmount();
+  });
+
+  it('says “Nothing new.” for an empty Seen list, the cap at 500, and no no-domain note on a rule with no calls', async () => {
+    api.created.push(sendRule());
+    const m = await mount();
+    await m.open('sends to a domain');
+    expect(m.text()).toContain('Nothing new.');
+    expect(m.text()).not.toContain('Only the domain is stored');
+    expect(m.text()).not.toContain('no domain found');
+    m.root.unmount();
+    document.body.innerHTML = '';
+    api.seenFull = true;
+    api.seenRows = { s1: [seenRows[0]] };
+    const full = await mount();
+    await full.click(full.row('sends to a domain'));
+    expect(full.text()).toContain('More than 500 domains seen. Showing the first 500.');
+    full.root.unmount();
+  });
+
+  it('stages Add to list; in Watch Save applies it without asking', async () => {
+    api.created.push(sendRule());
+    api.seenRows = { s1: seenRows };
+    saving();
+    const m = await mount();
+    await m.click(m.row('sends to a domain'));
+    await m.click(seenRow(m, 'gmail.com')!.querySelector('button')!);
+    expect(api.update).not.toHaveBeenCalled();
+    expect(m.text()).toContain('gmail.com added. Save to apply.');
+    expect(seenRow(m, 'gmail.com')).toBeUndefined();
+    await m.click(m.button('Save'));
+    expect(dlg(m)).toBeUndefined();
+    expect(api.update).toHaveBeenCalledWith('f1', 's1', { params: { tools: ['send_email', 'post_message'], domains: ['acme.com', 'gmail.com'] }, ifVersion: 1 }, 'k');
+    m.root.unmount();
+  });
+
+  it('in Enforce, Save of a staged Add to list asks “weaker?” first', async () => {
+    api.created.push(sendRule({ mode: 'enforce', response: 'block' }));
+    api.seenRows = { s1: seenRows };
+    saving();
+    const m = await mount();
+    await m.click(m.row('sends to a domain'));
+    // Block's own help: streamed replies and Bedrock.
+    expect(m.text()).toContain('Streamed replies from agents with these tools arrive all at once. Replies on Bedrock can’t be checked yet.');
+    await m.click(seenRow(m, 'gmail.com')!.querySelector('button')!);
+    await m.click(m.button('Save'));
+    expect(m.text()).toContain('Make the Where tools can send data rule weaker?');
+    expect(m.text()).toContain('Also allows gmail.com');
+    expect(api.update).not.toHaveBeenCalled();
+    await m.click(m.button('Save the change'));
+    expect(api.update).toHaveBeenCalledWith('f1', 's1', { params: { tools: ['send_email', 'post_message'], domains: ['acme.com', 'gmail.com'] }, ifVersion: 1 }, 'k');
+    m.root.unmount();
+  });
+
+  it('says what Only alert me does for this rule', async () => {
+    api.created.push(sendRule({ mode: 'enforce', response: 'notify' }));
+    const m = await mount();
+    await m.click(m.row('sends to a domain'));
+    expect(m.text()).toContain('You get an alert the first time a tool sends to a new domain. The call goes through.');
+    expect(m.text()).not.toContain('Streamed replies from agents');
+    m.root.unmount();
+  });
+
+  it('a caller without the secret sees the count, read only, with no Seen list, and never saves the list', async () => {
+    api.created.push(sendRule({}, { domains: [], domainCount: 3 }));
+    saving();
+    const m = await mount();
+    await m.click(m.row('sends to a domain'));
+    expect(m.text()).toContain('3 domains are hidden here.');
+    expect(m.text()).not.toContain('Seen, not on the list');
+    expect(api.seenAsked).toEqual([]);
+    expect(m.button('Change')!.closest('fieldset')!.disabled).toBe(true);
+    expect(m.button('Save')!.disabled).toBe(true);
+    expect(m.el.querySelector('input[aria-label="Domain"]')).toBeNull();
+    expect(api.update).not.toHaveBeenCalled();
+    m.root.unmount();
+  });
+
+  it('refuses a typed domain the engine would, in plain words, before Save', async () => {
+    api.created.push(sendRule());
+    const m = await mount();
+    await m.open('sends to a domain');
+    const input = m.el.querySelector('input[aria-label="Domain"]') as HTMLInputElement;
+    await type(input, 'https://gmail.com');
+    expect(m.text()).toContain('Type just the domain, like acme.com, without https://.');
+    expect(m.button('Add')!.disabled).toBe(true);
+    await type(input, 'Gmail.com');
+    await m.click(m.button('Add'));
+    expect([...m.el.querySelectorAll('.gov-chip')].map((c) => c.firstChild?.textContent)).toContain('gmail.com');
     m.root.unmount();
   });
 });
