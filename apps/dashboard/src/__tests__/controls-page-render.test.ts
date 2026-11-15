@@ -2842,11 +2842,72 @@ describe('Controls: Repeated blocks and Old tool results', () => {
     await m.click(m.seg('Watch'));
     await m.click(m.button('Save'));
     expect(m.text()).toContain('Stop trimming old tool results?');
-    expect(m.text()).toContain('Requests from all agents will go to the model unchanged.');
+    expect(m.text()).toContain('Requests from all agents will go to the model unchanged. In Watch it changes nothing and records what it would have removed. You can undo it.');
+    expect(m.text()).not.toContain('They’ll still be recorded.');
     expect(m.text()).not.toContain('You won’t get alerts');
     expect(m.button('Keep trimming')).toBeTruthy();
     await m.click(m.button('Switch to Watch'));
     expect(api.update).toHaveBeenCalledWith('f1', 't1', { mode: 'watch', ifVersion: 1 }, 'k');
+    m.root.unmount();
+  });
+
+  it('turning on Enforce for Repeated blocks says what it does at its limit, not what a matching call does', async () => {
+    api.govV1 = true;
+    api.created.push(streak());
+    saves();
+    const m = await mount();
+    await m.click(m.row(STREAK));
+    await m.click(m.seg('Enforce'));
+    await m.click(m.button('Save'));
+    expect(m.text()).toContain('Start pausing agents with this rule?');
+    expect(m.text()).toContain('From now on, when an agent has 3 calls in a row blocked in a run, its run ends, and it waits until someone resumes it.');
+    expect(m.text()).not.toContain('a call that matches');
+    // On its own it never makes the proxy refuse unnamed calls.
+    expect(m.text()).not.toContain('Calls WhiteRoom can’t tie to an agent');
+    await m.click(m.button('Start pausing'));
+    expect(api.update).toHaveBeenCalledWith('f1', 'b1', { mode: 'enforce', ifVersion: 1 }, 'k');
+    m.root.unmount();
+  });
+
+  it('turning on Enforce for Repeated blocks on Only alert me says it alerts at the limit', async () => {
+    api.created.push(streak({ response: 'notify' }));
+    const m = await mount();
+    await m.click(m.row(STREAK));
+    await m.click(m.seg('Enforce'));
+    await m.click(m.button('Save'));
+    expect(m.text()).toContain('Turn on alerts for this rule?');
+    expect(m.text()).toContain('From now on, when an agent has 3 calls in a row blocked in a run, you get an alert. The agent keeps going.');
+    expect(m.text()).not.toContain('The call goes through.');
+    m.root.unmount();
+  });
+
+  it('stepping Repeated blocks down from Enforce says what Watch does for it', async () => {
+    api.govV1 = true;
+    api.created.push(streak({ mode: 'enforce' }));
+    const m = await mount();
+    await m.click(m.row(STREAK));
+    await m.click(m.seg('Watch'));
+    await m.click(m.button('Save'));
+    expect(m.text()).toContain('It won’t pause all agents any more. In Watch it only records what it would have done. You can undo it.');
+    m.root.unmount();
+  });
+
+  it('an enforced Repeated blocks rule doesn’t count as a rule that blocks, and its editor has no unnamed-calls note', async () => {
+    api.govV1 = true;
+    // The fleet's two blocking rules are off, so Repeated blocks is the only one in Enforce.
+    api.saved.r1 = { ...RULES[0], mode: 'off' };
+    api.saved.r5 = { ...RULES[4], mode: 'off' };
+    api.created.push(streak({ mode: 'enforce' }));
+    const m = await mount();
+    expect(m.el.querySelector('.ctl-amber')!.textContent).toBe('No rule blocks yet, so every call goes through.');
+    await m.click(m.row(STREAK));
+    expect(m.el.querySelector('#ctl-what')!.children.length).toBe(0);
+    // A rule that does block has the note there.
+    await m.click(m.button('Close'));
+    await m.click(m.button('Show'));
+    await m.click(m.row('Same call'));
+    await m.click(m.seg('Enforce'));
+    expect(m.el.querySelector('#ctl-what')!.children.length).toBe(1);
     m.root.unmount();
   });
 

@@ -468,6 +468,12 @@ export function typedNumber(text: string): number {
   return /^(\d{1,3}(,\d{3})+|\d+)(\.\d+)?$/.test(t) ? Number(t.replace(/,/g, '')) : NaN;
 }
 
+const wholeIn = (n: unknown, min: number, max: number) => typeof n === 'number' && Number.isInteger(n) && n >= min && n <= max;
+/** The engine's ranges for Repeated blocks and Old tool results, for a typed number and for a kept draft's params alike. */
+export const streakFits = (n: unknown) => wholeIn(n, 2, 100);
+export const trimTurnsFit = (n: unknown) => wholeIn(n, 1, 100);
+export const trimTokensFit = (n: unknown) => wholeIn(n, 1_000, 10_000_000);
+
 /** The draft's params with the typed number in place, or an error to show. */
 export function draftParams(d: RuleDraft): { params: GovernanceParams } | { error: string } {
   if (!hasNumber(d.ruleType)) return { params: d.params };
@@ -478,14 +484,13 @@ export function draftParams(d: RuleDraft): { params: GovernanceParams } | { erro
     if ((d.params as SpendCapParams).unit === 'tokens' && !Number.isInteger(n)) return { error: 'Enter a whole number of tokens.' };
     return { params: { ...(d.params as SpendCapParams), dailyCap: n } };
   }
-  // The engine's ranges: 2 to 100 blocks in a row; 1 to 100 turns kept, and 1,000 to 10,000,000 tokens.
   if (d.ruleType === 'block_streak') {
-    return Number.isInteger(n) && n >= 2 && n <= 100 ? { params: { threshold: n } } : { error: 'Enter a whole number from 2 to 100.' };
+    return streakFits(n) ? { params: { threshold: n } } : { error: 'Enter a whole number from 2 to 100.' };
   }
   if (d.ruleType === 'trim_results') {
     const tokens = typedNumber(d.number2 ?? '');
-    if (!Number.isInteger(tokens) || tokens < 1_000 || tokens > 10_000_000) return { error: 'Enter a whole number of tokens from 1,000 to 10,000,000.' };
-    if (!Number.isInteger(n) || n < 1 || n > 100) return { error: 'Enter a whole number of turns from 1 to 100.' };
+    if (!trimTokensFit(tokens)) return { error: 'Enter a whole number of tokens from 1,000 to 10,000,000.' };
+    if (!trimTurnsFit(n)) return { error: 'Enter a whole number of turns from 1 to 100.' };
     return { params: { keepRecent: n, minTokens: tokens } };
   }
   if (!Number.isInteger(n) || n < 1 || n > 10_000) return { error: 'Enter a whole number from 1 to 10,000.' };
@@ -589,9 +594,12 @@ export const offeredTemplates = (ruleTypes: readonly string[] | undefined) => RU
 
 // ── Groups: who a rule covers ───────────────────────────────────────
 
-/** Whether a rule can stop a call or an agent now: Enforce with a response other than Only alert me, that has something to act on. */
+/**
+ * Whether a rule can stop a call or an agent now: Enforce with a response other than Only alert me, that has something to act on.
+ * Never Repeated blocks: it acts only after another rule blocked, so on its own every call goes through.
+ */
 export function isStopping(r: GovernanceRule): boolean {
-  return r.mode === 'enforce' && (r.response ?? 'block') !== 'notify' && !emptyPick(r);
+  return r.ruleType !== 'block_streak' && r.mode === 'enforce' && (r.response ?? 'block') !== 'notify' && !emptyPick(r);
 }
 
 /** The rules that can stop a call or an agent now (isStopping). */

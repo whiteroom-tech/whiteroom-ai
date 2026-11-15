@@ -25,7 +25,7 @@ import {
 } from "@/lib/whiteroom/client";
 import { wouldActsFor } from "@/lib/batched-reads";
 import type {
-  GovernanceHistoryEntry, GovernanceResponse, GovernanceRule, GovernanceRuleType, KeywordParams, ModelAllowlistParams, RuleActionCounts, RuleActionsResult, RuleWouldActResult, SpendCapParams, UnknownGovernanceRule,
+  BlockStreakParams, GovernanceHistoryEntry, GovernanceResponse, GovernanceRule, GovernanceRuleType, KeywordParams, ModelAllowlistParams, RuleActionCounts, RuleActionsResult, RuleWouldActResult, SpendCapParams, UnknownGovernanceRule,
 } from "@/lib/whiteroom/types";
 import { computeSuggestions, RESPONSE_EFFECT, RESPONSE_LABEL, RULE_LABELS, tallyFromRuleActions, tallyTotal, UNKNOWN_RULE, type GovernanceSuggestions } from "@/lib/governance";
 import { FleetLogin } from "@/components/citadel/FleetLogin";
@@ -1171,7 +1171,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         body={dialog?.kind === "downgrade" ? (
           <>
             <p style={{ margin: "0 0 8px" }}><strong>{RULE_LABELS[dialog.rule.ruleType]}</strong> · {ruleConditionText(dialog.rule)}</p>
-            <p style={{ margin: 0 }}>{trims(dialog.rule) ? `Requests from ${whoFor(dialog.next.appliesTo)} will go to the model unchanged.` : (dialog.rule.response ?? "block") === "notify" ? `You won’t get alerts for ${whoFor(dialog.next.appliesTo)} any more.` : dialog.rule.ruleType === "block_streak" ? `It won’t ${dialog.rule.response === "stop" ? "stop" : "pause"} ${whoFor(dialog.next.appliesTo)} any more.` : `Matching calls will go through for ${whoFor(dialog.next.appliesTo)}.`} {dialog.next.mode === "watch" ? "They’ll still be recorded." : "Nothing will be recorded."} You can undo it.</p>
+            <p style={{ margin: 0 }}>{trims(dialog.rule) ? `Requests from ${whoFor(dialog.next.appliesTo)} will go to the model unchanged.` : (dialog.rule.response ?? "block") === "notify" ? `You won’t get alerts for ${whoFor(dialog.next.appliesTo)} any more.` : dialog.rule.ruleType === "block_streak" ? `It won’t ${dialog.rule.response === "stop" ? "stop" : "pause"} ${whoFor(dialog.next.appliesTo)} any more.` : `Matching calls will go through for ${whoFor(dialog.next.appliesTo)}.`} {dialog.next.mode !== "watch" ? "Nothing will be recorded." : trims(dialog.rule) ? "In Watch it changes nothing and records what it would have removed." : dialog.rule.ruleType === "block_streak" ? "In Watch it only records what it would have done." : "They’ll still be recorded."} You can undo it.</p>
           </>
         ) : null}
         busy={saving}
@@ -1242,7 +1242,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       <ConfirmDialog
         open={dialog?.kind === "stop"}
         title="Let this rule stop agents?"
-        body={dialog?.kind === "stop" ? <>{RESPONSE_EFFECT.stop} {appliesNow(dialog.next.appliesTo)}<span style={{ display: "block", marginTop: 8 }}>{UNNAMED_CALLS_REFUSED}</span></> : null}
+        body={dialog?.kind === "stop" ? <>{RESPONSE_EFFECT.stop} {appliesNow(dialog.next.appliesTo)}{canAct(dialog.next) && <span style={{ display: "block", marginTop: 8 }}>{UNNAMED_CALLS_REFUSED}</span>}</> : null}
         confirmLabel={RESPONSE_LABEL.stop}
         confirmPhrase={dialog?.kind === "stop" ? stopPhrase(dialog.next.appliesTo) : "stop"}
         busy={saving}
@@ -1323,10 +1323,18 @@ const TRIM_WORDS: (typeof ACT_WORDS)[GovernanceResponse] = {
   effect: "a large request goes to the model with its old tool results replaced by a short note. This edits what the agent sends. No call is blocked.",
   stopTitle: "Stop trimming old tool results?", keep: "Keep trimming",
 };
-const actWords = (rule: Pick<GovernanceRule, "ruleType" | "response">) => {
+/** What Repeated blocks does at its limit. It matches no call of its own, so "a call that matches" isn't its to say. */
+const STREAK_THEN: Record<GovernanceResponse, string> = {
+  pause: "its run ends, and it waits until someone resumes it.", stop: "it is stopped until someone resumes it.",
+  notify: "you get an alert. The agent keeps going.",
+  // Never offered or saved (the engine refuses Block for this rule): kept for the full record.
+  block: "you get an alert. The agent keeps going.",
+};
+const actWords = (rule: Pick<GovernanceRule, "ruleType" | "response" | "params">) => {
   if (trims(rule)) return TRIM_WORDS;
   const words = ACT_WORDS[rule.response ?? "block"];
-  return rule.ruleType === "block_streak" && rule.response === "notify" ? { ...words, effect: "you get an alert when an agent reaches the limit. The agent keeps going." } : words;
+  if (rule.ruleType !== "block_streak") return words;
+  return { ...words, effect: `when an agent has ${(rule.params as BlockStreakParams).threshold.toLocaleString("en-US")} calls in a row blocked in a run, ${STREAK_THEN[rule.response ?? "notify"]}` };
 };
 
 /** "Two identical loop breakers": each kind of rule, more than one. */

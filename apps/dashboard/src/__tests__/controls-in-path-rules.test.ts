@@ -125,6 +125,32 @@ describe('the numbers each takes', () => {
       writeDraft('f1', { ruleId: 't1', version: 1, draft: { ...draftFrom(trim()), number2: 50_000 } as unknown as RuleDraft });
       expect(readDraft('f1')).toBeNull();
     });
+
+    it.each([
+      ['no threshold', streak(), {}],
+      ['a threshold that is text', streak(), { threshold: '3' }],
+      ['a threshold below 2', streak(), { threshold: 1 }],
+      ['a threshold above 100', streak(), { threshold: 101 }],
+      ['a threshold that isn’t whole', streak(), { threshold: 2.5 }],
+      ['no turns', trim(), { minTokens: 50_000 }],
+      ['no tokens', trim(), { keepRecent: 5 }],
+      ['turns as text', trim(), { keepRecent: '5', minTokens: 50_000 }],
+      ['0 turns', trim(), { keepRecent: 0, minTokens: 50_000 }],
+      ['101 turns', trim(), { keepRecent: 101, minTokens: 50_000 }],
+      ['999 tokens', trim(), { keepRecent: 5, minTokens: 999 }],
+      ['10,000,001 tokens', trim(), { keepRecent: 5, minTokens: 10_000_001 }],
+      ['tokens that aren’t whole', trim(), { keepRecent: 5, minTokens: 50_000.5 }],
+    ])('with %s reads as none', (_name, rule, params) => {
+      sessionStorage.setItem('wr_controls_draft:f1', JSON.stringify({ ruleId: rule.id, version: 1, draft: { ...draftFrom(rule), params } }));
+      expect(readDraft('f1')).toBeNull();
+    });
+
+    it('reads back at each end of the ranges', () => {
+      for (const rule of [streak({}, 2), streak({}, 100), trim({}, 1, 1_000), trim({}, 100, 10_000_000)]) {
+        writeDraft('f1', { ruleId: rule.id, version: 1, draft: draftFrom(rule) });
+        expect(readDraft('f1'), JSON.stringify(rule.params)).not.toBeNull();
+      }
+    });
   });
 });
 
@@ -213,7 +239,9 @@ describe('an Old tool results rule in Enforce never reads as an alert or a block
     expect(canAct(streak({ mode: 'enforce' }))).toBe(false);
     expect(canAct(streak({ mode: 'enforce', response: 'notify' }))).toBe(false);
     expect(canAct(streak())).toBe(false);
-    expect(isStopping(streak({ mode: 'enforce' }))).toBe(true);
+    // On its own it stops nothing: another rule has to block first.
+    expect(isStopping(streak({ mode: 'enforce' }))).toBe(false);
+    expect(isStopping(streak({ mode: 'enforce', response: 'stop' }))).toBe(false);
     expect(blocksWhen(streak({ mode: 'enforce' }))).toBe('only after 3 blocked calls in a row');
   });
 
