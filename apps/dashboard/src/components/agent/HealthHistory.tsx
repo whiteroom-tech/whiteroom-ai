@@ -5,6 +5,7 @@ import { Panel } from '@whiteroom/ui';
 import { healthHistory, type HealthHistoryEvent } from '@/lib/whiteroom/client';
 import { fetchControlActors, type ControlActor } from '@/lib/control-actors';
 import { formatInZone } from '@/lib/zone-time';
+import { fmtTime } from '@/lib/format';
 import { checkName, EVENT_LABEL, historyDays, whoActed } from '@/lib/health-history';
 
 /** Days the Agent detail list covers, and the entries it shows. */
@@ -48,7 +49,7 @@ export function HealthHistory({ fleetId, agentId, authKey, preview }: { fleetId:
       <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 6 }}>
         {shown.map((e, i) => (
           <li key={`${e.at}-${i}`} style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 'var(--fs-sm)' }}>
-            <span className="wr-agent-cap" style={{ minWidth: 116 }}>{formatInZone(new Date(e.at), { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).replace(/\s?(AM|PM)$/, (_, half: string) => ` ${half.toLowerCase()}`)}</span>
+            <span className="wr-agent-cap" style={{ minWidth: 116 }}>{formatInZone(new Date(e.at), { month: 'short', day: 'numeric' })}, {fmtTime(e.at)}</span>
             <span><strong style={{ fontWeight: 600 }}>{checkName(e.detector)}</strong>: {EVENT_LABEL[e.event] ?? e.event}{e.actor ? ` by ${whoActed(e.actor, actions)}` : ''}</span>
           </li>
         ))}
