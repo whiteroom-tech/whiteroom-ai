@@ -50,10 +50,12 @@ export function OrganizationView({
   const { membership, org, invitations } = mine;
   const manager = membership ? canManage(membership.role) : false;
 
+  // AppShell's page column is already the main region; the console shell has none of its own.
+  const Body = consoleMode ? 'main' : 'div';
   const inner = (
     <>
       <PageHeader title="Organization" />
-      <main style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+      <Body style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
         <div style={{ maxWidth: 1120, margin: '0 auto', padding: '24px 24px 80px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 22 }}>
             <div style={{ minWidth: 0 }}>
@@ -98,7 +100,7 @@ export function OrganizationView({
             {org && <LeavePanel />}
           </div>
         </div>
-      </main>
+      </Body>
     </>
   );
 

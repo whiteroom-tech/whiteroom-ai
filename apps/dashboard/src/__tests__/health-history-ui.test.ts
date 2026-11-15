@@ -42,6 +42,8 @@ describe('Agent detail › Health history', () => {
     const m = await mount(h(HealthHistory, { fleetId: 'f', agentId: 'a' }));
     expect(api.history).toHaveBeenCalledWith('f', expect.objectContaining({ agentId: 'a' }), undefined);
     expect(m.el.querySelectorAll('li')).toHaveLength(10);
+    // Times read like every other list: "Nov 10, 3:16 pm", not 24-hour.
+    expect(m.el.querySelector('li span')?.textContent).toMatch(/^[A-Z][a-z]{2} \d{1,2}, \d{1,2}:\d{2} (am|pm)$/);
     expect(m.text()).toContain('Repeating the same call: Snoozed by a teammate');
     expect(m.text()).toContain('2 more in the health report: Download report on Performance.');
     m.root.unmount();

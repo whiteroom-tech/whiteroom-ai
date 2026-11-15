@@ -158,7 +158,7 @@ export function SettingsView({
     <FleetAuthProvider>
     <AppShell>
       <SettingsHeader email={account.email} />
-      <main style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+      <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
         <div ref={sections} className="wr-settings-stack wr-setup-page">
           <PageLead>Profile, plan, data, alerts and sign-in.</PageLead>
           <JumpLinks preview={!!samples} />
@@ -178,7 +178,7 @@ export function SettingsView({
           <SessionsSection pending={pending} />
           <div id="delete-account"><DangerSection account={account} closing={closing} pending={pending} /></div>
         </div>
-      </main>
+      </div>
     </AppShell>
     </FleetAuthProvider>
   );

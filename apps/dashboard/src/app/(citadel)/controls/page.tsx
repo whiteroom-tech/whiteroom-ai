@@ -11,7 +11,7 @@ import { MODE_LABEL, modeTagText, NOTIFY } from '@/lib/vocab';
 import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Banner, Button, FONT_MONO, Toast } from "@whiteroom/ui";
+import { Banner, Button, FONT_MONO, Icon, Toast } from "@whiteroom/ui";
 import { LiveStatus, PageHeader } from "@/components/citadel/PageChrome";
 import { SuggestionDraft } from "./_components/SuggestionDraft";
 import { RuleEditor, type SeenState } from "./_components/RuleEditor";
@@ -888,6 +888,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
               ? <span className={`ctl-row__count is-${count.tone}`} title={count.label}><span aria-hidden="true">{count.text}</span><span className="wr-sr-only">{count.label}</span></span>
               : <span className={`ctl-row__count is-${count.tone}`}>{count.text}</span>)}
             {modeTag(r)}
+            <span className="ctl-row__chev" aria-hidden="true"><Icon name="chevronDown" size={12} strokeWidth={2.5} /></span>
           </span>
         </span>
       </button>
@@ -1063,7 +1064,12 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                     <p className="ctl-cap" style={{ margin: 0 }}>Add a rule to record what your agents do. New rules start in Watch, so nothing is blocked until you say so.</p>
                     <Button variant="primary" onClick={() => guard(() => setAdding("open"))} style={{ alignSelf: "flex-start" }}>Add rule</Button>
                   </section>
-                ) : <>{lists}{unknownCard}</>}
+                ) : (
+                  <>
+                    {!edited && <p className="ctl-cap ctl-phone-hint">Tap a rule to edit it. New rules start in Watch.</p>}
+                    {lists}{unknownCard}
+                  </>
+                )}
               </>
             )}
 
@@ -1125,9 +1131,9 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
               </aside>
             </>
           ) : (
-            <aside aria-label="Rule details" className="wr-panel ctl-editor is-empty">
-              <h2 className="ctl-ed-title">Select a rule to edit it</h2>
-              <p className="ctl-cap" style={{ margin: "-8px 0 8px" }}>New rules start in Watch.</p>
+            <aside aria-label="Rule details" className={`wr-panel ctl-editor is-empty${recent.length === 0 ? ' is-bare' : ''}`}>
+              <h2 className="ctl-ed-title ctl-ed-pick">Select a rule to edit it</h2>
+              <p className="ctl-cap ctl-ed-pick" style={{ margin: "-8px 0 8px" }}>New rules start in Watch.</p>
               {recent.length > 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <p className="gov-eyebrow">Recent changes</p>

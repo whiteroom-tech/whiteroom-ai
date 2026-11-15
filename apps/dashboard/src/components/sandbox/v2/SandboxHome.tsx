@@ -385,7 +385,7 @@ export function SandboxHome({ fleet, preview, onUnavailable, planLine }: { fleet
 
   return <>
     <PageHeader title="Sandbox" />
-    <main className={s.content}>
+    <div className={s.content}>
       <div className={v.page} ref={pageRef}>
         {planLine}
         {step === 'connect' && <p className={v.lead2}>{SANDBOX_LEAD}</p>}
@@ -489,7 +489,7 @@ export function SandboxHome({ fleet, preview, onUnavailable, planLine }: { fleet
           </div>
         )}
       </div>
-    </main>
+    </div>
 
     <ConfirmDialog
       open={confirm === 'rotate'}

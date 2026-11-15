@@ -39,7 +39,8 @@ describe('run page', () => {
   it('reads like the mockup: summary, rule activity, shaded calls, marks and legend', async () => {
     const { el, root } = await mount();
     const text = el.textContent ?? '';
-    expect(el.querySelector('.wr-run-summary')?.textContent).toMatch(/· 2 model calls · \$0\.05 · 0 failed · 2 would have blocked · claude-sonnet-4-5$/);
+    expect(el.querySelector('.wr-run-summary')?.textContent).toMatch(/· 2 model calls · \$0\.05 · 0 failed · 2 would have blocked$/);
+    expect(el.querySelector('.wr-run-models')?.textContent).toBe('claude-sonnet-4-5');
     expect(text).toContain('Model allowlist would have blocked 2 calls: model not on the allowlist');
     expect(text).toContain('These rules are in Watch, so the calls went through.');
     expect([...el.querySelectorAll('a')].find((a) => a.textContent?.startsWith('Open Model allowlist in Controls'))?.getAttribute('href')).toBe('/controls?rule=gr_allow');
@@ -57,7 +58,7 @@ describe('run page', () => {
 
   it('says the job outcome the customer’s system reported, and nothing when none was', async () => {
     let m = await mount({ ...DATA, run: { ...DATA.run, outcome: 'failure' } });
-    expect(m.el.querySelector('.wr-run-summary')?.textContent).toMatch(/claude-sonnet-4-5 · Job failed, as your system reported$/);
+    expect(m.el.querySelector('.wr-run-summary')?.textContent).toMatch(/2 would have blocked · Job failed, as your system reported$/);
     m.root.unmount();
     m = await mount({ ...DATA, run: { ...DATA.run, outcome: 'success' } });
     expect(m.el.querySelector('.wr-run-summary')?.textContent).toMatch(/Job succeeded, as your system reported$/);

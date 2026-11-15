@@ -47,12 +47,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div ref={shell} className={`wr-shell wr-shell--tabs citadel-layout${menuOpen ? ' navigation-open' : ''}`}>
+      <a href="#wr-content" className="wr-skip">Skip to content</a>
       <Sidebar />
-      <div inert={menuOpen} style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
+      <main id="wr-content" tabIndex={-1} inert={menuOpen} style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, outline: 'none' }}>
         <AccountClosingBanner />
         <AccountPlanBanner />
         {children}
-      </div>
+      </main>
       {menuOpen && <div className="wr-menu-scrim" aria-hidden="true" onClick={closeMenu} />}
       <PhoneTabBar menuOpen={menuOpen} onMore={() => setMenuOpen((v) => !v)} />
     </div>

@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
-import { proxy } from '@/proxy';
+import { config, proxy } from '@/proxy';
 import { PATH_HEADER } from '@/lib/callback-url';
 
 const ADMIN = 'admin.whiteroom.tech';
@@ -342,5 +342,14 @@ describe('script policy (report-only CSP)', () => {
     } finally {
       delete process.env.ADMIN_HOST;
     }
+  });
+});
+
+describe('the matcher', () => {
+  it('leaves robots.txt and the icons to the static server, on every host', () => {
+    // Next anchors the pattern; a path it doesn't match never reaches the proxy, so no host can 404 it.
+    const matched = new RegExp(`^${config.matcher[0]}$`);
+    for (const path of ['/robots.txt', '/favicon.ico', '/_next/static/chunk.js']) expect(matched.test(path)).toBe(false);
+    for (const path of ['/home', '/sign-in', '/api/auth/session']) expect(matched.test(path)).toBe(true);
   });
 });

@@ -154,7 +154,7 @@ function ChannelRow({ fleetId, channel, ending, onStatus, preview = false }: { f
         </div>
       ) : (
         <form
-          style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}
+          style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', alignContent: 'flex-start' }}
           onSubmit={(e) => { e.preventDefault(); void run('save', async () => { await apply(url.trim()); setUrl(''); }, 'Connected. A test message is in the channel.'); }}
         >
           <input

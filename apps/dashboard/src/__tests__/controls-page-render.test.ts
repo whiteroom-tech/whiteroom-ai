@@ -207,6 +207,9 @@ describe('Controls page', () => {
     expect(m.row('100×').textContent).toContain('2 blocked · 7 days');
     expect(m.row('$200').textContent).not.toContain('Never triggers');
     expect(m.text()).toContain('Select a rule to edit it');
+    // Every rule row ends in a chevron; the phone hint sits with the lists (CSS shows it under 720px).
+    expect(m.el.querySelectorAll('button.ctl-row .ctl-row__chev')).toHaveLength(m.el.querySelectorAll('button.ctl-row').length);
+    expect(m.el.querySelector('.ctl-main .ctl-phone-hint')?.textContent).toBe('Tap a rule to edit it. New rules start in Watch.');
     expect(m.text()).toContain('New rules start in Watch.');
     m.root.unmount();
   });

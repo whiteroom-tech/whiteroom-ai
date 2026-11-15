@@ -71,7 +71,7 @@ describe('phone tab bar', () => {
 describe('phone menu (AppShell)', () => {
   const open = () => el.querySelector('.wr-shell')!.classList.contains('navigation-open');
   const more = () => el.querySelector('.wr-tabbar button') as HTMLButtonElement;
-  const shell = () => h(AppShell, null, h('main', null, 'page'));
+  const shell = () => h(AppShell, null, h('div', null, 'page'));
 
   it('More opens the menu; Escape, the scrim and going to a page close it', async () => {
     nav.path = '/home';
@@ -95,7 +95,10 @@ describe('phone menu (AppShell)', () => {
   it('focus goes into the menu and comes back to More; the page behind is inert; a link closes it', async () => {
     nav.path = '/home';
     await render(shell());
-    const page = el.querySelector('main')!.parentElement!;
+    const page = el.querySelector<HTMLElement>('#wr-content')!;
+    // The page column is the one main region, and the skip link (first in the shell) points at it.
+    expect(page.tagName).toBe('MAIN');
+    expect(el.querySelector('.wr-shell')!.firstElementChild!.getAttribute('href')).toBe('#wr-content');
     more().focus();
     await act(async () => { more().click(); });
     expect(el.querySelector('#wr-main-nav')!.contains(document.activeElement)).toBe(true);
@@ -124,7 +127,8 @@ describe('phone menu (AppShell)', () => {
       wide.matches = true;
       await act(async () => { listeners.forEach((f) => f()); });
       expect(open()).toBe(false);
-      expect(el.querySelector('main')!.parentElement!.inert).toBe(false);
+      expect(el.querySelector<HTMLElement>('#wr-content')!.inert).toBe(false);
+      expect(el.querySelectorAll('main')).toHaveLength(1);
     } finally {
       vi.unstubAllGlobals();
     }
