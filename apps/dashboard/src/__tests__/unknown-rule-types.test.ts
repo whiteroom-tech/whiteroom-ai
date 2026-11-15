@@ -34,6 +34,15 @@ describe('governanceList with a rule type this build doesn’t know', () => {
     expect(res.history.map((e) => e.id)).toEqual(['h1']);
   });
 
+  it('knows Repeated blocks and Old tool results, and still sets a type it doesn’t know aside', async () => {
+    const streak = { ...base, id: 'gr_b', ruleType: 'block_streak', mode: 'watch', response: 'pause', appliesTo: 'all', params: { threshold: 3 } };
+    const trim = { ...base, id: 'gr_t', ruleType: 'trim_results', mode: 'enforce', response: 'notify', appliesTo: 'all', params: { keepRecent: 5, minTokens: 50000 } };
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ fleetId: 'f', rules: [streak, FUTURE, trim], history: [], agents: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    const res = await governanceList('f', 'sk-key');
+    expect(res.rules).toEqual([streak, trim]);
+    expect(res.unknownRules).toEqual([{ id: 'gr_x', mode: 'enforce', appliesTo: ['agent-a'] }]);
+  });
+
   it('passes a list of known rules through untouched', async () => {
     const body = { fleetId: 'f', rules: [KNOWN], history: [], agents: [] };
     fetchMock.mockResolvedValue(new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }));
@@ -58,7 +67,7 @@ describe('Performance › Rules with a rule type this build doesn’t know', () 
     const el = document.createElement('div');
     document.body.appendChild(el);
     const root = createRoot(el);
-    const counts = { blocks: 3, wouldBlocks: 141, byAgent: {}, byRule: { spend_cap: { blocks: 0, wouldBlocks: 0 }, loop_breaker: { blocks: 0, wouldBlocks: 0 }, model_allowlist: { blocks: 0, wouldBlocks: 60 }, tool_list: { blocks: 0, wouldBlocks: 0 }, call_rate: { blocks: 0, wouldBlocks: 0 }, keyword: { blocks: 0, wouldBlocks: 0 }, send_limit: { blocks: 0, wouldBlocks: 0 }, outside_then_send: { blocks: 0, wouldBlocks: 0 } } };
+    const counts = { blocks: 3, wouldBlocks: 141, byAgent: {}, byRule: { spend_cap: { blocks: 0, wouldBlocks: 0 }, loop_breaker: { blocks: 0, wouldBlocks: 0 }, model_allowlist: { blocks: 0, wouldBlocks: 60 }, tool_list: { blocks: 0, wouldBlocks: 0 }, call_rate: { blocks: 0, wouldBlocks: 0 }, keyword: { blocks: 0, wouldBlocks: 0 }, send_limit: { blocks: 0, wouldBlocks: 0 }, outside_then_send: { blocks: 0, wouldBlocks: 0 }, block_streak: { blocks: 0, wouldBlocks: 0 }, trim_results: { blocks: 0, wouldBlocks: 0 } } };
     await act(async () => { root.render(h(RulesSummary, { counts, byRuleId, rules: [KNOWN], unknownRules: unknown, unavailable: false })); });
     expect(el.textContent).toContain('1 rule: 0 Enforce · 1 Watch · 0 Off');
     await act(async () => { (el.querySelector('button[aria-expanded]') as HTMLButtonElement).click(); });

@@ -697,7 +697,7 @@ export interface CustomControlInput {
 
 // -- Fleet governance rules (Controls page) --
 
-export type GovernanceRuleType = 'spend_cap' | 'loop_breaker' | 'model_allowlist' | 'tool_list' | 'call_rate' | 'keyword' | 'send_limit' | 'outside_then_send';
+export type GovernanceRuleType = 'spend_cap' | 'loop_breaker' | 'model_allowlist' | 'tool_list' | 'call_rate' | 'keyword' | 'send_limit' | 'outside_then_send' | 'block_streak' | 'trim_results';
 export type GovernanceMode = 'off' | 'watch' | 'enforce';
 /** What Enforce does (engine P2.3): notify, block, pause or stop. */
 export type GovernanceResponse = 'notify' | 'block' | 'pause' | 'stop';
@@ -734,7 +734,18 @@ export interface SendLimitParams {
  * "Not set up".
  */
 export interface OutsideThenSendParams { readTools: string[]; sendTools: string[] }
-export type GovernanceParams = SpendCapParams | LoopBreakerParams | ModelAllowlistParams | ToolListParams | CallRateParams | KeywordParams | SendLimitParams | OutsideThenSendParams;
+/**
+ * Repeated blocks: this many calls in a row, in one run, that another rule in
+ * Enforce blocked. It can pause or stop the agent, or alert; it never blocks.
+ */
+export interface BlockStreakParams { threshold: number }
+/**
+ * Old tool results: once a request is about minTokens or more, tool results
+ * older than the newest keepRecent turns are replaced with a short note before
+ * it goes to the model. It holds the notify response but never alerts or blocks.
+ */
+export interface TrimResultsParams { keepRecent: number; minTokens: number }
+export type GovernanceParams = SpendCapParams | LoopBreakerParams | ModelAllowlistParams | ToolListParams | CallRateParams | KeywordParams | SendLimitParams | OutsideThenSendParams | BlockStreakParams | TrimResultsParams;
 
 export interface GovernanceRule {
   id: string;
@@ -820,10 +831,15 @@ export interface SendSeenListResult {
 }
 
 /** Rule actions in words (engine rule_actions). */
-export interface RuleActionCounts { blocked: number; paused: number; stopped: number; toldYou: number; wouldAct: number }
+export interface RuleActionCounts {
+  blocked: number; paused: number; stopped: number; toldYou: number; wouldAct: number;
+  /** Requests an Old tool results rule trimmed. Absent from older engines: read as 0. */
+  trimmed?: number;
+}
 export interface RuleActionsResult { fleetId: string; totals: RuleActionCounts; byAgent: Record<string, RuleActionCounts>; /** Per rule type, from the same rows as totals (newer engines). */ byRule?: Record<string, RuleActionCounts>; /** Per rule id (gr_…), from the same rows (engine E1a). */ byRuleId?: Record<string, RuleActionCounts> }
 export interface RunRuleAction {
-  at: string; ruleId: string; ruleType: GovernanceRuleType; response: GovernanceResponse; mode: GovernanceMode; occurrences: number;
+  /** `trim` is an Old tool results rule's own: it isn't a response a rule can be set to. */
+  at: string; ruleId: string; ruleType: GovernanceRuleType; response: GovernanceResponse | 'trim'; mode: GovernanceMode; occurrences: number;
   /** Timeline ids of the calls it was for, in timeline order (engine PR 298; empty on older rows, absent on older engines). */
   eventIds?: string[];
   ruleName?: string | null;
@@ -833,7 +849,7 @@ export interface RunRuleAction {
 }
 
 /** A rule that acted, or would have, on one call (engine PR 298). */
-export interface CallRuleAction { ruleId: string; ruleType: string; ruleName?: string | null; mode: string; response: string; outcome: 'blocked' | 'paused' | 'stopped' | 'notified' | 'would_block'; reason?: string | null }
+export interface CallRuleAction { ruleId: string; ruleType: string; ruleName?: string | null; mode: string; response: string; outcome: 'blocked' | 'paused' | 'stopped' | 'notified' | 'would_block' | 'trimmed'; reason?: string | null }
 
 // -- Runs (engine list_runs / get_run_events; a run is one agent's shift) --
 

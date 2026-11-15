@@ -23,7 +23,7 @@ import type { ControlActor } from '@/lib/control-actors';
 import { ROUTES } from '@/lib/routes';
 import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
 import {
-  canAddSeen, domainEntry, domainProblem, domainsHidden, domainTotal, FLOW_TOOLS_MAX, FLOW_WHEN, looksLikeReader, looksLikeSender, SEEN_RESERVED_TEXT, seenFullLine, seenNotOnList, SEND_DOMAINS_MAX, SEND_TOOLS_MAX, toolsWithNoDomain,
+  canAddSeen, domainEntry, domainProblem, domainsHidden, domainTotal, FLOW_TOOLS_MAX, FLOW_WHEN, looksLikeReader, looksLikeSender, SEEN_RESERVED_TEXT, seenFullLine, seenNotOnList, SEND_DOMAINS_MAX, SEND_TOOLS_MAX, toolsWithNoDomain, trims,
 } from '@/lib/controls-view';
 import { AGENT_NOTE, isMarker, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, looksLikeDeleteOrChange, newMarker, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, MODE_CHOICES, responseChoices, sendsAlert, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
 import { Chip, field, GroupPicker, InlineSelect, MarkerChip, MODEL_GROUPS, NumberField, ScopeField, ToolPicker } from './pickers';
@@ -34,6 +34,8 @@ const ACTS: Record<Exclude<GovernanceRule['ruleType'], 'keyword' | 'loop_breaker
   tool_list: 'Acts before the agent gets the tool call. Also covers tools the provider runs, like web search.', call_rate: 'Acts on the call over the limit.',
   send_limit: 'Acts before the agent gets the tool call. Tools the provider runs, like web search, always match.',
   outside_then_send: 'Checks each reply once the agent has read outside content. It never holds a call.',
+  block_streak: 'Acts on the blocked call that reaches the limit.',
+  trim_results: 'Acts before the request goes to the model.',
 };
 const KEYWORD_ACTS: Record<KeywordWhere, string> = {
   incoming: 'Acts before the call reaches the model.',
@@ -53,6 +55,8 @@ const WHEN_NOTES: Record<GovernanceRule['ruleType'], string | null> = {
   send_limit: null,
   // Its help is in the editor, under When (DLP spec 3.3).
   outside_then_send: null,
+  block_streak: 'Call rate blocks don’t count.',
+  trim_results: 'Native Bedrock Converse calls aren’t trimmed.',
 };
 
 /** A Where tools can send data rule's Seen list, as the page has read it. */
@@ -129,6 +133,8 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
   const send = rule.ruleType === 'send_limit' ? (p as SendLimitParams) : null;
   // Outside content, then send data: two tool lists, and it only alerts (DLP spec 3.3).
   const flow = rule.ruleType === 'outside_then_send' ? (p as OutsideThenSendParams) : null;
+  // Old tool results edits requests: no action to pick and no alert (its response is fixed and unused).
+  const trim = trims(rule);
   const readOnly = domainsHidden(rule);
   const [domain, setDomain] = useState('');
   const domainTyped = domainEntry(domain);
@@ -171,6 +177,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
     return needs ? actionAvailableFrom(rule.id, ruleHistory, rule.mode) : null;
   };
   const actions = responseChoices(govV1, rule.ruleType, rule.response ?? 'block', draft.response);
+  const oneAction = !trim && actions.length === 1;
   const nextOpen = Math.min(...actions.map(waitUntil).filter((t): t is number => typeof t === 'number'));
   useEffect(() => {
     if (!Number.isFinite(nextOpen)) return;
@@ -308,6 +315,31 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
             ))}
           </>
         )}
+        {rule.ruleType === 'block_streak' && (
+          <>
+            <div style={sentenceRow}>
+              An agent has
+              <NumberField label="Blocked calls in a row" value={draft.number} onChange={(v) => set({ number: v })} />
+              calls in a row blocked in a run
+            </div>
+            <p style={help}>Counts calls that another rule in Enforce blocked. A call that isn’t blocked starts the count over.</p>
+          </>
+        )}
+        {trim && (
+          <>
+            <div style={sentenceRow}>
+              A request is about
+              <NumberField label="Request size in tokens" value={draft.number2 ?? ''} onChange={(v) => set({ number2: v })} />
+              tokens or more,
+            </div>
+            <div style={sentenceRow}>
+              with tool results older than the newest
+              <NumberField label="Recent turns to keep" value={draft.number} onChange={(v) => set({ number: v })} />
+              turns
+            </div>
+            <p style={help}>Each old result is replaced with a short note. The agent can call the tool again if it needs one back.</p>
+          </>
+        )}
         {flow && (
           <>
             <span style={{ fontSize: 'var(--fs-md)' }}>{FLOW_WHEN}.</span>
@@ -411,11 +443,11 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
             onChange={(m) => onDraft(chooseMode(draft, m, rule, actions, (r) => !waitFor(r)))}
             options={MODE_CHOICES.map((m) => ({ value: m, label: MODE_LABEL[m] }))} />
         </div>
-        {/* Outside content, then send data only alerts: fixed text, no choice (DLP spec 3.3). */}
-        {draft.mode === 'enforce' && flow && (
-          <p style={{ margin: 0, fontSize: 'var(--fs-md)' }}>When enforced: <strong>{RESPONSE_LABEL.notify}</strong></p>
+        {/* Outside content, then send data only alerts: fixed text, no choice (DLP spec 3.3). The same for Repeated blocks on a fleet without Pause and Stop. */}
+        {draft.mode === 'enforce' && oneAction && (
+          <p style={{ margin: 0, fontSize: 'var(--fs-md)' }}>When enforced: <strong>{RESPONSE_LABEL[actions[0]]}</strong></p>
         )}
-        {draft.mode === 'enforce' && !flow && (
+        {draft.mode === 'enforce' && !oneAction && !trim && (
           <label style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, fontSize: 'var(--fs-md)' }}>
             When enforced:
             {/* An action that needs a day in Watch first stays in the list, disabled, saying when it opens. */}

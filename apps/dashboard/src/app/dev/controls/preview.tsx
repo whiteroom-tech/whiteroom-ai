@@ -23,6 +23,8 @@ import { newMarker } from '@/lib/controls-view';
 // Watch for all agents, one alerting in Enforce for support-triage, and one
 // with no send tools (Not set up); ?state=flow-old is an engine that doesn't
 // take outside_then_send (Add a rule leaves it out).
+// Repeated blocks (block_streak) and Old tool results (trim_results) are always
+// there: one pausing in Watch, one trimming in Enforce for market-researcher.
 const state = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('state') : null;
 const day = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
 const base = { fleetId: 'acme-claims-prod', changedBy: 'preview', changedAt: day(2) };
@@ -38,6 +40,8 @@ let rules: GovernanceRule[] = state === 'empty' ? [] : [
   { ...base, id: 'r5', version: 1, ruleType: 'keyword', mode: 'watch', response: 'block', appliesTo: ['lead-agent'], params: { keywords: ['password', newMarker()], where: 'incoming', wholeWord: true } },
   { ...base, id: 'r6', version: 1, ruleType: 'call_rate', mode: 'off', response: 'block', appliesTo: ['lead-agent'], params: { maxCalls: 60 } },
   { ...base, id: 'r7', version: 1, ruleType: 'tool_list', mode: 'off', response: 'block', appliesTo: 'all', params: { blockedTools: [] } },
+  { ...base, id: 'b1', version: 1, ruleType: 'block_streak', mode: 'watch', response: 'pause', appliesTo: 'all', params: { threshold: 3 } },
+  { ...base, id: 't1', version: 1, ruleType: 'trim_results', mode: 'enforce', response: 'notify', appliesTo: ['market-researcher'], params: { keepRecent: 5, minTokens: 50_000 } },
   ...(state?.startsWith('send') ? sendRules() : []),
   ...(state === 'flow' ? flowRules() : []),
   ...(state === 'unknown' ? [{ ...base, id: 'r12', version: 1, ruleType: 'made_up_type', mode: 'enforce', response: 'block', appliesTo: 'all', params: {} } as unknown as GovernanceRule] : []),
@@ -72,7 +76,7 @@ const SEEN: Record<string, { tool: string; domain: string; agentId: string; firs
     ],
   s2: [{ tool: 'post_message', domain: '(none)', agentId: 'support-triage', firstSeen: day(1) }],
 };
-const RULE_TYPES = ['spend_cap', 'loop_breaker', 'model_allowlist', 'tool_list', 'call_rate', 'keyword', ...(state === 'send-old' ? [] : ['send_limit']), ...(state === 'flow-old' ? [] : ['outside_then_send'])];
+const RULE_TYPES = ['spend_cap', 'loop_breaker', 'model_allowlist', 'tool_list', 'call_rate', 'keyword', ...(state === 'send-old' ? [] : ['send_limit']), ...(state === 'flow-old' ? [] : ['outside_then_send']), 'block_streak', 'trim_results'];
 const AGENTS = ['code-reviewer', 'contract-summarizer', 'invoice-reconciler', 'lead-agent', 'market-researcher', 'ops-scheduler', 'support-triage'];
 const history = state === 'empty' ? [] : [
   { id: 'h5', ruleId: 'r10', ruleType: 'loop_breaker', description: 'Added new Loop breaker rule', by: 'user:u1', time: new Date(Date.now() - 40 * 60_000).toISOString() },
@@ -86,7 +90,7 @@ const history = state === 'empty' ? [] : [
     before: { mode: 'enforce', response: 'block', alsoNotify: false, appliesTo: ['code-reviewer'], params: { dailyCap: 20, scope: 'day', unit: 'dollars' } }, after: null },
   { id: 'h3', ruleId: 'r5', ruleType: 'keyword', description: 'Added new Keywords rule', by: 'user:u1', time: day(3) },
 ];
-const counts = (n: Partial<Record<'blocked' | 'paused' | 'stopped' | 'toldYou' | 'wouldAct', number>>) => ({ blocked: 0, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0, ...n });
+const counts = (n: Partial<Record<'blocked' | 'paused' | 'stopped' | 'toldYou' | 'wouldAct' | 'trimmed', number>>) => ({ blocked: 0, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0, ...n });
 
 function engine(body: Record<string, unknown>): unknown {
   switch (body.action) {
@@ -97,6 +101,7 @@ function engine(body: Record<string, unknown>): unknown {
         spend_cap: { dailyCap: 50, scope: 'day', unit: 'dollars' }, loop_breaker: { threshold: 100, scope: 'run', ignoreTools: [] },
         model_allowlist: { allowedModels: [] }, tool_list: { blockedTools: [] }, call_rate: { maxCalls: 60 }, keyword: { keywords: [], where: 'incoming', wholeWord: true },
         send_limit: { tools: [], domains: [] }, outside_then_send: { readTools: [], sendTools: [] },
+        block_streak: { threshold: 3 }, trim_results: { keepRecent: 5, minTokens: 50_000 },
       };
       const rule = { ...base, changedAt: new Date().toISOString(), id: `n${++version}`, version: 1, ruleType: type, mode: 'watch', response: (body.response as GovernanceRule['response']) ?? (type === 'outside_then_send' ? 'notify' : 'block'), appliesTo: (body.applies_to as GovernanceRule['appliesTo']) ?? 'all', params: (body.params as GovernanceRule['params']) ?? defaults[type] } as GovernanceRule;
       rules = [...rules, rule];
@@ -118,8 +123,8 @@ function engine(body: Record<string, unknown>): unknown {
     case 'tools_seen': if (state === 'empty') throw new Error('Unknown action'); return { tools: ['search_claims', 'update_claim', 'delete_attachment', 'send_email', 'read_file', ...(state?.startsWith('send') || state?.startsWith('flow') ? ['post_message', 'http_request'] : []), ...(state?.startsWith('flow') ? ['web_fetch', 'read_inbox'] : [])] };
     case 'rule_would_act': return { fleetId: base.fleetId, ruleId: body.rule_id, byAgent: body.rule_id === 'r2' ? { 'code-reviewer': 44 } : {}, unversioned: false, since: day(4) };
     // Sample counts: the allowlist caught 60 calls from code-reviewer; one loop breaker caught 12 from lead-agent.
-    case 'rule_actions': return { fleetId: base.fleetId, totals: counts({ wouldAct: 72 }), byAgent: { 'code-reviewer': counts({ wouldAct: 60 }), 'lead-agent': counts({ wouldAct: 12 }) },
-      byRule: { model_allowlist: counts({ wouldAct: 60 }), loop_breaker: counts({ wouldAct: 12 }) }, byRuleId: { r2: counts({ wouldAct: 60 }), r9: counts({ wouldAct: 12 }) } };
+    case 'rule_actions': return { fleetId: base.fleetId, totals: counts({ wouldAct: 72, trimmed: 38 }), byAgent: { 'code-reviewer': counts({ wouldAct: 60 }), 'lead-agent': counts({ wouldAct: 12 }), 'market-researcher': counts({ trimmed: 38 }) },
+      byRule: { model_allowlist: counts({ wouldAct: 60 }), loop_breaker: counts({ wouldAct: 12 }), trim_results: counts({ trimmed: 38 }) }, byRuleId: { r2: counts({ wouldAct: 60 }), r9: counts({ wouldAct: 12 }), t1: counts({ trimmed: 38 }) } };
     case 'performance_agent': return { fleetId: base.fleetId, agentId: body.agent_id, hourly: [{ hour: day(10), calls: 60, costMicros: 31_000_000 }], totals: { calls: body.agent_id === 'code-reviewer' ? 44 : 120, costMicros: 31_000_000, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, errorRate: 0, avgLatencyMs: null } };
     case 'audit_integrity': return { fleetId: base.fleetId, mode: 'sequenced', headSeq: 2045, verifiedThroughSeq: 2045, verifiedAt: new Date().toISOString(), prunedBeforeTracking: true, legacyEvents: 0, gaps: { count: 0, recent: [] }, anchoring: { enabled: false } };
     case 'verify_audit': return { valid: true, eventsVerified: 2045, message: 'ok' };

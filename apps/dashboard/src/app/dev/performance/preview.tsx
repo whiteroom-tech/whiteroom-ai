@@ -151,7 +151,7 @@ const MODELS: PerformanceModelSummary[] = [
   { provider: 'anthropic', model: 'claude-sonnet-4-5', calls: 60, inputTokens: 44_300, outputTokens: 9_100, costMicros: 400_000 },
 ];
 
-// Control: eight rules, one in Enforce; what they caught this week, per rule id.
+// Control: ten rules, one blocking in Enforce and one trimming; what they caught this week, per rule id.
 const rule = (id: string, ruleType: GovernanceRule['ruleType'], mode: GovernanceRule['mode'], params: object): GovernanceRule =>
   ({ id, fleetId: 'acme-claims-prod', ruleType, mode, response: 'block', params, appliesTo: 'all', version: 1, changedBy: 'preview', changedAt: '2026-10-20T12:00:00Z' }) as GovernanceRule;
 const RULES: GovernanceRule[] = [
@@ -163,16 +163,19 @@ const RULES: GovernanceRule[] = [
   rule('gr_lb5', 'loop_breaker', 'watch', { threshold: 5, scope: 'run' }),
   rule('gr_lb5b', 'loop_breaker', 'watch', { threshold: 5, scope: 'run' }),
   rule('gr_kw', 'keyword', 'watch', { keywords: ['password'], where: 'incoming' }),
+  { ...rule('gr_streak', 'block_streak', 'watch', { threshold: 3 }), response: 'pause' },
+  { ...rule('gr_trim', 'trim_results', 'enforce', { keepRecent: 5, minTokens: 50_000 }), response: 'notify' },
 ];
 const acts = (blocked: number, wouldAct: number) => ({ blocked, paused: 0, stopped: 0, toldYou: 0, wouldAct });
 // ?state=unknown: a rule of a type this build doesn't know, which caught the most.
 const unknownState = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('state') === 'unknown';
 const UNKNOWN_RULES = unknownState ? [{ id: 'gr_future', mode: 'watch' as const, appliesTo: 'all' as const }] : [];
-const BY_RULE_ID = { gr_allow: acts(0, 60), gr_sc190: acts(0, 59), gr_gone: acts(0, 1), ...(unknownState && { gr_future: acts(0, 80) }) };
+const BY_RULE_ID = { gr_trim: { ...acts(0, 0), trimmed: 38 }, gr_allow: acts(0, 60), gr_sc190: acts(0, 59), gr_gone: acts(0, 1), ...(unknownState && { gr_future: acts(0, 80) }) };
 const tally = (blocks: number, wouldBlocks: number) => ({ blocks, wouldBlocks });
 const COUNTS: GovernanceCounts = {
-  blocks: 0, wouldBlocks: 120,
-  byRule: { spend_cap: tally(0, 59), loop_breaker: tally(0, 0), model_allowlist: tally(0, 60), tool_list: tally(0, 0), call_rate: tally(0, 0), keyword: tally(0, 1), send_limit: tally(0, 0), outside_then_send: tally(0, 0) },
+  // What the Old tool results rule did: its own word, never blocked or alerted.
+  blocks: 0, wouldBlocks: 120, trimmed: 38,
+  byRule: { spend_cap: tally(0, 59), loop_breaker: tally(0, 0), model_allowlist: tally(0, 60), tool_list: tally(0, 0), call_rate: tally(0, 0), keyword: tally(0, 1), send_limit: tally(0, 0), outside_then_send: tally(0, 0), block_streak: tally(0, 0), trim_results: tally(0, 0) },
   byAgent: { 'code-reviewer': tally(0, 60), 'lead-agent': tally(0, 59), 'keyword-test': tally(0, 1) },
 };
 
