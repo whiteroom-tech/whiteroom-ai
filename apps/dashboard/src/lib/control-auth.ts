@@ -37,6 +37,8 @@ export const DASHBOARD_ONLY_ACTIONS: ReadonlySet<string> = new Set([
   'create_policy', 'set_policy_mode',
   // Purge zeroes every agent's spend, loop and rate counters (security fixes S6).
   'purge_fleet',
+  // The tool names the fleet's agents call, for the Controls pickers: the owner's to read.
+  'tools_seen',
 ]);
 
 /**

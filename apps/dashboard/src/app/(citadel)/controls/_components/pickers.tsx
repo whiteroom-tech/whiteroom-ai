@@ -4,9 +4,11 @@
 // agents), and the inline number, in the shared control style (sunk well,
 // line2 border, 7px corners).
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FONT_MONO, Icon } from '@whiteroom/ui';
 import type { GovernanceScope } from '@/lib/whiteroom/types';
+import { useCopy } from '@/components/citadel/CopyChip';
+import { markerShort } from '@/lib/controls-view';
 
 export const field = { background: 'var(--sunk)', border: '1px solid var(--line2)', borderRadius: 7, color: 'var(--tx)', fontSize: 'var(--fs-sm)', minHeight: '1.875rem', boxSizing: 'border-box' } as const;
 
@@ -42,6 +44,16 @@ export const TOOL_GROUPS: PickGroup[] = [
   { label: 'Memory & state', tools: ['get_memory', 'set_memory', 'read_context', 'save_state'] },
 ].map((g) => ({ label: g.label, options: g.tools.map((t) => ({ id: t, label: t })) }));
 
+/**
+ * The tool groups with the fleet's own tools first (tools_seen), those `first`
+ * picks out at the top. Without fleet tools, exactly TOOL_GROUPS.
+ */
+export function toolGroups(fleetTools: readonly string[], first?: (tool: string) => boolean): PickGroup[] {
+  if (!fleetTools.length) return TOOL_GROUPS;
+  const tools = first ? [...fleetTools.filter(first), ...fleetTools.filter((t) => !first(t))] : fleetTools;
+  return [{ label: 'Your fleet’s tools', options: tools.map((t) => ({ id: t, label: t })) }, ...TOOL_GROUPS];
+}
+
 export function Chip({ label, onRemove, removeLabel = `Remove ${label}` }: { label: string; onRemove: () => void; removeLabel?: string }) {
   return (
     <span className="gov-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, minHeight: '1.625rem', padding: '0 2px 0 9px', borderRadius: 6, border: '1px solid var(--line2)', background: 'var(--sunk)', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx)' }}>
@@ -51,8 +63,22 @@ export function Chip({ label, onRemove, removeLabel = `Remove ${label}` }: { lab
   );
 }
 
+/** A Keywords marker: labelled Marker, the code cut to one line, and Copy for all of it. If the browser won't copy, the whole code shows to select. */
+export function MarkerChip({ code, onRemove }: { code: string; onRemove: () => void }) {
+  const { copied, failed, copy } = useCopy(code);
+  return (
+    <span className="gov-chip gov-chip--marker" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%', minHeight: '1.625rem', padding: '0 2px 0 9px', borderRadius: 6, border: '1px solid var(--brand)', background: 'var(--sunk)', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx)' }}>
+      <b style={{ fontFamily: 'var(--font-sans)', fontWeight: 600, color: 'var(--brand)' }}>Marker</b>
+      {failed ? <span style={{ userSelect: 'all', overflowWrap: 'anywhere' }}>{code}</span> : <span style={{ whiteSpace: 'nowrap' }}>{markerShort(code)}</span>}
+      <button type="button" className="gov-chip__copy" onClick={copy} aria-label={copied ? undefined : 'Copy marker'}>{copied ? 'Copied' : 'Copy'}</button>
+      <button type="button" onClick={onRemove} aria-label="Remove marker" style={{ background: 'none', border: 0, color: 'var(--tx2)', width: 24, height: 24, cursor: 'pointer', fontSize: 'var(--fs-md)' }}>&times;</button>
+      <span className="wr-sr-only" aria-live="polite">{copied ? 'Copied' : failed ? 'Couldn’t copy. Select the code to copy it.' : ''}</span>
+    </span>
+  );
+}
+
 /** Chosen values as chips, a grouped menu to add more, and "Other…" for one that isn't listed. */
-export function GroupPicker({ values, onChange, groups, addLabel, otherLabel, placeholder, ariaLabel = addLabel }: {
+export function GroupPicker({ values, onChange, groups, addLabel, otherLabel, placeholder, ariaLabel = addLabel, chooseLabel = addLabel }: {
   values: string[];
   onChange: (next: string[]) => void;
   groups: PickGroup[];
@@ -61,6 +87,8 @@ export function GroupPicker({ values, onChange, groups, addLabel, otherLabel, pl
   placeholder: string;
   /** The add menu's name for screen readers, when addLabel ("+ add agent") reads badly. */
   ariaLabel?: string;
+  /** The menu's first line, where it opens: never an option, so opening it adds nothing. */
+  chooseLabel?: string;
 }) {
   const [other, setOther] = useState<string | null>(null);
   const labelOf = (id: string) => groups.flatMap((g) => g.options).find((o) => o.id === id)?.label ?? id;
@@ -78,7 +106,7 @@ export function GroupPicker({ values, onChange, groups, addLabel, otherLabel, pl
             value=""
             onChange={(e) => { const v = e.target.value; if (v === '__other__') setOther(''); else if (v) add(v); }}
           >
-          <option value="">{addLabel}</option>
+          <option value="">{chooseLabel}</option>
           {groups.map((g) => {
             const left = g.options.filter((o) => !values.includes(o.id));
             return left.length ? <optgroup key={g.label} label={g.label}>{left.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</optgroup> : null;
@@ -103,6 +131,25 @@ export function GroupPicker({ values, onChange, groups, addLabel, otherLabel, pl
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The Tool list and Loop breaker picker. Shown, it asks for the fleet's tools
+ * (`onShow`); once known they're a first group and the menu opens on "Choose a
+ * tool…". Until then, and without them, it's the plain tool picker.
+ */
+export function ToolPicker({ values, onChange, fleetTools, onShow, first }: {
+  values: string[];
+  onChange: (next: string[]) => void;
+  fleetTools: readonly string[];
+  onShow: () => void;
+  first?: (tool: string) => boolean;
+}) {
+  useEffect(() => { onShow(); }, [onShow]);
+  return (
+    <GroupPicker values={values} onChange={onChange} groups={toolGroups(fleetTools, first)} chooseLabel={fleetTools.length ? 'Choose a tool…' : undefined}
+      addLabel="+ Add tool" ariaLabel="Add a tool" otherLabel="Other (type tool name)…" placeholder="tool name" />
   );
 }
 

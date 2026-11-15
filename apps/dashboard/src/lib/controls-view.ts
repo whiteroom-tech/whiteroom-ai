@@ -26,6 +26,28 @@ export function keywordFits(keywords: readonly string[]): boolean {
   return keywords.length < KEYWORD_MAX;
 }
 
+/** A marker: a made-up code stored as an ordinary keyword (DLP spec 3.4), `wrmk` and 16 hex characters. */
+const MARKER = /^wrmk[0-9a-f]{16}$/;
+export const isMarker = (k: string) => MARKER.test(k);
+
+/** A new marker, from the browser's random source. */
+export function newMarker(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
+  return `wrmk${[...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** A marker cut to fit one line: its first 8 characters, an ellipsis, its last 4. */
+export const markerShort = (code: string) => `${code.slice(0, 8)}…${code.slice(-4)}`;
+
+const markerCount = (n: number) => (n === 1 ? '1 marker' : `${n} markers`);
+
+/** Keywords for a sentence, quoted by `quote`; markers are counted ("1 marker"), never shown. */
+function keywordsText(keywords: readonly string[], quote: (k: string) => string): string {
+  const words = keywords.filter((k) => !isMarker(k));
+  const markers = keywords.length - words.length;
+  return [...words.map(quote), ...(markers ? [markerCount(markers)] : [])].join(', ');
+}
+
 /** Where a Keywords rule looks, as it reads in a sentence. */
 export const KEYWORD_WHERE: Record<KeywordWhere, string> = { incoming: 'incoming data', replies: 'a model reply', both: 'incoming data or a reply' };
 
@@ -62,7 +84,7 @@ export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 
           : { pre: `When ${KEYWORD_WHERE[p.where]} contains any of `, val: `${p.keywordCount} hidden keywords`, post: `, ${v}.` };
       }
       return p.keywords.length
-        ? { pre: `When ${KEYWORD_WHERE[p.where]} contains ${p.keywords.length > 1 ? 'any of ' : ''}`, val: p.keywords.map((k) => `“${k}”`).join(', '), post: `, ${v}.` }
+        ? { pre: `When ${KEYWORD_WHERE[p.where]} contains ${p.keywords.length > 1 ? 'any of ' : ''}`, val: keywordsText(p.keywords, (k) => `“${k}”`), post: `, ${v}.` }
         : { pre: 'No keywords picked yet.', val: '', post: '' };
     }
     case 'tool_list': {
@@ -410,7 +432,7 @@ function looser(prev: GovernanceRule, next: GovernanceRule): string[] {
       // Matched without regard to case, as the editor's duplicate check does: "Orion" → "orion" isn't a removal.
       const kept = new Set(n.keywords.map((k) => k.toLowerCase()));
       const removed = p.keywords.filter((k) => !kept.has(k.toLowerCase()));
-      if (removed.length) out.push(`No longer looks for ${removed.map((k) => `“${k}”`).join(', ')}`);
+      if (removed.length) out.push(`No longer looks for ${keywordsText(removed, (k) => `“${k}”`)}`);
       if (!p.wholeWord && n.wholeWord) out.push('Matches whole words only, not parts of words');
       const places = (w: KeywordParams['where']) => (w === 'both' ? ['incoming', 'replies'] : [w]);
       for (const gone of places(p.where).filter((x) => !places(n.where).includes(x))) out.push(`No longer looks in ${gone === 'incoming' ? 'incoming data' : 'model replies'}`);
@@ -465,7 +487,7 @@ export function ruleCondition(rule: Pick<GovernanceRule, 'ruleType' | 'params'>)
       const where = KEYWORD_WHERE[p.where];
       const lead = `${where[0].toUpperCase()}${where.slice(1)} contains `;
       if (!p.keywords.length && p.keywordCount) return { pre: lead, val: p.keywordCount === 1 ? 'a hidden keyword' : `${p.keywordCount} hidden keywords`, post: '' };
-      return p.keywords.length ? { pre: lead, val: p.keywords.map((k) => `"${k}"`).join(', '), post: '' } : { pre: 'No keywords picked yet', val: '', post: '' };
+      return p.keywords.length ? { pre: lead, val: keywordsText(p.keywords, (k) => `"${k}"`), post: '' } : { pre: 'No keywords picked yet', val: '', post: '' };
     }
     case 'tool_list': {
       const tools = (rule.params as ToolListParams).blockedTools;
@@ -677,11 +699,21 @@ export function keywordsHidden(r: Pick<GovernanceRule, 'ruleType' | 'params'>): 
   return r.ruleType === 'keyword' && !(r.params as KeywordParams).keywords.length && !!(r.params as KeywordParams).keywordCount;
 }
 
-/** A Keywords rule's words for a sentence: "password", or "password", "SSN" + 2 more. */
+/** A Keywords rule's words for a sentence: "password", or "password", "SSN" + 2 more; markers only count. */
 export function keywordsShort(p: KeywordParams): string {
-  const shown = p.keywords.slice(0, 2).map((k) => `"${k}"`).join(', ');
-  return p.keywords.length > 2 ? `${shown} + ${p.keywords.length - 2} more` : shown;
+  const words = p.keywords.filter((k) => !isMarker(k));
+  if (!words.length && p.keywords.length) return markerCount(p.keywords.length);
+  const shown = words.slice(0, 2).map((k) => `"${k}"`).join(', ');
+  const more = p.keywords.length - Math.min(2, words.length);
+  return more ? `${shown} + ${more} more` : shown;
 }
+
+/** Names a Tool list starts with when "Block tools" is added: ones that look like they delete or change data. Never used to decide a call. */
+const DELETE_LOOKING = /delete|remove|drop|purge|update|write/i;
+export const looksLikeDelete = (tool: string) => DELETE_LOOKING.test(tool);
+
+/** The fleet's delete-looking tools, as many as a Tool list holds (the engine's limit is 100). */
+export const deleteLookingTools = (tools: readonly string[]) => tools.filter(looksLikeDelete).slice(0, 100);
 
 // ── The editor's three questions (Rashad, Oct 27): When · Who · What happens ──
 
