@@ -320,20 +320,36 @@ describe('the console host', () => {
   });
 });
 
-describe('script policy (report-only CSP)', () => {
-  it('sends a fresh nonce to the app and the same policy to the browser, report-only', () => {
+describe('script policy (enforced CSP)', () => {
+  it('sends a fresh nonce to the app and the same policy to the browser, enforced', () => {
     const a = proxy(req(APP, '/settings', { withSession: true }))!;
     const b = proxy(req(APP, '/settings', { withSession: true }))!;
-    const policy = a.headers.get('content-security-policy-report-only')!;
+    const policy = a.headers.get('content-security-policy')!;
     const nonce = /'nonce-([^']+)'/.exec(policy)![1];
     expect(policy).toContain("'strict-dynamic'");
-    expect(a.headers.get('content-security-policy')).toBeNull();
+    // Enforced, not report-only; and it keeps next.config's framing rules, since this header replaces that one.
+    expect(a.headers.get('content-security-policy-report-only')).toBeNull();
+    for (const rule of ["object-src 'none'", "base-uri 'self'", "frame-ancestors 'none'"]) expect(policy).toContain(rule);
     expect(a.headers.get('x-middleware-request-x-nonce')).toBe(nonce);
-    expect(b.headers.get('content-security-policy-report-only')).not.toContain(nonce);
+    expect(b.headers.get('content-security-policy')).not.toContain(nonce);
+  });
+
+  it('enforces it on the admin host’s rewritten pages too', () => {
+    process.env.ADMIN_HOST = ADMIN;
+    try {
+      const res = proxy(req(ADMIN, '/organizations'))!;
+      expect(verdict(res)).toBe('rewrite:/admin/organizations');
+      const policy = res.headers.get('content-security-policy')!;
+      expect(policy).toContain(`'nonce-${res.headers.get('x-middleware-request-x-nonce')}'`);
+      expect(policy).toContain("frame-ancestors 'none'");
+      expect(res.headers.get('content-security-policy-report-only')).toBeNull();
+    } finally {
+      delete process.env.ADMIN_HOST;
+    }
   });
 
   it('sends reports to /api/csp-report, which the admin host also serves', () => {
-    const policy = proxy(req(APP, '/home', { withSession: true }))!.headers.get('content-security-policy-report-only')!;
+    const policy = proxy(req(APP, '/home', { withSession: true }))!.headers.get('content-security-policy')!;
     expect(policy).toContain('report-uri /api/csp-report');
     process.env.ADMIN_HOST = ADMIN;
     try {

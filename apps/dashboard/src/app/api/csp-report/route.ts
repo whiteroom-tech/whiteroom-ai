@@ -1,8 +1,8 @@
-// Collects Content-Security-Policy violation reports (the report-only script
-// policy, lib/csp.ts) into the server logs, so violations can be seen before
-// the policy is enforced. Logs only the directive and what was blocked: no
-// page URLs with query strings, no cookies. Anyone can post here, so the body
-// is capped and nothing is stored.
+// Collects Content-Security-Policy violation reports (the script policy,
+// lib/csp.ts) into the server logs, so anything it blocks can be seen. Logs
+// only the directive and what was blocked: no page URLs with query strings,
+// no cookies. Anyone can post here, so the body is capped and nothing is
+// stored.
 
 const MAX_BYTES = 8 * 1024;
 
