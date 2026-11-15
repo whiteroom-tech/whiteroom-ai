@@ -674,11 +674,11 @@ export interface CustomControlInput {
 
 // -- Fleet governance rules (Controls page) --
 
-export type GovernanceRuleType = 'spend_cap' | 'loop_breaker' | 'model_allowlist' | 'tool_list' | 'call_rate' | 'keyword' | 'send_limit';
+export type GovernanceRuleType = 'spend_cap' | 'loop_breaker' | 'model_allowlist' | 'tool_list' | 'call_rate' | 'keyword' | 'send_limit' | 'outside_then_send';
 export type GovernanceMode = 'off' | 'watch' | 'enforce';
 /** What Enforce does (engine P2.3): notify, block, pause or stop. */
 export type GovernanceResponse = 'notify' | 'block' | 'pause' | 'stop';
-export type GovernanceReason = 'budget_exceeded' | 'loop_detected' | 'model_not_allowed' | 'tool_not_allowed' | 'rate_exceeded' | 'keyword_found' | 'destination_not_allowed';
+export type GovernanceReason = 'budget_exceeded' | 'loop_detected' | 'model_not_allowed' | 'tool_not_allowed' | 'rate_exceeded' | 'keyword_found' | 'destination_not_allowed' | 'outside_then_send';
 export type GovernanceScope = 'all' | string[];
 
 export interface SpendCapParams { dailyCap: number; scope: 'run' | 'day'; unit: 'tokens' | 'dollars' }
@@ -704,7 +704,14 @@ export interface SendLimitParams {
   /** Sent instead of the list to a caller without the dashboard's secret (domains is then empty). */
   domainCount?: number;
 }
-export type GovernanceParams = SpendCapParams | LoopBreakerParams | ModelAllowlistParams | ToolListParams | CallRateParams | KeywordParams | SendLimitParams;
+/**
+ * Outside content, then send data (DLP spec 5.3): an agent used a tool in
+ * readTools (or the provider's web search or web fetch), then asks for a tool
+ * in sendTools in the same run. Only alerts, once per run. No sendTools is
+ * "Not set up".
+ */
+export interface OutsideThenSendParams { readTools: string[]; sendTools: string[] }
+export type GovernanceParams = SpendCapParams | LoopBreakerParams | ModelAllowlistParams | ToolListParams | CallRateParams | KeywordParams | SendLimitParams | OutsideThenSendParams;
 
 export interface GovernanceRule {
   id: string;

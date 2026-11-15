@@ -27,6 +27,7 @@ export const RULE_LABELS: Record<GovernanceRuleType, string> = {
   call_rate: 'Call rate',
   keyword: 'Keywords',
   send_limit: 'Where tools can send data',
+  outside_then_send: 'Outside content, then send data',
 };
 
 /** Each rule's category label on Controls, in sentence case (.ctl-cat upper-cases it). */
@@ -38,6 +39,7 @@ export const RULE_CATEGORY: Record<GovernanceRuleType, string> = {
   call_rate: 'Cost & reliability',
   keyword: 'Data protection',
   send_limit: 'Data protection',
+  outside_then_send: 'Data protection',
 };
 
 /** What a rule of a type this build doesn't know shows as, wherever rules are listed. */
@@ -84,6 +86,7 @@ export const REASON_LABELS: Record<string, string> = {
   rate_exceeded: 'too many calls',
   keyword_found: 'keyword found',
   destination_not_allowed: 'domain not on the list',
+  outside_then_send: 'sent after outside content',
 };
 
 /** Each rule's own reason: said after its name, it only repeats it ("the spend cap (budget exceeded)"). */
@@ -95,6 +98,7 @@ const OWN_REASON: Record<GovernanceRuleType, string> = {
   call_rate: 'rate_exceeded',
   keyword: 'keyword_found',
   send_limit: 'destination_not_allowed',
+  outside_then_send: 'outside_then_send',
 };
 
 /**
@@ -173,6 +177,7 @@ export function governanceFromSummary(g: { blocks: number; wouldBlocks: number; 
       call_rate: g.byRule.call_rate ?? emptyTally(),
       keyword: g.byRule.keyword ?? emptyTally(),
       send_limit: g.byRule.send_limit ?? emptyTally(),
+      outside_then_send: g.byRule.outside_then_send ?? emptyTally(),
     },
   };
 }
@@ -183,7 +188,7 @@ export function governanceCounts(entries: AuditEntry[], sinceMs = 0): Governance
     blocks: 0,
     wouldBlocks: 0,
     byAgent: {},
-    byRule: { spend_cap: emptyTally(), loop_breaker: emptyTally(), model_allowlist: emptyTally(), tool_list: emptyTally(), call_rate: emptyTally(), keyword: emptyTally(), send_limit: emptyTally() },
+    byRule: { spend_cap: emptyTally(), loop_breaker: emptyTally(), model_allowlist: emptyTally(), tool_list: emptyTally(), call_rate: emptyTally(), keyword: emptyTally(), send_limit: emptyTally(), outside_then_send: emptyTally() },
   };
   for (const e of entries) {
     if (!isGovernanceDecision(e)) continue;

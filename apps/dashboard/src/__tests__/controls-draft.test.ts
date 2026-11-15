@@ -50,6 +50,9 @@ it.each([
   ['a spend cap with no unit', { ...draft, ruleType: 'spend_cap', params: { dailyCap: 5, scope: 'day' } }],
   ['a loop breaker whose ignore list isn\'t a list', { ...draft, ruleType: 'loop_breaker', params: { threshold: 5, scope: 'run', ignoreTools: 'x' } }],
   ['a rule type this build doesn\'t know', { ...draft, ruleType: 'mystery', params: {} }],
+  ['an Outside content, then send data rule with no read list', { ...draft, ruleType: 'outside_then_send', params: { sendTools: ['send_email'] } }],
+  ['an Outside content, then send data rule whose send list is a string', { ...draft, ruleType: 'outside_then_send', params: { readTools: [], sendTools: 'send_email' } }],
+  ['an Outside content, then send data rule with a tool that isn\'t text', { ...draft, ruleType: 'outside_then_send', params: { readTools: [1], sendTools: [] } }],
 ])('a draft the editor couldn\'t open (%s) reads as none', (_name, bad) => {
   sessionStorage.setItem('wr_controls_draft:f1', JSON.stringify({ ruleId: 'r1', version: 1, draft: bad }));
   expect(readDraft('f1')).toBeNull();
@@ -62,6 +65,8 @@ it.each([
   ['model allowlist', { ruleType: 'model_allowlist', params: { allowedModels: ['m'] } }],
   ['tool list', { ruleType: 'tool_list', params: { blockedTools: [] } }],
   ['keyword', { ruleType: 'keyword', params: { keywords: ['x'], where: 'both', wholeWord: true } }],
+  ['outside content, then send data', { ruleType: 'outside_then_send', response: 'notify', params: { readTools: ['web_fetch'], sendTools: ['send_email'] } }],
+  ['outside content, then send data with empty lists', { ruleType: 'outside_then_send', response: 'notify', params: { readTools: [], sendTools: [] } }],
 ])('a well-formed %s draft reads back', (_name, shape) => {
   writeDraft('f1', { ruleId: 'r1', version: 1, draft: { ...draft, ...shape } as RuleDraft });
   expect(readDraft('f1')).not.toBeNull();

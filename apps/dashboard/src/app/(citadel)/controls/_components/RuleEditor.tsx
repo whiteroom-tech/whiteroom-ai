@@ -13,7 +13,7 @@ import type { GovernanceMode, GovernanceResponse } from '@/lib/whiteroom/types';
 import Link from 'next/link';
 import { Banner, Button, FONT_MONO, Hint, SegmentedControl } from '@whiteroom/ui';
 import type {
-  GovernanceHistoryEntry, GovernanceRule, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, SendLimitParams, SendSeenRow, SpendCapParams, ToolListParams,
+  GovernanceHistoryEntry, GovernanceRule, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, OutsideThenSendParams, SendLimitParams, SendSeenRow, SpendCapParams, ToolListParams,
 } from '@/lib/whiteroom/types';
 import { RESPONSE_LABEL, RULE_LABELS } from '@/lib/governance';
 import { actionAvailableFrom, canAct, keywordBlockCheck, stopCheck } from '@/lib/controls-guard';
@@ -23,7 +23,7 @@ import type { ControlActor } from '@/lib/control-actors';
 import { ROUTES } from '@/lib/routes';
 import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
 import {
-  canAddSeen, domainEntry, domainProblem, domainsHidden, domainTotal, looksLikeSender, SEEN_RESERVED_TEXT, seenFullLine, seenNotOnList, SEND_DOMAINS_MAX, SEND_TOOLS_MAX, toolsWithNoDomain,
+  canAddSeen, domainEntry, domainProblem, domainsHidden, domainTotal, FLOW_TOOLS_MAX, FLOW_WHEN, looksLikeReader, looksLikeSender, SEEN_RESERVED_TEXT, seenFullLine, seenNotOnList, SEND_DOMAINS_MAX, SEND_TOOLS_MAX, toolsWithNoDomain,
 } from '@/lib/controls-view';
 import { AGENT_NOTE, isMarker, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, looksLikeDeleteOrChange, newMarker, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, MODE_CHOICES, responseChoices, sendsAlert, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
 import { Chip, field, GroupPicker, InlineSelect, MarkerChip, MODEL_GROUPS, NumberField, ScopeField, ToolPicker } from './pickers';
@@ -33,6 +33,7 @@ const ACTS: Record<Exclude<GovernanceRule['ruleType'], 'keyword' | 'loop_breaker
   spend_cap: 'Acts before the next call.', model_allowlist: 'Acts before the call.',
   tool_list: 'Acts before the agent gets the tool call. Also covers tools the provider runs, like web search.', call_rate: 'Acts on the call over the limit.',
   send_limit: 'Acts before the agent gets the tool call. Tools the provider runs, like web search, always match.',
+  outside_then_send: 'Checks each reply once the agent has read outside content. It never holds a call.',
 };
 const KEYWORD_ACTS: Record<KeywordWhere, string> = {
   incoming: 'Acts before the call reaches the model.',
@@ -50,6 +51,8 @@ const WHEN_NOTES: Record<GovernanceRule['ruleType'], string | null> = {
   tool_list: 'In Watch, streamed calls are checked after they arrive. In Enforce, a streamed call that can use a listed tool arrives all at once, and a Bedrock one is refused.',
   // Its streaming and Bedrock notes sit under Block, where they matter (DLP spec 3.2).
   send_limit: null,
+  // Its help is in the editor, under When (DLP spec 3.3).
+  outside_then_send: null,
 };
 
 /** A Where tools can send data rule's Seen list, as the page has read it. */
@@ -124,6 +127,8 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
   // Where tools can send data. Without the dashboard's secret the engine sends only how many domains
   // there are: the editor is read only, has no Seen list, and never writes the hidden list back.
   const send = rule.ruleType === 'send_limit' ? (p as SendLimitParams) : null;
+  // Outside content, then send data: two tool lists, and it only alerts (DLP spec 3.3).
+  const flow = rule.ruleType === 'outside_then_send' ? (p as OutsideThenSendParams) : null;
   const readOnly = domainsHidden(rule);
   const [domain, setDomain] = useState('');
   const domainTyped = domainEntry(domain);
@@ -303,8 +308,14 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
             ))}
           </>
         )}
-        {/* Where tools can send data ends When with its own Allowed domains section, Done under it. */}
-        {!send && <Button size={28} onClick={() => setWhenOpen(false)} style={{ alignSelf: 'flex-start' }} aria-expanded>Done</Button>}
+        {flow && (
+          <>
+            <span style={{ fontSize: 'var(--fs-md)' }}>{FLOW_WHEN}.</span>
+            <p style={help}>A web page, email or file can carry hidden instructions. An agent that reads mail and replies will match on most runs.</p>
+          </>
+        )}
+        {/* Where tools can send data and Outside content, then send data end When with their own sections, Done under them. */}
+        {!send && !flow && <Button size={28} onClick={() => setWhenOpen(false)} style={{ alignSelf: 'flex-start' }} aria-expanded>Done</Button>}
         </>}
       </section>
 
@@ -330,6 +341,22 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
           </>}
           <Button size={28} onClick={() => setWhenOpen(false)} style={{ alignSelf: 'flex-start' }} aria-expanded>Done</Button>
         </section>
+      )}
+
+      {flow && whenOpen && (
+        <>
+          <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <p className="gov-eyebrow ctl-q">Reads outside content</p>
+            <ToolPicker values={flow.readTools} onChange={(readTools) => setParams({ readTools })} fleetTools={fleetTools} onShow={onToolPicker} first={looksLikeReader} ariaLabel="Add a tool that reads outside content" />
+            <p style={help}>The provider’s web search and web fetch always count.</p>
+          </section>
+          <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <p className="gov-eyebrow ctl-q">Sends data out</p>
+            <ToolPicker values={flow.sendTools} onChange={(sendTools) => setParams({ sendTools })} fleetTools={fleetTools} onShow={onToolPicker} first={looksLikeSender} ariaLabel="Add a tool that sends data out" />
+            {(flow.readTools.length > FLOW_TOOLS_MAX || flow.sendTools.length > FLOW_TOOLS_MAX) && <p style={help}>A rule holds up to {FLOW_TOOLS_MAX} tools in each list. Remove one to save.</p>}
+            <Button size={28} onClick={() => setWhenOpen(false)} style={{ alignSelf: 'flex-start' }} aria-expanded>Done</Button>
+          </section>
+        </>
       )}
 
       {/* How the list gets built: shown whether or not When is open (DLP spec 3.2). Never for a reader without the list. */}
@@ -384,7 +411,11 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
             onChange={(m) => onDraft(chooseMode(draft, m, rule, actions, (r) => !waitFor(r)))}
             options={MODE_CHOICES.map((m) => ({ value: m, label: MODE_LABEL[m] }))} />
         </div>
-        {draft.mode === 'enforce' && (
+        {/* Outside content, then send data only alerts: fixed text, no choice (DLP spec 3.3). */}
+        {draft.mode === 'enforce' && flow && (
+          <p style={{ margin: 0, fontSize: 'var(--fs-md)' }}>When enforced: <strong>{RESPONSE_LABEL.notify}</strong></p>
+        )}
+        {draft.mode === 'enforce' && !flow && (
           <label style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, fontSize: 'var(--fs-md)' }}>
             When enforced:
             {/* An action that needs a day in Watch first stays in the list, disabled, saying when it opens. */}
@@ -404,7 +435,8 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
             Also alert me
           </label>
         )}
-        <p style={help}>{send && draft.mode === 'enforce' && draft.response === 'notify' ? 'You get an alert the first time a tool sends to a new domain. The call goes through.' : whatHappensLine(draft)}</p>
+        <p style={help}>{send && draft.mode === 'enforce' && draft.response === 'notify' ? 'You get an alert the first time a tool sends to a new domain. The call goes through.'
+          : flow && draft.mode === 'enforce' ? 'You get one alert per run. The agent keeps going.' : whatHappensLine(draft)}</p>
         {send && draft.mode === 'enforce' && draft.response === 'block' && (
           <p style={help}>Streamed replies from agents with these tools arrive all at once. Replies on Bedrock can’t be checked yet.</p>
         )}

@@ -43,7 +43,7 @@ import {
   weakenings,
   averageDailySpend,
   sameValue,
-  blocksWhen, domainRefusal, domainsHidden, duplicateRules, hiddenList, listHidden, keywordGaps, sendLookingTools, keywordsShort, leadCounts, modeCount, notSetUp, ruleCondition, ruleConditionText, ruleGroups, rowCount, ruleStatus, whoFor,
+  blocksWhen, domainRefusal, domainsHidden, duplicateRules, hiddenList, listHidden, keywordGaps, readLookingTools, sendLookingTools, keywordsShort, leadCounts, modeCount, notSetUp, ruleCondition, ruleConditionText, ruleGroups, rowCount, ruleStatus, whoFor,
 } from "@/lib/controls-view";
 import { readDraft, removeDraft, writeDraft } from "@/lib/controls-draft";
 
@@ -691,14 +691,19 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     try {
       // "Block tools" starts with the fleet's delete-looking tools picked, when its tools are known.
       // Tools already read are used as they are; else the read gets 2 s, then the rule is added as before.
-      // "Limit where tools can send data" starts the same way, with the tools that look like they send.
-      const likely = ruleType === "tool_list" ? deleteLookingTools : ruleType === "send_limit" ? sendLookingTools : null;
-      const picked = likely ? likely(fleetTools.length ? fleetTools : await within(TOOLS_WAIT_MS, readFleetTools(), [])) : [];
-      const params = ruleType === "tool_list" && picked.length > 0 ? { blockedTools: picked } : ruleType === "send_limit" ? { tools: picked, domains: [] } : undefined;
+      // "Limit where tools can send data" starts the same way, with the tools that look like they send;
+      // "Flag sends after outside content" with those that look like they read, and those that send.
+      const flow = ruleType === "outside_then_send";
+      const tools = ruleType === "tool_list" || ruleType === "send_limit" || flow ? (fleetTools.length ? fleetTools : await within(TOOLS_WAIT_MS, readFleetTools(), [])) : [];
+      const picked = ruleType === "tool_list" ? deleteLookingTools(tools) : ruleType === "send_limit" ? sendLookingTools(tools) : [];
+      const readPicked = flow ? readLookingTools(tools) : [], sendPicked = flow ? sendLookingTools(tools) : [];
+      const params = ruleType === "tool_list" && picked.length > 0 ? { blockedTools: picked } : ruleType === "send_limit" ? { tools: picked, domains: [] }
+        : flow ? { readTools: readPicked, sendTools: sendPicked } : undefined;
       // New rules start in Watch; while viewing one agent, they start for that agent. A data rule
-      // starts on Only alert me, the engine's default for it (DLP spec 5.2).
+      // starts on Only alert me, the engine's default for it (DLP spec 5.2); Outside content, then
+      // send data has no other response (5.3).
       const { rule } = await governanceCreateRule(fleetId, {
-        ruleType, mode: "watch", ...(ruleType === "send_limit" && { response: "notify" as const }), ...(params && { params }), ...(agentFilter && { appliesTo: [agentFilter] }),
+        ruleType, mode: "watch", ...((ruleType === "send_limit" || flow) && { response: "notify" as const }), ...(params && { params }), ...(agentFilter && { appliesTo: [agentFilter] }),
       }, authKey);
       setRules((rs) => [...rs, rule]);
       setAdding("closed");
@@ -708,7 +713,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       setSelectedId(rule.id);
       setDraft(draftFrom(rule));
       setNotice(null);
-      if (picked.length) showToast(`${RULE_LABELS[ruleType]} rule added in Watch. Check its tools.`);
+      if (picked.length || readPicked.length || sendPicked.length) showToast(`${RULE_LABELS[ruleType]} rule added in Watch. Check its tools.`);
       void fetchData();
     } catch (e) { setAdding("closed"); handleError(e, "add the rule"); void fetchData(); }
   };
@@ -1307,7 +1312,7 @@ const ACT_WORDS: Record<GovernanceResponse, { title: string; start: string; woul
 /** "Two identical loop breakers": each kind of rule, more than one. */
 const RULE_PLURAL: Record<GovernanceRuleType, string> = {
   spend_cap: "spend caps", loop_breaker: "loop breakers", call_rate: "call rate rules", model_allowlist: "model allowlists", tool_list: "tool lists", keyword: "Keywords rules",
-  send_limit: "Where tools can send data rules",
+  send_limit: "Where tools can send data rules", outside_then_send: "Outside content, then send data rules",
 };
 
 /** "6 agents will lose this rule", for moving a rule from all agents to some. */

@@ -109,12 +109,12 @@ describe('the agent filter and groups', () => {
 
   it('keeps rows in today’s order whatever order the Add a rule choices are in', () => {
     // Today's six in today's order, then the new types (DLP spec 6).
-    expect(RULE_ROW_ORDER).toEqual(['spend_cap', 'call_rate', 'model_allowlist', 'loop_breaker', 'tool_list', 'keyword', 'send_limit']);
+    expect(RULE_ROW_ORDER).toEqual(['spend_cap', 'call_rate', 'model_allowlist', 'loop_breaker', 'tool_list', 'keyword', 'send_limit', 'outside_then_send']);
     expect([...RULE_ROW_ORDER].sort()).toEqual(Object.keys(RULE_LABELS).sort());
     const params = {
       spend_cap: { dailyCap: 190, scope: 'day', unit: 'dollars' }, call_rate: { maxCalls: 60 }, model_allowlist: { allowedModels: ['m'] },
       loop_breaker: { threshold: 100, scope: 'run', ignoreTools: [] }, tool_list: { blockedTools: ['x'] }, keyword: { where: 'incoming', keywords: ['x'], wholeWord: true },
-      send_limit: { tools: ['send_email'], domains: [] },
+      send_limit: { tools: ['send_email'], domains: [] }, outside_then_send: { readTools: [], sendTools: ['send_email'] },
     } as const;
     const rules = RULE_ROW_ORDER.map((t) => rule({ ruleType: t, params: params[t] as GovernanceRule['params'] }));
     RULE_TEMPLATES.reverse();
@@ -125,18 +125,18 @@ describe('the agent filter and groups', () => {
     }
   });
 
-  it('offers today’s six choices in today’s order, then the new data rule', () => {
+  it('offers today’s six choices in today’s order, then the new data rules', () => {
     expect(RULE_TEMPLATES.map((t) => [t.type, t.title])).toEqual([
       ['spend_cap', 'Cap spending'], ['call_rate', 'Limit calls per minute'], ['model_allowlist', 'Allow only certain models'],
       ['loop_breaker', 'Break loops'], ['tool_list', 'Block tools'], ['keyword', 'Flag keywords'],
-      ['send_limit', 'Limit where tools can send data'],
+      ['send_limit', 'Limit where tools can send data'], ['outside_then_send', 'Flag sends after outside content'],
     ]);
   });
 
   it('puts every rule type in one of two categories', () => {
     expect(RULE_CATEGORY).toEqual({
       spend_cap: 'Cost & reliability', call_rate: 'Cost & reliability', model_allowlist: 'Cost & reliability', loop_breaker: 'Cost & reliability',
-      tool_list: 'Data protection', keyword: 'Data protection', send_limit: 'Data protection',
+      tool_list: 'Data protection', keyword: 'Data protection', send_limit: 'Data protection', outside_then_send: 'Data protection',
     });
   });
 
@@ -472,6 +472,8 @@ describe('What happens: Off · Watch · Enforce, and the action when enforced', 
     // Where tools can send data only alerts or blocks, Only alert me first (DLP spec 3.2), on any fleet.
     expect(responseChoices(true, 'send_limit', 'notify')).toEqual(['notify', 'block']);
     expect(responseChoices(false, 'send_limit', 'notify')).toEqual(['notify', 'block']);
+    // Outside content, then send data only alerts (DLP spec 3.3), whatever the rule holds.
+    expect(responseChoices(true, 'outside_then_send', 'block', 'stop')).toEqual(['notify']);
   });
 
   it('says what the pick does in one plain line', () => {
