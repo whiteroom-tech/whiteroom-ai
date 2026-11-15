@@ -5,8 +5,8 @@
  * redesign's word for a watch, README › Labels) is defined once, in What we
  * checked.
  */
-import type { DiagnosisDetectorId, DiagnosisMeasures } from '@/lib/whiteroom/types';
-import { fmtCount, plural } from '@/lib/format';
+import type { DiagnosisDetectorId, DiagnosisMeasures, RecommendationFixCheck, RecommendationLinkedRule } from '@/lib/whiteroom/types';
+import { fmtCount, fmtDay, plural } from '@/lib/format';
 
 export const DIAGNOSIS_DETECTORS: DiagnosisDetectorId[] = [
   'review_handover_churn',
@@ -22,6 +22,8 @@ export const DIAGNOSIS_DETECTORS: DiagnosisDetectorId[] = [
   'review_job_failures',
   'review_planted_instruction',
   'review_done_after_failure',
+  'review_tool_change',
+  'review_no_limit',
 ];
 
 export function isDiagnosisDetector(detector: string): detector is DiagnosisDetectorId {
@@ -42,6 +44,8 @@ export const TITLES: Record<DiagnosisDetectorId, string> = {
   review_job_failures: 'Jobs are failing',
   review_planted_instruction: 'Suspicious instruction in a tool result',
   review_done_after_failure: 'Said done after a failed step',
+  review_tool_change: 'More trouble after its tools changed',
+  review_no_limit: 'No limit on long runs',
 };
 
 /** Days a Diagnosis snooze lasts. Sent with every snooze, so the copy and the engine agree. */
@@ -105,8 +109,16 @@ export function findingSentence(detector: DiagnosisDetectorId, m: DiagnosisMeasu
       return parts;
     }
     case 'review_provider_failures': {
+      // What most of the failures were. Findings from before the split carry no kind: the provider, as before.
+      const why = m.mainKind === 'rate_limited'
+        ? [t(' Most were rate limits ('), v(m.rateLimited), t('): the agent is calling faster than its provider plan allows.')]
+        : m.mainKind === 'bad_request'
+          ? [t(' Most were turned down as bad requests ('), v(m.badRequests), t('): something the agent sends is wrong.')]
+          : m.mainKind === 'too_long'
+            ? [t(' Most were too long for the model ('), v(m.tooLong), t(').')]
+            : [t(' This usually comes from the AI provider, not your agent.')];
       const parts = has(m, 'failureRatePct')
-        ? [v(m.failureRatePct), t('% of calls to '), code(m.model ?? m.provider ?? 'the model'), t(' failed in the last 24 hours ('), v(m.upstreamErrors), t(' of '), v(m.totalRequests), t('). This usually comes from the AI provider, not your agent.')]
+        ? [v(m.failureRatePct), t('% of calls to '), code(m.model ?? m.provider ?? 'the model'), t(' failed in the last 24 hours ('), v(m.upstreamErrors), t(' of '), v(m.totalRequests), t(').'), ...why]
         : [t('Calls to the AI provider are failing. This usually comes from the provider, not your agent.')];
       if (Number(m.otherCohorts) > 0) {
         const one = Number(m.otherCohorts) === 1;
@@ -146,6 +158,20 @@ export function findingSentence(detector: DiagnosisDetectorId, m: DiagnosisMeasu
     }
     case 'review_done_after_failure':
       return [t('It reported success right after a step failed, '), ...count(m.times, 'time', 'times'), t(' this week. Worth a look.')];
+    case 'review_tool_change': {
+      const changes = [
+        ...(Number(m.added) > 0 ? [`${num(m.added)} added`] : []),
+        ...(Number(m.removed) > 0 ? [`${num(m.removed)} removed`] : []),
+      ].join(', ');
+      return [
+        t('Its tools changed on '), v(typeof m.changedAt === 'string' ? fmtDay(m.changedAt) : m.changedAt), t(changes ? ` (${changes}). Since then ` : '. Since then '),
+        v(m.afterRatePct), t('% of its calls had a failed step, against '), v(m.beforeRatePct), t('% before.'),
+      ];
+    }
+    case 'review_no_limit':
+      return [
+        t('Run '), v(m.longestRun), t(' made '), ...count(m.longestRunCalls, 'call', 'calls'), t(', and no rule in Enforce limits this agent. A stuck run would keep going until someone noticed.'),
+      ];
   }
 }
 
@@ -193,6 +219,8 @@ export function notMeasuredShort(code: string, reason: string): string {
     case 'openai_format': return 'only works with Anthropic-format tools';
     case 'few_results': return left(/has (\d+)/, 20, (m) => `needs ${m} more tool ${plural(m, 'result')}`);
     case 'not_captured': return 'nothing recorded yet';
+    case 'few_calls_each_side': return 'needs more calls before and after the change';
+    case 'rules_unread': return 'couldn\u2019t read this agent\u2019s rules';
     case 'few_measured_calls': return left(/has (\d+)/, 50, (m) => `needs ${m} more fully recorded ${plural(m, 'call')} this week`);
     case 'few_outcomes': return left(/has (\d+)/, 10, (m) => `needs ${m} more reported job ${plural(m, 'outcome')} this week`);
     case 'few_prior_calls': return 'needs more calls before a block to compare';
@@ -227,6 +255,12 @@ export function howtoParagraphs(howtoId: string, m: DiagnosisMeasures): string[]
         'Common causes: an earlier step fails so the agent never gets there, its instructions changed, or it thinks the work is already done.',
       ];
     case 'provider_failures':
+      if (m.mainKind === 'rate_limited') return [
+        'Slow the agent down or spread its calls out. A Call rate rule can cap how many it makes a minute.',
+        'If it needs the volume, ask the provider for a higher limit.',
+      ];
+      if (m.mainKind === 'bad_request') return ['Open the calls to see which were turned down. Check the model name, the API key, and the shape of what the agent sends.'];
+      if (m.mainKind === 'too_long') return ['The agent sent more than the model takes in one call. Send less: drop old tool results from the conversation, or split the job.'];
       return ['Open the calls to see which errors came back. Usually the fix is to wait and try again, or switch to another model until the provider recovers.'];
     case 'bad_endings':
       return [
@@ -258,6 +292,13 @@ export function howtoParagraphs(howtoId: string, m: DiagnosisMeasures): string[]
         'Have its tools send back shorter answers, so its conversation grows more slowly.',
         'Or split long jobs into smaller ones, each with its own run.',
       ];
+    case 'tool_change':
+      return [
+        'Open the calls to see which steps fail since the change.',
+        m.removedTool !== undefined
+          ? `If a tool was renamed or removed (${String(m.removedTool)} is gone), check the agent\u2019s instructions still match its tools.`
+          : 'Check the agent\u2019s instructions still match its tools, and that each new tool says clearly what to send it.',
+      ];
     case 'model_change':
       return [
         'Check a few recent results from this agent against older ones.',
@@ -279,5 +320,45 @@ export const STATUS_LABEL: Record<string, string> = {
   resolved: 'stopped happening',
 };
 
-export const MARKED_FIXED_TOAST = 'Marked as fixed. You can find it under Implemented.';
+export const MARKED_FIXED_TOAST = 'Marked as fixed. WhiteRoom checks it worked in a week. You can find it under Implemented.';
+
+/**
+ * After "Mark as fixed": checking, stopped, or still happening. Never says
+ * fixed before the check has a result.
+ */
+export function fixCheckLine(fix: RecommendationFixCheck | undefined): string | null {
+  if (!fix) return null;
+  if (fix.state === 'checking') return `Marked fixed on ${fmtDay(fix.markedAt)}. WhiteRoom checks it worked on ${fmtDay(fix.resultAfter)}.`;
+  if (fix.state === 'stopped') return `Marked fixed on ${fmtDay(fix.markedAt)}. It stopped.`;
+  return `Marked fixed on ${fmtDay(fix.markedAt)}, but it is still happening.`;
+}
+
+/** What the finding said when it was marked fixed, to set beside what it says now; null when that isn't known. */
+export function beforeFixText(detector: string, fix: RecommendationFixCheck | undefined): string | null {
+  if (!fix?.before || fix.state === 'checking' || !isDiagnosisDetector(detector)) return null;
+  return `When it was marked fixed: ${sentenceText(findingSentence(detector, fix.before))}`;
+}
+
+const LINKED_RULE_TITLE: Record<string, string> = { loop_breaker: 'Loop breaker', spend_cap: 'Spend cap' };
+
+/**
+ * The rule made from a recommendation: its mode and what it did in the last
+ * 7 days. A Watch rule changes nothing, so its line says what it would have
+ * done; a count that couldn't be read is left out, never shown as zero.
+ */
+export function linkedRuleLine(rule: RecommendationLinkedRule | undefined): string | null {
+  if (!rule) return null;
+  const title = LINKED_RULE_TITLE[rule.ruleType] ?? 'The rule';
+  const times = (n: number) => `${fmtCount(n)} ${plural(n, 'time')}`;
+  if (rule.mode === 'watch') {
+    if (rule.wouldAct == null) return `${title} is in Watch. It doesn\u2019t stop anything yet.`;
+    return rule.wouldAct === 0
+      ? `${title} is in Watch. It wouldn\u2019t have acted in the last 7 days.`
+      : `${title} is in Watch. It would have acted ${times(rule.wouldAct)} in the last 7 days, and stopped none of them.`;
+  }
+  if (rule.mode === 'enforce') {
+    return rule.acted == null ? `${title} is in Enforce.` : `${title} is in Enforce. It acted ${times(rule.acted)} in the last 7 days.`;
+  }
+  return `${title} is switched off.`;
+}
 export const ALREADY_CHANGED_NOTICE = 'This suggestion had already changed, so nothing was applied. The list now shows where it stands.';

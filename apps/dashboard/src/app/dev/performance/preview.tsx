@@ -67,8 +67,11 @@ function Insights({ runs, health }: { runs: RunSummary[]; health: FleetDiagnosis
 const rec = (p: Partial<RecommendationDetail>): RecommendationDetail => ({
   id: 'pr_cache', detector: 'review_cache_behavior', agentId: 'lead-agent', source: 'engine', cohort: '', action: '', status: 'open',
   verificationStatus: 'none', currentFindingId: 'pf_cache', feedbackCount: 0, createdAt: '2026-10-01T12:00:00Z', updatedAt: '2026-10-01T12:00:00Z',
-  summary: "69% of this agent's input came from the cache.", ...p,
+  summary: 'This agent stores more input for reuse than it reads back, so caching costs more than it saves. Something near the start of its prompt changes on every call: check for a timestamp, an ID, or tools in a different order.', ...p,
 });
+const daysAgo = (n: number) => new Date(Date.now() - n * 86400_000).toISOString();
+const LOOPS = { toolName: 'search_places', maxRepeats: 9, worstWatch: 14, watchesAffected: 3 };
+const ERRORS = { toolName: 'fetch_page', toolErrors: 31, totalErrors: 31, totalResults: 120, errorRatePct: 26 };
 const RECS_QUIET = [rec({})];
 const RECS_PROBLEM = [
   rec({
@@ -76,14 +79,55 @@ const RECS_PROBLEM = [
     measures: { shortWatches: 3, totalWatches: 3, longestStreak: 3, medianCallsPerWatch: 1.5, limitMultiplier: 4 },
     estWastedTokens: 115_797, estWastedCostMicros: 80_000, evidenceCount: 10, suggestedAction: { kind: 'howto', howtoId: 'handover_churn' },
   }),
+  // Added in Watch: stays open, and says what the rule would have done.
+  rec({
+    id: 'pr_loops', detector: 'review_tool_loops', currentFindingId: 'pf_loops', summary: null, measures: LOOPS, evidenceCount: 8,
+    suggestedAction: { kind: 'rule', rule: 'loop_breaker', mode: 'watch', appliesTo: ['lead-agent'], params: { threshold: 5, scope: 'run', ignoreTools: [] } },
+    linkedRule: { id: 'gr_lb5', ruleType: 'loop_breaker', mode: 'watch', response: 'block', wouldAct: 7, acted: 0 },
+  }),
+  // Marked fixed a week ago and still there: reopened.
+  rec({
+    id: 'pr_errors', detector: 'review_tool_errors', currentFindingId: 'pf_errors', summary: null, measures: ERRORS, evidenceCount: 10, limitations: 'x',
+    suggestedAction: { kind: 'howto', howtoId: 'tool_errors' }, verificationStatus: 'still_happening',
+    fixCheck: { state: 'still_happening', markedAt: daysAgo(9), resultAfter: daysAgo(2), before: { ...ERRORS, toolErrors: 28, totalErrors: 28, totalResults: 100, errorRatePct: 28 } },
+  }),
+  rec({
+    id: 'pr_provider', detector: 'review_provider_failures', currentFindingId: 'pf_provider', summary: null, evidenceCount: 5,
+    measures: { totalRequests: 118, upstreamErrors: 18, failureRatePct: 15, model: 'claude-haiku-4-5', mainKind: 'rate_limited', rateLimited: 12, badRequests: 2, tooLong: 1, providerErrors: 3 },
+    suggestedAction: { kind: 'howto', howtoId: 'provider_failures' },
+  }),
+  rec({
+    id: 'pr_toolchange', detector: 'review_tool_change', currentFindingId: 'pf_toolchange', summary: null, evidenceCount: 10,
+    measures: { changedAt: daysAgo(3), added: 2, removed: 1, addedTool: 'fetch_url', removedTool: 'fetch_page', beforeRatePct: 5, afterRatePct: 30, beforeCalls: 40, afterCalls: 44 },
+    limitations: 'Shows what happened after the change, not that the change caused it. A failed step is a tool error your agent reported or a failed model call.',
+    suggestedAction: { kind: 'howto', howtoId: 'tool_change' },
+  }),
+  rec({
+    id: 'pr_nolimit', detector: 'review_no_limit', currentFindingId: 'pf_nolimit', summary: null, evidenceCount: 10,
+    measures: { longestRunCalls: 180, longestRun: 14, longRuns: 2, suggestedCap: 600_000 },
+    limitations: 'Looks for a Spend cap or Loop breaker in Enforce. 100 calls in a run is WhiteRoom\u2019s own bar for a long run.',
+    suggestedAction: { kind: 'rule', rule: 'spend_cap', mode: 'watch', appliesTo: ['lead-agent'], params: { dailyCap: 600_000, scope: 'day', unit: 'tokens' } },
+  }),
   rec({}),
+  rec({ id: 'pr_tools', detector: 'review_task_tool_loading', currentFindingId: 'pf_tools', summary: 'Tool descriptions take up 34% of this agent\u2019s input, but it uses only 20% of its tools. Not used this week: archive_lead, export_csv, merge_records, send_fax, translate and 7 more. Remove them, or load them only when needed.' }),
+  // Past rows (shown under All): a fix still being checked, and one that held.
+  rec({
+    id: 'pr_fixed_checking', detector: 'review_bad_endings', currentFindingId: 'pf_be', summary: null, status: 'reported_implemented', verificationStatus: 'collecting',
+    measures: { badRuns: 4, finishedRuns: 12, badPct: 33, endedFailed: 3, endedBlocked: 1 }, suggestedAction: { kind: 'howto', howtoId: 'bad_endings' },
+    fixCheck: { state: 'checking', markedAt: daysAgo(2), resultAfter: daysAgo(-5), before: null },
+  }),
+  rec({
+    id: 'pr_fixed_stopped', detector: 'review_done_after_failure', currentFindingId: 'pf_daf', summary: null, status: 'reported_implemented', verificationStatus: 'stopped',
+    measures: { times: 3, toolName: 'upload_file' }, suggestedAction: { kind: 'howto', howtoId: 'done_after_failure' },
+    fixCheck: { state: 'stopped', markedAt: daysAgo(10), resultAfter: daysAgo(3), before: { times: 3, toolName: 'upload_file' } },
+  }),
 ];
 
 /** The Recommendations card as on Performance, with sample rows; buttons do nothing here. */
 function Recs({ recs }: { recs: RecommendationDetail[] }) {
   const [status, setStatus] = useState('open');
   const [showStatuses, setShowStatuses] = useState(false);
-  const shown = status === 'open' || status === 'all' ? recs : [];
+  const shown = status === 'all' ? recs : recs.filter((r) => r.status === status);
   return (
     <RecommendationsCard
       recs={shown} total={shown.length} status={status} onStatus={setStatus}

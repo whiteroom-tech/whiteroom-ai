@@ -8,7 +8,7 @@ import { useState, type ReactNode } from 'react';
 import type { RecommendationDetail } from '@/lib/whiteroom/types';
 import { SegmentedControl } from '@whiteroom/ui';
 import { fmtDay, plural } from '@/lib/format';
-import { SNOOZE_DAYS } from '@/lib/diagnosis/copy';
+import { SNOOZE_DAYS, fixCheckLine } from '@/lib/diagnosis/copy';
 import { recCountSuffix, recEmptyText, recFeedback, recRowActions, recStatusLabel, recTitle, type RecRowAction, NO_FINDING_NOTE } from '@/lib/performance-insights';
 import { Badge, Btn } from './primitives';
 import { DiagnosisRow, isDiagnosisRow } from './Diagnosis';
@@ -79,9 +79,11 @@ export function RecommendationsCard({
             <strong style={{ color: 'var(--tx)' }}>{recTitle(rec.detector)}</strong>
             <button type="button" onClick={() => onSelectAgent(rec.agentId)} className="wr-agent-link">{rec.agentId}</button>
             {rec.status !== 'open' && <Badge status={rec.status} />}
-            {rec.verificationStatus && rec.verificationStatus !== 'none' && <Badge status={rec.verificationStatus} size="small" />}
+            {/* A fix check has its own line below; without one, the verification state keeps its badge. */}
+            {!rec.fixCheck && rec.verificationStatus && rec.verificationStatus !== 'none' && <Badge status={rec.verificationStatus} size="small" />}
           </div>
           {rec.summary && <p style={{ margin: 0, fontSize: 'var(--fs-md)', lineHeight: 1.5, color: 'var(--tx)' }}>{rec.summary}</p>}
+          {rec.fixCheck && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: rec.fixCheck.state === 'still_happening' ? 'var(--warn-tx)' : 'var(--tx2)' }}>{fixCheckLine(rec.fixCheck)}</p>}
           <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
             Since {fmtDay(rec.createdAt)}
             {rec.feedbackCount > 0 && <> &middot; {rec.feedbackCount} {plural(rec.feedbackCount, 'action')}</>}

@@ -396,6 +396,27 @@ export interface RecommendationDetail {
   estWastedCostMicros?: number | null;
   evidenceCount?: number;
   suggestedAction?: DiagnosisSuggestedAction;
+  /** After "Mark as fixed": whether the pattern stopped. Judged a week after the mark; "checking" until then. */
+  fixCheck?: RecommendationFixCheck;
+  /** The rule made from this recommendation, with its last 7 days of actions (null counts: unknown, not zero). */
+  linkedRule?: RecommendationLinkedRule;
+}
+
+export interface RecommendationFixCheck {
+  state: 'checking' | 'stopped' | 'still_happening';
+  markedAt: string;
+  resultAfter: string;
+  /** The finding's measures when it was marked fixed; null when that finding is gone. */
+  before: DiagnosisMeasures | null;
+}
+
+export interface RecommendationLinkedRule {
+  id: string;
+  ruleType: string;
+  mode: string;
+  response: string;
+  wouldAct: number | null;
+  acted: number | null;
 }
 
 // -- Agent Diagnosis (diagnosis.v1) --
@@ -413,14 +434,16 @@ export type DiagnosisDetectorId =
   | 'review_long_context'
   | 'review_job_failures'
   | 'review_planted_instruction'
-  | 'review_done_after_failure';
+  | 'review_done_after_failure'
+  | 'review_tool_change'
+  | 'review_no_limit';
 
 export type DiagnosisMeasures = Record<string, number | string>;
 
 /** Suggested rules always start in Watch. */
 export type DiagnosisSuggestedAction =
   | { kind: 'rule'; rule: 'loop_breaker' | 'spend_cap'; mode: 'watch'; appliesTo: string[]; params: Record<string, number | string | string[]> }
-  | { kind: 'howto'; howtoId: 'handover_churn' | 'tool_errors' | 'tool_silence' | 'provider_failures' | 'bad_endings' | 'model_change' | 'block_workaround' | 'long_context' | 'job_failures' | 'planted_instruction' | 'done_after_failure' };
+  | { kind: 'howto'; howtoId: 'handover_churn' | 'tool_errors' | 'tool_silence' | 'provider_failures' | 'bad_endings' | 'model_change' | 'block_workaround' | 'long_context' | 'job_failures' | 'planted_instruction' | 'done_after_failure' | 'tool_change' };
 
 export interface DiagnosisFinding {
   recommendationId: string;
