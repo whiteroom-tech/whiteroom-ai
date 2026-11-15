@@ -3,22 +3,29 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, Icon, FONT_MONO } from '@whiteroom/ui';
 
-/** Copy `text` and show "Copied" for 1.5 s; the timer is cleared on repeat clicks and unmount. */
-export function useCopy(text: string): { copied: boolean; copy: () => Promise<void> } {
+/**
+ * Copy `text` and show "Copied" for 1.5 s; the timer is cleared on repeat
+ * clicks and unmount. `failed`: the browser refused, so the caller can show
+ * the text to select instead.
+ */
+export function useCopy(text: string): { copied: boolean; failed: boolean; copy: () => Promise<void> } {
   const [copied, setCopied] = useState(false);
+  const [failed, setFailed] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
   async function copy() {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
+      setFailed(false);
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => setCopied(false), 1500);
     } catch {
       // Clipboard blocked (permissions, insecure context): the text stays selectable.
+      setFailed(true);
     }
   }
-  return { copied, copy };
+  return { copied, failed, copy };
 }
 
 /**

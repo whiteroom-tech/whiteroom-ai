@@ -74,6 +74,9 @@ const api = vi.hoisted(() => ({
   unknown: [] as Array<Record<string, unknown>>,
   /** rule_actions' fleet-wide totals this week (default: 2 blocked, 5 would have acted). */
   totals: null as { blocked: number; paused: number; stopped: number; toldYou: number; wouldAct: number } | null,
+  /** What tools_seen gives ([]: an older engine, a failure or no data), and how often it was asked. */
+  tools: [] as string[],
+  toolsAsked: 0,
 }));
 const { knownRulesOnly } = await import('@/lib/governance');
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
@@ -101,6 +104,7 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
   governanceUpdateRule: api.update,
   governanceDeleteRule: api.remove,
   governanceCreateRule: api.create,
+  toolsSeen: async () => { api.toolsAsked++; return api.tools; },
 }));
 
 const { default: ControlsPage } = await import('@/app/(citadel)/controls/page');
@@ -145,7 +149,7 @@ beforeEach(() => {
   // An unsaved edit is kept in sessionStorage across visits (controls-draft): each test starts with none.
   sessionStorage.clear();
   nav.params = new URLSearchParams(); nav.replace.mockClear(); nav.push.mockClear();
-  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.hourly = []; api.listGate = null; api.listFail = false; api.empty = false; api.would = {}; api.agentCalls = {}; api.history = []; api.totals = null; api.unknown = [];
+  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.hourly = []; api.listGate = null; api.listFail = false; api.empty = false; api.would = {}; api.agentCalls = {}; api.history = []; api.totals = null; api.unknown = []; api.tools = []; api.toolsAsked = 0;
   api.oldEngine = false; api.wouldBatches = []; api.wouldSingle = 0; resetBatchSupport();
   document.body.innerHTML = '';
 });
@@ -607,6 +611,84 @@ describe('Controls page, editing', () => {
     await m.click([...m.el.querySelectorAll('button.gov-template')].find((b) => b.textContent?.includes('Limit calls per minute')));
     expect(api.create).toHaveBeenCalledWith('f1', { ruleType: 'call_rate', mode: 'watch', appliesTo: ['lead-agent'] }, 'k');
     expect(m.el.querySelector('aside[aria-label="Edit rule"]')).toBeTruthy();
+    m.root.unmount();
+  });
+
+  it('the tool pickers ask for the fleet’s tools only once shown, and list them first', async () => {
+    api.tools = ['search_claims', 'update_claim'];
+    const m = await mount();
+    expect(api.toolsAsked).toBe(0);
+    await m.click(m.button('Show'));
+    await m.open('No tools picked yet');
+    expect(api.toolsAsked).toBe(1);
+    await flush();
+    const select = m.el.querySelector('select[aria-label="Add a tool"]') as HTMLSelectElement;
+    expect(select.options[0].textContent).toBe('Choose a tool…');
+    expect(select.querySelector('optgroup')!.getAttribute('label')).toBe('Your fleet’s tools');
+    expect(select.querySelector('optgroup')!.textContent).toBe('update_claimsearch_claims');
+    // Another tool picker reuses the same read.
+    await m.click(m.button('Close'));
+    await m.open('Same call 100');
+    expect(api.toolsAsked).toBe(1);
+    expect(m.el.querySelector('select[aria-label="Add a tool"] optgroup')!.getAttribute('label')).toBe('Your fleet’s tools');
+    m.root.unmount();
+  });
+
+  it('with no fleet tools, the tool picker is today’s', async () => {
+    const m = await mount();
+    await m.click(m.button('Show'));
+    await m.open('No tools picked yet');
+    await flush();
+    const select = m.el.querySelector('select[aria-label="Add a tool"]') as HTMLSelectElement;
+    expect(select.options[0].textContent).toBe('+ Add tool');
+    expect([...select.querySelectorAll('optgroup')].map((g) => g.getAttribute('label'))).toEqual(['File & code', 'Web & API', 'Execution', 'Memory & state']);
+    m.root.unmount();
+  });
+
+  it('"Block tools" starts with the fleet’s delete-looking tools picked, and says to check them', async () => {
+    api.tools = ['search_claims', 'update_claim', 'DeleteAttachment', 'send_email'];
+    api.create.mockImplementation(async (_f: string, r: { ruleType: GovernanceRule['ruleType']; mode: GovernanceRule['mode']; params?: GovernanceRule['params'] }) => {
+      const rule: GovernanceRule = { ...base, id: 'new', ruleType: r.ruleType, mode: r.mode, response: 'block', appliesTo: 'all', params: r.params ?? { blockedTools: [] } };
+      api.created.push(rule);
+      return { rule };
+    });
+    const m = await mount();
+    await m.click(m.button('Add rule'));
+    await m.click([...m.el.querySelectorAll('button.gov-template')].find((b) => b.textContent?.includes('Block tools')));
+    expect(api.create).toHaveBeenCalledWith('f1', { ruleType: 'tool_list', mode: 'watch', params: { blockedTools: ['update_claim', 'DeleteAttachment'] } }, 'k');
+    expect(m.text()).toContain('Tool list rule added in Watch. Check its tools.');
+    m.root.unmount();
+  });
+
+  it('"Block tools" with no fleet tools known is added as before', async () => {
+    api.create.mockImplementation(async (_f: string, r: { ruleType: GovernanceRule['ruleType']; mode: GovernanceRule['mode'] }) => {
+      const rule: GovernanceRule = { ...base, id: 'new', ruleType: r.ruleType, mode: r.mode, response: 'block', appliesTo: 'all', params: { blockedTools: [] } };
+      api.created.push(rule);
+      return { rule };
+    });
+    const m = await mount();
+    await m.click(m.button('Add rule'));
+    await m.click([...m.el.querySelectorAll('button.gov-template')].find((b) => b.textContent?.includes('Block tools')));
+    expect(api.create).toHaveBeenCalledWith('f1', { ruleType: 'tool_list', mode: 'watch' }, 'k');
+    expect(m.text()).not.toContain('Check its tools');
+    m.root.unmount();
+  });
+
+  it('Keywords: Generate marker adds a marker chip and says what a marker is', async () => {
+    api.created = [{ ...base, id: 'k1', ruleType: 'keyword', mode: 'watch', response: 'block', appliesTo: 'all', params: { keywords: ['Project Falcon', 'wrmk3f9a1c07b2e4d8a6'], where: 'replies', wholeWord: true } }];
+    const m = await mount();
+    // The row counts the marker and never shows its code.
+    expect(m.row('Project Falcon').textContent).toContain('"Project Falcon", 1 marker');
+    expect(m.text()).not.toContain('wrmk3f9a1c07b2e4d8a6');
+    await m.open('Project Falcon');
+    const editor = () => m.el.querySelector('aside[aria-label="Edit rule"]')!.textContent ?? '';
+    expect(editor()).toContain('wrmk3f9a…d8a6');
+    expect(editor()).toContain('A marker is a made-up code. Copy it into private records and this rule flags it when it shows up.');
+    expect(editor()).not.toContain('With incoming data on');
+    await m.click(m.button('Generate marker'));
+    expect(m.el.querySelectorAll('.gov-chip--marker')).toHaveLength(2);
+    await choose(m.el.querySelector('select[aria-label="Where to look"]') as HTMLSelectElement, 'both');
+    expect(editor()).toContain('With incoming data on, it also matches when an agent reads the record.');
     m.root.unmount();
   });
 

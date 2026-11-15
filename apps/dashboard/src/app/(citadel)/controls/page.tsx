@@ -21,7 +21,7 @@ import { ChoiceDialog } from "./_components/ChoiceDialog";
 import { useFleetAuth } from "@/hooks/useFleetAuth";
 import {
   WhiteRoomApiError, alertsGet, controlFailure, governanceCreateRule, governanceDeleteRule, governanceList, governanceUpdateRule, isAuthError,
-  performanceAgent, performanceFleetHourly, performanceIndex, ruleActions as fetchRuleActions,
+  performanceAgent, performanceFleetHourly, performanceIndex, ruleActions as fetchRuleActions, toolsSeen,
 } from "@/lib/whiteroom/client";
 import { wouldActsFor } from "@/lib/batched-reads";
 import type {
@@ -37,7 +37,7 @@ import { localDay } from "@/lib/runs";
 import { ROUTES } from "@/lib/routes";
 import { UNNAMED_CALLS_REFUSED } from "@/lib/setup";
 import {
-  appliesNow, draftChanges, draftFrom, draftParams, draftProblem, isDirty, money, NO_ACTIONS, rulesFor, ruleSentenceText, spendOverlap,
+  appliesNow, deleteLookingTools, draftChanges, draftFrom, draftParams, draftProblem, isDirty, money, NO_ACTIONS, rulesFor, ruleSentenceText, spendOverlap,
   type RuleDraft,
   stopping,
   weakenings,
@@ -273,6 +273,20 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     alertsGet(fleetId).then((a) => { if (!cancelled && a) setAlertChannel(!!a.slack || !!a.teams); }, () => {});
     return () => { cancelled = true; };
   }, [fleetId]);
+
+  // The fleet's own tools for the tool pickers: read once a picker shows (or "Block tools" is added), not on load.
+  const [seenTools, setSeenTools] = useState<{ fleetId: string; tools: string[] } | null>(null);
+  const toolsRead = useRef<{ fleetId: string; tools: Promise<string[]> } | null>(null);
+  const fleetTools = useMemo(() => (seenTools?.fleetId === fleetId ? seenTools.tools : []), [seenTools, fleetId]);
+  const readFleetTools = useCallback(() => {
+    if (toolsRead.current?.fleetId !== fleetId) {
+      const forFleet = fleetId;
+      const tools = toolsSeen(fleetId, authKey);
+      toolsRead.current = { fleetId, tools };
+      void tools.then((t) => setSeenTools({ fleetId: forFleet, tools: t }));
+    }
+    return toolsRead.current.tools;
+  }, [fleetId, authKey]);
 
   // Suggested rules come from real traffic; the performance store is optional, so a failure just means none.
   useEffect(() => {
@@ -630,8 +644,12 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     setAdding("busy");
     setError(null);
     try {
+      // "Block tools" starts with the fleet's delete-looking tools picked, when its tools are known.
+      const picked = ruleType === "tool_list" ? deleteLookingTools(await readFleetTools()) : [];
       // New rules start in Watch; while viewing one agent, they start for that agent.
-      const { rule } = await governanceCreateRule(fleetId, { ruleType, mode: "watch", ...(agentFilter && { appliesTo: [agentFilter] }) }, authKey);
+      const { rule } = await governanceCreateRule(fleetId, {
+        ruleType, mode: "watch", ...(picked.length > 0 && { params: { blockedTools: picked } }), ...(agentFilter && { appliesTo: [agentFilter] }),
+      }, authKey);
       setRules((rs) => [...rs, rule]);
       setAdding("closed");
       if (suggestionRec) router.replace(withParams({ rec: null }));
@@ -640,6 +658,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       setSelectedId(rule.id);
       setDraft(draftFrom(rule));
       setNotice(null);
+      if (picked.length) showToast(`${RULE_LABELS.tool_list} rule added in Watch. Check its tools.`);
       void fetchData();
     } catch (e) { setAdding("closed"); handleError(e, "add the rule"); void fetchData(); }
   };
@@ -1024,6 +1043,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                   draft={draft}
                   onDraft={(d) => { setDraft(d); setError(null); }}
                   agents={agents}
+                  fleetTools={fleetTools}
+                  onToolPicker={readFleetTools}
                   govV1={govV1}
                   alertChannel={alertChannel}
                   history={history.filter((h) => h.ruleId === edited.id)}

@@ -778,6 +778,22 @@ export async function governanceList(fleetId: string, key?: string): Promise<Gov
   return knownRulesOnly(await apiCall<GovernanceListResult>({ action: 'governance_list', fleet_id: fleetId }, key));
 }
 
+/**
+ * Tools the fleet's agents called lately, for the Controls tool pickers.
+ * Dashboard only. An engine without tools_seen, a failed read or an odd reply
+ * gives [], which leaves the pickers as they were. Names over 64 characters
+ * are left out: the picker keeps a name to 64, so one couldn't be added whole.
+ */
+export async function toolsSeen(fleetId: string, key?: string): Promise<string[]> {
+  try {
+    const { tools } = await apiCall<{ tools?: unknown }>({ action: 'tools_seen', fleet_id: fleetId }, key);
+    if (!Array.isArray(tools)) return [];
+    return [...new Set(tools.filter((t): t is string => typeof t === 'string' && t.trim() === t && t.length > 0 && t.length <= 64))];
+  } catch {
+    return [];
+  }
+}
+
 export function governanceCreateRule(
   fleetId: string,
   rule: {
