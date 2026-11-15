@@ -23,7 +23,7 @@ import type { ControlActor } from '@/lib/control-actors';
 import { ROUTES } from '@/lib/routes';
 import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
 import {
-  canAddSeen, domainEntry, domainProblem, domainsHidden, domainTotal, FLOW_TOOLS_MAX, looksLikeReader, looksLikeSender, SEEN_RESERVED_TEXT, seenFullLine, seenNotOnList, SEND_DOMAINS_MAX, SEND_TOOLS_MAX, toolsWithNoDomain,
+  canAddSeen, domainEntry, domainProblem, domainsHidden, domainTotal, FLOW_TOOLS_MAX, FLOW_WHEN, looksLikeReader, looksLikeSender, SEEN_RESERVED_TEXT, seenFullLine, seenNotOnList, SEND_DOMAINS_MAX, SEND_TOOLS_MAX, toolsWithNoDomain,
 } from '@/lib/controls-view';
 import { AGENT_NOTE, isMarker, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, looksLikeDeleteOrChange, newMarker, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, MODE_CHOICES, responseChoices, sendsAlert, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
 import { Chip, field, GroupPicker, InlineSelect, MarkerChip, MODEL_GROUPS, NumberField, ScopeField, ToolPicker } from './pickers';
@@ -310,7 +310,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
         )}
         {flow && (
           <>
-            <span style={{ fontSize: 'var(--fs-md)' }}>An agent reads outside content, then tries to send data out in the same run.</span>
+            <span style={{ fontSize: 'var(--fs-md)' }}>{FLOW_WHEN}.</span>
             <p style={help}>A web page, email or file can carry hidden instructions. An agent that reads mail and replies will match on most runs.</p>
           </>
         )}

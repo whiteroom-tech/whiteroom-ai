@@ -57,8 +57,11 @@ export const money = (p: SpendCapParams) => (p.unit === 'dollars' ? `$${fmtCount
 
 // ── Where tools can send data (DLP spec 3.2, 5.2) ──────────────────
 
+/** The engine's limit on each tool list a data rule holds (DLP spec 5.2, 5.3). */
+const TOOLS_PER_LIST = 50;
+
 /** The engine's limits on a Where tools can send data rule: 50 tools, 100 allowed domains. */
-export const SEND_TOOLS_MAX = 50;
+export const SEND_TOOLS_MAX = TOOLS_PER_LIST;
 export const SEND_DOMAINS_MAX = 100;
 const SEEN_FULL_AT = 500;
 
@@ -181,10 +184,10 @@ export const sendLookingTools = (tools: readonly string[]) => tools.filter(looks
 // ── Outside content, then send data (DLP spec 3.3, 5.3) ────────────
 
 /** The engine's limit on each of an Outside content, then send data rule's two lists. */
-export const FLOW_TOOLS_MAX = 50;
+export const FLOW_TOOLS_MAX = TOOLS_PER_LIST;
 
 /** The rule as one sentence, the same in the row and under When. */
-const FLOW_WHEN = 'An agent reads outside content, then tries to send data out in the same run';
+export const FLOW_WHEN = 'An agent reads outside content, then tries to send data out in the same run';
 
 /** Name parts of a tool that reads outside content. Used only to order and pre-pick tools, never to decide a call. */
 const READS = new Set(['fetch', 'fetches', 'inbox', 'browse', 'browses', 'browser', 'scrape', 'scrapes']);
