@@ -40,6 +40,9 @@ describe('Where tools can send data: names and sentences', () => {
     expect(canAct({ ...send({ tools: [] }), mode: 'enforce', response: 'block' })).toBe(false);
     expect(canAct({ ...send(), mode: 'enforce', response: 'notify' })).toBe(false);
     expect(draftProblem({ ...draftFrom(send({ tools: [] })), mode: 'enforce' })).toBe('Pick at least one tool before you turn on Enforce.');
+    // Over the engine's limits, Save says so in any mode, before the round trip.
+    expect(draftProblem(draftFrom(send({ tools: Array.from({ length: 51 }, (_, i) => `t${i}`) })))).toBe('A rule holds up to 50 tools. Remove one to save.');
+    expect(draftProblem(draftFrom(send({ domains: Array.from({ length: 101 }, (_, i) => `d${i}.com`) })))).toBe('A rule allows up to 100 domains. Remove one to save.');
   });
 
   it('only alerts or blocks, Only alert me first, on any fleet', () => {
@@ -102,12 +105,7 @@ describe('a typed allowed domain', () => {
     expect(domainProblem('new.com', full)).toBe('A rule allows up to 100 domains. Remove one to add another.');
   });
 
-  it('turns the engine’s save refusals into the same words, and keeps any other reason', () => {
-    expect(domainRefusal('co.uk is a public suffix.')).toBe('That ending is shared by many sites, like co.uk. Type the full domain, like acme.co.uk.');
-    expect(domainRefusal('Domains can’t be IP addresses.')).toBe('Use a domain name, not an IP address.');
-    expect(domainRefusal('A domain has no scheme.')).toBe('Type just the domain, like acme.com, without https://.');
-    expect(domainRefusal('A domain has no port.')).toBe('Leave out the port. Type just the domain, like acme.com.');
-    expect(domainRefusal('You can have up to 50 rules for all agents.')).toBe('You can have up to 50 rules for all agents.');
+  it('turns the engine’s entry refusals into the same words, and keeps any other reason as it is', () => {
     // The engine's own words (E7 ENTRY_REFUSALS), entry first.
     expect(domainRefusal('"co.uk": that ending is shared by many sites. Enter a domain under it.')).toBe('co.uk: That ending is shared by many sites, like co.uk. Type the full domain, like acme.co.uk.');
     expect(domainRefusal('"https://x.io": enter just the domain, without http:// or the like.')).toBe('https://x.io: Type just the domain, like acme.com, without https://.');
@@ -117,6 +115,10 @@ describe('a typed allowed domain', () => {
     expect(domainRefusal('"a@x.io": enter a domain, not an email address.')).toBe('a@x.io: Type the domain, not an address: acme.com, not bob@acme.com.');
     expect(domainRefusal('"10.0.0.1": enter a domain, not an IP address.')).toBe('10.0.0.1: Use a domain name, not an IP address.');
     expect(domainRefusal('"a b": that isn\'t a domain.')).toBe('a b: That isn’t a domain. Type one like acme.com.');
+    // Anything else keeps its words, even when it mentions a port, a path, an IP or an address.
+    for (const other of ['You can have up to 50 rules for all agents.', 'The port 443 path is busy; try again.', 'domains can hold at most 100 entries.', '"x": something else about an IP address.', 'This rule\'s domains are hidden here, so its settings can\'t be saved from here.']) {
+      expect(domainRefusal(other), other).toBe(other);
+    }
   });
 });
 

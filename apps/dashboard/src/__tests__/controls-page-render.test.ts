@@ -2193,11 +2193,11 @@ describe('Controls: category labels', () => {
   const keyword: GovernanceRule = { ...base, id: 'k1', ruleType: 'keyword', mode: 'watch', response: 'notify', appliesTo: 'all', params: { keywords: ['Project Falcon'], where: 'incoming', wholeWord: true } };
   const send: GovernanceRule = { ...base, id: 's1', ruleType: 'send_limit', mode: 'watch', response: 'notify', appliesTo: 'all', params: { tools: ['send_email'], domains: ['acme.com'] } };
   // Every type, each with a row in view (the fleet's Tool list is off, in a closed card).
-  const sixTypes = () => { api.created.push(keyword, send); api.saved.r6 = { ...RULES[5], mode: 'watch', params: { blockedTools: ['delete_file'] } }; };
+  const everyType = () => { api.created.push(keyword, send); api.saved.r6 = { ...RULES[5], mode: 'watch', params: { blockedTools: ['delete_file'] } }; };
   const nameToCat = Object.fromEntries(Object.entries(RULE_LABELS).map(([t, name]) => [name, RULE_CATEGORY[t as keyof typeof RULE_CATEGORY]]));
 
   it('shows each row’s category above its count and mode tag, for every type', async () => {
-    sixTypes();
+    everyType();
     const m = await mount();
     const rows = [...m.el.querySelectorAll('button.ctl-row')];
     const seen = rows.map((r) => {
@@ -2213,7 +2213,7 @@ describe('Controls: category labels', () => {
   });
 
   it('shows the category in the editor beside Close, with the name under it and again in the body for a phone', async () => {
-    sixTypes();
+    everyType();
     const m = await mount();
     const names = [...m.el.querySelectorAll('button.ctl-row .ctl-row__main .ctl-cap')].map((c) => c.textContent!);
     const opened = new Set<string>();

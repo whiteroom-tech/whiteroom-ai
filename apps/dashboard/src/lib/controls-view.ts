@@ -145,23 +145,23 @@ export function domainProblem(typed: string, list: readonly string[]): string | 
  */
 export function domainRefusal(reason: string): string {
   // The engine names the entry first: `"co.uk": that ending is shared by many sites…`.
+  // Only that form is one of its entry refusals: any other reason is shown in its own words.
   const named = /^"([^"]{1,80})":\s*([\s\S]*)$/.exec(reason);
-  const plain = refusalWords(named ? named[2] : reason);
-  return plain && named ? `${named[1]}: ${plain}` : plain ?? reason;
+  const plain = named ? refusalWords(named[2]) : null;
+  return plain && named ? `${named[1]}: ${plain}` : reason;
 }
 
 function refusalWords(reason: string): string | null {
   const r = reason.toLowerCase();
-  if (/hidden here/.test(r)) return null;
-  if (/isn’t a domain|isn't a domain/.test(r)) return 'That isn’t a domain. Type one like acme.com.';
-  if (/public suffix|shared by many sites/.test(r)) return 'That ending is shared by many sites, like co.uk. Type the full domain, like acme.co.uk.';
-  if (/\bip\b|ip address/.test(r)) return 'Use a domain name, not an IP address.';
-  if (/scheme|https?:\/\//.test(r)) return 'Type just the domain, like acme.com, without https://.';
-  if (/\bport\b/.test(r)) return 'Leave out the port. Type just the domain, like acme.com.';
-  if (/\bpath\b/.test(r)) return 'Leave out the path. Type just the domain, like acme.com.';
-  if (/wildcard|\*/.test(r)) return 'Leave out the *. acme.com already covers mail.acme.com.';
-  if (/@|email address/.test(r)) return 'Type the domain, not an address: acme.com, not bob@acme.com.';
-  if (/%/.test(r)) return 'A domain can’t have a % in it.';
+  // The engine's entry refusals (E7 ENTRY_REFUSALS), matched on their own phrasings.
+  if (r.startsWith('that isn\'t a domain') || r.startsWith('that isn’t a domain')) return 'That isn’t a domain. Type one like acme.com.';
+  if (r.startsWith('that ending is shared by many sites')) return 'That ending is shared by many sites, like co.uk. Type the full domain, like acme.co.uk.';
+  if (r.startsWith('enter a domain, not an ip address')) return 'Use a domain name, not an IP address.';
+  if (r.startsWith('enter a domain, not an email address')) return 'Type the domain, not an address: acme.com, not bob@acme.com.';
+  if (r.startsWith('enter just the domain, without http://')) return 'Type just the domain, like acme.com, without https://.';
+  if (r.startsWith('enter the domain without a port')) return 'Leave out the port. Type just the domain, like acme.com.';
+  if (r.startsWith('enter the domain without a path')) return 'Leave out the path. Type just the domain, like acme.com.';
+  if (r.startsWith('enter the domain without *')) return 'Leave out the *. acme.com already covers mail.acme.com.';
   return null;
 }
 
@@ -464,6 +464,11 @@ export function draftChanges(d: RuleDraft, rule: GovernanceRule): {
 export function draftProblem(d: RuleDraft): string | null {
   const p = draftParams(d);
   if ('error' in p) return p.error;
+  if (d.ruleType === 'send_limit') {
+    const s = p.params as SendLimitParams;
+    if (s.tools.length > SEND_TOOLS_MAX) return `A rule holds up to ${SEND_TOOLS_MAX} tools. Remove one to save.`;
+    if (s.domains.length > SEND_DOMAINS_MAX) return `A rule allows up to ${SEND_DOMAINS_MAX} domains. Remove one to save.`;
+  }
   if (d.appliesTo !== 'all' && d.appliesTo.length === 0) return 'Pick at least one agent, or choose All agents.';
   if (d.mode !== 'enforce') return null;
   switch (d.ruleType) {
