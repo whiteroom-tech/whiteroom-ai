@@ -2826,6 +2826,9 @@ describe('Controls: Repeated blocks and Old tool results', () => {
     await m.click(m.button('Save'));
     expect(m.text()).toContain('Start trimming old tool results?');
     expect(m.text()).toContain('Would have trimmed');
+    // The tile counts requests (none in the last 7 days here), never calls.
+    expect(m.text()).toContain('Would have trimmedno requests');
+    expect(m.text()).not.toMatch(/Would have trimmed(no|\d+) calls?/);
     expect(m.text()).toContain('From now on, a large request goes to the model with its old tool results replaced by a short note. This edits what the agent sends. No call is blocked.');
     expect(m.text()).not.toContain('Turn on alerts');
     expect(api.update).not.toHaveBeenCalled();

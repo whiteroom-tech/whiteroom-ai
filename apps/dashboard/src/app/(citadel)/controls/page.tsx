@@ -1369,12 +1369,14 @@ function EnforcePreview({ rule, next, wouldAct, week, agentCalls }: {
   const all = wouldAct && !wouldAct.unversioned && next.ruleType === "model_allowlist"
     ? Object.entries(wouldAct.byAgent).filter(([a, c]) => c > 0 && agentCalls[callsKey(rule, wouldAct.since ?? "", a)] !== undefined && c >= agentCalls[callsKey(rule, wouldAct.since ?? "", a)] && (next.appliesTo === "all" || next.appliesTo.includes(a)))
     : [];
+  // What the engine counts for this rule: Old tool results counts requests it would have trimmed, Repeated blocks the times its limit was reached, every other rule calls.
+  const unit = next.ruleType === "trim_results" ? ["request", "requests"] : next.ruleType === "block_streak" ? ["time", "times"] : ["call", "calls"];
   return (
     <>
       <p style={{ margin: "0 0 4px" }}><strong>{RULE_LABELS[next.ruleType]}</strong> · {ruleConditionText(next)}</p>
       <p className="ctl-cap" style={{ margin: "0 0 14px" }}>Applies to {whoFor(next.appliesTo)}</p>
       <div className="ctl-tiles">
-        <div className="ctl-tile"><div className="ctl-tile__lbl">{actWords(next).would}</div><div className="ctl-tile__num">{n === null ? "—" : n ? `${n.toLocaleString("en-US")} ${n === 1 ? "call" : "calls"}` : "no calls"}</div><div className="ctl-cap">{week || !watched ? "last 7 days" : "since its last change"}</div></div>
+        <div className="ctl-tile"><div className="ctl-tile__lbl">{actWords(next).would}</div><div className="ctl-tile__num">{n === null ? "—" : n ? `${n.toLocaleString("en-US")} ${n === 1 ? unit[0] : unit[1]}` : `no ${unit[1]}`}</div><div className="ctl-cap">{week || !watched ? "last 7 days" : "since its last change"}</div></div>
         <div className="ctl-tile"><div className="ctl-tile__lbl">Watching since</div><div className="ctl-tile__num">{since ?? "—"}</div><div className="ctl-cap">{watched ? "since its last change" : "Turn on Watch first to see what it would do"}</div></div>
       </div>
       {all.map(([a, c]) => (
