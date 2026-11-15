@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { timeAgo } from '@/lib/format';
 import {
   findingSentence, sentenceText, costLine, notMeasuredShort, howtoParagraphs, limitationText, TITLES, DIAGNOSIS_DETECTORS,
+  fixCheckLine, beforeFixText, linkedRuleLine,
 } from '@/lib/diagnosis/copy';
 import { statusLine, agentsWithOpenFindings, checkRows, checkTitle, humanizeDetector, setAsideLabel, checksOpenByDefault, shouldRefetchOnFocus, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader, diagnosisSummary } from '@/lib/diagnosis/model';
 import type { DiagnosisDetectorId, DiagnosisMeasures, FleetDiagnosis, DiagnosisFinding } from '@/lib/whiteroom/types';
@@ -20,6 +21,8 @@ const MEASURES: Record<DiagnosisDetectorId, DiagnosisMeasures> = {
   review_job_failures: { failedJobs: 6, reportedJobs: 20, failurePct: 30 },
   review_planted_instruction: { times: 2, toolName: 'read_email', tools: 1 },
   review_done_after_failure: { times: 3, toolName: 'upload_file' },
+  review_tool_change: { changedAt: '2026-11-12T12:00:00.000Z', added: 2, removed: 1, addedTool: 'fetch_url', removedTool: 'fetch_page', beforeRatePct: 5, afterRatePct: 30, beforeCalls: 40, afterCalls: 44 },
+  review_no_limit: { longestRunCalls: 180, longestRun: 14, longRuns: 2, suggestedCap: 600000 },
 };
 
 /** Every number in the text, normalised (thousands separators dropped). */
@@ -44,6 +47,8 @@ describe('check names', () => {
       review_job_failures: 'Jobs are failing',
       review_planted_instruction: 'Suspicious instruction in a tool result',
       review_done_after_failure: 'Said done after a failed step',
+      review_tool_change: 'More trouble after its tools changed',
+      review_no_limit: 'No limit on long runs',
     });
   });
 });
@@ -447,5 +452,68 @@ describe('evidence headers', () => {
   });
   it('other detectors keep the existing view', () => {
     expect(evidenceHeader('review_tool_bloat', [], {})).toBeNull();
+  });
+});
+
+describe('provider errors say what most of them were', () => {
+  const base = { totalRequests: 118, upstreamErrors: 18, failureRatePct: 15, model: 'claude-haiku-4-5', rateLimited: 12, badRequests: 2, tooLong: 1, providerErrors: 3 };
+  const say = (mainKind?: string) => sentenceText(findingSentence('review_provider_failures', mainKind ? { ...base, mainKind } : base));
+
+  it('only blames the provider when the provider failed', () => {
+    expect(say('provider')).toContain('usually comes from the AI provider');
+    expect(say()).toContain('usually comes from the AI provider'); // findings from before the split
+    for (const k of ['rate_limited', 'bad_request', 'too_long']) expect(say(k)).not.toContain('AI provider');
+  });
+
+  it('names rate limits, bad requests and requests that were too long, with the count', () => {
+    expect(say('rate_limited')).toContain('Most were rate limits (12)');
+    expect(say('bad_request')).toContain('bad requests (2)');
+    expect(say('too_long')).toContain('too long for the model (1)');
+  });
+
+  it('gives a fix for each', () => {
+    expect(howtoParagraphs('provider_failures', { mainKind: 'rate_limited' })[0]).toContain('Call rate rule');
+    expect(howtoParagraphs('provider_failures', { mainKind: 'bad_request' })[0]).toContain('model name');
+    expect(howtoParagraphs('provider_failures', { mainKind: 'too_long' })[0]).toContain('Send less');
+    expect(howtoParagraphs('provider_failures', {})[0]).toContain('wait and try again');
+  });
+});
+
+describe('after someone acts on a recommendation', () => {
+  const fix = (state: 'checking' | 'stopped' | 'still_happening', before: DiagnosisMeasures | null = MEASURES.review_tool_errors) =>
+    ({ state, markedAt: '2026-11-01T12:00:00.000Z', resultAfter: '2026-11-08T12:00:00.000Z', before });
+
+  it('never says fixed before the check has a result', () => {
+    expect(fixCheckLine(fix('checking'))).toMatch(/^Marked fixed on .+\. WhiteRoom checks it worked on .+\.$/);
+    expect(fixCheckLine(fix('checking'))).not.toMatch(/stopped|worked\.$/);
+    expect(fixCheckLine(fix('stopped'))).toMatch(/It stopped\.$/);
+    expect(fixCheckLine(fix('still_happening'))).toMatch(/but it is still happening\.$/);
+    expect(fixCheckLine(undefined)).toBeNull();
+  });
+
+  it('shows what the finding said when it was marked, once there is a result', () => {
+    expect(beforeFixText('review_tool_errors', fix('still_happening'))).toContain('When it was marked fixed: fetch_page failed 28 times');
+    expect(beforeFixText('review_tool_errors', fix('checking'))).toBeNull();
+    expect(beforeFixText('review_tool_errors', fix('stopped', null))).toBeNull();
+    expect(beforeFixText('review_cache_behavior', fix('stopped'))).toBeNull();
+  });
+
+  const rule = (over: Record<string, unknown>) => ({ id: 'gr_1', ruleType: 'loop_breaker', mode: 'watch', response: 'block', wouldAct: 7, acted: 0, ...over });
+
+  it('a Watch rule says what it would have done, and that it stopped nothing', () => {
+    expect(linkedRuleLine(rule({}))).toBe('Loop breaker is in Watch. It would have acted 7 times in the last 7 days, and stopped none of them.');
+    expect(linkedRuleLine(rule({ wouldAct: 1 }))).toContain('acted 1 time in');
+    expect(linkedRuleLine(rule({ wouldAct: 0 }))).toBe('Loop breaker is in Watch. It wouldn’t have acted in the last 7 days.');
+  });
+
+  it('a count that could not be read is left out, never shown as zero', () => {
+    expect(linkedRuleLine(rule({ wouldAct: null }))).toBe('Loop breaker is in Watch. It doesn’t stop anything yet.');
+    expect(linkedRuleLine(rule({ mode: 'enforce', acted: null }))).toBe('Loop breaker is in Enforce.');
+  });
+
+  it('an enforced or switched-off rule says so', () => {
+    expect(linkedRuleLine(rule({ ruleType: 'spend_cap', mode: 'enforce', acted: 3 }))).toBe('Spend cap is in Enforce. It acted 3 times in the last 7 days.');
+    expect(linkedRuleLine(rule({ mode: 'off' }))).toBe('Loop breaker is switched off.');
+    expect(linkedRuleLine(undefined)).toBeNull();
   });
 });

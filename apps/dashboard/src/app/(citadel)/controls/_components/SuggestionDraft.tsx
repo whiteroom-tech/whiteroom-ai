@@ -7,10 +7,9 @@
  * confirms, and the mode is fixed to Watch.
  */
 import { useEffect, useState } from 'react';
-import { governanceCreateRule, performanceFeedback, performanceRecommendationGet } from '@/lib/whiteroom/client';
+import { governanceCreateRule, performanceRecommendationGet } from '@/lib/whiteroom/client';
 import type { GovernanceParams } from '@/lib/whiteroom/types';
 import { addSuggestedRuleInWatch } from '@/lib/diagnosis/addInWatch';
-import { feedbackOrThrow } from '@/lib/diagnosis/feedback';
 import { RULE_LABEL, RULE_TITLE, STATUS_LABEL } from '@/lib/diagnosis/copy';
 import { FIELD, isRecId, readAmount, readSuggestion, type Suggestion } from '@/lib/diagnosis/suggestion';
 import { MONO } from '@/lib/diagnosis/ui';
@@ -34,12 +33,11 @@ export function SuggestionDraft({ fleetId, authKey, recId, existingRule, onDone,
   const [problem, setProblem] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
   const [saving, setSaving] = useState(false);
-  const [ruleId, setRuleId] = useState<string | undefined>(undefined);
   const [failure, setFailure] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setLoaded(null); setProblem(null); setRuleId(undefined); setFailure(null);
+    setLoaded(null); setProblem(null); setFailure(null);
     if (!isRecId(recId)) { setProblem('This link doesn’t point to a suggestion.'); return; }
     performanceRecommendationGet(fleetId, recId, authKey)
       .then((res) => {
@@ -81,25 +79,17 @@ export function SuggestionDraft({ fleetId, authKey, recId, existingRule, onDone,
     setFailure(null);
     const result = await addSuggestedRuleInWatch({
       createRule: (input) => governanceCreateRule(fleetId, input, authKey),
-      markImplemented: (input) => performanceFeedback(fleetId, { ...input, action: 'implemented' }, authKey).then(feedbackOrThrow),
-      reloadRecommendation: (id) => performanceRecommendationGet(fleetId, id, authKey),
     }, {
       recommendationId: rec.id,
-      currentFindingId: rec.currentFindingId ?? '',
-      status: rec.status,
       ruleType,
       params: { ...loaded.params, [field.key]: value } as GovernanceParams,
       agentId: rec.agentId,
-      ruleId,
     });
     setSaving(false);
     if (result.ok) {
       onDone(result.ruleId, result.existing
         ? `This suggestion's ${RULE_LABEL[ruleType]} was already added in Watch for ${rec.agentId}, so it was kept as it is. Change its number in the list if you need to.`
-        : `${RULE_TITLE[ruleType]} added in Watch for ${rec.agentId}. You'll see what it would have done in Runs.`);
-    } else if (result.step === 'feedback') {
-      setRuleId(result.ruleId);
-      setFailure(`${RULE_TITLE[ruleType]} added in Watch. We couldn't mark the suggestion as done.`);
+        : `${RULE_TITLE[ruleType]} added in Watch for ${rec.agentId}. It stops nothing yet: the recommendation shows what it would have done, and you can switch it to Enforce here.`);
     } else {
       // A timeout can hide a rule the engine did create; retrying is safe either way.
       setFailure("Couldn't confirm the rule was added. Try again.");
@@ -121,7 +111,7 @@ export function SuggestionDraft({ fleetId, authKey, recId, existingRule, onDone,
         <dt style={{ color: 'var(--tx2)' }}>Applies to</dt><dd style={{ margin: 0, ...MONO }}>{rec.agentId}</dd>
         <dt style={{ color: 'var(--tx2)' }}><label htmlFor="suggestion-amount">{loaded.text.label}</label></dt>
         <dd style={{ margin: 0 }}>
-          <input id="suggestion-amount" inputMode="numeric" value={shownAmount} disabled={!!ruleId || !!existingRule} aria-invalid={!valid} aria-describedby={existingRule ? 'suggestion-existing' : undefined}
+          <input id="suggestion-amount" inputMode="numeric" value={shownAmount} disabled={!!existingRule} aria-invalid={!valid} aria-describedby={existingRule ? 'suggestion-existing' : undefined}
             onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ''))}
             style={{ ...MONO, width: 120, padding: '5px 8px', borderRadius: 6, border: `1px solid ${valid ? 'var(--line2)' : 'var(--bad)'}`, background: 'var(--sunk)', color: 'var(--tx)' }} />
           {' '}<span style={{ color: 'var(--tx2)', whiteSpace: 'nowrap' }}>{loaded.text.suffix}</span>
@@ -150,8 +140,8 @@ export function SuggestionDraft({ fleetId, authKey, recId, existingRule, onDone,
         ) : (<button type="button" className="dx-main-btn" disabled={saving || !valid} onClick={() => void add()} style={{
           fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '7px 16px', borderRadius: 6, border: '1px solid var(--brand)',
           background: 'var(--brand)', color: 'var(--bg)', cursor: saving ? 'wait' : 'pointer', opacity: saving || !valid ? 0.6 : 1,
-        }}>{saving ? 'Adding…' : ruleId ? 'Try again' : 'Add in Watch'}</button>)}
-        <button type="button" className="dx-link" onClick={() => onCancel(!!ruleId)}>Cancel</button>
+        }}>{saving ? 'Adding…' : failure ? 'Try again' : 'Add in Watch'}</button>)}
+        <button type="button" className="dx-link" onClick={() => onCancel(false)}>Cancel</button>
       </div>
     </section>
   );

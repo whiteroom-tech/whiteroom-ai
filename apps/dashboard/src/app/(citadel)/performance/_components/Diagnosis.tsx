@@ -10,7 +10,7 @@ import Link from 'next/link';
 import type { RecommendationDetail } from '@/lib/whiteroom/types';
 import {
   TITLES, RULE_LABEL, STATUS_LABEL, SNOOZE_DAYS,
-  findingSentence, costLine, limitationText, howtoParagraphs, isDiagnosisDetector, type SentencePart,
+  findingSentence, costLine, limitationText, howtoParagraphs, isDiagnosisDetector, fixCheckLine, beforeFixText, linkedRuleLine, type SentencePart,
 } from '@/lib/diagnosis/copy';
 import { evidenceHeader } from '@/lib/diagnosis/model';
 import { MONO } from '@/lib/diagnosis/ui';
@@ -55,6 +55,11 @@ export function DiagnosisRow({ rec, onSelectAgent, onSelectEvidence, onFeedback,
   const limitation = limitationText(detector, rec.limitations);
   const howId = `how-${rec.id}`;
   const calls = rec.evidenceCount ?? 0;
+  // A rule already made from this suggestion: say what it did, and link to it, in place of "Add … in Watch".
+  const rule = action?.kind === 'rule' ? rec.linkedRule : undefined;
+  const ruleLine = linkedRuleLine(rule);
+  const fixLine = fixCheckLine(rec.fixCheck);
+  const beforeFix = beforeFixText(detector, rec.fixCheck);
 
   return (
     <article style={{ padding: '16px 0', borderBottom: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -66,13 +71,22 @@ export function DiagnosisRow({ rec, onSelectAgent, onSelectEvidence, onFeedback,
       <Sentence parts={findingSentence(detector, m)} />
       {cost && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--warn-tx)' }}>{cost}</p>}
       {limitation && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{limitation}</p>}
+      {fixLine && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: rec.fixCheck?.state === 'still_happening' ? 'var(--warn-tx)' : 'var(--tx2)' }}>{fixLine}</p>}
+      {beforeFix && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', maxWidth: '80ch' }}>{beforeFix}</p>}
+      {ruleLine && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx)' }}>{ruleLine}</p>}
 
       <div className="dx-acts" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
-        {open && action?.kind === 'rule' && (
+        {open && action?.kind === 'rule' && !rule && (
           <Link href={`${ROUTES.controls}?rec=${encodeURIComponent(rec.id)}`} className="dx-main-btn" style={{
             display: 'inline-flex', alignItems: 'center', fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '6px 14px', borderRadius: 6,
             background: 'var(--brand)', color: 'var(--bg)', border: '1px solid var(--brand)', textDecoration: 'none',
           }}>Add {RULE_LABEL[action.rule]} in Watch</Link>
+        )}
+        {open && rule && (
+          <Link href={`${ROUTES.controls}?rule=${encodeURIComponent(rule.id)}`} className="dx-main-btn" style={{
+            display: 'inline-flex', alignItems: 'center', fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '6px 14px', borderRadius: 6,
+            background: rule.mode === 'watch' ? 'var(--brand)' : 'var(--brand-dim)', color: rule.mode === 'watch' ? 'var(--bg)' : 'var(--brand)', border: '1px solid var(--brand)', textDecoration: 'none',
+          }}>{rule.mode === 'watch' ? 'Switch to Enforce' : 'Open the rule'}</Link>
         )}
         {open && action?.kind === 'howto' && (
           <button type="button" className="dx-main-btn" aria-expanded={howOpen} aria-controls={howId} onClick={() => setHowOpen((v) => !v)} style={{
