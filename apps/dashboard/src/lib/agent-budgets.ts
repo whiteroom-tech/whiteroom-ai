@@ -36,6 +36,8 @@ export function existingCap(rules: GovernanceRule[], agentId: string, usd: numbe
 export function refusalText(reason: string | undefined): string | null {
   if (!reason) return null;
   if (/no agent .* in this fleet/i.test(reason)) return 'That agent isn’t in this fleet.';
-  if (/at most \d+ rules/i.test(reason)) return 'This fleet already has the most rules it can have. Remove one in Controls first.';
+  // Older engines say "at most N rules"; newer ones limit each agent's own rules and the fleet's total.
+  if (/rules of its own/i.test(reason)) return 'This agent already has the most rules it can have. Remove one in Controls first.';
+  if (/(at most|up to) [\d,]+ rules/i.test(reason)) return 'This fleet already has the most rules it can have. Remove one in Controls first.';
   return null;
 }
