@@ -92,6 +92,7 @@ describe('a typed allowed domain', () => {
     expect(domainProblem('acme%2eio', list)).toBe('A domain can’t have a % in it.');
     expect(domainProblem('10.0.0.1', list)).toBe('Use a domain name, not an IP address.');
     expect(domainProblem('[::1]', list)).toBe('Use a domain name, not an IP address.');
+    for (const ip of ['2130706433', '0x7f.1', '1.2.3', '127.1', '0x7f000001', '10.0.0.1.']) expect(domainProblem(ip, list), ip).toBe('Use a domain name, not an IP address.');
     expect(domainProblem('ACME.com.', list)).toBe('That domain is already on the list.');
     expect(domainProblem('a b.com', list)).toBe('That isn’t a domain. Type one like acme.com.');
   });

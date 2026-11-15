@@ -361,6 +361,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
                 })}
               </div>
               <p style={help}>Only the domain is stored, never what was sent.</p>
+              {send.domains.length >= SEND_DOMAINS_MAX && <p style={help}>A rule allows up to {SEND_DOMAINS_MAX} domains. Remove one to add another.</p>}
             </>
           ) : <p style={help}>Nothing new.</p>)}
           {seen.status === 'ok' && seenFullLine(seen) && <p style={help}>{seenFullLine(seen)}</p>}

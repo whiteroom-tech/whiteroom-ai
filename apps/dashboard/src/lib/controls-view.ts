@@ -115,7 +115,8 @@ export function seenFullLine(res: { rows: readonly unknown[]; full?: boolean; fl
 /** A typed domain as the list stores it: trimmed, lower case, without one trailing dot. */
 export const domainEntry = (typed: string) => typed.trim().toLowerCase().replace(/\.$/, '');
 
-const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
+/** An IP address in any spelling the engine refuses: every label a number, decimal, octal or 0x hex (`10.0.0.1`, `2130706433`, `0x7f.1`). */
+const NUMERIC_HOST = /^(0x[0-9a-f]*|\d+)(\.(0x[0-9a-f]*|\d+))*\.?$/;
 
 /**
  * Why a typed entry can't go on the list, in plain words, or null. The same
@@ -132,7 +133,7 @@ export function domainProblem(typed: string, list: readonly string[]): string | 
   if (d.includes('@')) return 'Type the domain, not an address: acme.com, not bob@acme.com.';
   if (d.includes('*')) return 'Leave out the *. acme.com already covers mail.acme.com.';
   if (d.includes('%')) return 'A domain can’t have a % in it.';
-  if (IPV4.test(d) || d.includes('[') || (d.match(/:/g) ?? []).length > 1) return 'Use a domain name, not an IP address.';
+  if (NUMERIC_HOST.test(d) || d.includes('[') || (d.match(/:/g) ?? []).length > 1) return 'Use a domain name, not an IP address.';
   if (/:\d*$/.test(d) || /:\d+[/?#]/.test(d)) return 'Leave out the port. Type just the domain, like acme.com.';
   if (/[/?#\\]/.test(d)) return 'Leave out the path. Type just the domain, like acme.com.';
   if (/\s/.test(d) || !/^[a-z0-9_.-]+$/.test(d) && !/[^\x00-\x7f]/.test(d)) return 'That isn’t a domain. Type one like acme.com.';

@@ -2372,6 +2372,16 @@ describe('Controls: Where tools can send data', () => {
     m.root.unmount();
   });
 
+  it('at 100 domains, says why Add to list is off', async () => {
+    api.created.push(sendRule({}, { domains: Array.from({ length: 100 }, (_, i) => `d${i}.com`) }));
+    api.seenRows = { s1: seenRows };
+    const m = await mount();
+    await m.click(m.row('sends to a domain'));
+    expect((seenRow(m, 'gmail.com')!.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+    expect(m.text()).toContain('A rule allows up to 100 domains. Remove one to add another.');
+    m.root.unmount();
+  });
+
   it('a caller without the secret sees the count, read only, with no Seen list, and never saves the list', async () => {
     api.created.push(sendRule({}, { domains: [], domainCount: 3 }));
     saving();
