@@ -425,6 +425,7 @@ const REASON_TEXT: Record<string, string> = {
   loop_detected: 'the same call repeated',
   rate_exceeded: 'too many calls',
   keyword_found: 'a keyword was found',
+  destination_not_allowed: 'a domain not on the list',
 };
 export function reasonText(reason: string | null | undefined): string | null {
   return reason ? REASON_TEXT[reason] ?? REASON_LABELS[reason] ?? null : null;

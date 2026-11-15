@@ -13,6 +13,12 @@ import { newMarker } from '@/lib/controls-view';
 // and a Tool list with nothing picked. ?state=empty (no rules), ?state=fail
 // (the rules can't be read) and ?state=loading show the other states;
 // ?state=unknown adds a rule of a type this build doesn't know.
+// Where tools can send data (send_limit): ?state=send adds one in Watch with
+// a Seen list (reserved and cleaned rows among them) and one in Enforce with
+// an empty list and a tool that sends no domain; ?state=send-cap fills Seen
+// to its 500 cap; ?state=send-hidden is a reader without the dashboard's
+// secret (domainCount, no Seen list); ?state=send-old is an engine that
+// doesn't take send_limit (Add a rule leaves it out).
 const state = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('state') : null;
 const day = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
 const base = { fleetId: 'acme-claims-prod', changedBy: 'preview', changedAt: day(2) };
@@ -28,8 +34,30 @@ let rules: GovernanceRule[] = state === 'empty' ? [] : [
   { ...base, id: 'r5', version: 1, ruleType: 'keyword', mode: 'watch', response: 'block', appliesTo: ['lead-agent'], params: { keywords: ['password', newMarker()], where: 'incoming', wholeWord: true } },
   { ...base, id: 'r6', version: 1, ruleType: 'call_rate', mode: 'off', response: 'block', appliesTo: ['lead-agent'], params: { maxCalls: 60 } },
   { ...base, id: 'r7', version: 1, ruleType: 'tool_list', mode: 'off', response: 'block', appliesTo: 'all', params: { blockedTools: [] } },
+  ...(state?.startsWith('send') ? sendRules() : []),
   ...(state === 'unknown' ? [{ ...base, id: 'r12', version: 1, ruleType: 'made_up_type', mode: 'enforce', response: 'block', appliesTo: 'all', params: {} } as unknown as GovernanceRule] : []),
 ];
+function sendRules(): GovernanceRule[] {
+  const hidden = state === 'send-hidden';
+  return [
+    { ...base, id: 's1', version: 1, ruleType: 'send_limit', mode: 'watch', response: 'notify', appliesTo: 'all',
+      params: hidden ? { tools: ['send_email', 'http_request'], domains: [], domainCount: 3 } : { tools: ['send_email', 'http_request'], domains: ['acme.com'] } },
+    ...(hidden ? [] : [{ ...base, id: 's2', version: 1, ruleType: 'send_limit', mode: 'enforce', response: 'block', appliesTo: ['support-triage'],
+      params: { tools: ['post_message', 'send_email'], domains: [] } } as GovernanceRule]),
+  ];
+}
+const SEEN: Record<string, { tool: string; domain: string; agentId: string; firstSeen: string; canAdd?: boolean }[]> = {
+  s1: state === 'send-cap'
+    ? Array.from({ length: 500 }, (_, i) => ({ tool: 'http_request', domain: `vendor-${String(i + 1).padStart(3, '0')}.com`, agentId: 'support-triage', firstSeen: day(1 + (i % 9)) }))
+    : [
+      { tool: 'send_email', domain: 'gmail.com', agentId: 'support-triage', firstSeen: day(3) },
+      { tool: 'http_request', domain: 'sendgrid.net', agentId: 'support-triage', firstSeen: day(5) },
+      { tool: 'http_request', domain: '(unreadable)', agentId: 'ops-scheduler', firstSeen: day(4) },
+      { tool: 'send_email', domain: 'mail-[removed].example', agentId: 'support-triage', firstSeen: day(2), canAdd: false },
+    ],
+  s2: [{ tool: 'post_message', domain: '(none)', agentId: 'support-triage', firstSeen: day(1) }],
+};
+const RULE_TYPES = ['spend_cap', 'loop_breaker', 'model_allowlist', 'tool_list', 'call_rate', 'keyword', ...(state === 'send-old' ? [] : ['send_limit'])];
 const AGENTS = ['code-reviewer', 'contract-summarizer', 'invoice-reconciler', 'lead-agent', 'market-researcher', 'ops-scheduler', 'support-triage'];
 const history = state === 'empty' ? [] : [
   { id: 'h5', ruleId: 'r10', ruleType: 'loop_breaker', description: 'Added new Loop breaker rule', by: 'user:u1', time: new Date(Date.now() - 40 * 60_000).toISOString() },
@@ -47,14 +75,15 @@ const counts = (n: Partial<Record<'blocked' | 'paused' | 'stopped' | 'toldYou' |
 
 function engine(body: Record<string, unknown>): unknown {
   switch (body.action) {
-    case 'governance_list': if (state === 'fail') throw new Error('down'); return { fleetId: base.fleetId, rules, history, agents: AGENTS, govV1: true };
+    case 'governance_list': if (state === 'fail') throw new Error('down'); return { fleetId: base.fleetId, rules, history, agents: AGENTS, govV1: true, ruleTypes: RULE_TYPES };
     case 'governance_create_rule': {
       const type = body.rule_type as GovernanceRule['ruleType'];
       const defaults: Record<string, GovernanceRule['params']> = {
         spend_cap: { dailyCap: 50, scope: 'day', unit: 'dollars' }, loop_breaker: { threshold: 100, scope: 'run', ignoreTools: [] },
         model_allowlist: { allowedModels: [] }, tool_list: { blockedTools: [] }, call_rate: { maxCalls: 60 }, keyword: { keywords: [], where: 'incoming', wholeWord: true },
+        send_limit: { tools: [], domains: [] },
       };
-      const rule = { ...base, changedAt: new Date().toISOString(), id: `n${++version}`, version: 1, ruleType: type, mode: 'watch', response: 'block', appliesTo: (body.applies_to as GovernanceRule['appliesTo']) ?? 'all', params: (body.params as GovernanceRule['params']) ?? defaults[type] } as GovernanceRule;
+      const rule = { ...base, changedAt: new Date().toISOString(), id: `n${++version}`, version: 1, ruleType: type, mode: 'watch', response: (body.response as GovernanceRule['response']) ?? 'block', appliesTo: (body.applies_to as GovernanceRule['appliesTo']) ?? 'all', params: (body.params as GovernanceRule['params']) ?? defaults[type] } as GovernanceRule;
       rules = [...rules, rule];
       return { rule };
     }
@@ -69,7 +98,9 @@ function engine(body: Record<string, unknown>): unknown {
     }
     case 'governance_delete_rule': rules = rules.filter((r) => r.id !== body.rule_id); return { success: true };
     // The fleet's own tools for the pickers; with ?state=empty the read fails, as on an older engine.
-    case 'tools_seen': if (state === 'empty') throw new Error('Unknown action'); return { tools: ['search_claims', 'update_claim', 'delete_attachment', 'send_email', 'read_file'] };
+    case 'send_seen_list': if (state === 'send-hidden') throw new Error('Only this fleet’s owner can read this.');
+      return { ruleId: body.rule_id, rows: SEEN[String(body.rule_id)] ?? [], full: state === 'send-cap' && body.rule_id === 's1' };
+    case 'tools_seen': if (state === 'empty') throw new Error('Unknown action'); return { tools: ['search_claims', 'update_claim', 'delete_attachment', 'send_email', 'read_file', ...(state?.startsWith('send') ? ['post_message', 'http_request'] : [])] };
     case 'rule_would_act': return { fleetId: base.fleetId, ruleId: body.rule_id, byAgent: body.rule_id === 'r2' ? { 'code-reviewer': 44 } : {}, unversioned: false, since: day(4) };
     // Sample counts: the allowlist caught 60 calls from code-reviewer; one loop breaker caught 12 from lead-agent.
     case 'rule_actions': return { fleetId: base.fleetId, totals: counts({ wouldAct: 72 }), byAgent: { 'code-reviewer': counts({ wouldAct: 60 }), 'lead-agent': counts({ wouldAct: 12 }) },

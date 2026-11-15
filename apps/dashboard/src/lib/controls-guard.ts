@@ -4,7 +4,7 @@
 
 import { keywordTotal } from '@/lib/controls-view';
 import { unhandledType } from '@/lib/governance';
-import type { GovernanceHistoryEntry, GovernanceParams, GovernanceResponse, GovernanceRule, GovernanceScope, KeywordParams, ModelAllowlistParams, ToolListParams } from '@/lib/whiteroom/types';
+import type { GovernanceHistoryEntry, GovernanceParams, GovernanceResponse, GovernanceRule, GovernanceScope, KeywordParams, ModelAllowlistParams, SendLimitParams, ToolListParams } from '@/lib/whiteroom/types';
 import { plural, HOUR_MS } from '@/lib/format';
 
 /**
@@ -20,6 +20,8 @@ export function canAct(rule: Pick<GovernanceRule, 'mode' | 'ruleType' | 'params'
     case 'model_allowlist': return (rule.params as ModelAllowlistParams).allowedModels.length > 0;
     case 'tool_list': return (rule.params as ToolListParams).blockedTools.length > 0;
     case 'keyword': return keywordTotal(rule.params as KeywordParams) > 0;
+    // With no tools it judges nothing; with tools and an empty list, every call to them is off the list.
+    case 'send_limit': return (rule.params as SendLimitParams).tools.length > 0;
     case 'spend_cap': case 'loop_breaker': case 'call_rate': return true;
     default: return unhandledType(rule.ruleType, true);
   }

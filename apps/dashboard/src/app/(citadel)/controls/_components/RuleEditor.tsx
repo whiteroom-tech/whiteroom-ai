@@ -13,7 +13,7 @@ import type { GovernanceMode, GovernanceResponse } from '@/lib/whiteroom/types';
 import Link from 'next/link';
 import { Banner, Button, FONT_MONO, Hint, SegmentedControl } from '@whiteroom/ui';
 import type {
-  GovernanceHistoryEntry, GovernanceRule, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, SpendCapParams, ToolListParams,
+  GovernanceHistoryEntry, GovernanceRule, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, SendLimitParams, SendSeenRow, SpendCapParams, ToolListParams,
 } from '@/lib/whiteroom/types';
 import { RESPONSE_LABEL, RULE_LABELS } from '@/lib/governance';
 import { actionAvailableFrom, canAct, keywordBlockCheck, stopCheck } from '@/lib/controls-guard';
@@ -22,6 +22,9 @@ import { addDays, dayKey, formatInZone } from '@/lib/zone-time';
 import type { ControlActor } from '@/lib/control-actors';
 import { ROUTES } from '@/lib/routes';
 import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
+import {
+  canAddSeen, domainEntry, domainProblem, domainsHidden, domainTotal, looksLikeSender, SEEN_RESERVED_TEXT, seenFullLine, seenNotOnList, SEND_DOMAINS_MAX, SEND_TOOLS_MAX, toolsWithNoDomain,
+} from '@/lib/controls-view';
 import { AGENT_NOTE, isMarker, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, looksLikeDeleteOrChange, newMarker, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, MODE_CHOICES, responseChoices, sendsAlert, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
 import { Chip, field, GroupPicker, InlineSelect, MarkerChip, MODEL_GROUPS, NumberField, ScopeField, ToolPicker } from './pickers';
 
@@ -29,6 +32,7 @@ import { Chip, field, GroupPicker, InlineSelect, MarkerChip, MODEL_GROUPS, Numbe
 const ACTS: Record<Exclude<GovernanceRule['ruleType'], 'keyword' | 'loop_breaker'>, string> = {
   spend_cap: 'Acts before the next call.', model_allowlist: 'Acts before the call.',
   tool_list: 'Acts before the agent gets the tool call. Also covers tools the provider runs, like web search.', call_rate: 'Acts on the call over the limit.',
+  send_limit: 'Acts before the agent gets the tool call. Tools the provider runs, like web search, always match.',
 };
 const KEYWORD_ACTS: Record<KeywordWhere, string> = {
   incoming: 'Acts before the call reaches the model.',
@@ -44,14 +48,27 @@ const WHEN_NOTES: Record<GovernanceRule['ruleType'], string | null> = {
   loop_breaker: 'Calls to the tools listed under Not counting never count as a loop.',
   keyword: 'Whole words, any case. Images and PDFs aren’t checked. The matched text is never stored, and the agent isn’t told which keyword matched.',
   tool_list: 'In Watch, streamed calls are checked after they arrive. In Enforce, a streamed call that can use a listed tool arrives all at once, and a Bedrock one is refused.',
+  // Its streaming and Bedrock notes sit under Block, where they matter (DLP spec 3.2).
+  send_limit: null,
 };
+
+/** A Where tools can send data rule's Seen list, as the page has read it. */
+export type SeenState = { status: 'loading' } | { status: 'failed' } | { status: 'ok'; rows: SendSeenRow[]; full?: boolean; fleetFull?: boolean };
 const REPLY_NOTE = 'To block a streamed reply, it’s checked whole first, so its text arrives all at once. Bedrock replies are checked in Watch; in Enforce, Bedrock calls are refused.';
+/** A reader without the list sees only how many domains it has (engine domainCount). */
+const hiddenDomains = (p: SendLimitParams) => { const n = domainTotal(p); return n === 0 ? 'No domains are on the list.' : n === 1 ? '1 domain is hidden here.' : `${n} domains are hidden here.`; };
 const help = { margin: 0, fontSize: 'var(--fs-sm)', lineHeight: 1.5, color: 'var(--tx2)' } as const;
 const usd = (n: number) => `$${n < 10 ? n.toFixed(2) : Math.round(n).toLocaleString('en-US')}`;
 const sentenceRow = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, fontSize: 'var(--fs-md)' } as const;
 
-export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPicker, govV1, alertChannel, history, ruleHistory, actors, undoOf, onUndo, fleetDailySpend = null, agentSpend = [], status, startOpen = false, dirty, error, saving, onSave, onDiscard, onClose, onRemove }: {
+export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPicker, govV1, alertChannel, history, ruleHistory, actors, undoOf, onUndo, fleetDailySpend = null, agentSpend = [], status, startOpen = false, dirty, error, saving, onSave, onDiscard, onClose, onRemove, seen, onSeenRetry, onStaged }: {
   rule: GovernanceRule;
+  /** Where tools can send data: its Seen list (the owner's only; absent otherwise). */
+  seen?: SeenState;
+  /** Read the Seen list again after a failed read. */
+  onSeenRetry?: () => void;
+  /** An edit was staged from outside the form (Add to list): say so. */
+  onStaged?: (message: string) => void;
   draft: RuleDraft;
   onDraft: (d: RuleDraft) => void;
   agents: string[];
@@ -104,6 +121,26 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
     setKeyword('');
   };
   const markers = keywords.filter(isMarker).length;
+  // Where tools can send data. Without the dashboard's secret the engine sends only how many domains
+  // there are: the editor is read only, has no Seen list, and never writes the hidden list back.
+  const send = rule.ruleType === 'send_limit' ? (p as SendLimitParams) : null;
+  const readOnly = domainsHidden(rule);
+  const [domain, setDomain] = useState('');
+  const domainTyped = domainEntry(domain);
+  const domainWrong = send ? domainProblem(domain, send.domains) : null;
+  const addDomain = () => {
+    if (!send || !domainTyped || domainWrong) return;
+    setParams({ domains: [...send.domains, domainTyped] });
+    setDomain('');
+  };
+  const seenRows = send && seen?.status === 'ok' ? seenNotOnList(seen.rows, send.domains) : [];
+  const noDomain = send && seen?.status === 'ok' ? toolsWithNoDomain(seen.rows, send.tools) : [];
+  const fullLine = send && seen?.status === 'ok' ? seenFullLine(seen) : null;
+  const addSeen = (row: SendSeenRow) => {
+    if (!send || send.domains.length >= SEND_DOMAINS_MAX || send.domains.includes(row.domain)) return;
+    setParams({ domains: [...send.domains, row.domain] });
+    onStaged?.(`${row.domain} added. Save to apply.`);
+  };
   // Only alert me, Pause and Stop alert; Block does when asked to.
   const alerts = sendsAlert(draft);
   // A rule with nothing to act on yet, or a number that doesn't read, opens with When expanded.
@@ -128,7 +165,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
       || keywordBlockCheck(rule, { mode: 'enforce', response: o, params: asRule.params }, ruleHistory).kind === 'blocked';
     return needs ? actionAvailableFrom(rule.id, ruleHistory, rule.mode) : null;
   };
-  const actions = responseChoices(govV1, rule.response ?? 'block', draft.response);
+  const actions = responseChoices(govV1, rule.ruleType, rule.response ?? 'block', draft.response);
   const nextOpen = Math.min(...actions.map(waitUntil).filter((t): t is number => typeof t === 'number'));
   useEffect(() => {
     if (!Number.isFinite(nextOpen)) return;
@@ -167,15 +204,16 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
         </p>
       )}
 
-      <fieldset disabled={saving} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <fieldset disabled={saving || readOnly} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <p className="gov-eyebrow ctl-q">When{whenHint && <Hint text={whenHint} size={12} />}</p>
-        {!whenOpen ? (
+        {!whenOpen ? (<>
           <div className="ctl-when">
             <span style={{ fontSize: 'var(--fs-md)' }}>{when.pre}{when.val && <span style={{ fontFamily: FONT_MONO }}>{when.val}</span>}{when.post}</span>
             <Button size={28} onClick={() => setWhenOpen(true)} aria-expanded={false}>Change</Button>
           </div>
-        ) : <>
+          {send && readOnly && <p style={{ ...help, color: 'var(--tx)' }}>{hiddenDomains(send)}</p>}
+        </>) : <>
         {rule.ruleType === 'spend_cap' && (
           <div style={sentenceRow}>
             An agent spends more than
@@ -255,9 +293,81 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
             <ToolPicker values={(p as ToolListParams).blockedTools} onChange={(blockedTools) => setParams({ blockedTools })} fleetTools={fleetTools} onShow={onToolPicker} first={looksLikeDeleteOrChange} />
           </>
         )}
-        <Button size={28} onClick={() => setWhenOpen(false)} style={{ alignSelf: 'flex-start' }} aria-expanded>Done</Button>
+        {send && (
+          <>
+            <span style={{ fontSize: 'var(--fs-md)' }}>One of these tools sends to a domain that isn’t on the list:</span>
+            <ToolPicker values={send.tools} onChange={(tools) => setParams({ tools })} fleetTools={fleetTools} onShow={onToolPicker} first={looksLikeSender} />
+            {send.tools.length > SEND_TOOLS_MAX && <p style={help}>A rule holds up to {SEND_TOOLS_MAX} tools. Remove one to save.</p>}
+            {noDomain.map((t) => (
+              <p key={t} style={help}><span style={{ fontFamily: FONT_MONO }}>{t}</span>: no domain found. Block would stop every call it makes.</p>
+            ))}
+          </>
+        )}
+        {/* Where tools can send data ends When with its own Allowed domains section, Done under it. */}
+        {!send && <Button size={28} onClick={() => setWhenOpen(false)} style={{ alignSelf: 'flex-start' }} aria-expanded>Done</Button>}
         </>}
       </section>
+
+      {send && whenOpen && (
+        <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <p className="gov-eyebrow ctl-q">Allowed domains</p>
+          {readOnly ? (
+            <p style={{ ...help, color: 'var(--tx)' }}>{hiddenDomains(send)}</p>
+          ) : <>
+            {send.domains.length > 0 ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {send.domains.map((d) => <Chip key={d} label={d} onRemove={() => setParams({ domains: send.domains.filter((x) => x !== d) })} />)}
+              </div>
+            ) : <p style={help}>Nothing is allowed yet. Leave this in Watch to see where these tools send data, then add what’s fine.</p>}
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input className="gov-field" aria-label="Domain" placeholder="acme.com" value={domain} maxLength={253} autoCapitalize="off" autoCorrect="off" spellCheck={false}
+                onChange={(e) => setDomain(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addDomain(); } }}
+                aria-describedby={domainWrong ? 'ctl-domain-problem' : undefined}
+                style={{ ...field, padding: '0 10px', flex: '1 1 140px', minWidth: 0 }} />
+              <Button onClick={addDomain} disabled={!domainTyped || !!domainWrong}>Add</Button>
+            </div>
+            {domainWrong && <p id="ctl-domain-problem" style={help}>{domainWrong}</p>}
+          </>}
+          <Button size={28} onClick={() => setWhenOpen(false)} style={{ alignSelf: 'flex-start' }} aria-expanded>Done</Button>
+        </section>
+      )}
+
+      {/* How the list gets built: shown whether or not When is open (DLP spec 3.2). Never for a reader without the list. */}
+      {send && !readOnly && seen && (
+        <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }} aria-labelledby="ctl-seen-title">
+          <p className="gov-eyebrow ctl-q" id="ctl-seen-title">Seen, not on the list</p>
+          {seen.status === 'loading' && <p style={help} role="status">Loading…</p>}
+          {seen.status === 'failed' && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+              <p style={help}>Couldn’t load this list.</p>
+              {onSeenRetry && <Button size={28} onClick={onSeenRetry}>Try again</Button>}
+            </div>
+          )}
+          {seen.status === 'ok' && (seenRows.length ? (
+            <>
+              <div className="ctl-seen">
+                {seenRows.map((r) => {
+                  const reserved = SEEN_RESERVED_TEXT[r.domain];
+                  return (
+                    <div key={`${r.tool}\n${r.domain}`} className="ctl-seen__row">
+                      <span className="ctl-seen__what">
+                        {reserved ? <span>{reserved}</span> : <span style={{ fontFamily: FONT_MONO }}>{r.domain}</span>}
+                        <span className="ctl-seen__sub">{[r.agentId, r.tool, formatInZone(r.firstSeen, { month: 'short', day: 'numeric' })].filter(Boolean).join(' · ')}</span>
+                      </span>
+                      {canAddSeen(r) && (
+                        <Button size={28} onClick={() => addSeen(r)} disabled={saving || send.domains.length >= SEND_DOMAINS_MAX} aria-label={`Add ${r.domain} to the list`}>Add to list</Button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <p style={help}>Only the domain is stored, never what was sent.</p>
+              {send.domains.length >= SEND_DOMAINS_MAX && <p style={help}>A rule allows up to {SEND_DOMAINS_MAX} domains. Remove one to add another.</p>}
+            </>
+          ) : <p style={help}>Nothing new.</p>)}
+          {fullLine && <p style={help}>{fullLine}</p>}
+        </section>
+      )}
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {/* Narrowing a rule for all agents: Save asks whether to keep it for everyone and add a copy, or move it. */}
@@ -294,7 +404,10 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
             Also alert me
           </label>
         )}
-        <p style={help}>{whatHappensLine(draft)}</p>
+        <p style={help}>{send && draft.mode === 'enforce' && draft.response === 'notify' ? 'You get an alert the first time a tool sends to a new domain. The call goes through.' : whatHappensLine(draft)}</p>
+        {send && draft.mode === 'enforce' && draft.response === 'block' && (
+          <p style={help}>Streamed replies from agents with these tools arrive all at once. Replies on Bedrock can’t be checked yet.</p>
+        )}
         {alerts && alertChannel === false && (
           <p style={{ ...help, color: 'var(--warn-tx)' }}>No alert channel is connected. <Link href={`${ROUTES.settings}#alerts`} style={{ color: 'var(--brand)', fontWeight: 600 }}>Connect one in Settings →</Link></p>
         )}
@@ -305,12 +418,12 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
 
       {/* On a phone Remove sits at the end of the rule, and the bar below shows only once something changed. */}
       <div className="gov-remove-row">
-        <Button variant="ghost" className="ctl-remove" onClick={onRemove} disabled={saving}>Remove rule</Button>
+        <Button variant="ghost" className="ctl-remove" onClick={onRemove} disabled={saving || readOnly}>Remove rule</Button>
       </div>
       <div className={`gov-actbar${dirty || saving ? ' is-dirty' : ''}`} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, borderTop: '1px solid var(--line)', paddingTop: 16 }}>
         <Button variant="primary" onClick={onSave} disabled={!dirty} busy={saving} busyLabel="Saving…" className="gov-actbar__save">Save</Button>
         <Button variant="secondary" onClick={onDiscard} disabled={!dirty || saving} className="gov-actbar__discard">Discard changes</Button>
-        <Button variant="ghost" onClick={onRemove} disabled={saving} className="gov-remove ctl-remove" style={{ marginLeft: 'auto' }}>Remove rule</Button>
+        <Button variant="ghost" onClick={onRemove} disabled={saving || readOnly} className="gov-remove ctl-remove" style={{ marginLeft: 'auto' }}>Remove rule</Button>
       </div>
 
       <details className="gov-details">

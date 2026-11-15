@@ -792,6 +792,12 @@ button.ctl-row.is-on, button.ctl-row.is-on:hover { background: var(--brand-dim);
 /* The editor's three questions: When (a sentence + Change), Who, What happens (one choice). */
 .ctl-q { display: inline-flex; align-items: center; gap: 6px; }
 .ctl-when { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; overflow-wrap: anywhere; }
+/* Where tools can send data: Seen, not on the list. One row per domain and tool, Add to list at its right. */
+.ctl-seen { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.ctl-seen__row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; padding: 10px 12px; border-top: 1px solid var(--line); }
+.ctl-seen__row:first-child { border-top: 0; }
+.ctl-seen__what { flex: 1 1 180px; min-width: 0; display: flex; flex-direction: column; overflow-wrap: anywhere; }
+.ctl-seen__sub { font-size: var(--fs-sm); line-height: 1.5; color: var(--tx2); }
 .gov-scrim { display: none; }
 /* Dialogs */
 .ctl-dlg__title { margin: 0; font-family: var(--font-display); font-size: var(--fs-section); line-height: 1.3; font-weight: 600; color: var(--tx); text-wrap: balance; }
