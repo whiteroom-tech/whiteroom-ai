@@ -334,6 +334,20 @@ describe('script policy (enforced CSP)', () => {
     expect(b.headers.get('content-security-policy')).not.toContain(nonce);
   });
 
+  it('enforces it on the admin host’s rewritten pages too', () => {
+    process.env.ADMIN_HOST = ADMIN;
+    try {
+      const res = proxy(req(ADMIN, '/organizations'))!;
+      expect(verdict(res)).toBe('rewrite:/admin/organizations');
+      const policy = res.headers.get('content-security-policy')!;
+      expect(policy).toContain(`'nonce-${res.headers.get('x-middleware-request-x-nonce')}'`);
+      expect(policy).toContain("frame-ancestors 'none'");
+      expect(res.headers.get('content-security-policy-report-only')).toBeNull();
+    } finally {
+      delete process.env.ADMIN_HOST;
+    }
+  });
+
   it('sends reports to /api/csp-report, which the admin host also serves', () => {
     const policy = proxy(req(APP, '/home', { withSession: true }))!.headers.get('content-security-policy')!;
     expect(policy).toContain('report-uri /api/csp-report');
