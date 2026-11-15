@@ -2623,6 +2623,17 @@ describe('Controls: Outside content, then send data', () => {
     m.root.unmount();
   });
 
+  it('says each list holds up to 50 tools, and Save says so too', async () => {
+    api.created.push(flowRule({}, { sendTools: Array.from({ length: 51 }, (_, i) => `send_${i}`) }));
+    const m = await mount();
+    await m.open(WHEN);
+    expect(m.text()).toContain('A rule holds up to 50 tools in each list. Remove one to save.');
+    // Taking one off clears it.
+    await m.click(m.el.querySelector('button[aria-label="Remove send_0"]')!);
+    expect(m.text()).not.toContain('A rule holds up to 50 tools in each list.');
+    m.root.unmount();
+  });
+
   it('tells the agent nothing: the call goes through', async () => {
     api.created.push(flowRule({ mode: 'enforce' }));
     const m = await mount();

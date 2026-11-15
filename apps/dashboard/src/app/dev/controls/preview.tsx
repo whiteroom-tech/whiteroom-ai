@@ -98,15 +98,12 @@ function engine(body: Record<string, unknown>): unknown {
         model_allowlist: { allowedModels: [] }, tool_list: { blockedTools: [] }, call_rate: { maxCalls: 60 }, keyword: { keywords: [], where: 'incoming', wholeWord: true },
         send_limit: { tools: [], domains: [] }, outside_then_send: { readTools: [], sendTools: [] },
       };
-      // As the engine: this type only alerts, and is refused with anything else (DLP spec 5.3).
-      if (type === 'outside_then_send' && body.response !== undefined && body.response !== 'notify') throw new Error('This rule can only alert you.');
-      const rule = { ...base, changedAt: new Date().toISOString(), id: `n${++version}`, version: 1, ruleType: type, mode: 'watch', response: (body.response as GovernanceRule['response']) ?? 'block', appliesTo: (body.applies_to as GovernanceRule['appliesTo']) ?? 'all', params: (body.params as GovernanceRule['params']) ?? defaults[type] } as GovernanceRule;
+      const rule = { ...base, changedAt: new Date().toISOString(), id: `n${++version}`, version: 1, ruleType: type, mode: 'watch', response: (body.response as GovernanceRule['response']) ?? (type === 'outside_then_send' ? 'notify' : 'block'), appliesTo: (body.applies_to as GovernanceRule['appliesTo']) ?? 'all', params: (body.params as GovernanceRule['params']) ?? defaults[type] } as GovernanceRule;
       rules = [...rules, rule];
       return { rule };
     }
     case 'governance_update_rule': {
       const prev = rules.find((r) => r.id === body.rule_id)!;
-      if (prev.ruleType === 'outside_then_send' && body.response !== undefined && body.response !== 'notify') throw new Error('This rule can only alert you.');
       const next = { ...prev, version: prev.version + 1, changedAt: new Date().toISOString(),
         ...(body.mode !== undefined && { mode: body.mode }), ...(body.response !== undefined && { response: body.response }),
         ...(body.also_notify !== undefined && { alsoNotify: body.also_notify }), ...(body.params !== undefined && { params: body.params }),

@@ -408,7 +408,7 @@ const numberOf = (rule: Pick<GovernanceRule, 'ruleType' | 'params'>): string => 
 
 export function draftFrom(rule: GovernanceRule): RuleDraft {
   return {
-    ruleType: rule.ruleType, mode: rule.mode, response: rule.response ?? 'block', alsoNotify: !!rule.alsoNotify,
+    ruleType: rule.ruleType, mode: rule.mode, response: typeResponse(rule.ruleType, rule.response), alsoNotify: !!rule.alsoNotify,
     appliesTo: rule.appliesTo === 'all' ? 'all' : [...rule.appliesTo],
     params: JSON.parse(JSON.stringify(rule.params)) as GovernanceParams,
     number: numberOf(rule),
@@ -990,7 +990,7 @@ export function chooseMode(
   actions: readonly GovernanceResponse[] = responseChoices(true, d.ruleType), canPick: (r: GovernanceResponse) => boolean = () => true,
 ): RuleDraft {
   if (mode !== 'enforce') {
-    return d.mode === 'enforce' ? { ...d, mode, response: saved.response ?? 'block', alsoNotify: !!saved.alsoNotify } : { ...d, mode };
+    return d.mode === 'enforce' ? { ...d, mode, response: typeResponse(d.ruleType, saved.response), alsoNotify: !!saved.alsoNotify } : { ...d, mode };
   }
   if (d.mode === 'enforce') return d;
   const pick = [d.response, ...actions].find((r) => actions.includes(r) && canPick(r)) ?? d.response;
@@ -1010,6 +1010,17 @@ const TYPE_RESPONSES: Record<GovernanceRuleType, readonly GovernanceResponse[]> 
   // Only alerts (DLP spec 5.3): the editor shows "When enforced: Only alert me" as fixed text.
   outside_then_send: ['notify'],
 };
+
+/**
+ * A saved response as the draft holds it: the rule's own when its type has it,
+ * else the type's first (Outside content, then send data only alerts, so a
+ * rule holding anything else is drafted on Only alert me and can be saved).
+ */
+function typeResponse(ruleType: GovernanceRuleType, saved: GovernanceResponse | undefined): GovernanceResponse {
+  const r = saved ?? 'block';
+  const own = TYPE_RESPONSES[ruleType];
+  return !own || own.includes(r) ? r : own[0];
+}
 
 /**
  * The actions this rule type has on this fleet, in its "When enforced" order:

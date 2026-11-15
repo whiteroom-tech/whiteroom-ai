@@ -79,6 +79,23 @@ describe('It only alerts', () => {
     expect(draftChanges(d, saved)).toEqual({ mode: 'enforce', response: 'notify' });
   });
 
+  it('drafts a rule holding another response on Only alert me, so Off and Watch can still be saved', () => {
+    for (const mode of ['off', 'watch', 'enforce'] as const) {
+      const saved = flow({}, { mode, response: 'block' });
+      const d = draftFrom(saved);
+      expect(d.response, mode).toBe('notify');
+      expect(draftProblem(d), mode).toBeNull();
+    }
+    // Leaving Enforce keeps Only alert me too, not a response the type can't have.
+    const saved = flow({}, { mode: 'enforce', response: 'block' });
+    const off = chooseMode(draftFrom(saved), 'off', saved);
+    expect([off.mode, off.response]).toEqual(['off', 'notify']);
+    expect(draftProblem(off)).toBeNull();
+    expect(draftChanges(off, saved)).toEqual({ mode: 'off', response: 'notify' });
+    // Other types keep their saved response as before.
+    expect(draftFrom({ ...saved, ruleType: 'tool_list', params: { blockedTools: ['x'] } }).response).toBe('block');
+  });
+
   it('never stops a call, so it never counts as a rule that can act', () => {
     expect(canAct({ ...flow(), mode: 'enforce' })).toBe(false);
     expect(canAct({ ...flow(), mode: 'enforce', response: 'block' })).toBe(false);
