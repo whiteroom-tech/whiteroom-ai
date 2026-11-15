@@ -80,6 +80,10 @@ const api = vi.hoisted(() => ({
   toolsAsked: 0,
   /** tools_seen fails (an engine blip). */
   toolsFail: false,
+  /** tools_seen never answers (a slow engine). */
+  toolsHang: false,
+  /** When set, each tools_seen read waits here until the test answers it. */
+  toolsReplies: null as Array<(tools: string[]) => void> | null,
 }));
 const { knownRulesOnly } = await import('@/lib/governance');
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
@@ -107,7 +111,7 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
   governanceUpdateRule: api.update,
   governanceDeleteRule: api.remove,
   governanceCreateRule: api.create,
-  toolsSeen: async () => { api.toolsAsked++; if (api.toolsFail) throw new Error('down'); return api.tools; },
+  toolsSeen: async () => { api.toolsAsked++; if (api.toolsHang) await new Promise(() => {}); if (api.toolsReplies) return new Promise<string[]>((r) => api.toolsReplies!.push(r)); if (api.toolsFail) throw new Error('down'); return api.tools; },
 }));
 
 const { default: ControlsPage } = await import('@/app/(citadel)/controls/page');
@@ -152,7 +156,7 @@ beforeEach(() => {
   // An unsaved edit is kept in sessionStorage across visits (controls-draft): each test starts with none.
   sessionStorage.clear();
   nav.params = new URLSearchParams(); nav.replace.mockClear(); nav.push.mockClear();
-  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.hourly = []; api.listGate = null; api.listFail = false; api.empty = false; api.would = {}; api.agentCalls = {}; api.history = []; api.totals = null; api.unknown = []; api.tools = []; api.toolsAsked = 0; api.toolsFail = false; session.key = 'k';
+  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.hourly = []; api.listGate = null; api.listFail = false; api.empty = false; api.would = {}; api.agentCalls = {}; api.history = []; api.totals = null; api.unknown = []; api.tools = []; api.toolsAsked = 0; api.toolsFail = false; api.toolsHang = false; api.toolsReplies = null; session.key = 'k';
   api.oldEngine = false; api.wouldBatches = []; api.wouldSingle = 0; resetBatchSupport();
   document.body.innerHTML = '';
 });
@@ -663,6 +667,8 @@ describe('Controls page, editing', () => {
     await flush();
     expect(m.el.querySelector('select[aria-label="Add a tool"] optgroup')!.getAttribute('label')).toBe('Your fleet’s tools');
     // The session's key changes, so the next picker reads again, and that read fails.
+    // Had a read worked, it would have shown new_tool.
+    api.tools = ['new_tool'];
     api.toolsFail = true;
     session.key = 'k2';
     await act(async () => { m.root.render(h(ControlsPage)); });
@@ -670,9 +676,31 @@ describe('Controls page, editing', () => {
     await m.click(m.button('Close'));
     await m.open('Same call 100');
     await flush();
-    // Read again under the new key, and failed.
+    // Read again under the new key, and failed: the earlier list is still shown.
     expect(api.toolsAsked).toBeGreaterThan(1);
-    expect(m.el.querySelector('select[aria-label="Add a tool"] optgroup')!.getAttribute('label')).toBe('Your fleet’s tools');
+    const group = m.el.querySelector('select[aria-label="Add a tool"] optgroup')!;
+    expect(group.getAttribute('label')).toBe('Your fleet’s tools');
+    expect(group.textContent).toBe('update_claim');
+    expect(m.el.textContent).not.toContain('new_tool');
+    m.root.unmount();
+  });
+
+  it('a read that answers late, after the session key changed, doesn’t replace the newer list', async () => {
+    api.toolsReplies = [];
+    const m = await mount();
+    await m.click(m.button('Show'));
+    await m.open('No tools picked yet');
+    session.key = 'k2';
+    await act(async () => { m.root.render(h(ControlsPage)); });
+    await flush();
+    // The open picker asked again under the new key.
+    expect(api.toolsReplies).toHaveLength(2);
+    await act(async () => { api.toolsReplies![1](['new_tool']); });
+    await flush();
+    await act(async () => { api.toolsReplies![0](['old_tool']); });
+    await flush();
+    const group = m.el.querySelector('select[aria-label="Add a tool"] optgroup')!;
+    expect(group.textContent).toBe('new_tool');
     m.root.unmount();
   });
 
@@ -699,6 +727,50 @@ describe('Controls page, editing', () => {
     await m.click([...m.el.querySelectorAll('button.gov-template')].find((b) => b.textContent?.includes('Block tools')));
     expect(api.create).toHaveBeenCalledWith('f1', { ruleType: 'tool_list', mode: 'watch', params: { blockedTools: ['update_claim', 'DeleteAttachment'] } }, 'k');
     expect(m.text()).toContain('Tool list rule added in Watch. Check its tools.');
+    m.root.unmount();
+  });
+
+  it('"Block tools" uses tools already read, without reading again', async () => {
+    api.tools = ['update_claim'];
+    api.create.mockImplementation(async (_f: string, r: { ruleType: GovernanceRule['ruleType']; mode: GovernanceRule['mode']; params?: GovernanceRule['params'] }) => {
+      const rule: GovernanceRule = { ...base, id: 'new', ruleType: r.ruleType, mode: r.mode, response: 'block', appliesTo: 'all', params: r.params ?? { blockedTools: [] } };
+      api.created.push(rule);
+      return { rule };
+    });
+    const m = await mount();
+    await m.click(m.button('Show'));
+    await m.open('No tools picked yet');
+    await m.click(m.button('Close'));
+    expect(api.toolsAsked).toBe(1);
+    await m.click(m.button('Add rule'));
+    await m.click([...m.el.querySelectorAll('button.gov-template')].find((b) => b.textContent?.includes('Block tools')));
+    expect(api.toolsAsked).toBe(1);
+    expect(api.create).toHaveBeenCalledWith('f1', { ruleType: 'tool_list', mode: 'watch', params: { blockedTools: ['update_claim'] } }, 'k');
+    m.root.unmount();
+  });
+
+  it('"Block tools" waits at most 2 seconds for the tools, then is added as before', async () => {
+    api.toolsHang = true;
+    api.create.mockImplementation(async (_f: string, r: { ruleType: GovernanceRule['ruleType']; mode: GovernanceRule['mode'] }) => {
+      const rule: GovernanceRule = { ...base, id: 'new', ruleType: r.ruleType, mode: r.mode, response: 'block', appliesTo: 'all', params: { blockedTools: [] } };
+      api.created.push(rule);
+      return { rule };
+    });
+    const m = await mount();
+    await m.click(m.button('Add rule'));
+    vi.useFakeTimers();
+    try {
+      await m.click([...m.el.querySelectorAll('button.gov-template')].find((b) => b.textContent?.includes('Block tools')));
+      expect(api.create).not.toHaveBeenCalled();
+      await act(async () => { vi.advanceTimersByTime(1999); });
+      expect(api.create).not.toHaveBeenCalled();
+      await act(async () => { vi.advanceTimersByTime(1); });
+      await flush();
+    } finally { vi.useRealTimers(); }
+    await flush();
+    expect(api.create).toHaveBeenCalledWith('f1', { ruleType: 'tool_list', mode: 'watch' }, 'k');
+    expect(m.el.querySelector('aside[aria-label="Edit rule"]')).toBeTruthy();
+    expect(m.text()).not.toContain('Check its tools');
     m.root.unmount();
   });
 

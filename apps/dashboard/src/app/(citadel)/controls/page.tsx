@@ -79,6 +79,15 @@ type Dialog =
 /** The toast after a change: what happened, and how to undo it. */
 type ToastState = { id: number; message: string; undo?: () => void };
 
+/** How long adding "Block tools" waits for the fleet's tools before adding it without them. */
+const TOOLS_WAIT_MS = 2000;
+/** `p`'s value, or `fallback` if it takes longer than `ms`. */
+function within<T>(ms: number, p: Promise<T>, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<T>((resolve) => { timer = setTimeout(() => resolve(fallback), ms); });
+  return Promise.race([p, late]).finally(() => clearTimeout(timer));
+}
+
 function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; authKey: string | undefined; onAuthError: (msg?: string) => void }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -287,8 +296,10 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       // A failed read leaves the pickers as they are (the last good list, if any), and the next picker shown asks again.
       const got = toolsSeen(fleetId, authKey).then((t) => t, () => null);
       read.tools = got.then((t) => {
+        // Only the current read sets the list: a late one for another fleet or session key is dropped.
+        if (toolsRead.current !== read) return t ?? [];
         if (t) setSeenTools({ fleetId: forFleet, tools: t });
-        else if (toolsRead.current === read) toolsRead.current = null;
+        else toolsRead.current = null;
         return t ?? (seenToolsRef.current?.fleetId === forFleet ? seenToolsRef.current.tools : []);
       });
       toolsRead.current = read;
@@ -653,7 +664,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     setError(null);
     try {
       // "Block tools" starts with the fleet's delete-looking tools picked, when its tools are known.
-      const picked = ruleType === "tool_list" ? deleteLookingTools(await readFleetTools()) : [];
+      // Tools already read are used as they are; else the read gets 2 s, then the rule is added as before.
+      const picked = ruleType === "tool_list" ? deleteLookingTools(fleetTools.length ? fleetTools : await within(TOOLS_WAIT_MS, readFleetTools(), [])) : [];
       // New rules start in Watch; while viewing one agent, they start for that agent.
       const { rule } = await governanceCreateRule(fleetId, {
         ruleType, mode: "watch", ...(picked.length > 0 && { params: { blockedTools: picked } }), ...(agentFilter && { appliesTo: [agentFilter] }),

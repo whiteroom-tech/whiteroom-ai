@@ -90,10 +90,13 @@ describe('a marker passes the engine’s "looks like a credential" check', () =>
 });
 
 describe('"Block tools" pre-pick', () => {
-  it('picks tools named like delete, remove, drop, purge, update or write, in any case, up to 100', () => {
+  it('picks tools with a name part like delete, remove, drop, purge, update or write, in any case, up to 100', () => {
     expect(deleteLookingTools(['search_claims', 'update_claim', 'DeleteAttachment', 'send_email', 'drop_table', 'purgeCache', 'remove_user', 'write_file', 'read_file']))
       .toEqual(['update_claim', 'DeleteAttachment', 'drop_table', 'purgeCache', 'remove_user', 'write_file']);
     expect(deleteLookingTools([])).toEqual([]);
+    // Whole name parts, split at non-letters and camelCase: not words that only contain one.
+    expect(deleteLookingTools(['delete_record', 'removeUser', 'bulk-update', 'records.deleted', 'XMLWrite', 'dropdown_options', 'overwrite_x', 'updater', 'droplet_list', 'writer_notes']))
+      .toEqual(['delete_record', 'removeUser', 'bulk-update', 'records.deleted', 'XMLWrite']);
     expect(deleteLookingTools(Array.from({ length: 150 }, (_, i) => `delete_${i}`))).toHaveLength(100);
   });
 });

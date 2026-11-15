@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement as h } from 'react';
 import { createRoot } from 'react-dom/client';
 import { GroupPicker, InlineSelect, MarkerChip, ScopeField, TOOL_GROUPS, ToolPicker, toolGroups, type PickGroup } from '@/app/(citadel)/controls/_components/pickers';
-import { looksLikeDelete } from '@/lib/controls-view';
+import { looksLikeDeleteOrChange } from '@/lib/controls-view';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -171,7 +171,7 @@ describe('ToolPicker: the fleet’s own tools (tools_seen)', () => {
 
   it('puts the fleet’s tools first, opens on "Choose a tool…", and keeps every group it had', async () => {
     const onChange = vi.fn();
-    const { el, root } = await mount(h(ToolPicker, { values: ['send_email'], onChange, fleetTools: ['search_claims', 'update_claim', 'send_email'], onShow: () => {}, first: looksLikeDelete }));
+    const { el, root } = await mount(h(ToolPicker, { values: ['send_email'], onChange, fleetTools: ['search_claims', 'update_claim', 'send_email'], onShow: () => {}, first: looksLikeDeleteOrChange }));
     const select = el.querySelector('select[aria-label="Add a tool"]') as HTMLSelectElement;
     expect(select.value).toBe('');
     expect(options(el)[0]).toBe('Choose a tool…');
@@ -205,12 +205,24 @@ describe('MarkerChip', () => {
     root.unmount();
   });
 
-  it('when the browser refuses to copy, shows the whole code to select', async () => {
-    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: vi.fn(async () => { throw new Error('denied'); }) } });
+  it('when the browser refuses to copy, shows the whole code to select; the note goes after a few seconds, the code stays until a copy works', async () => {
+    vi.useFakeTimers();
+    const writeText = vi.fn(async (): Promise<void> => { throw new Error('denied'); });
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
     const { el, root } = await mount(h(MarkerChip, { code: CODE, onRemove: () => {} }));
-    await act(async () => { (el.querySelector('button[aria-label="Copy marker wrmk3f9a…d8a6"]') as HTMLButtonElement).click(); });
+    const copy = () => act(async () => { (el.querySelector('button[aria-label="Copy marker wrmk3f9a…d8a6"]') as HTMLButtonElement).click(); });
+    await copy();
     expect(el.textContent).toContain(CODE);
     expect(el.textContent).toContain('Couldn’t copy. Select the code to copy it.');
+    await act(async () => { vi.advanceTimersByTime(4000); });
+    expect(el.textContent).not.toContain('Couldn’t copy');
+    expect(el.textContent).toContain(CODE);
+    // A retry that works puts the short code back.
+    writeText.mockImplementation(async () => {});
+    await copy();
+    expect(el.textContent).not.toContain(CODE);
+    expect(el.textContent).toContain('wrmk3f9a…d8a6');
     root.unmount();
+    vi.useRealTimers();
   });
 });

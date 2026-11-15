@@ -708,12 +708,20 @@ export function keywordsShort(p: KeywordParams): string {
   return more ? `${shown} + ${more} more` : shown;
 }
 
-/** Names a Tool list starts with when "Block tools" is added: ones that look like they delete or change data. Never used to decide a call. */
-const DELETE_LOOKING = /delete|remove|drop|purge|update|write/i;
-export const looksLikeDelete = (tool: string) => DELETE_LOOKING.test(tool);
+/** Name parts of a tool that deletes or changes data. Used only to order and pre-pick tools, never to decide a call. */
+const DELETE_OR_CHANGE = new Set([
+  'delete', 'deletes', 'deleted', 'remove', 'removes', 'removed', 'drop', 'drops', 'dropped',
+  'purge', 'purges', 'purged', 'update', 'updates', 'updated', 'write', 'writes',
+]);
 
-/** The fleet's delete-looking tools, as many as a Tool list holds (the engine's limit is 100). */
-export const deleteLookingTools = (tools: readonly string[]) => tools.filter(looksLikeDelete).slice(0, 100);
+/** Whether a tool's name has a part (split at non-letters and camelCase) like delete, remove, drop, purge, update or write: `bulk-update` does, `dropdown_options` doesn't. */
+export function looksLikeDeleteOrChange(tool: string): boolean {
+  const parts = tool.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2').toLowerCase().split(/[^a-z]+/);
+  return parts.some((p) => DELETE_OR_CHANGE.has(p));
+}
+
+/** The fleet's tools that look like they delete or change data, as many as a Tool list holds (the engine's limit is 100). */
+export const deleteLookingTools = (tools: readonly string[]) => tools.filter(looksLikeDeleteOrChange).slice(0, 100);
 
 // ── The editor's three questions (Rashad, Oct 27): When · Who · What happens ──
 
