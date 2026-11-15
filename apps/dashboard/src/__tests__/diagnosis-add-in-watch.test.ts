@@ -23,12 +23,16 @@ describe('Add in Watch from a suggestion', () => {
   });
 
   // A Watch rule stops nothing, so adding one doesn't fix the problem: the
-  // suggestion stays open and nothing but the rule is sent.
+  // suggestion stays open. Anything else on the deps (feedback calls an older
+  // version made) must not be touched.
   it('leaves the suggestion open: the only call made is the rule', async () => {
-    const d = deps();
+    const markImplemented = vi.fn();
+    const reloadRecommendation = vi.fn();
+    const d = { ...deps(), markImplemented, reloadRecommendation };
     await addSuggestedRuleInWatch(d, input);
-    expect(Object.keys(d)).toEqual(['createRule']);
     expect(d.createRule).toHaveBeenCalledTimes(1);
+    expect(markImplemented).not.toHaveBeenCalled();
+    expect(reloadRecommendation).not.toHaveBeenCalled();
   });
 
   it('adding twice keeps the first rule', async () => {
