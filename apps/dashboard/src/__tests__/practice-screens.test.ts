@@ -28,7 +28,7 @@ const DISCLAIMER = "Practice tasks use made-up records and WhiteRoom's test tool
 describe('practice test screens', () => {
   it.each(Object.keys(PRACTICE_STATES) as (keyof typeof PRACTICE_STATES)[])('%s: plain words only (rule 7, no "readiness")', (state) => {
     // `Watch` is allowed only as the Controls mode label: on a rule, and in a row's reason (D3).
-    const words = text(render(state)).replace(/· Watch\b|\band Watch\b|\bWatch: |Watch can’t see/g, '');
+    const words = text(render(state)).replace(/· Watch\b|\band Watch\b|\bWatch: /g, '');
     expect(words).not.toMatch(/handover|hand over|\bshifts?\b|\bwatch|context|compress|readiness|\battempt|\bprobe|evidence|\bsafe\b|certified|guarantee/i);
   });
 

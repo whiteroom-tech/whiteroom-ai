@@ -43,9 +43,9 @@ const WHEN_NOTES: Record<GovernanceRule['ruleType'], string | null> = {
   call_rate: null,
   loop_breaker: 'Calls to the tools listed under Not counting never count as a loop.',
   keyword: 'Whole words, any case. Images and PDFs aren’t checked. The matched text is never stored, and the agent isn’t told which keyword matched.',
-  tool_list: 'In Enforce, a streamed call is checked before it streams, so its text arrives all at once. In Watch, streamed calls aren’t checked.',
+  tool_list: 'In Watch, streamed calls are checked after they arrive. In Enforce, a streamed call that can use a listed tool arrives all at once, and a Bedrock one is refused.',
 };
-const REPLY_NOTE = 'To block a streamed reply, it’s checked whole first, so its text arrives all at once. Replies on Bedrock can’t be checked yet.';
+const REPLY_NOTE = 'To block a streamed reply, it’s checked whole first, so its text arrives all at once. Bedrock replies are checked in Watch; in Enforce, Bedrock calls are refused.';
 const help = { margin: 0, fontSize: 'var(--fs-sm)', lineHeight: 1.5, color: 'var(--tx2)' } as const;
 const usd = (n: number) => `$${n < 10 ? n.toFixed(2) : Math.round(n).toLocaleString('en-US')}`;
 const sentenceRow = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, fontSize: 'var(--fs-md)' } as const;

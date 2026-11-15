@@ -139,6 +139,11 @@ const EVENT_COPY: Record<string, EventCopy> = {
     icon: '⚠', tone: 'wouldBlock', code: 'NTS',
     say: () => "couldn't get its saved progress back",
   },
+  // The event names no keyword and holds no content, so neither is shown.
+  handover_notes_dropped: {
+    icon: '⚠', tone: 'wouldBlock', code: 'NTS',
+    say: () => 'had its saved progress dropped because it held a keyword a rule blocks',
+  },
   goal_set: {
     icon: '◎', tone: 'idle', code: 'GOL',
     say: (e) => (e.cleared ? 'had its goal cleared' : 'got a new goal from its owner'),

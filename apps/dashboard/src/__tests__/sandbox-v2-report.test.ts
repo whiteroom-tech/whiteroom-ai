@@ -187,10 +187,10 @@ describe('the report on the page', () => {
 
   it('lists other agents that called (not checked), and how a streaming agent’s rules treat its replies', () => {
     const base = stateOf(all('passed'));
-    const html = renderToStaticMarkup(h(ReportView, { state: { ...base, window: { ...base.window!, otherAgents: ['billing-agent', 'ops-bot'] }, streaming: { streamed: true, lines: ['Tool list: in Watch, streamed replies aren’t checked; they pass and say so.'] } }, checked: 'just now', calls: 30 }));
+    const html = renderToStaticMarkup(h(ReportView, { state: { ...base, window: { ...base.window!, otherAgents: ['billing-agent', 'ops-bot'] }, streaming: { streamed: true, lines: ['Tool list: streamed replies are checked after your agent gets them, so a match is reported, not stopped.'] } }, checked: 'just now', calls: 30 }));
     expect(html).toContain('Also called during this check: billing-agent, ops-bot (not checked).');
     expect(html).toContain('Your agent streams: how your rules treat its replies');
-    expect(html).toContain('Tool list: in Watch, streamed replies aren’t checked; they pass and say so.');
+    expect(html).toContain('Tool list: streamed replies are checked after your agent gets them, so a match is reported, not stopped.');
     const quiet = renderToStaticMarkup(h(ReportView, { state: base, checked: 'just now', calls: 30 }));
     expect(quiet).not.toMatch(/Also called during|Your agent streams/);
   });
