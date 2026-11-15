@@ -103,6 +103,13 @@ describe('Runs › Show › Rule activity', () => {
     m.root.unmount();
   });
 
+  it('explains the Spend column’s + and <$0.01 in a hint on its header', async () => {
+    const m = await mount();
+    const head = [...m.el.querySelectorAll('[role="columnheader"]')].find((c) => c.textContent?.trim().startsWith('Spend'));
+    expect(head?.querySelector('.wr-hint')?.getAttribute('aria-label')).toBe('What is this? A + means some calls have no price on file, so the real spend is higher. <$0.01 is under one cent.');
+    m.root.unmount();
+  });
+
   it('opens on a shared ?show=rules link', async () => {
     setQuery('show=rules');
     const m = await mount();
