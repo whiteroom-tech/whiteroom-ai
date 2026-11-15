@@ -343,7 +343,7 @@
 .wr-btn--danger:hover:not(:disabled), .wr-btn--danger:active:not(:disabled) { background: var(--bad-dim); }
 .wr-btn--danger-fill { background: var(--bad); color: var(--on-brand); font-weight: 600; }
 .wr-btn:disabled { opacity: .6; cursor: not-allowed; }
-/* A disabled filled button looks like a disabled secondary one; at 45% the
+/* A disabled filled button looks like a disabled secondary one; faded, the
    brand fill still read as the page's main action. Busy ("Resuming…") is
    disabled too but keeps its fill. */
 .wr-btn--primary:disabled:not([aria-busy]),

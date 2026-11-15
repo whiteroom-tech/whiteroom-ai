@@ -1064,8 +1064,12 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                     <p className="ctl-cap" style={{ margin: 0 }}>Add a rule to record what your agents do. New rules start in Watch, so nothing is blocked until you say so.</p>
                     <Button variant="primary" onClick={() => guard(() => setAdding("open"))} style={{ alignSelf: "flex-start" }}>Add rule</Button>
                   </section>
-                ) : <>{!edited && <p className="ctl-cap ctl-phone-hint">Tap a rule to edit it. New rules start in Watch.</p>}
-            {lists}{unknownCard}</>}
+                ) : (
+                  <>
+                    {!edited && <p className="ctl-cap ctl-phone-hint">Tap a rule to edit it. New rules start in Watch.</p>}
+                    {lists}{unknownCard}
+                  </>
+                )}
               </>
             )}
 
