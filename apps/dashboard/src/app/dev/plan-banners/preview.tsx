@@ -26,13 +26,13 @@ export function PlanBannersPreview() {
   return (
     <AppShell>
       <PageHeader title="Plan banners" />
-      <main style={{ flex: 1, overflow: 'auto', minHeight: 0, display: 'grid', gap: 20, alignContent: 'start', padding: '16px 0 32px' }}>
+      <div style={{ flex: 1, overflow: 'auto', minHeight: 0, display: 'grid', gap: 20, alignContent: 'start', padding: '16px 0 32px' }}>
         {rows}
         <section data-state="live" style={{ display: 'grid', gap: 6 }}>
           <div style={{ padding: '0 16px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{PLAN_PREVIEWS.live.label} · Fleet key</div>
           <div style={{ padding: '0 16px' }}><YoureLive trialEndsAt={PLAN_PREVIEWS.live.state.trialEndsAt!} /></div>
         </section>
-      </main>
+      </div>
     </AppShell>
   );
 }

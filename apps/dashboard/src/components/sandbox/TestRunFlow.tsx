@@ -915,7 +915,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
   if (!session?.user?.id) return (
     <>
     <PageHeader title="Sandbox" />
-    <main className={s.content}>
+    <div className={s.content}>
       <h2 className={s.pageTitle} style={{ fontFamily: FONT_DISPLAY }}>Test your agent</h2>
       <div className={`${s.card} ${s.cardBrand}`} style={{ maxWidth: 460 }}>
         <p className={s.pageSub}>Sandbox uses your WhiteRoom account sign-in, so sign in to create and manage your test environments.</p>
@@ -923,7 +923,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
           <a className={`${s.btn} ${s.btnPrimary}`} href={`/sign-in?callbackUrl=${encodeURIComponent(ROUTES.sandbox)}`} style={{ textDecoration: 'none' }}>Sign in →</a>
         </div>
       </div>
-    </main>
+    </div>
     </>
   );
 
@@ -996,7 +996,7 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
     {/* ── Header (start/setup only) ── */}
     {phase !== 'workspace' && <PageHeader title="Sandbox" />}
 
-    <main className={s.content}>
+    <div className={s.content}>
       {phase !== 'workspace' && <div className="wr-setup-leadwrap" style={{ marginBottom: 8 }}><PageLead>{SANDBOX_LEAD}</PageLead></div>}
       <div className={s.layout}>
       <StepsRail steps={SANDBOX_STEPS} current={sandboxStep(phase, { stage, allPassed, expired: !!expired })} />
@@ -1190,6 +1190,6 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
           </div>
         </div>
       )}
-    </main>
+    </div>
   </>;
 }

@@ -3,7 +3,12 @@
 import { useEffect } from 'react';
 import { BrandLink, Button } from '@whiteroom/ui';
 
-/** A page that failed to load or draw: say so, and offer another try. */
+/**
+ * A page that failed to load or draw: say so, and offer another try.
+ * Next 16.4 passes `{ error: unknown, reset, retry }` (ErrorInfo in
+ * next/dist/client/components/error-boundary); `retry` refetches the page,
+ * where `reset` would only redraw what failed.
+ */
 export default function PageError({ error, retry }: { error: unknown; retry: () => void }) {
   useEffect(() => { console.error(error); }, [error]);
   return (

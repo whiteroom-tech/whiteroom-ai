@@ -25,7 +25,7 @@ function opensAt(tomorrow: boolean): string {
 export function SandboxOpenPreview({ state }: { state: SandboxOpenState }) {
   const shell = (body: React.ReactNode) => <>
     <PageHeader title="Sandbox" />
-    <main className={s.content}>{body}</main>
+    <div className={s.content}>{body}</div>
   </>;
   return (
     <AppShell>

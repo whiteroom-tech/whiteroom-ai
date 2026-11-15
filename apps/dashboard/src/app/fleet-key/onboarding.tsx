@@ -493,7 +493,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, no
     <>
       <PageHeader title="Fleet key" fleetId={fleetId} fleetTitle={`Signed in as ${email}`} />
       <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-        <main className="wr-setup-page">
+        <div className="wr-setup-page">
           {notice}
           <PageLead>Connect an agent to WhiteRoom.</PageLead>
           <div className="wr-setup-narrow">
@@ -562,7 +562,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, no
             <a href={ROUTES.sandbox} className="wr-link">Test in Sandbox &rarr;</a>
           </p>
           </div>
-        </main>
+        </div>
       </div>
     </>
   );

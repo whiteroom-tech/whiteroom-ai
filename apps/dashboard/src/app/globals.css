@@ -172,7 +172,6 @@
 .wr-sidebar__account { position: relative; margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 12px 2px 0 6px; border-top: 1px solid var(--line); }
 .wr-sidebar__avatar { width: 28px; height: 28px; flex: none; display: grid; place-items: center; border-radius: 99px; background: var(--sunk); border: 1px solid var(--line2); font-size: var(--fs-sm); font-weight: 600; color: var(--tx); }
 
-/* Read by screen readers, not shown. */
 /* Page not found, and a page that failed (app/not-found.tsx, app/error.tsx). */
 .wr-stop { min-height: 100dvh; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px 16px; background: var(--bg); color: var(--tx); text-align: center; }
 .wr-stop__title { margin: 12px 0 0; font-family: var(--font-display); font-size: var(--fs-section); font-weight: 600; }
@@ -180,6 +179,7 @@
 /* Keyboard users' first Tab stop: jumps past the sidebar to the page. */
 .wr-skip { position: absolute; left: 8px; top: -64px; z-index: 2000; padding: 8px 12px; border-radius: 7px; background: var(--card); border: 1px solid var(--line2); color: var(--tx); font-size: var(--fs-sm); font-weight: 500; text-decoration: none; }
 .wr-skip:focus { top: 8px; outline: 2px solid var(--brand); outline-offset: 2px; }
+/* Read by screen readers, not shown. */
 .wr-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 /* Keep the shared navigation usable on narrow screens without squeezing content. */
@@ -589,8 +589,9 @@ a.wr-btn { text-decoration: none; }
 .wr-key-list .wr-key-endpoint { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 720px) { .wr-key-list > li { flex-wrap: wrap; } .wr-key-list .wr-key-endpoint { flex-basis: 100%; order: 5; } }
 .wr-input { min-height: 2.125rem; padding: 0 12px; border-radius: 7px; background: var(--sunk); border: 1px solid var(--line2); color: var(--tx); font-size: var(--fs-md); }
-.wr-signin-email:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
 .wr-input:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+/* Sign-in's email field (its own Tailwind box, the same focus ring). */
+.wr-signin-email:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
 
 /* Narrow screens: segmented controls and panel headers wrap instead of
    pushing content past the edge (P1.8 rule: no sideways scrolling). */

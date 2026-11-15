@@ -324,7 +324,7 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
 
   return <>
     <PageHeader title="Practice tasks" />
-    <main className={s.content}>
+    <div className={s.content}>
       <p className={s.srOnly} role="status" aria-live="polite">{said}</p>
       {view !== 'unavailable' && <PracticeIntro />}
       {refusal && view !== 'unavailable' && view !== 'demo' && (
@@ -350,7 +350,7 @@ export function PracticeTest({ preview }: { preview?: PracticePreview }) {
           </div>
         </div>
       )}
-    </main>
+    </div>
 
     {confirm?.kind === 'end' && (
       <PracticeDialog title="End this practice test?" confirm="End test" cancel="Keep testing" danger busy={busy} onClose={() => setConfirm(null)} onConfirm={() => { void end(confirm.id); }}>

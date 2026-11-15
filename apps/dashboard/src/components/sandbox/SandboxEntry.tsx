@@ -37,12 +37,12 @@ type Shown = { kind: 'deciding' } | { kind: 'v2'; fleet: string } | { kind: 'con
 export function SandboxOpensLater({ opensAt, now }: { opensAt: string; now?: number }) {
   return <>
     <PageHeader title="Sandbox" />
-    <main className={s.content}>
+    <div className={s.content}>
       <div className={v.page}>
         <p className={v.lead2}>{SANDBOX_LEAD}</p>
         <SandboxOpensLaterLine opensAt={opensAt} now={now} />
       </div>
-    </main>
+    </div>
   </>;
 }
 
@@ -129,12 +129,12 @@ export function SandboxEntry() {
   }
   return <>
     <PageHeader title="Sandbox" />
-    <main className={s.content}>
+    <div className={s.content}>
       {homeFailed
         ? <div style={{ maxWidth: 480 }}><LoadFailed what="your Sandbox" text={SANDBOX_OPEN_FAILED} busy={homeBusy} onRetry={openHome} /></div>
         : home && shown.kind === 'failed'
           ? <div style={{ maxWidth: 480 }}><LoadFailed what="the Sandbox" onRetry={auth.retry} /></div>
           : <SkeletonCard label={SANDBOX_OPENING} style={{ maxWidth: 480 }} />}
-    </main>
+    </div>
   </>;
 }
