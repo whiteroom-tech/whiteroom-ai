@@ -30,12 +30,19 @@ describe('not-found and error pages', () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => {});
     const retry = vi.fn();
     const failure = new Error('boom');
-    const m = await mount(h(PageError, { error: failure, retry }));
+    const reset = vi.fn();
+    const m = await mount(h(PageError, { error: failure, reset, retry }));
     expect(m.el.querySelector('main.wr-shell h1')?.textContent).toBe('Something went wrong');
     expect(log).toHaveBeenCalledWith(failure);
     const button = [...m.el.querySelectorAll('button')].find((b) => b.textContent === 'Retry')!;
     await act(async () => { button.click(); });
     expect(retry).toHaveBeenCalledTimes(1);
+    expect(reset).not.toHaveBeenCalled();
+    // A Next that passes no retry: the button falls back to reset.
+    const old = await mount(h(PageError, { error: failure, reset }));
+    await act(async () => { old.el.querySelector('button')!.click(); });
+    expect(reset).toHaveBeenCalledTimes(1);
+    old.root.unmount();
     log.mockRestore();
     m.root.unmount();
   });
