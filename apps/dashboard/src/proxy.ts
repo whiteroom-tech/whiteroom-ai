@@ -58,7 +58,7 @@ function withRequestHeaders(request: NextRequest) {
 function forward(request: NextRequest) {
   const { headers, csp } = withRequestHeaders(request);
   const response = NextResponse.next({ request: { headers } });
-  response.headers.set('Content-Security-Policy-Report-Only', csp);
+  response.headers.set('Content-Security-Policy', csp);
   return response;
 }
 
@@ -68,7 +68,7 @@ function rewriteTo(request: NextRequest, pathname: string) {
   const url = request.nextUrl.clone();
   url.pathname = pathname;
   const response = NextResponse.rewrite(url, { request: { headers } });
-  response.headers.set('Content-Security-Policy-Report-Only', csp);
+  response.headers.set('Content-Security-Policy', csp);
   return response;
 }
 
