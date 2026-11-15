@@ -1418,6 +1418,16 @@ describe('Keywords in the editor', () => {
     m.root.unmount();
   });
 
+  it('a Tool list says streamed calls are checked in Watch, and what Enforce does to streamed and Bedrock calls', async () => {
+    api.created.push({ ...base, id: 't1', ruleType: 'tool_list', mode: 'watch', response: 'block', appliesTo: 'all', params: { blockedTools: ['delete_record'] } });
+    const m = await mount();
+    await m.open('delete_record');
+    const hint = m.el.querySelector('aside .ctl-q [aria-label^="What is this?"]')?.getAttribute('aria-label') ?? '';
+    expect(hint).toContain('In Watch, streamed calls are checked after they arrive. In Enforce, a streamed call that can use a listed tool arrives all at once, and a Bedrock one is refused.');
+    expect(hint).not.toMatch(/aren’t checked|can’t be checked|before it streams/);
+    m.root.unmount();
+  });
+
   it('changes where it looks, removes a keyword, and won’t add a blank or a repeat in any case', async () => {
     api.created.push(keywordRule({ params: { keywords: ['Project Falcon', 'Orion'], where: 'incoming', wholeWord: true } }));
     api.update.mockImplementation(async (_f: string, _id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...keywordRule(), ...ch, version: 2 } }));
@@ -1426,9 +1436,10 @@ describe('Keywords in the editor', () => {
     const where = m.el.querySelector('select[aria-label="Where to look"]') as HTMLSelectElement;
     expect([...where.options].map((o) => o.textContent)).toEqual(['Incoming data', 'A model reply', 'Incoming data or a reply']);
     const hint = () => m.el.querySelector('aside .ctl-q [aria-label^="What is this?"]')?.getAttribute('aria-label') ?? '';
-    expect(hint()).not.toContain('Replies on Bedrock can’t be checked yet.');
+    expect(hint()).not.toContain('Bedrock replies are checked in Watch; in Enforce, Bedrock calls are refused.');
     await choose(where, 'both');
-    expect(hint()).toContain('Replies on Bedrock can’t be checked yet.');
+    expect(hint()).toContain('To block a streamed reply, it’s checked whole first, so its text arrives all at once. Bedrock replies are checked in Watch; in Enforce, Bedrock calls are refused.');
+    expect(hint()).not.toMatch(/can’t be checked|streamed calls aren’t checked/);
     await m.click(m.el.querySelector('button[aria-label="Remove Orion"]')!);
     expect(m.el.querySelector('aside[aria-label="Edit rule"]')!.textContent).not.toContain('“Orion”');
     const input = m.el.querySelector('input[aria-label="Keyword or phrase"]') as HTMLInputElement;

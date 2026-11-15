@@ -88,6 +88,10 @@ describe('handover health labels', () => {
     expect(at({ type: 'handover_delivery_abandoned' }).said).toBe('had too much saved progress to send in full, so some was left out');
     expect(at({ type: 'handover_chain_abandoned' }).said).toBe("couldn't get its saved progress back");
     expect(at({ type: 'handover_notes_resealed' }).said).toBe('had its saved progress cleaned and re-secured by WhiteRoom');
+    const dropped = at({ type: 'handover_notes_dropped', ruleId: 'gr_example', stage: 'summary', message: 'Handover notes held a keyword a rule blocks, so they were dropped. The agent continues without them.' });
+    expect(dropped.who).toBe('Lead-agent');
+    expect(dropped.said).toBe('had its saved progress dropped because it held a keyword a rule blocks');
+    expect(at({ type: 'handover_notes_dropped', stage: 'injection' }).said).toBe(dropped.said);
     expect(at({ type: 'goal_set', cleared: false }).said).toBe('got a new goal from its owner');
     expect(at({ type: 'goal_set', cleared: true }).said).toBe('had its goal cleared');
     expect(at({ type: 'run_started' }).said).toBe('was started on a new task');

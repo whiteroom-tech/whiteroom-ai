@@ -17,7 +17,7 @@ const later = (min: number) => new Date(NOW + min * 60_000).toISOString();
 
 // support-bot was active most recently, so setup starts on it, not on the first by name.
 const SETUP: SetupData = { agents: ['billing-bot', 'support-bot'], lastActiveAt: { 'billing-bot': '2026-10-11T09:00:00Z', 'support-bot': '2026-10-12T14:10:00Z' } };
-/** The control checks source-model plans for these rules: an allowlist, a loop breaker, a Watch call rate and a spend cap, with durable Pause and Stop; a tool list in Watch can't be checked. */
+/** The control checks source-model plans for these rules: an allowlist, a loop breaker, a Watch call rate and a spend cap, with durable Pause and Stop; a tool list in Watch isn't checked, since its tools are named differently. */
 const control = (id: string, label: string, mode: string | null, calls: number | null, note: string | null = null): PracticeControlCheck =>
   ({ id, label, mode, agents: 'all', checked: calls !== null, note, setup: 'ok', calls });
 const CONTROLS: PracticeControlCheck[] = [
@@ -26,7 +26,7 @@ const CONTROLS: PracticeControlCheck[] = [
   control('ctl.loop_breaker.gr_loop', 'Loop breaker', 'Enforce', 2),
   control('ctl.call_rate.gr_rate', 'Call rate', 'Watch', 6),
   control('ctl.spend_cap.gr_spend', 'Spend cap', 'Enforce', 1),
-  control('ctl.tool_list.gr_tools', 'Tool list', 'Watch', null, 'Not checked: Watch can’t see streamed replies, and your agent streams.'),
+  control('ctl.tool_list.gr_tools', 'Tool list', 'Watch', null, 'Not checked: your agent’s tools are named differently.'),
 ];
 
 /** R7: Fleet key keys as source-model lists them (placeholder prefixes, no real keys). */

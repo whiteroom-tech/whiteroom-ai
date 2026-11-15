@@ -164,14 +164,14 @@ describe('setup’s plan of the rows (§7 step 2)', () => {
     const plan = planRows([
       ctl('ctl.pause_stop', { mode: null, calls: 0 }),
       ctl('ctl.loop_breaker.l1'), ctl('ctl.call_rate.c1', { mode: 'Watch', calls: 6 }),
-      ctl('ctl.tool_list.t1', { checked: false, calls: null, note: 'Not checked: Watch can’t see streamed replies, and your agent streams.', mode: 'Watch' }),
+      ctl('ctl.tool_list.t1', { checked: false, calls: null, note: 'Not checked: your agent’s tools are named differently.', mode: 'Watch' }),
     ]);
     const by = (id: string) => plan.find((x) => x.row.id === id)!;
     expect(by('finishes_job')).toMatchObject({ status: 'will_check', reason: '1 check', members: ['Finishes a job correctly'] });
     expect(by('long_task')).toMatchObject({ status: 'will_check', reason: '4 checks' });
     expect(by('spend_cap')).toMatchObject({ status: 'not_set_up', reason: 'No rule yet.' });
     expect(by('loop_breaker')).toMatchObject({ status: 'will_check', reason: '2 rules · Enforce and Watch · 8 extra calls', members: ['ctl.loop_breaker.l1 · Enforce', 'ctl.call_rate.c1 · Watch'] });
-    expect(by('keyword')).toMatchObject({ status: 'not_checked', reason: 'Watch can’t see streamed replies, and your agent streams.' });
+    expect(by('keyword')).toMatchObject({ status: 'not_checked', reason: 'Your agent’s tools are named differently.' });
     expect(by('pause_stop')).toMatchObject({ status: 'will_check', reason: 'no extra calls' });
   });
 
