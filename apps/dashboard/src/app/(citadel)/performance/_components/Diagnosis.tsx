@@ -55,7 +55,7 @@ export function DiagnosisRow({ rec, onSelectAgent, onSelectEvidence, onFeedback,
   const limitation = limitationText(detector, rec.limitations);
   const howId = `how-${rec.id}`;
   const calls = rec.evidenceCount ?? 0;
-  // A rule already made from this suggestion: say what it did, and link to it, in place of "Add … in Watch".
+  // A rule already made from this suggestion: say what it did, and link to it (its mode is changed there), in place of "Add … in Watch".
   const rule = action?.kind === 'rule' ? rec.linkedRule : undefined;
   const ruleLine = linkedRuleLine(rule);
   const fixLine = fixCheckLine(rec.fixCheck);
@@ -86,7 +86,7 @@ export function DiagnosisRow({ rec, onSelectAgent, onSelectEvidence, onFeedback,
           <Link href={`${ROUTES.controls}?rule=${encodeURIComponent(rule.id)}`} className="dx-main-btn" style={{
             display: 'inline-flex', alignItems: 'center', fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '6px 14px', borderRadius: 6,
             background: rule.mode === 'watch' ? 'var(--brand)' : 'var(--brand-dim)', color: rule.mode === 'watch' ? 'var(--bg)' : 'var(--brand)', border: '1px solid var(--brand)', textDecoration: 'none',
-          }}>{rule.mode === 'watch' ? 'Switch to Enforce' : 'Open the rule'}</Link>
+          }}>Open the rule</Link>
         )}
         {open && action?.kind === 'howto' && (
           <button type="button" className="dx-main-btn" aria-expanded={howOpen} aria-controls={howId} onClick={() => setHowOpen((v) => !v)} style={{

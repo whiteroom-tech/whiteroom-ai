@@ -26,8 +26,8 @@ export function SuggestionDraft({ fleetId, authKey, recId, existingRule, onDone,
   /** A rule already made from this suggestion: adding again keeps it unchanged, so the amount can't be edited. */
   existingRule: { id: string; params: unknown } | null;
   onDone: (ruleId: string, message: string) => void;
-  /** `ruleCreated`: the rule exists even though the draft is being closed. */
-  onCancel: (ruleCreated: boolean) => void;
+  /** `maybeCreated`: an add was tried and couldn't be confirmed, so the rule may exist even though the draft is being closed. */
+  onCancel: (maybeCreated: boolean) => void;
 }) {
   const [loaded, setLoaded] = useState<Suggestion | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -89,7 +89,7 @@ export function SuggestionDraft({ fleetId, authKey, recId, existingRule, onDone,
     if (result.ok) {
       onDone(result.ruleId, result.existing
         ? `This suggestion's ${RULE_LABEL[ruleType]} was already added in Watch for ${rec.agentId}, so it was kept as it is. Change its number in the list if you need to.`
-        : `${RULE_TITLE[ruleType]} added in Watch for ${rec.agentId}. It stops nothing yet: the recommendation shows what it would have done, and you can switch it to Enforce here.`);
+        : `${RULE_TITLE[ruleType]} added in Watch for ${rec.agentId}. It stops nothing yet. The recommendation shows what it would have done; switch the rule to Enforce when you're ready.`);
     } else {
       // A timeout can hide a rule the engine did create; retrying is safe either way.
       setFailure("Couldn't confirm the rule was added. Try again.");
@@ -141,7 +141,7 @@ export function SuggestionDraft({ fleetId, authKey, recId, existingRule, onDone,
           fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '7px 16px', borderRadius: 6, border: '1px solid var(--brand)',
           background: 'var(--brand)', color: 'var(--bg)', cursor: saving ? 'wait' : 'pointer', opacity: saving || !valid ? 0.6 : 1,
         }}>{saving ? 'Adding…' : failure ? 'Try again' : 'Add in Watch'}</button>)}
-        <button type="button" className="dx-link" onClick={() => onCancel(false)}>Cancel</button>
+        <button type="button" className="dx-link" onClick={() => onCancel(!!failure)}>Cancel</button>
       </div>
     </section>
   );

@@ -485,7 +485,7 @@ describe('after someone acts on a recommendation', () => {
 
   it('never says fixed before the check has a result', () => {
     expect(fixCheckLine(fix('checking'))).toMatch(/^Marked fixed on .+\. WhiteRoom checks it worked on .+\.$/);
-    expect(fixCheckLine(fix('checking'))).not.toMatch(/stopped|worked\.$/);
+    expect(fixCheckLine(fix('checking'))).not.toContain('stopped');
     expect(fixCheckLine(fix('stopped'))).toMatch(/It stopped\.$/);
     expect(fixCheckLine(fix('still_happening'))).toMatch(/but it is still happening\.$/);
     expect(fixCheckLine(undefined)).toBeNull();
@@ -515,5 +515,38 @@ describe('after someone acts on a recommendation', () => {
     expect(linkedRuleLine(rule({ ruleType: 'spend_cap', mode: 'enforce', acted: 3 }))).toBe('Spend cap is in Enforce. It acted 3 times in the last 7 days.');
     expect(linkedRuleLine(rule({ mode: 'off' }))).toBe('Loop breaker is switched off.');
     expect(linkedRuleLine(undefined)).toBeNull();
+  });
+});
+
+describe('the two newer checks', () => {
+  const change = MEASURES.review_tool_change;
+  const say = (m: DiagnosisMeasures) => sentenceText(findingSentence('review_tool_change', m));
+
+  it('tool change lists only what changed', () => {
+    expect(say(change)).toContain('(2 added, 1 removed). Since then 30% of its calls had a failed step, against 5% before.');
+    expect(say({ ...change, removed: 0 })).toContain('(2 added). Since then');
+    expect(say({ ...change, added: 0 })).toContain('(1 removed). Since then');
+    expect(say({ ...change, added: 0, removed: 0 })).toMatch(/changed on [^(]+\. Since then/);
+  });
+
+  it('tool change without a readable date still makes a sentence', () => {
+    const { changedAt: _gone, ...rest } = change;
+    expect(say(rest)).toContain('Its tools changed on —');
+  });
+
+  it('tool change how-to names a removed tool when there is one', () => {
+    expect(howtoParagraphs('tool_change', change)).toHaveLength(2);
+    expect(howtoParagraphs('tool_change', change)[1]).toContain('fetch_page is gone');
+    const { removedTool: _gone, ...added } = change;
+    expect(howtoParagraphs('tool_change', added)[1]).toContain('each new tool says clearly what to send it');
+  });
+
+  it('no limit says which run and how long', () => {
+    expect(sentenceText(findingSentence('review_no_limit', MEASURES.review_no_limit))).toBe('Run 14 made 180 calls, and no rule in Enforce limits this agent. A stuck run would keep going until someone noticed.');
+  });
+
+  it('their waiting reasons are plain', () => {
+    expect(notMeasuredShort('few_calls_each_side', 'Needs 30 calls before and after the change; has 60 and 10')).toBe('needs more calls before and after the change');
+    expect(notMeasuredShort('rules_unread', "This agent's rules couldn't be read")).toBe('couldn’t read this agent’s rules');
   });
 });

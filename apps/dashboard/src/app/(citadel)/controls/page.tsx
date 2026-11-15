@@ -1083,7 +1083,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                   // Select the new rule only once the list that holds it has loaded.
                   void fetchData().then((ok) => { if (ok) { setSelectedId(ruleId); setDraft(null); } });
                 }}
-                onCancel={(ruleCreated) => { router.replace(withParams({ rec: null })); if (ruleCreated) void fetchData(); }}
+                onCancel={(maybeCreated) => { router.replace(withParams({ rec: null })); if (maybeCreated) void fetchData(); }}
               />
             </aside>
           ) : edited && draft ? (
