@@ -164,7 +164,7 @@ const READ_ACTIONS: ReadonlySet<string> = new Set([
   'performance_live_feed', 'performance_recommendations_export', 'performance_cost_forecast',
   'agent_budgets_get', 'governance_list', 'get_diagnosis', 'audit_integrity', 'verify_audit', 'audit_summary',
   'rule_would_act', 'list_runs', 'rule_actions', 'run_days', 'get_run_events', 'alerts_get', 'health_history', 'job_outcomes',
-  'fleet_data_settings_get', 'compression_preview',
+  'fleet_data_settings_get', 'compression_preview', 'tools_seen',
 ]);
 
 async function postRaw(
@@ -776,6 +776,25 @@ export async function agentBudgetSet(fleetId: string, agentId: string, budgetUsd
 /** The fleet's rules. A rule type this build doesn't know comes back in unknownRules (knownRulesOnly). */
 export async function governanceList(fleetId: string, key?: string): Promise<GovernanceListResult> {
   return knownRulesOnly(await apiCall<GovernanceListResult>({ action: 'governance_list', fleet_id: fleetId }, key));
+}
+
+/**
+ * Tools the fleet's agents called lately, for the Controls tool pickers.
+ * Dashboard only. An engine without tools_seen, or an odd reply, gives [],
+ * which leaves the pickers as they were; any other failure throws, so the
+ * caller can ask again later. Names over 64 characters are left out: the
+ * picker keeps a name to 64, so one couldn't be added whole.
+ */
+export async function toolsSeen(fleetId: string, key?: string): Promise<string[]> {
+  let tools: unknown;
+  try {
+    ({ tools } = await apiCall<{ tools?: unknown }>({ action: 'tools_seen', fleet_id: fleetId }, key));
+  } catch (e) {
+    if (e instanceof WhiteRoomApiError && e.status === 400 && /unknown action/i.test(e.reason ?? '')) return [];
+    throw e;
+  }
+  if (!Array.isArray(tools)) return [];
+  return [...new Set(tools.filter((t): t is string => typeof t === 'string' && t.trim() === t && t.length > 0 && t.length <= 64))];
 }
 
 export function governanceCreateRule(

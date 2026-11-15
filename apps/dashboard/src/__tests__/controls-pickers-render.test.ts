@@ -2,10 +2,11 @@
 // The Controls editor's pickers (spec Rev 1, D1): GroupPicker's chips, menu
 // and "Other…" (trimmed, capped at 64 characters, no duplicates), and
 // ScopeField's All agents / Specific agents.
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement as h } from 'react';
 import { createRoot } from 'react-dom/client';
-import { GroupPicker, InlineSelect, ScopeField, type PickGroup } from '@/app/(citadel)/controls/_components/pickers';
+import { GroupPicker, InlineSelect, MarkerChip, ScopeField, TOOL_GROUPS, ToolPicker, toolGroups, type PickGroup } from '@/app/(citadel)/controls/_components/pickers';
+import { looksLikeDeleteOrChange } from '@/lib/controls-view';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -146,5 +147,82 @@ describe('Editor controls look like buttons and selects, and stay real controls'
     await choose(select, 'day');
     expect(onChange).toHaveBeenLastCalledWith('day');
     root.unmount();
+  });
+});
+
+describe('ToolPicker: the fleet’s own tools (tools_seen)', () => {
+  const options = (el: HTMLElement) => [...el.querySelectorAll('select[aria-label="Add a tool"] option')].map((o) => o.textContent);
+  const groups = (el: HTMLElement) => [...el.querySelectorAll('select[aria-label="Add a tool"] optgroup')].map((g) => g.getAttribute('label'));
+  const today = async () => {
+    const { el, root } = await mount(h(GroupPicker, { values: [], onChange: () => {}, groups: TOOL_GROUPS, addLabel: '+ Add tool', ariaLabel: 'Add a tool', otherLabel: 'Other (type tool name)…', placeholder: 'tool name' }));
+    const html = el.innerHTML;
+    root.unmount();
+    return html;
+  };
+
+  it('with no fleet tools is exactly today’s picker, and asks for them once shown', async () => {
+    expect(toolGroups([])).toBe(TOOL_GROUPS);
+    const onShow = vi.fn();
+    const { el, root } = await mount(h(ToolPicker, { values: [], onChange: () => {}, fleetTools: [], onShow }));
+    expect(onShow).toHaveBeenCalledTimes(1);
+    expect(el.innerHTML).toBe(await today());
+    root.unmount();
+  });
+
+  it('puts the fleet’s tools first, opens on "Choose a tool…", and keeps every group it had', async () => {
+    const onChange = vi.fn();
+    const { el, root } = await mount(h(ToolPicker, { values: ['send_email'], onChange, fleetTools: ['search_claims', 'update_claim', 'send_email'], onShow: () => {}, first: looksLikeDeleteOrChange }));
+    const select = el.querySelector('select[aria-label="Add a tool"]') as HTMLSelectElement;
+    expect(select.value).toBe('');
+    expect(options(el)[0]).toBe('Choose a tool…');
+    expect(groups(el)).toEqual(['Your fleet’s tools', ...TOOL_GROUPS.map((g) => g.label)]);
+    // Delete-looking first; a tool already picked isn't offered.
+    expect([...el.querySelectorAll('optgroup')][0].textContent).toBe('update_claimsearch_claims');
+    expect(options(el)).toContain('read_file');
+    await choose(select, 'update_claim');
+    expect(onChange).toHaveBeenLastCalledWith(['send_email', 'update_claim']);
+    root.unmount();
+  });
+});
+
+describe('MarkerChip', () => {
+  const CODE = 'wrmk3f9a1c07b2e4d8a6';
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it('reads Marker and the short code, and Copy copies the whole code', async () => {
+    const writeText = vi.fn(async () => {});
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+    const onRemove = vi.fn();
+    const { el, root } = await mount(h(MarkerChip, { code: CODE, onRemove }));
+    expect(el.textContent).toContain('Marker');
+    expect(el.textContent).toContain('wrmk3f9a…d8a6');
+    expect(el.textContent).not.toContain(CODE);
+    await act(async () => { (el.querySelector('button[aria-label="Copy marker wrmk3f9a…d8a6"]') as HTMLButtonElement).click(); });
+    expect(writeText).toHaveBeenCalledWith(CODE);
+    expect(el.textContent).toContain('Copied');
+    await act(async () => { (el.querySelector('button[aria-label="Remove marker wrmk3f9a…d8a6"]') as HTMLButtonElement).click(); });
+    expect(onRemove).toHaveBeenCalled();
+    root.unmount();
+  });
+
+  it('when the browser refuses to copy, shows the whole code to select; the note goes after a few seconds, the code stays until a copy works', async () => {
+    vi.useFakeTimers();
+    const writeText = vi.fn(async (): Promise<void> => { throw new Error('denied'); });
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+    const { el, root } = await mount(h(MarkerChip, { code: CODE, onRemove: () => {} }));
+    const copy = () => act(async () => { (el.querySelector('button[aria-label="Copy marker wrmk3f9a…d8a6"]') as HTMLButtonElement).click(); });
+    await copy();
+    expect(el.textContent).toContain(CODE);
+    expect(el.textContent).toContain('Couldn’t copy. Select the code to copy it.');
+    await act(async () => { vi.advanceTimersByTime(4000); });
+    expect(el.textContent).not.toContain('Couldn’t copy');
+    expect(el.textContent).toContain(CODE);
+    // A retry that works puts the short code back.
+    writeText.mockImplementation(async () => {});
+    await copy();
+    expect(el.textContent).not.toContain(CODE);
+    expect(el.textContent).toContain('wrmk3f9a…d8a6');
+    root.unmount();
+    vi.useRealTimers();
   });
 });

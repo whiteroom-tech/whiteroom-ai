@@ -4,11 +4,12 @@ import { AppShell } from '@/components/AppShell';
 import { FleetAuthProvider } from '@/hooks/useFleetAuth';
 import ControlsPage from '@/app/(citadel)/controls/page';
 import type { GovernanceRule } from '@/lib/whiteroom/types';
+import { newMarker } from '@/lib/controls-view';
 
 // The engine and session, stood in for in the browser (installed before the
 // page's first request). Shaped like the demo fleet in the mockup: one rule
 // blocking, two overlapping spend caps, two identical loop breakers, an
-// allowlist missing a model one agent uses, a Keywords rule for one agent,
+// allowlist missing a model one agent uses, a Keywords rule (with a marker) for one agent,
 // and a Tool list with nothing picked. ?state=empty (no rules), ?state=fail
 // (the rules can't be read) and ?state=loading show the other states;
 // ?state=unknown adds a rule of a type this build doesn't know.
@@ -24,7 +25,7 @@ let rules: GovernanceRule[] = state === 'empty' ? [] : [
   { ...base, id: 'r2', version: 1, ruleType: 'model_allowlist', mode: 'watch', response: 'block', appliesTo: 'all', params: { allowedModels: ['claude-haiku-4-5'] } },
   { ...base, id: 'r9', version: 1, ruleType: 'loop_breaker', mode: 'watch', response: 'block', appliesTo: 'all', params: { threshold: 5, scope: 'run', ignoreTools: [] } },
   { ...base, id: 'r10', version: 1, ruleType: 'loop_breaker', mode: 'watch', response: 'block', appliesTo: 'all', params: { threshold: 5, scope: 'run', ignoreTools: [] } },
-  { ...base, id: 'r5', version: 1, ruleType: 'keyword', mode: 'watch', response: 'block', appliesTo: ['lead-agent'], params: { keywords: ['password'], where: 'incoming', wholeWord: true } },
+  { ...base, id: 'r5', version: 1, ruleType: 'keyword', mode: 'watch', response: 'block', appliesTo: ['lead-agent'], params: { keywords: ['password', newMarker()], where: 'incoming', wholeWord: true } },
   { ...base, id: 'r6', version: 1, ruleType: 'call_rate', mode: 'off', response: 'block', appliesTo: ['lead-agent'], params: { maxCalls: 60 } },
   { ...base, id: 'r7', version: 1, ruleType: 'tool_list', mode: 'off', response: 'block', appliesTo: 'all', params: { blockedTools: [] } },
   ...(state === 'unknown' ? [{ ...base, id: 'r12', version: 1, ruleType: 'made_up_type', mode: 'enforce', response: 'block', appliesTo: 'all', params: {} } as unknown as GovernanceRule] : []),
@@ -53,7 +54,7 @@ function engine(body: Record<string, unknown>): unknown {
         spend_cap: { dailyCap: 50, scope: 'day', unit: 'dollars' }, loop_breaker: { threshold: 100, scope: 'run', ignoreTools: [] },
         model_allowlist: { allowedModels: [] }, tool_list: { blockedTools: [] }, call_rate: { maxCalls: 60 }, keyword: { keywords: [], where: 'incoming', wholeWord: true },
       };
-      const rule = { ...base, changedAt: new Date().toISOString(), id: `n${++version}`, version: 1, ruleType: type, mode: 'watch', response: 'block', appliesTo: (body.applies_to as GovernanceRule['appliesTo']) ?? 'all', params: defaults[type] } as GovernanceRule;
+      const rule = { ...base, changedAt: new Date().toISOString(), id: `n${++version}`, version: 1, ruleType: type, mode: 'watch', response: 'block', appliesTo: (body.applies_to as GovernanceRule['appliesTo']) ?? 'all', params: (body.params as GovernanceRule['params']) ?? defaults[type] } as GovernanceRule;
       rules = [...rules, rule];
       return { rule };
     }
@@ -67,6 +68,8 @@ function engine(body: Record<string, unknown>): unknown {
       return { rule: next };
     }
     case 'governance_delete_rule': rules = rules.filter((r) => r.id !== body.rule_id); return { success: true };
+    // The fleet's own tools for the pickers; with ?state=empty the read fails, as on an older engine.
+    case 'tools_seen': if (state === 'empty') throw new Error('Unknown action'); return { tools: ['search_claims', 'update_claim', 'delete_attachment', 'send_email', 'read_file'] };
     case 'rule_would_act': return { fleetId: base.fleetId, ruleId: body.rule_id, byAgent: body.rule_id === 'r2' ? { 'code-reviewer': 44 } : {}, unversioned: false, since: day(4) };
     // Sample counts: the allowlist caught 60 calls from code-reviewer; one loop breaker caught 12 from lead-agent.
     case 'rule_actions': return { fleetId: base.fleetId, totals: counts({ wouldAct: 72 }), byAgent: { 'code-reviewer': counts({ wouldAct: 60 }), 'lead-agent': counts({ wouldAct: 12 }) },

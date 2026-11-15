@@ -22,8 +22,8 @@ import { addDays, dayKey, formatInZone } from '@/lib/zone-time';
 import type { ControlActor } from '@/lib/control-actors';
 import { ROUTES } from '@/lib/routes';
 import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
-import { AGENT_NOTE, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, MODE_CHOICES, responseChoices, sendsAlert, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
-import { Chip, field, GroupPicker, InlineSelect, MODEL_GROUPS, NumberField, ScopeField, TOOL_GROUPS } from './pickers';
+import { AGENT_NOTE, isMarker, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, looksLikeDeleteOrChange, newMarker, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, MODE_CHOICES, responseChoices, sendsAlert, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
+import { Chip, field, GroupPicker, InlineSelect, MarkerChip, MODEL_GROUPS, NumberField, ScopeField, ToolPicker } from './pickers';
 
 /** When each rule acts; Keywords depends on where it looks (KEYWORD_ACTS), Loop breaker on its number (loopActs). */
 const ACTS: Record<Exclude<GovernanceRule['ruleType'], 'keyword' | 'loop_breaker'>, string> = {
@@ -50,11 +50,15 @@ const help = { margin: 0, fontSize: 'var(--fs-sm)', lineHeight: 1.5, color: 'var
 const usd = (n: number) => `$${n < 10 ? n.toFixed(2) : Math.round(n).toLocaleString('en-US')}`;
 const sentenceRow = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, fontSize: 'var(--fs-md)' } as const;
 
-export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, history, ruleHistory, actors, undoOf, onUndo, fleetDailySpend = null, agentSpend = [], status, startOpen = false, dirty, error, saving, onSave, onDiscard, onClose, onRemove }: {
+export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPicker, govV1, alertChannel, history, ruleHistory, actors, undoOf, onUndo, fleetDailySpend = null, agentSpend = [], status, startOpen = false, dirty, error, saving, onSave, onDiscard, onClose, onRemove }: {
   rule: GovernanceRule;
   draft: RuleDraft;
   onDraft: (d: RuleDraft) => void;
   agents: string[];
+  /** The fleet's own tools for the tool pickers; empty until read, or when the engine has none to give. */
+  fleetTools: readonly string[];
+  /** A tool picker is showing: read the fleet's tools, if not already. */
+  onToolPicker: () => void;
   govV1: boolean;
   /** Whether the fleet has somewhere to send alerts (Slack or Teams); null while unknown. */
   alertChannel: boolean | null;
@@ -99,6 +103,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
     setParams({ keywords: [...keywords, typed] });
     setKeyword('');
   };
+  const markers = keywords.filter(isMarker).length;
   // Only alert me, Pause and Stop alert; Block does when asked to.
   const alerts = sendsAlert(draft);
   // A rule with nothing to act on yet, or a number that doesn't read, opens with When expanded.
@@ -189,8 +194,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
               <InlineSelect label="Limit period" value={(p as LoopBreakerParams).scope} options={['run', 'day'] as const} onChange={(scope) => setParams({ scope })} />
             </div>
             <span style={help}>Not counting:</span>
-            <GroupPicker values={(p as LoopBreakerParams).ignoreTools} onChange={(ignoreTools) => setParams({ ignoreTools })} groups={TOOL_GROUPS}
-              addLabel="+ Add tool" ariaLabel="Add a tool" otherLabel="Other (type tool name)…" placeholder="tool name" />
+            <ToolPicker values={(p as LoopBreakerParams).ignoreTools} onChange={(ignoreTools) => setParams({ ignoreTools })} fleetTools={fleetTools} onShow={onToolPicker} />
           </>
         )}
         {rule.ruleType === 'call_rate' && (
@@ -222,9 +226,12 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
             ) : <>
             {keywords.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {keywords.map((k, i) => (
-                  <Chip key={`${i}:${k}`} label={`“${k}”`} removeLabel={`Remove ${k}`} onRemove={() => setParams({ keywords: keywords.filter((_, j) => j !== i) })} />
-                ))}
+                {keywords.map((k, i) => {
+                  const remove = () => setParams({ keywords: keywords.filter((_, j) => j !== i) });
+                  return isMarker(k)
+                    ? <MarkerChip key={`${i}:${k}`} code={k} onRemove={remove} />
+                    : <Chip key={`${i}:${k}`} label={`“${k}”`} removeLabel={`Remove ${k}`} onRemove={remove} />;
+                })}
               </div>
             )}
             <div style={{ display: 'flex', gap: 6 }}>
@@ -233,16 +240,19 @@ export function RuleEditor({ rule, draft, onDraft, agents, govV1, alertChannel, 
                 style={{ ...field, padding: '0 10px', flex: '1 1 160px', minWidth: 0 }} />
               <Button onClick={addKeyword} disabled={!typed || repeat || !keywordFits(keywords)}>Add</Button>
             </div>
+            <Button size={28} onClick={() => setParams({ keywords: [...keywords, newMarker()] })} disabled={!keywordFits(keywords)} style={{ alignSelf: 'flex-start' }}>Generate marker</Button>
             {repeat && <p style={help}>That keyword is already in the list.</p>}
             {!keywordFits(keywords) && <p style={help}>A rule holds up to {KEYWORD_MAX} keywords. Remove one to add another.</p>}
+            {markers > 0 && (
+              <p style={help}>A marker is a made-up code. Copy it into private records and this rule flags it when it shows up.{where !== 'replies' && ' With incoming data on, it also matches when an agent reads the record.'}</p>
+            )}
             </>}
           </>
         )}
         {rule.ruleType === 'tool_list' && (
           <>
             <span style={{ fontSize: 'var(--fs-md)' }}>When an agent is about to run any of these tools:</span>
-            <GroupPicker values={(p as ToolListParams).blockedTools} onChange={(blockedTools) => setParams({ blockedTools })} groups={TOOL_GROUPS}
-              addLabel="+ Add tool" ariaLabel="Add a tool" otherLabel="Other (type tool name)…" placeholder="tool name" />
+            <ToolPicker values={(p as ToolListParams).blockedTools} onChange={(blockedTools) => setParams({ blockedTools })} fleetTools={fleetTools} onShow={onToolPicker} first={looksLikeDeleteOrChange} />
           </>
         )}
         <Button size={28} onClick={() => setWhenOpen(false)} style={{ alignSelf: 'flex-start' }} aria-expanded>Done</Button>

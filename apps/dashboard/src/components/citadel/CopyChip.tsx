@@ -3,22 +3,39 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, Icon, FONT_MONO } from '@whiteroom/ui';
 
-/** Copy `text` and show "Copied" for 1.5 s; the timer is cleared on repeat clicks and unmount. */
-export function useCopy(text: string): { copied: boolean; copy: () => Promise<void> } {
+/**
+ * Copy `text` and show "Copied" for 1.5 s; the timer is cleared on repeat
+ * clicks and unmount. `failed`: the browser refused, so the caller can show
+ * the text to select instead, until a copy works. `failNote`: the refusal is
+ * recent enough to say so (4 s from each failed try).
+ */
+export function useCopy(text: string): { copied: boolean; failed: boolean; failNote: boolean; copy: () => Promise<void> } {
   const [copied, setCopied] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [failNote, setFailNote] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  const noteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+    if (noteTimer.current) clearTimeout(noteTimer.current);
+  }, []);
   async function copy() {
+    if (noteTimer.current) clearTimeout(noteTimer.current);
+    setFailNote(false);
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
+      setFailed(false);
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => setCopied(false), 1500);
     } catch {
       // Clipboard blocked (permissions, insecure context): the text stays selectable.
+      setFailed(true);
+      setFailNote(true);
+      noteTimer.current = setTimeout(() => setFailNote(false), 4000);
     }
   }
-  return { copied, copy };
+  return { copied, failed, failNote, copy };
 }
 
 /**
