@@ -15,9 +15,6 @@ import { DiagnosisRow, isDiagnosisRow } from './Diagnosis';
 
 export const REC_STATUSES = ['all', 'open', 'snoozed', 'dismissed', 'reported_implemented', 'resolved', 'evaluating', 'validated'] as const;
 
-/** Verification states the fix-check line covers (or that mean nothing to show). */
-const FIX_CHECK_STATES = ['none', 'collecting', 'stopped', 'still_happening'];
-
 type Feedback = ReturnType<typeof recFeedback>;
 
 export function RecommendationsCard({
@@ -82,8 +79,8 @@ export function RecommendationsCard({
             <strong style={{ color: 'var(--tx)' }}>{recTitle(rec.detector)}</strong>
             <button type="button" onClick={() => onSelectAgent(rec.agentId)} className="wr-agent-link">{rec.agentId}</button>
             {rec.status !== 'open' && <Badge status={rec.status} />}
-            {/* A fix check has its own line below; any other verification state keeps its badge. */}
-            {!rec.fixCheck && rec.verificationStatus && !FIX_CHECK_STATES.includes(rec.verificationStatus) && <Badge status={rec.verificationStatus} size="small" />}
+            {/* A fix check has its own line below; without one, the verification state keeps its badge. */}
+            {!rec.fixCheck && rec.verificationStatus && rec.verificationStatus !== 'none' && <Badge status={rec.verificationStatus} size="small" />}
           </div>
           {rec.summary && <p style={{ margin: 0, fontSize: 'var(--fs-md)', lineHeight: 1.5, color: 'var(--tx)' }}>{rec.summary}</p>}
           {rec.fixCheck && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: rec.fixCheck.state === 'still_happening' ? 'var(--warn-tx)' : 'var(--tx2)' }}>{fixCheckLine(rec.fixCheck)}</p>}

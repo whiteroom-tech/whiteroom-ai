@@ -82,8 +82,9 @@ describe('a fix check on a row', () => {
     expect(host.textContent).not.toContain('stoppedMarked');
     card([rec({ ...legacy, verificationStatus: 'inconclusive' })]);
     expect(host.textContent).toContain('inconclusive');
+    // No fix check sent (an engine that only has the status): the badge still says where it stands.
     card([rec({ ...legacy, verificationStatus: 'collecting' })]);
-    expect(host.textContent).not.toContain('collecting');
+    expect(host.textContent).toContain('collecting');
   });
 });
 
