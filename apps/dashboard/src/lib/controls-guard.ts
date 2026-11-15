@@ -24,7 +24,9 @@ export function canAct(rule: Pick<GovernanceRule, 'mode' | 'ruleType' | 'params'
     case 'send_limit': return (rule.params as SendLimitParams).tools.length > 0;
     // Only ever alerts (DLP spec 5.3): it never stops a call, whatever is saved.
     case 'outside_then_send': return false;
-    case 'spend_cap': case 'loop_breaker': case 'call_rate': return true;
+    // Edits the request and lets it through: it never stops a call, whatever is saved.
+    case 'trim_results': return false;
+    case 'spend_cap': case 'loop_breaker': case 'call_rate': case 'block_streak': return true;
     default: return unhandledType(rule.ruleType, true);
   }
 }

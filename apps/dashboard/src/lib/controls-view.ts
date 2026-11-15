@@ -3,12 +3,12 @@
 // fetching, so every sentence and decision here is tested on its own.
 
 import type {
-  CallRateParams, GovernanceMode, GovernanceParams, GovernanceResponse, GovernanceRule, GovernanceRuleType,
-  GovernanceScope, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, OutsideThenSendParams, RuleActionCounts, SendLimitParams, SendSeenRow, SpendCapParams, ToolListParams,
+  BlockStreakParams, CallRateParams, GovernanceMode, GovernanceParams, GovernanceResponse, GovernanceRule, GovernanceRuleType,
+  GovernanceScope, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, OutsideThenSendParams, RuleActionCounts, SendLimitParams, SendSeenRow, SpendCapParams, ToolListParams, TrimResultsParams,
 } from '@/lib/whiteroom/types';
 import { convertSpendCap, engineTakes, UNKNOWN_RULE, unhandledType } from '@/lib/governance';
 import { MODE_LABEL, NOTIFY } from '@/lib/vocab';
-import { DAY_MS, fmtCount, ordinal } from '@/lib/format';
+import { DAY_MS, fmtCount, ordinal, plural } from '@/lib/format';
 
 // ── Sentences ───────────────────────────────────────────────────────
 
@@ -200,6 +200,18 @@ export function looksLikeReader(tool: string): boolean {
 /** The fleet's tools that look like they read outside content, as many as the rule holds. */
 export const readLookingTools = (tools: readonly string[]) => tools.filter(looksLikeReader).slice(0, FLOW_TOOLS_MAX);
 
+// ── Old tool results ────────────────────────────────────────────────
+
+/**
+ * Old tool results edits what goes to the model. It holds the notify response
+ * (the engine's fixed value for it) but never alerts or blocks, so wherever a
+ * response is put into words or counted, it has its own: trimmed.
+ */
+export const trims = (r: { ruleType?: string }) => r.ruleType === 'trim_results';
+
+/** "the newest 5 turns", "the newest turn". */
+const newest = (n: number) => (n === 1 ? 'the newest turn' : `the newest ${fmtCount(n)} turns`);
+
 /**
  * The rule as one sentence, split so the values can be set in mono. Only a
  * rule in Enforce does what it says; in Watch or Off it "would", so the
@@ -250,6 +262,13 @@ export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 
       return (rule.params as OutsideThenSendParams).sendTools.length
         ? { pre: `When ${FLOW_WHEN[0].toLowerCase()}${FLOW_WHEN.slice(1)}, ${v}.`, val: '', post: '' }
         : { pre: 'No send tools picked yet.', val: '', post: '' };
+    case 'block_streak':
+      return { pre: 'When an agent has ', val: fmtCount((rule.params as BlockStreakParams).threshold), post: ` calls in a row blocked in a run, ${v}.` };
+    case 'trim_results': {
+      const p = rule.params as TrimResultsParams;
+      const removes = `remove tool results older than ${newest(p.keepRecent)}`;
+      return { pre: 'When a request is about ', val: `${fmtCount(p.minTokens)} tokens`, post: ` or more, ${rule.mode === undefined || rule.mode === 'enforce' ? removes : `it would ${removes}`}.` };
+    }
     default:
       return unhandledType(rule.ruleType, { pre: UNKNOWN_RULE, val: '', post: '' });
   }
@@ -277,7 +296,7 @@ function ruleOrder(a: GovernanceRule, b: GovernanceRule): number {
 }
 
 /** The order rules are listed in on Controls, by type. Its own list, so the Add-a-rule choices can change without moving rows. */
-export const RULE_ROW_ORDER: readonly GovernanceRuleType[] = ['spend_cap', 'call_rate', 'model_allowlist', 'loop_breaker', 'tool_list', 'keyword', 'send_limit', 'outside_then_send'];
+export const RULE_ROW_ORDER: readonly GovernanceRuleType[] = ['spend_cap', 'call_rate', 'model_allowlist', 'loop_breaker', 'tool_list', 'keyword', 'send_limit', 'outside_then_send', 'block_streak', 'trim_results'];
 
 function typeRank(t: GovernanceRuleType): number {
   const i = RULE_ROW_ORDER.indexOf(t);
@@ -317,6 +336,8 @@ export function spendOverlap(rules: readonly GovernanceRule[]): { never: Governa
 
 const TALLY: Record<GovernanceResponse, keyof RuleActionCounts> = { notify: 'toldYou', block: 'blocked', pause: 'paused', stop: 'stopped' };
 const TALLY_WORD: Record<GovernanceResponse, string> = { notify: NOTIFY.done, block: 'blocked', pause: 'paused', stop: 'stopped' };
+/** What an enforced rule did this week: Old tool results counts under trimmed (0 from an engine that doesn't send it), never under its response. */
+const enforcedCount = (rule: Pick<GovernanceRule, 'ruleType' | 'response'>, week: RuleActionCounts) => (trims(rule) ? week.trimmed ?? 0 : week[TALLY[rule.response ?? 'block']] ?? 0);
 const times = (n: number) => (n === 1 ? 'once' : `${fmtCount(n)} times`);
 /** A rule (or agent) with no actions. */
 export const NO_ACTIONS: RuleActionCounts = { blocked: 0, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 };
@@ -332,14 +353,15 @@ export function emptyPick(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): st
     case 'send_limit': return (rule.params as SendLimitParams).tools.length ? null : 'a tool';
     // No send tools is "Not set up" (DLP spec 5.3). No read tools is a real rule: the provider's web search and fetch always count.
     case 'outside_then_send': return (rule.params as OutsideThenSendParams).sendTools.length ? null : 'a send tool';
-    case 'spend_cap': case 'loop_breaker': case 'call_rate': return null;
+    case 'spend_cap': case 'loop_breaker': case 'call_rate': case 'block_streak': case 'trim_results': return null;
     default: return unhandledType(rule.ruleType, null);
   }
 }
 
 // ── What the agent gets ─────────────────────────────────────────────
 
-const REASON: Record<GovernanceRuleType, string> = {
+// Repeated blocks and Old tool results never block a call themselves, so they have no reason of their own.
+const REASON: Record<Exclude<GovernanceRuleType, 'block_streak' | 'trim_results'>, string> = {
   spend_cap: 'budget_exceeded', loop_breaker: 'loop_detected', model_allowlist: 'model_not_allowed', tool_list: 'tool_not_allowed', call_rate: 'rate_exceeded',
   keyword: 'keyword_found', send_limit: 'destination_not_allowed', outside_then_send: 'outside_then_send',
 };
@@ -347,6 +369,12 @@ const REASON: Record<GovernanceRuleType, string> = {
 /** The engine's 403 for this rule (blockResponseBody); nothing for Only alert me. */
 export function agentGets(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'response'>): string {
   const response = rule.response ?? 'block';
+  if (rule.ruleType === 'trim_results') return 'Nothing: the call goes through.\nOld tool results in it are replaced with a short note.';
+  if (rule.ruleType === 'block_streak') {
+    // The call that reaches the limit was blocked by another rule: that rule's 403 is what the agent gets.
+    const then = response === 'notify' ? 'You get an alert; the agent doesn’t.' : `Then the agent is ${response === 'stop' ? 'stopped' : 'paused'} until someone resumes it.`;
+    return `Nothing new: the blocked call fails with the other rule’s reason.\n${then}`;
+  }
   if (response === 'notify') return 'Nothing: the call goes through.\nYou get an alert; the agent doesn’t.';
   const held = response === 'pause' || response === 'stop';
   const resets = held ? 'when someone resumes it' : resetsWhen(rule);
@@ -358,7 +386,7 @@ export function agentGets(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 're
 function resetsWhen(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): string {
   switch (rule.ruleType) {
     case 'call_rate': return 'once the last minute is back under the limit';
-    case 'model_allowlist': case 'tool_list': case 'keyword': case 'send_limit': case 'outside_then_send': return 'never';
+    case 'model_allowlist': case 'tool_list': case 'keyword': case 'send_limit': case 'outside_then_send': case 'block_streak': case 'trim_results': return 'never';
     case 'spend_cap': case 'loop_breaker': return (rule.params as SpendCapParams | LoopBreakerParams).scope === 'day' ? 'next day (00:00 UTC)' : 'next run';
     default: return unhandledType(rule.ruleType, 'never');
   }
@@ -374,6 +402,9 @@ export const AGENT_NOTE: Record<GovernanceRuleType, string> = {
   send_limit: 'Stops the model’s reply before the agent gets it, so the tool never sends. The agent isn’t told the list.',
   // Only alerts (DLP spec 5.3), so this never shows: What the agent sees is "Nothing".
   outside_then_send: 'It never stops a call.',
+  block_streak: 'Acts after the blocked call that reaches the limit.',
+  // Never stops a call, so this never shows.
+  trim_results: 'It never stops a call.',
 };
 
 // ── The edit model behind Save ──────────────────────────────────────
@@ -395,8 +426,10 @@ export interface RuleDraft {
   alsoNotify: boolean;
   appliesTo: GovernanceScope;
   params: GovernanceParams;
-  /** The number the person is typing (spend cap, loop threshold, calls a minute). */
+  /** The number the person is typing (spend cap, loop threshold, calls a minute, blocks in a row, turns to keep). */
   number: string;
+  /** Old tool results only: its second number, the request size in tokens. */
+  number2?: string;
 }
 
 const numberOf = (rule: Pick<GovernanceRule, 'ruleType' | 'params'>): string => {
@@ -404,10 +437,13 @@ const numberOf = (rule: Pick<GovernanceRule, 'ruleType' | 'params'>): string => 
     case 'spend_cap': return String((rule.params as SpendCapParams).dailyCap);
     case 'loop_breaker': return String((rule.params as LoopBreakerParams).threshold);
     case 'call_rate': return String((rule.params as CallRateParams).maxCalls);
+    case 'block_streak': return String((rule.params as BlockStreakParams).threshold);
+    case 'trim_results': return String((rule.params as TrimResultsParams).keepRecent);
     case 'model_allowlist': case 'tool_list': case 'keyword': case 'send_limit': case 'outside_then_send': return '';
     default: return unhandledType(rule.ruleType, '');
   }
 };
+const number2Of = (rule: Pick<GovernanceRule, 'ruleType' | 'params'>): string => (rule.ruleType === 'trim_results' ? String((rule.params as TrimResultsParams).minTokens) : '');
 
 export function draftFrom(rule: GovernanceRule): RuleDraft {
   return {
@@ -415,10 +451,11 @@ export function draftFrom(rule: GovernanceRule): RuleDraft {
     appliesTo: rule.appliesTo === 'all' ? 'all' : [...rule.appliesTo],
     params: JSON.parse(JSON.stringify(rule.params)) as GovernanceParams,
     number: numberOf(rule),
+    ...(rule.ruleType === 'trim_results' && { number2: number2Of(rule) }),
   };
 }
 
-const HAS_NUMBER: Record<GovernanceRuleType, boolean> = { spend_cap: true, loop_breaker: true, call_rate: true, model_allowlist: false, tool_list: false, keyword: false, send_limit: false, outside_then_send: false };
+const HAS_NUMBER: Record<GovernanceRuleType, boolean> = { spend_cap: true, loop_breaker: true, call_rate: true, model_allowlist: false, tool_list: false, keyword: false, send_limit: false, outside_then_send: false, block_streak: true, trim_results: true };
 const hasNumber = (t: GovernanceRuleType) => HAS_NUMBER[t] === true;
 
 /**
@@ -441,6 +478,16 @@ export function draftParams(d: RuleDraft): { params: GovernanceParams } | { erro
     if ((d.params as SpendCapParams).unit === 'tokens' && !Number.isInteger(n)) return { error: 'Enter a whole number of tokens.' };
     return { params: { ...(d.params as SpendCapParams), dailyCap: n } };
   }
+  // The engine's ranges: 2 to 100 blocks in a row; 1 to 100 turns kept, and 1,000 to 10,000,000 tokens.
+  if (d.ruleType === 'block_streak') {
+    return Number.isInteger(n) && n >= 2 && n <= 100 ? { params: { threshold: n } } : { error: 'Enter a whole number from 2 to 100.' };
+  }
+  if (d.ruleType === 'trim_results') {
+    const tokens = typedNumber(d.number2 ?? '');
+    if (!Number.isInteger(tokens) || tokens < 1_000 || tokens > 10_000_000) return { error: 'Enter a whole number of tokens from 1,000 to 10,000,000.' };
+    if (!Number.isInteger(n) || n < 1 || n > 100) return { error: 'Enter a whole number of turns from 1 to 100.' };
+    return { params: { keepRecent: n, minTokens: tokens } };
+  }
   if (!Number.isInteger(n) || n < 1 || n > 10_000) return { error: 'Enter a whole number from 1 to 10,000.' };
   return { params: d.ruleType === 'loop_breaker' ? { ...(d.params as LoopBreakerParams), threshold: n } : { maxCalls: n } };
 }
@@ -453,7 +500,7 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
  * number that doesn't read yet counts as one when its text differs.
  */
 export function isDirty(d: RuleDraft, rule: GovernanceRule): boolean {
-  if ('error' in draftParams(d)) return d.number.trim() !== numberOf(rule);
+  if ('error' in draftParams(d)) return d.number.trim() !== numberOf(rule) || (d.number2 ?? '').trim() !== number2Of(rule);
   return draftChanges(d, rule) !== null;
 }
 
@@ -466,9 +513,9 @@ export function changeUnit(d: RuleDraft, unit: 'tokens' | 'dollars'): RuleDraft 
   return { ...d, number, params: { ...p, unit } };
 }
 
-/** Whether the rule, as drafted, sends an alert when it acts: Only alert me, Pause, Stop, or Block with an alert. */
-export function sendsAlert(d: Pick<RuleDraft, 'mode' | 'response' | 'alsoNotify'>): boolean {
-  return d.mode === 'enforce' && (d.response !== 'block' || d.alsoNotify);
+/** Whether the rule, as drafted, sends an alert when it acts: Only alert me, Pause, Stop, or Block with an alert. Old tool results never does. */
+export function sendsAlert(d: Pick<RuleDraft, 'mode' | 'response' | 'alsoNotify'> & { ruleType?: GovernanceRuleType }): boolean {
+  return d.mode === 'enforce' && !trims(d) && (d.response !== 'block' || d.alsoNotify);
 }
 
 /** A new response; "Also alert me" only applies to Block, so it's cleared otherwise. */
@@ -515,7 +562,7 @@ export function draftProblem(d: RuleDraft): string | null {
     case 'keyword': return keywordTotal(p.params as KeywordParams) === 0 ? 'Pick at least one keyword before you turn on Enforce.' : null;
     case 'send_limit': return (p.params as SendLimitParams).tools.length === 0 ? 'Pick at least one tool before you turn on Enforce.' : null;
     case 'outside_then_send': return (p.params as OutsideThenSendParams).sendTools.length === 0 ? 'Pick at least one tool under Sends data out before you turn on Enforce.' : null;
-    case 'spend_cap': case 'loop_breaker': case 'call_rate': return null;
+    case 'spend_cap': case 'loop_breaker': case 'call_rate': case 'block_streak': case 'trim_results': return null;
     // Never saved: the editor doesn't open a rule of a type it doesn't know.
     default: return unhandledType(d.ruleType, UNKNOWN_RULE);
   }
@@ -533,6 +580,8 @@ export const RULE_TEMPLATES: { type: GovernanceRuleType; title: string; desc: st
   { type: 'keyword', title: 'Flag keywords', desc: 'Get an alert, or block the call, when words you pick show up.' },
   { type: 'send_limit', title: 'Limit where tools can send data', desc: 'For example, email only to your own domain.' },
   { type: 'outside_then_send', title: 'Flag sends after outside content', desc: 'Get an alert when an agent reads a web page, email or file, then tries to send data out.' },
+  { type: 'block_streak', title: 'Act on repeated blocks', desc: 'Catch an agent that keeps making calls your rules block.' },
+  { type: 'trim_results', title: 'Trim old tool results', desc: 'Keep long conversations short by removing old tool results before they go to the model.' },
 ];
 
 /** The Add a rule choices this engine takes (governance_list ruleTypes): an engine without a new type never gets offered it. */
@@ -567,7 +616,7 @@ export function weakenings(prev: GovernanceRule, next: GovernanceRule): string[]
   const pr = prev.response ?? 'block', nr = next.response ?? 'block';
   if (next.mode === 'enforce' && prev.mode === 'enforce' && RESPONSE_RANK[nr] < RESPONSE_RANK[pr]) out.push(`When enforced: ${VERB[pr]} → ${VERB[nr]}`);
   // Any lost alert, whatever the response: Pause, Stop and Only alert me alert; Block does when asked to.
-  const alerts = (r: GovernanceRule) => r.mode === 'enforce' && ((r.response ?? 'block') !== 'block' || !!r.alsoNotify);
+  const alerts = (r: GovernanceRule) => r.mode === 'enforce' && !trims(r) && ((r.response ?? 'block') !== 'block' || !!r.alsoNotify);
   if (alerts(prev) && !alerts(next) && MODE_RANK[next.mode] >= MODE_RANK[prev.mode]) out.push('It stops sending you an alert');
   if (prev.appliesTo === 'all' && next.appliesTo !== 'all') out.push(`Covers only ${next.appliesTo.join(', ') || 'no agents'}, not every agent`);
   else if (prev.appliesTo !== 'all' && next.appliesTo !== 'all') {
@@ -643,6 +692,12 @@ function looser(prev: GovernanceRule, next: GovernanceRule): string[] {
       if (unsent.length) out.push(`No longer checks ${unsent.join(', ')}`);
       return out;
     }
+    case 'block_streak': {
+      const p = a as BlockStreakParams, n = b as BlockStreakParams;
+      return n.threshold > p.threshold ? [`Acts after ${fmtCount(n.threshold)} blocked calls in a row instead of ${fmtCount(p.threshold)}`] : [];
+    }
+    // It guards nothing: trimming less is never a weaker rule.
+    case 'trim_results': return [];
     default:
       return unhandledType(prev.ruleType, []);
   }
@@ -710,6 +765,11 @@ export function ruleCondition(rule: Pick<GovernanceRule, 'ruleType' | 'params'>)
     }
     case 'outside_then_send':
       return (rule.params as OutsideThenSendParams).sendTools.length ? { pre: FLOW_WHEN, val: '', post: '' } : { pre: 'No send tools picked yet', val: '', post: '' };
+    case 'block_streak': return { pre: 'Blocked ', val: fmtCount((rule.params as BlockStreakParams).threshold), post: '× in a row in a run' };
+    case 'trim_results': {
+      const p = rule.params as TrimResultsParams;
+      return { pre: 'Tool results older than the newest ', val: fmtCount(p.keepRecent), post: ` ${plural(p.keepRecent, 'turn')}, once a request is about ${fmtCount(p.minTokens)} tokens` };
+    }
     default:
       return unhandledType(rule.ruleType, { pre: UNKNOWN_RULE, val: '', post: '' });
   }
@@ -745,7 +805,7 @@ export function ruleGroups(rules: readonly GovernanceRule[]): {
 const MODE_ORDER: Record<GovernanceMode, number> = { enforce: 0, watch: 1, off: 2 };
 
 /** An on rule that only alerts: it acts, but never stops a call, so it isn't counted as Enforce. */
-export const alertOnly = (r: Pick<GovernanceRule, 'mode' | 'response'>) => r.mode === 'enforce' && r.response === 'notify';
+export const alertOnly = (r: Pick<GovernanceRule, 'mode' | 'response'> & { ruleType?: GovernanceRuleType }) => r.mode === 'enforce' && r.response === 'notify' && !trims(r);
 
 /** A group's sub-line, worded like the lead line: "1 Enforce · 6 Watch" (and "· 1 Alert only" when there is one). */
 export function modeCount(rules: readonly GovernanceRule[]): string {
@@ -774,6 +834,9 @@ export function blocksWhen(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'a
     case 'send_limit': return `only for sends to domains not on its list${only}`;
     // Never blocks (canAct is false), so never the one rule that does: kept for the exhaustive switch.
     case 'outside_then_send': return `only for sends after outside content${only}`;
+    case 'block_streak': return `only after ${fmtCount((rule.params as BlockStreakParams).threshold)} blocked calls in a row${only}`;
+    // Never blocks (canAct is false): kept for the exhaustive switch.
+    case 'trim_results': return `only for old tool results${only}`;
     default: return unhandledType(rule.ruleType, `only in some cases${only}`);
   }
 }
@@ -810,8 +873,8 @@ export function rowCount(rule: GovernanceRule, ctx: {
   if (rule.mode === 'enforce') {
     const justThem = !ctx.agent || (rule.appliesTo !== 'all' && rule.appliesTo.length === 1 && rule.appliesTo[0] === ctx.agent);
     if (!justThem || !week) return { text: '', tone: 'plain' };
-    const n = week[TALLY[response]];
-    return n ? { text: `${fmtCount(n)} ${TALLY_WORD[response]} · 7 days`, tone: 'hot' } : NONE_CAUGHT;
+    const n = enforcedCount(rule, week);
+    return n ? { text: `${fmtCount(n)} ${trims(rule) ? 'trimmed' : TALLY_WORD[response]} · 7 days`, tone: 'hot' } : NONE_CAUGHT;
   }
   const since = ctx.wouldAct && !ctx.wouldAct.unversioned ? ctx.wouldAct : null;
   const sinceN = since ? (ctx.agent ? since.byAgent[ctx.agent] ?? 0 : Object.values(since.byAgent).reduce((a, b) => a + b, 0)) : null;
@@ -850,9 +913,9 @@ export function ruleStatus(rule: GovernanceRule, ctx: {
   if (nothingPicked) return `Does nothing until you add ${nothingPicked}`;
   if (ctx.neverFirst) return `Never triggers · the ${ctx.neverFirst} cap catches it first`;
   if (rule.mode === 'enforce') {
-    const n = ctx.week ? ctx.week[TALLY[response]] : null;
-    const tail = n === null ? '' : n ? ` · ${DID[response](n)} in 7 days` : ' · nothing caught in 7 days';
-    return `${response === 'notify' ? 'Alerting you' : 'Enforcing'} for ${who}${tail}`;
+    const n = ctx.week ? enforcedCount(rule, ctx.week) : null;
+    const tail = n === null ? '' : n ? ` · ${trims(rule) ? `${fmtCount(n)} trimmed` : DID[response](n)} in 7 days` : ' · nothing caught in 7 days';
+    return `${response === 'notify' && !trims(rule) ? 'Alerting you' : 'Enforcing'} for ${who}${tail}`;
   }
   const w = ctx.wouldAct;
   if (w && !w.unversioned && w.since) {
@@ -861,7 +924,7 @@ export function ruleStatus(rule: GovernanceRule, ctx: {
     if (!hits.length) return `Watching ${who} · nothing caught since its last change ${when}`;
     const total = hits.reduce((s, [, n]) => s + n, 0);
     const whom = hits.length === 1 ? `${hits[0][0]} ${times(hits[0][1])}` : hits.length === 2 ? `${hits[0][0]} and ${hits[1][0]} ${times(total)} in all` : `${hits.length} agents ${times(total)} in all`;
-    return `Would have ${WOULD_VERB[response](whom)} since its last change ${when}`;
+    return `Would have ${trims(rule) ? `trimmed requests from ${whom}` : WOULD_VERB[response](whom)} since its last change ${when}`;
   }
   if (ctx.week) {
     return `Watching ${who} · ${ctx.week.wouldAct ? `would have acted ${times(ctx.week.wouldAct)} in 7 days` : 'nothing caught in 7 days'}`;
@@ -975,6 +1038,11 @@ export function whenSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params'>):
     case 'keyword': return ruleCondition(rule);
     case 'send_limit': return ruleCondition(rule);
     case 'outside_then_send': return ruleCondition(rule);
+    case 'block_streak': return { pre: 'Has ', val: fmtCount((rule.params as BlockStreakParams).threshold), post: ' calls in a row blocked in a run' };
+    case 'trim_results': {
+      const p = rule.params as TrimResultsParams;
+      return { pre: 'Sends a request of about ', val: `${fmtCount(p.minTokens)} tokens`, post: ` or more, with tool results older than ${newest(p.keepRecent)}` };
+    }
     default: return unhandledType(rule.ruleType, { pre: UNKNOWN_RULE, val: '', post: '' });
   }
 }
@@ -1012,6 +1080,10 @@ const TYPE_RESPONSES: Record<GovernanceRuleType, readonly GovernanceResponse[]> 
   send_limit: ['notify', 'block'],
   // Only alerts (DLP spec 5.3): the editor shows "When enforced: Only alert me" as fixed text.
   outside_then_send: ['notify'],
+  // Never Block: it acts on calls another rule already blocked.
+  block_streak: ['pause', 'stop', 'notify'],
+  // The engine's fixed value; the rule never alerts, so the editor shows no action at all.
+  trim_results: ['notify'],
 };
 
 /**
@@ -1042,8 +1114,15 @@ const ENFORCE_LINE: Record<GovernanceResponse, string> = {
 };
 
 /** The one plain line under What happens, for the pick. */
-export function whatHappensLine(d: Pick<RuleDraft, 'mode' | 'response' | 'alsoNotify'>): string {
+export function whatHappensLine(d: Pick<RuleDraft, 'mode' | 'response' | 'alsoNotify'> & { ruleType?: GovernanceRuleType }): string {
   if (d.mode === 'off') return 'Off: does nothing and records nothing.';
+  if (trims(d)) {
+    return d.mode === 'watch' ? 'Watch: changes nothing and records what it would have removed.'
+      : 'Enforce: edits what the agent sends to the model. It never blocks a call or alerts you.';
+  }
+  // The calls it counts were blocked by another rule, so "the call goes through" isn't its to say.
+  if (d.ruleType === 'block_streak' && d.mode === 'watch') return 'Watch: only records what it would have done.';
+  if (d.ruleType === 'block_streak' && d.response === 'notify') return 'Enforce: alerts you. The agent keeps going.';
   if (d.mode === 'watch') return 'Watch: records what it would do; every call goes through.';
   if (d.response === 'block' && d.alsoNotify) return 'Enforce: blocks the call and alerts you. The agent keeps going.';
   return `Enforce: ${ENFORCE_LINE[d.response]}`;

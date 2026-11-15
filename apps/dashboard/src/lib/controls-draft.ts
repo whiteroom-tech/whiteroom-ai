@@ -48,6 +48,8 @@ const PARAMS_FIT: Record<GovernanceRuleType, (p: Record<string, unknown>) => boo
   keyword: (p) => strings(p.keywords) && (p.where === 'incoming' || p.where === 'replies' || p.where === 'both'),
   send_limit: (p) => strings(p.tools) && strings(p.domains),
   outside_then_send: (p) => strings(p.readTools) && strings(p.sendTools),
+  block_streak: () => true,
+  trim_results: () => true,
 };
 
 /** The fields the rule editor reads, of the right kinds, with params that fit the rule type. */
@@ -60,6 +62,8 @@ function isRuleDraft(d: unknown): d is RuleDraft {
   return !!fits && fits(params as Record<string, unknown>)
     && typeof x.mode === 'string' && typeof x.response === 'string'
     && typeof x.alsoNotify === 'boolean' && typeof x.number === 'string'
+    // Old tool results has a second number, typed as text too.
+    && (x.ruleType !== 'trim_results' || typeof x.number2 === 'string')
     && (x.appliesTo === 'all' || strings(x.appliesTo));
 }
 

@@ -28,6 +28,8 @@ export const RULE_LABELS: Record<GovernanceRuleType, string> = {
   keyword: 'Keywords',
   send_limit: 'Where tools can send data',
   outside_then_send: 'Outside content, then send data',
+  block_streak: 'Repeated blocks',
+  trim_results: 'Old tool results',
 };
 
 /** Each rule's category label on Controls, in sentence case (.ctl-cat upper-cases it). */
@@ -40,6 +42,8 @@ export const RULE_CATEGORY: Record<GovernanceRuleType, string> = {
   keyword: 'Data protection',
   send_limit: 'Data protection',
   outside_then_send: 'Data protection',
+  block_streak: 'Cost & reliability',
+  trim_results: 'Cost & reliability',
 };
 
 /** What a rule of a type this build doesn't know shows as, wherever rules are listed. */
@@ -89,8 +93,11 @@ export const REASON_LABELS: Record<string, string> = {
   outside_then_send: 'sent after outside content',
 };
 
-/** Each rule's own reason: said after its name, it only repeats it ("the spend cap (budget exceeded)"). */
-const OWN_REASON: Record<GovernanceRuleType, string> = {
+/**
+ * Each rule's own reason: said after its name, it only repeats it ("the spend cap (budget exceeded)").
+ * Repeated blocks and Old tool results never block a call, so they have none.
+ */
+const OWN_REASON: Record<Exclude<GovernanceRuleType, 'block_streak' | 'trim_results'>, string> = {
   spend_cap: 'budget_exceeded',
   loop_breaker: 'loop_detected',
   model_allowlist: 'model_not_allowed',
@@ -113,7 +120,7 @@ export function blockedByPhrase(ruleType: unknown, reason: unknown, lower: boole
   if (ruleType === 'keyword') return 'the Keywords rule';
   const label = ruleLabel(ruleType);
   const r = String(reason ?? '');
-  const why = OWN_REASON[ruleType as GovernanceRuleType] === r ? undefined : REASON_LABELS[r];
+  const why = (OWN_REASON as Record<string, string>)[String(ruleType)] === r ? undefined : REASON_LABELS[r];
   return `${lower ? `the ${label.toLowerCase()}` : label}${why ? ` (${why})` : ''}`;
 }
 
@@ -151,6 +158,8 @@ export interface GovernanceTally {
   paused?: number;
   stopped?: number;
   toldYou?: number;
+  /** Requests an Old tool results rule trimmed: never a block or an alert. */
+  trimmed?: number;
 }
 
 export interface GovernanceCounts extends GovernanceTally {
@@ -178,6 +187,8 @@ export function governanceFromSummary(g: { blocks: number; wouldBlocks: number; 
       keyword: g.byRule.keyword ?? emptyTally(),
       send_limit: g.byRule.send_limit ?? emptyTally(),
       outside_then_send: g.byRule.outside_then_send ?? emptyTally(),
+      block_streak: g.byRule.block_streak ?? emptyTally(),
+      trim_results: g.byRule.trim_results ?? emptyTally(),
     },
   };
 }
@@ -188,7 +199,7 @@ export function governanceCounts(entries: AuditEntry[], sinceMs = 0): Governance
     blocks: 0,
     wouldBlocks: 0,
     byAgent: {},
-    byRule: { spend_cap: emptyTally(), loop_breaker: emptyTally(), model_allowlist: emptyTally(), tool_list: emptyTally(), call_rate: emptyTally(), keyword: emptyTally(), send_limit: emptyTally(), outside_then_send: emptyTally() },
+    byRule: { spend_cap: emptyTally(), loop_breaker: emptyTally(), model_allowlist: emptyTally(), tool_list: emptyTally(), call_rate: emptyTally(), keyword: emptyTally(), send_limit: emptyTally(), outside_then_send: emptyTally(), block_streak: emptyTally(), trim_results: emptyTally() },
   };
   for (const e of entries) {
     if (!isGovernanceDecision(e)) continue;
@@ -216,7 +227,7 @@ export function ruleActionsByAgent(byAgent: Record<string, GovernanceTally>): Re
     const prev = out[key] ?? emptyTally();
     const merged: GovernanceTally = { blocks: prev.blocks + t.blocks, wouldBlocks: prev.wouldBlocks + t.wouldBlocks };
     // The rule_actions kinds, only where a source has them (the audit log doesn't).
-    for (const k of ['paused', 'stopped', 'toldYou'] as const) {
+    for (const k of ['paused', 'stopped', 'toldYou', 'trimmed'] as const) {
       if (prev[k] !== undefined || t[k] !== undefined) merged[k] = (prev[k] ?? 0) + (t[k] ?? 0);
     }
     out[key] = merged;
@@ -267,8 +278,10 @@ export const RESPONSE_EFFECT: Record<GovernanceResponse, string> = {
 
 // ── Rule actions (P2.4) ─────────────────────────────────────────────
 
-/** The engine's rule_actions counts as a tally (the words tallyWords and tallyTotal read). */
-export const tallyFromRuleActions = (c: RuleActionCounts): GovernanceTally => ({ blocks: c.blocked, wouldBlocks: c.wouldAct, paused: c.paused, stopped: c.stopped, toldYou: c.toldYou });
+/** The engine's rule_actions counts as a tally (the words tallyWords and tallyTotal read). `trimmed` only when there are some: an older engine sends none. */
+export const tallyFromRuleActions = (c: RuleActionCounts): GovernanceTally => ({
+  blocks: c.blocked, wouldBlocks: c.wouldAct, paused: c.paused, stopped: c.stopped, toldYou: c.toldYou, ...(c.trimmed ? { trimmed: c.trimmed } : {}),
+});
 
 /**
  * Counts from the engine's rule_actions, which last as long as the runs (the
@@ -296,6 +309,7 @@ export function tallyWords(t: GovernanceTally): { text: string; tone: 'bad' | 'w
   if (t.paused) out.push({ text: `${t.paused} paused`, tone: 'bad' });
   if (t.blocks) out.push({ text: `${t.blocks} blocked`, tone: 'bad' });
   if (t.toldYou) out.push({ text: `${t.toldYou} ${NOTIFY.done}`, tone: 'tx2' });
+  if (t.trimmed) out.push({ text: `${t.trimmed} trimmed`, tone: 'tx2' });
   if (t.wouldBlocks) out.push({ text: `${t.wouldBlocks} would have acted (${MODE_LABEL.watch})`, tone: 'warn' });
   return out;
 }
@@ -312,6 +326,7 @@ export function tallyParts(t: GovernanceTally): { count: number; word: string }[
   if (t.paused) out.push({ count: t.paused, word: 'paused' });
   if (t.blocks) out.push({ count: t.blocks, word: 'blocked' });
   if (t.toldYou) out.push({ count: t.toldYou, word: NOTIFY.done });
+  if (t.trimmed) out.push({ count: t.trimmed, word: 'trimmed' });
   if (t.wouldBlocks) out.push({ count: t.wouldBlocks, word: 'would have acted' });
   return out;
 }
@@ -322,5 +337,5 @@ export function tallyShort(t: GovernanceTally): string {
 }
 
 export function tallyTotal(t: GovernanceTally): number {
-  return t.blocks + t.wouldBlocks + (t.paused ?? 0) + (t.stopped ?? 0) + (t.toldYou ?? 0);
+  return t.blocks + t.wouldBlocks + (t.paused ?? 0) + (t.stopped ?? 0) + (t.toldYou ?? 0) + (t.trimmed ?? 0);
 }

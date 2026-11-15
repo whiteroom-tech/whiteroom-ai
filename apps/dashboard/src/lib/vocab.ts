@@ -24,7 +24,9 @@ export const NOTIFY = { option: 'Only alert me', verb: 'alert you', done: 'alert
 export const ENFORCE_TAG: Record<GovernanceResponse, string> = { block: 'Enforce', pause: 'Enforce · pauses', stop: 'Enforce · stops', notify: NOTIFY.tag };
 
 /** A rule's mode as its tag reads: Off, Watch, or what it enforces (ENFORCE_TAG). */
-export function modeTagText(rule: { mode: RuleMode; response?: GovernanceResponse }): string {
+export function modeTagText(rule: { mode: RuleMode; response?: GovernanceResponse; ruleType?: string }): string {
+  // Old tool results holds the notify response but never alerts: its tag is plain Enforce.
+  if (rule.mode === 'enforce' && rule.ruleType === 'trim_results') return MODE_LABEL.enforce;
   return rule.mode === 'enforce' ? ENFORCE_TAG[rule.response ?? 'block'] : MODE_LABEL[rule.mode];
 }
 

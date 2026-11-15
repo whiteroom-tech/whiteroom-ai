@@ -34,6 +34,7 @@ export function RulesSummary({ counts, byRuleId, rules, unknownRules, unavailabl
     counts.paused ? `${fmtCount(counts.paused)} paused` : '',
     counts.stopped ? `${fmtCount(counts.stopped)} stopped` : '',
     counts.toldYou ? `${fmtCount(counts.toldYou)} alerted` : '',
+    counts.trimmed ? `${fmtCount(counts.trimmed)} trimmed` : '',
   ].filter(Boolean) : [];
 
   return (

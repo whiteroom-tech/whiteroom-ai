@@ -115,6 +115,7 @@ export function ruleOutcomes(t: GovernanceTally, always = false): string {
   if (t.paused) bits.push(`${fmtCount(t.paused)} paused`);
   if (t.blocks || always) bits.push(`${fmtCount(t.blocks)} blocked`);
   if (t.toldYou) bits.push(`${fmtCount(t.toldYou)} ${plural(t.toldYou, 'alert')}`);
+  if (t.trimmed) bits.push(`${fmtCount(t.trimmed)} trimmed`);
   if (t.wouldBlocks || always) bits.push(`${fmtCount(t.wouldBlocks)} would have acted`);
   return bits.join(' · ');
 }

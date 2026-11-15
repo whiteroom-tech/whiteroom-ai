@@ -74,7 +74,9 @@ const api = vi.hoisted(() => ({
   /** Rules of a type this build doesn't know, as a newer engine would list them. */
   unknown: [] as Array<Record<string, unknown>>,
   /** rule_actions' fleet-wide totals this week (default: 2 blocked, 5 would have acted). */
-  totals: null as { blocked: number; paused: number; stopped: number; toldYou: number; wouldAct: number } | null,
+  totals: null as { blocked: number; paused: number; stopped: number; toldYou: number; wouldAct: number; trimmed?: number } | null,
+  /** rule_actions' counts for other rule types, beside the Loop breaker's. */
+  byRule: {} as Record<string, { blocked: number; paused: number; stopped: number; toldYou: number; wouldAct: number; trimmed?: number }>,
   /** What tools_seen gives ([]: an older engine, a failure or no data), and how often it was asked. */
   tools: [] as string[],
   toolsAsked: 0,
@@ -113,7 +115,7 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
   performanceAgent: async (_f: string, agentId: string) => ({ fleetId: 'f1', agentId, hourly: [], totals: { calls: api.agentCalls[agentId] ?? 0, costMicros: 0 } }),
   auditIntegrity: async () => ({ fleetId: 'f1', mode: 'sequenced', headSeq: 2045, verifiedThroughSeq: 2045, verifiedAt: new Date().toISOString(), prunedBeforeTracking: true, legacyEvents: 0, gaps: { count: 0, recent: [] }, anchoring: { enabled: false } }),
   verifyAudit: async () => ({ valid: true, eventsVerified: 2045, message: '' }),
-  ruleActions: async () => ({ fleetId: 'f1', totals: api.totals ?? { blocked: 2, paused: 0, stopped: 0, toldYou: 0, wouldAct: 5 }, byAgent: {}, byRule: { loop_breaker: { blocked: 2, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 } } }),
+  ruleActions: async () => ({ fleetId: 'f1', totals: api.totals ?? { blocked: 2, paused: 0, stopped: 0, toldYou: 0, wouldAct: 5 }, byAgent: {}, byRule: { loop_breaker: { blocked: 2, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 }, ...api.byRule } }),
   performanceIndex: async () => { if (!api.models) throw new Error('no store'); return { summary: { models: api.models.map((model) => ({ model, calls: 3 })) } }; },
   performanceFleetHourly: async () => { if (!api.models) throw new Error('no store'); return { hourly: api.hourly }; },
   governanceUpdateRule: api.update,
@@ -165,7 +167,7 @@ beforeEach(() => {
   // An unsaved edit is kept in sessionStorage across visits (controls-draft): each test starts with none.
   sessionStorage.clear();
   nav.params = new URLSearchParams(); nav.replace.mockClear(); nav.push.mockClear();
-  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.hourly = []; api.listGate = null; api.listFail = false; api.empty = false; api.would = {}; api.agentCalls = {}; api.history = []; api.totals = null; api.unknown = []; api.tools = []; api.toolsAsked = 0; api.toolsFail = false; api.toolsHang = false; api.toolsReplies = null; session.key = 'k';
+  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.hourly = []; api.listGate = null; api.listFail = false; api.empty = false; api.would = {}; api.agentCalls = {}; api.history = []; api.totals = null; api.byRule = {}; api.unknown = []; api.tools = []; api.toolsAsked = 0; api.toolsFail = false; api.toolsHang = false; api.toolsReplies = null; session.key = 'k';
   api.ruleTypes = undefined; api.seenRows = {}; api.seenFull = false; api.seenAsked = []; api.seenFail = false;
   api.oldEngine = false; api.wouldBatches = []; api.wouldSingle = 0; resetBatchSupport();
   document.body.innerHTML = '';
@@ -2199,7 +2201,9 @@ describe('Controls: category labels', () => {
   const send: GovernanceRule = { ...base, id: 's1', ruleType: 'send_limit', mode: 'watch', response: 'notify', appliesTo: 'all', params: { tools: ['send_email'], domains: ['acme.com'] } };
   const flow: GovernanceRule = { ...base, id: 'o1', ruleType: 'outside_then_send', mode: 'watch', response: 'notify', appliesTo: 'all', params: { readTools: ['web_fetch'], sendTools: ['send_email'] } };
   // Every type, each with a row in view (the fleet's Tool list is off, in a closed card).
-  const everyType = () => { api.created.push(keyword, send, flow); api.saved.r6 = { ...RULES[5], mode: 'watch', params: { blockedTools: ['delete_file'] } }; };
+  const streak: GovernanceRule = { ...base, id: 'b1', ruleType: 'block_streak', mode: 'watch', response: 'notify', appliesTo: 'all', params: { threshold: 3 } };
+  const trim: GovernanceRule = { ...base, id: 't1', ruleType: 'trim_results', mode: 'watch', response: 'notify', appliesTo: 'all', params: { keepRecent: 5, minTokens: 50_000 } };
+  const everyType = () => { api.created.push(keyword, send, flow, streak, trim); api.saved.r6 = { ...RULES[5], mode: 'watch', params: { blockedTools: ['delete_file'] } }; };
   const nameToCat = Object.fromEntries(Object.entries(RULE_LABELS).map(([t, name]) => [name, RULE_CATEGORY[t as keyof typeof RULE_CATEGORY]]));
 
   it('shows each row’s category above its count and mode tag, for every type', async () => {
@@ -2232,7 +2236,7 @@ describe('Controls: category labels', () => {
       expect(m.el.querySelector('.gov-edhead__full')!.textContent).toBe(nameToCat[name] + name);
       opened.add(name);
     }
-    expect(opened.size).toBe(8);
+    expect(opened.size).toBe(10);
     m.root.unmount();
   });
 
@@ -2646,6 +2650,231 @@ describe('Controls: Outside content, then send data', () => {
     const m = await mount();
     await m.click(m.row(WHEN));
     expect(m.el.querySelector('details.gov-details pre')!.textContent).toBe('Nothing: the call goes through.\nYou get an alert; the agent doesn’t.');
+    m.root.unmount();
+  });
+});
+
+// Repeated blocks (block_streak) and Old tool results (trim_results).
+describe('Controls: Repeated blocks and Old tool results', () => {
+  const ALL_TYPES = ['spend_cap', 'loop_breaker', 'model_allowlist', 'tool_list', 'call_rate', 'keyword', 'send_limit', 'outside_then_send', 'block_streak', 'trim_results'];
+  const streak = (over: Partial<GovernanceRule> = {}): GovernanceRule => ({ ...base, id: 'b1', ruleType: 'block_streak', mode: 'watch', response: 'pause', appliesTo: 'all', params: { threshold: 3 }, ...over });
+  const trim = (over: Partial<GovernanceRule> = {}): GovernanceRule => ({ ...base, id: 't1', ruleType: 'trim_results', mode: 'watch', response: 'notify', appliesTo: 'all', params: { keepRecent: 5, minTokens: 50_000 }, ...over });
+  const STREAK = 'Blocked 3× in a row in a run';
+  const TRIM = 'Tool results older than the newest 5 turns';
+  const creates = () => api.create.mockImplementation(async (_f: string, r: { ruleType: GovernanceRule['ruleType']; mode: GovernanceRule['mode']; response?: GovernanceRule['response']; params?: GovernanceRule['params'] }) => {
+    const rule: GovernanceRule = { ...base, id: 'new', ruleType: r.ruleType, mode: r.mode, response: r.response, appliesTo: 'all', params: r.params! };
+    api.created.push(rule);
+    return { rule };
+  });
+  const saves = () => api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...api.created.find((r) => r.id === id)!, ...ch, version: 2 } }));
+  const input = (m: Awaited<ReturnType<typeof mount>>, label: string) => m.el.querySelector(`input[aria-label="${label}"]`) as HTMLInputElement | null;
+  const template = (m: Awaited<ReturnType<typeof mount>>, title: string) => [...m.el.querySelectorAll('button.gov-template')].find((b) => b.textContent?.startsWith(title));
+
+  it('are offered in Add a rule only when the engine’s ruleTypes has them', async () => {
+    const titles = async () => {
+      const m = await mount();
+      await m.click(m.button('Add rule'));
+      const t = [...m.el.querySelectorAll('button.gov-template .gov-template__title')].map((b) => b.textContent);
+      m.root.unmount();
+      document.body.innerHTML = '';
+      return t;
+    };
+    expect(await titles()).not.toEqual(expect.arrayContaining(['Act on repeated blocks']));
+    api.ruleTypes = ALL_TYPES.slice(0, 8);
+    const before = await titles();
+    expect(before).not.toContain('Act on repeated blocks');
+    expect(before).not.toContain('Trim old tool results');
+    api.ruleTypes = ALL_TYPES;
+    expect((await titles()).slice(-2)).toEqual(['Act on repeated blocks', 'Trim old tool results']);
+  });
+
+  it('Repeated blocks is added in Watch on Pause where the fleet has it, else on Only alert me, and opens on its number', async () => {
+    api.ruleTypes = ALL_TYPES;
+    creates();
+    const plain = await mount();
+    await plain.click(plain.button('Add rule'));
+    await plain.click(template(plain, 'Act on repeated blocks'));
+    expect(api.create).toHaveBeenLastCalledWith('f1', { ruleType: 'block_streak', mode: 'watch', response: 'notify', params: { threshold: 3 } }, 'k');
+    plain.root.unmount();
+    document.body.innerHTML = '';
+    api.created = [];
+    api.govV1 = true;
+    const m = await mount();
+    await m.click(m.button('Add rule'));
+    await m.click(template(m, 'Act on repeated blocks'));
+    expect(api.create).toHaveBeenLastCalledWith('f1', { ruleType: 'block_streak', mode: 'watch', response: 'pause', params: { threshold: 3 } }, 'k');
+    // A new rule opens with When expanded: the number, with its default, and what counts.
+    expect(input(m, 'Blocked calls in a row')!.value).toBe('3');
+    expect(m.text()).toContain('Counts calls that another rule in Enforce blocked. A call that isn’t blocked starts the count over.');
+    expect(m.el.querySelector('#ctl-ed-title')!.textContent).toBe('Repeated blocks');
+    m.root.unmount();
+  });
+
+  it('Old tool results is added in Watch with its defaults, and opens on both numbers', async () => {
+    api.ruleTypes = ALL_TYPES;
+    creates();
+    const m = await mount();
+    await m.click(m.button('Add rule'));
+    await m.click(template(m, 'Trim old tool results'));
+    expect(api.create).toHaveBeenCalledWith('f1', { ruleType: 'trim_results', mode: 'watch', response: 'notify', params: { keepRecent: 5, minTokens: 50_000 } }, 'k');
+    expect(input(m, 'Request size in tokens')!.value).toBe('50000');
+    expect(input(m, 'Recent turns to keep')!.value).toBe('5');
+    expect(m.text()).toContain('Each old result is replaced with a short note. The agent can call the tool again if it needs one back.');
+    expect(m.text()).toContain('Watch: changes nothing and records what it would have removed.');
+    m.root.unmount();
+  });
+
+  it('Repeated blocks offers Pause, Stop and Only alert me when enforced, never Block the call', async () => {
+    api.govV1 = true;
+    api.created.push(streak());
+    const m = await mount();
+    expect(m.row(STREAK).querySelector('.ctl-row__main .ctl-cap')!.textContent).toBe('Repeated blocks');
+    await m.click(m.row(STREAK));
+    expect(m.el.querySelector('.ctl-when')!.textContent).toBe('Has 3 calls in a row blocked in a run' + 'Change');
+    expect(m.text()).toContain('Watch: only records what it would have done.');
+    await m.click(m.seg('Enforce'));
+    expect([...m.action()!.options].map((o) => o.textContent!.split(' · ')[0])).toEqual(['Pause the agent', 'Stop the agent', 'Only alert me']);
+    expect(m.action()!.value).toBe('pause');
+    // Stop still needs its day in Watch first, as on any rule.
+    expect((await m.option('Stop the agent'))!.disabled).toBe(true);
+    expect(m.text()).not.toContain('Block the call');
+    expect(m.text()).not.toContain('Also alert me');
+    expect(m.text()).toContain('Enforce: pauses the agent and alerts you. Its run ends until someone resumes it.');
+    await m.pick('Only alert me');
+    expect(m.text()).toContain('Enforce: alerts you. The agent keeps going.');
+    m.root.unmount();
+  });
+
+  it('Repeated blocks on a fleet without Pause and Stop only alerts: fixed text, no dropdown', async () => {
+    api.created.push(streak({ response: 'notify' }));
+    const m = await mount();
+    await m.click(m.row(STREAK));
+    await m.click(m.seg('Enforce'));
+    expect(m.action()).toBeNull();
+    expect(m.text()).toContain('When enforced: Only alert me');
+    expect(m.text()).not.toContain('Pause the agent');
+    expect(m.text()).not.toContain('Block the call');
+    m.root.unmount();
+  });
+
+  it('Repeated blocks takes 2 to 100, says so on Save, and saves a number in range', async () => {
+    api.created.push(streak());
+    saves();
+    const m = await mount();
+    await m.open(STREAK);
+    for (const bad of ['1', '101', '', 'abc', '2.5']) {
+      await type(input(m, 'Blocked calls in a row')!, bad);
+      await m.click(m.button('Save'));
+      expect(m.text(), bad).toContain('Enter a whole number from 2 to 100.');
+    }
+    expect(api.update).not.toHaveBeenCalled();
+    await type(input(m, 'Blocked calls in a row')!, '2');
+    await m.click(m.button('Save'));
+    expect(api.update).toHaveBeenCalledWith('f1', 'b1', { params: { threshold: 2 }, ifVersion: 1 }, 'k');
+    m.root.unmount();
+  });
+
+  it('Old tool results has no When enforced choice and no alert control, and says what Enforce changes', async () => {
+    api.govV1 = true;
+    api.created.push(trim());
+    const m = await mount();
+    expect(m.row(TRIM).textContent).toContain('Tool results older than the newest 5 turns, once a request is about 50,000 tokens');
+    await m.click(m.row(TRIM));
+    expect(m.el.querySelector('.ctl-when')!.textContent).toBe('Sends a request of about 50,000 tokens or more, with tool results older than the newest 5 turns' + 'Change');
+    await m.click(m.seg('Enforce'));
+    expect(m.action()).toBeNull();
+    expect(m.text()).not.toContain('When enforced');
+    expect(m.text()).not.toContain('Also alert me');
+    expect(m.text()).not.toContain('Only alert me');
+    expect(m.text()).toContain('Enforce: edits what the agent sends to the model. It never blocks a call or alerts you.');
+    // No alert channel is connected, and it doesn't matter: this rule never sends one.
+    expect(m.text()).not.toContain('No alert channel is connected.');
+    expect(m.el.querySelector('.gov-edhead__mode')!.textContent).toBe('Enforce · unsaved');
+    expect(m.el.querySelector('details.gov-details pre')!.textContent).toBe('Nothing: the call goes through.\nOld tool results in it are replaced with a short note.');
+    m.root.unmount();
+  });
+
+  it('Old tool results checks both numbers on Save, then saves them', async () => {
+    api.created.push(trim());
+    saves();
+    const m = await mount();
+    await m.open(TRIM);
+    for (const bad of ['999', '10000001', '', 'abc']) {
+      await type(input(m, 'Request size in tokens')!, bad);
+      await m.click(m.button('Save'));
+      expect(m.text(), bad).toContain('Enter a whole number of tokens from 1,000 to 10,000,000.');
+    }
+    await type(input(m, 'Request size in tokens')!, '80,000');
+    for (const bad of ['0', '101', '']) {
+      await type(input(m, 'Recent turns to keep')!, bad);
+      await m.click(m.button('Save'));
+      expect(m.text(), bad).toContain('Enter a whole number of turns from 1 to 100.');
+    }
+    expect(api.update).not.toHaveBeenCalled();
+    await type(input(m, 'Recent turns to keep')!, '8');
+    await m.click(m.button('Save'));
+    expect(api.update).toHaveBeenCalledWith('f1', 't1', { params: { keepRecent: 8, minTokens: 80_000 }, ifVersion: 1 }, 'k');
+    m.root.unmount();
+  });
+
+  it('turning on Enforce for Old tool results asks first, in its own words', async () => {
+    api.created.push(trim());
+    saves();
+    const m = await mount();
+    await m.click(m.row(TRIM));
+    await m.click(m.seg('Enforce'));
+    await m.click(m.button('Save'));
+    expect(m.text()).toContain('Start trimming old tool results?');
+    expect(m.text()).toContain('Would have trimmed');
+    expect(m.text()).toContain('From now on, a large request goes to the model with its old tool results replaced by a short note. This edits what the agent sends. No call is blocked.');
+    expect(m.text()).not.toContain('Turn on alerts');
+    expect(api.update).not.toHaveBeenCalled();
+    await m.click(m.button('Start trimming'));
+    expect(api.update).toHaveBeenCalledWith('f1', 't1', { mode: 'enforce', ifVersion: 1 }, 'k');
+    m.root.unmount();
+  });
+
+  it('stepping Old tool results down from Enforce asks in its own words', async () => {
+    api.created.push(trim({ mode: 'enforce' }));
+    saves();
+    const m = await mount();
+    await m.click(m.row(TRIM));
+    await m.click(m.seg('Watch'));
+    await m.click(m.button('Save'));
+    expect(m.text()).toContain('Stop trimming old tool results?');
+    expect(m.text()).toContain('Requests from all agents will go to the model unchanged.');
+    expect(m.text()).not.toContain('You won’t get alerts');
+    expect(m.button('Keep trimming')).toBeTruthy();
+    await m.click(m.button('Switch to Watch'));
+    expect(api.update).toHaveBeenCalledWith('f1', 't1', { mode: 'watch', ifVersion: 1 }, 'k');
+    m.root.unmount();
+  });
+
+  it('an enforced Old tool results rule is tagged Enforce and counts as trimmed, never as blocked or an alert', async () => {
+    api.created.push(trim({ mode: 'enforce' }));
+    api.totals = { blocked: 2, paused: 0, stopped: 0, toldYou: 0, wouldAct: 5, trimmed: 12 };
+    api.byRule = { trim_results: { blocked: 0, paused: 0, stopped: 0, toldYou: 3, wouldAct: 0, trimmed: 12 } };
+    const m = await mount();
+    const row = m.row(TRIM);
+    expect(row.querySelector('.ctl-mtag')!.textContent).toBe('Enforce');
+    expect(row.querySelector('.ctl-row__count')!.textContent).toBe('12 trimmed · 7 days');
+    expect(row.textContent).not.toMatch(/blocked|alerted|Alert only/);
+    // The lead line names trims apart from blocks, and doesn't count the rule as Alert only.
+    const lead = m.el.querySelector('.ctl-lead')!.textContent!;
+    expect(lead).toContain('19 caught, 2 blocked, 12 trimmed this week');
+    expect(lead).not.toContain('Alert only');
+    await m.click(row);
+    expect(m.el.querySelector('.ctl-status')!.textContent).toBe('Enforcing for all agents · 12 trimmed in 7 days');
+    m.root.unmount();
+  });
+
+  it('an engine that doesn’t send trimmed reads as none, and the lead line is as before', async () => {
+    api.created.push(trim({ mode: 'enforce' }));
+    api.byRule = { trim_results: { blocked: 0, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 } };
+    const m = await mount();
+    expect(m.row(TRIM).querySelector('.ctl-row__count')!.textContent).toContain('0');
+    expect(m.row(TRIM).querySelector('.ctl-row__count')!.textContent).toContain('None caught · 7 days');
+    expect(m.el.querySelector('.ctl-lead')!.textContent).toContain('7 caught, 2 blocked this week');
     m.root.unmount();
   });
 });

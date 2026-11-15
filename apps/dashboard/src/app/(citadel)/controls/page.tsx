@@ -39,7 +39,7 @@ import { UNNAMED_CALLS_REFUSED } from "@/lib/setup";
 import {
   appliesNow, deleteLookingTools, draftChanges, draftFrom, draftParams, draftProblem, isDirty, money, NO_ACTIONS, rulesFor, ruleSentenceText, spendOverlap,
   type RuleDraft,
-  stopping,
+  stopping, trims,
   weakenings,
   averageDailySpend,
   sameValue,
@@ -698,12 +698,14 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       const picked = ruleType === "tool_list" ? deleteLookingTools(tools) : ruleType === "send_limit" ? sendLookingTools(tools) : [];
       const readPicked = flow ? readLookingTools(tools) : [], sendPicked = flow ? sendLookingTools(tools) : [];
       const params = ruleType === "tool_list" && picked.length > 0 ? { blockedTools: picked } : ruleType === "send_limit" ? { tools: picked, domains: [] }
-        : flow ? { readTools: readPicked, sendTools: sendPicked } : undefined;
+        : flow ? { readTools: readPicked, sendTools: sendPicked } : ruleType === "block_streak" ? { threshold: 3 } : ruleType === "trim_results" ? { keepRecent: 5, minTokens: 50_000 } : undefined;
       // New rules start in Watch; while viewing one agent, they start for that agent. A data rule
       // starts on Only alert me, the engine's default for it (DLP spec 5.2); Outside content, then
-      // send data has no other response (5.3).
+      // send data has no other response (5.3). Repeated blocks and Old tool results start on the
+      // engine's own defaults, sent in full: Pause where the fleet has it, and notify (its fixed value).
       const { rule } = await governanceCreateRule(fleetId, {
-        ruleType, mode: "watch", ...((ruleType === "send_limit" || flow) && { response: "notify" as const }), ...(params && { params }), ...(agentFilter && { appliesTo: [agentFilter] }),
+        ruleType, mode: "watch", ...((ruleType === "send_limit" || flow || ruleType === "trim_results") && { response: "notify" as const }),
+        ...(ruleType === "block_streak" && { response: govV1 ? "pause" as const : "notify" as const }), ...(params && { params }), ...(agentFilter && { appliesTo: [agentFilter] }),
       }, authKey);
       setRules((rs) => [...rs, rule]);
       setAdding("closed");
@@ -973,7 +975,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   // As Performance and Home count them: "blocked" is blocked calls only; pauses and stops are named apart.
   const caught = counts ? tallyTotal(counts) : 0;
   const acted: Array<[number, string]> = counts
-    ? [[counts.blocks, "blocked"], ...([[counts.paused ?? 0, "paused"], [counts.stopped ?? 0, "stopped"]] as Array<[number, string]>).filter(([n]) => n > 0)]
+    ? [[counts.blocks, "blocked"], ...([[counts.paused ?? 0, "paused"], [counts.stopped ?? 0, "stopped"], [counts.trimmed ?? 0, "trimmed"]] as Array<[number, string]>).filter(([n]) => n > 0)]
     : [];
   const warnIcon = <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" style={{ flex: "none", color: "var(--warn)" }}><path d="M9 2l7.5 13h-15z" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M9 7v4M9 13v.5" stroke="currentColor" strokeWidth="1.6" /></svg>;
   const infoIcon = <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" style={{ flex: "none", color: "var(--tx2)" }}><circle cx="9" cy="9" r="7.5" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M9 8v5M9 5.5v.5" stroke="currentColor" strokeWidth="1.6" /></svg>;
@@ -1153,29 +1155,29 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
 
       <ChoiceDialog
         open={dialog?.kind === "enforce"}
-        title={dialog?.kind === "enforce" ? ACT_WORDS[dialog.next.response ?? "block"].title : ""}
+        title={dialog?.kind === "enforce" ? actWords(dialog.next).title : ""}
         body={dialog?.kind === "enforce" ? <EnforcePreview rule={dialog.rule} next={dialog.next} wouldAct={wouldOf(dialog.rule)} week={weekOf(dialog.rule)} agentCalls={agentCalls} /> : null}
         busy={saving}
         cancelLabel={null}
         choices={[
           { label: dialog?.kind === "enforce" && dialog.rule.mode === "watch" ? "Keep watching" : "Cancel", onClick: cancelDialog },
-          { label: dialog?.kind === "enforce" ? ACT_WORDS[dialog.next.response ?? "block"].start : "", tone: "primary", onClick: () => { if (dialog?.kind === "enforce" && draft) void commit(dialog.rule, draft); } },
+          { label: dialog?.kind === "enforce" ? actWords(dialog.next).start : "", tone: "primary", onClick: () => { if (dialog?.kind === "enforce" && draft) void commit(dialog.rule, draft); } },
         ]}
         onCancel={cancelDialog}
       />
       <ChoiceDialog
         open={dialog?.kind === "downgrade"}
-        title={dialog?.kind === "downgrade" ? ACT_WORDS[dialog.rule.response ?? "block"].stopTitle : ""}
+        title={dialog?.kind === "downgrade" ? actWords(dialog.rule).stopTitle : ""}
         body={dialog?.kind === "downgrade" ? (
           <>
             <p style={{ margin: "0 0 8px" }}><strong>{RULE_LABELS[dialog.rule.ruleType]}</strong> · {ruleConditionText(dialog.rule)}</p>
-            <p style={{ margin: 0 }}>{(dialog.rule.response ?? "block") === "notify" ? `You won’t get alerts for ${whoFor(dialog.next.appliesTo)} any more.` : `Matching calls will go through for ${whoFor(dialog.next.appliesTo)}.`} {dialog.next.mode === "watch" ? "They’ll still be recorded." : "Nothing will be recorded."} You can undo it.</p>
+            <p style={{ margin: 0 }}>{trims(dialog.rule) ? `Requests from ${whoFor(dialog.next.appliesTo)} will go to the model unchanged.` : (dialog.rule.response ?? "block") === "notify" ? `You won’t get alerts for ${whoFor(dialog.next.appliesTo)} any more.` : dialog.rule.ruleType === "block_streak" ? `It won’t ${dialog.rule.response === "stop" ? "stop" : "pause"} ${whoFor(dialog.next.appliesTo)} any more.` : `Matching calls will go through for ${whoFor(dialog.next.appliesTo)}.`} {dialog.next.mode === "watch" ? "They’ll still be recorded." : "Nothing will be recorded."} You can undo it.</p>
           </>
         ) : null}
         busy={saving}
         cancelLabel={null}
         choices={[
-          { label: dialog?.kind === "downgrade" ? ACT_WORDS[dialog.rule.response ?? "block"].keep : "", tone: "primary", onClick: cancelDialog },
+          { label: dialog?.kind === "downgrade" ? actWords(dialog.rule).keep : "", tone: "primary", onClick: cancelDialog },
           { label: `Switch to ${dialog?.kind === "downgrade" ? MODE_LABEL[dialog.next.mode] : ""}`, tone: "bad", onClick: () => { setDialog(null); save(true); } },
         ]}
         onCancel={cancelDialog}
@@ -1315,10 +1317,23 @@ const ACT_WORDS: Record<GovernanceResponse, { title: string; start: string; woul
   notify: { title: "Turn on alerts for this rule?", start: "Turn on alerts", would: "Would have alerted you", effect: "a call that matches sends you an alert. The call goes through.", stopTitle: "Turn off alerts from this rule?", keep: "Keep alerts" },
 };
 
+/** Old tool results holds the notify response but trims, and Repeated blocks alerts about calls that were blocked: their confirms say so. */
+const TRIM_WORDS: (typeof ACT_WORDS)[GovernanceResponse] = {
+  title: "Start trimming old tool results?", start: "Start trimming", would: "Would have trimmed",
+  effect: "a large request goes to the model with its old tool results replaced by a short note. This edits what the agent sends. No call is blocked.",
+  stopTitle: "Stop trimming old tool results?", keep: "Keep trimming",
+};
+const actWords = (rule: Pick<GovernanceRule, "ruleType" | "response">) => {
+  if (trims(rule)) return TRIM_WORDS;
+  const words = ACT_WORDS[rule.response ?? "block"];
+  return rule.ruleType === "block_streak" && rule.response === "notify" ? { ...words, effect: "you get an alert when an agent reaches the limit. The agent keeps going." } : words;
+};
+
 /** "Two identical loop breakers": each kind of rule, more than one. */
 const RULE_PLURAL: Record<GovernanceRuleType, string> = {
   spend_cap: "spend caps", loop_breaker: "loop breakers", call_rate: "call rate rules", model_allowlist: "model allowlists", tool_list: "tool lists", keyword: "Keywords rules",
   send_limit: "Where tools can send data rules", outside_then_send: "Outside content, then send data rules",
+  block_streak: "Repeated blocks rules", trim_results: "Old tool results rules",
 };
 
 /** "6 agents will lose this rule", for moving a rule from all agents to some. */
@@ -1351,13 +1366,13 @@ function EnforcePreview({ rule, next, wouldAct, week, agentCalls }: {
       <p style={{ margin: "0 0 4px" }}><strong>{RULE_LABELS[next.ruleType]}</strong> · {ruleConditionText(next)}</p>
       <p className="ctl-cap" style={{ margin: "0 0 14px" }}>Applies to {whoFor(next.appliesTo)}</p>
       <div className="ctl-tiles">
-        <div className="ctl-tile"><div className="ctl-tile__lbl">{ACT_WORDS[next.response ?? "block"].would}</div><div className="ctl-tile__num">{n === null ? "—" : n ? `${n.toLocaleString("en-US")} ${n === 1 ? "call" : "calls"}` : "no calls"}</div><div className="ctl-cap">{week || !watched ? "last 7 days" : "since its last change"}</div></div>
+        <div className="ctl-tile"><div className="ctl-tile__lbl">{actWords(next).would}</div><div className="ctl-tile__num">{n === null ? "—" : n ? `${n.toLocaleString("en-US")} ${n === 1 ? "call" : "calls"}` : "no calls"}</div><div className="ctl-cap">{week || !watched ? "last 7 days" : "since its last change"}</div></div>
         <div className="ctl-tile"><div className="ctl-tile__lbl">Watching since</div><div className="ctl-tile__num">{since ?? "—"}</div><div className="ctl-cap">{watched ? "since its last change" : "Turn on Watch first to see what it would do"}</div></div>
       </div>
       {all.map(([a, c]) => (
         <p key={a} className="ctl-warnbox"><strong>This would block every call {a} makes.</strong> None of its {c.toLocaleString("en-US")} {c === 1 ? "call" : "calls"} since the last change used a model on this allowlist. Add its model first if {a} should keep working.</p>
       ))}
-      <p style={{ margin: "14px 0 0" }}>From now on, {ACT_WORDS[next.response ?? "block"].effect}</p>
+      <p style={{ margin: "14px 0 0" }}>From now on, {actWords(next).effect}</p>
       {canAct(next) && <p className="ctl-cap" style={{ margin: "8px 0 0" }}>{UNNAMED_CALLS_REFUSED}</p>}
     </>
   );

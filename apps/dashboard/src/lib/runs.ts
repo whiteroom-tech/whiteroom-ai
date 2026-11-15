@@ -450,22 +450,26 @@ export function callToolsText(e: Pick<RunEvent, 'requestedTools'>): string {
 
 /** What a rule did to a call, past tense: "would have been blocked", "blocked", "paused the agent". */
 const CALL_OUTCOME_TEXT: Record<CallRuleAction['outcome'], string> = {
-  would_block: 'would have been blocked', blocked: 'blocked', paused: 'paused the agent', stopped: 'stopped the agent', notified: NOTIFY.done,
+  would_block: 'would have been blocked', blocked: 'blocked', paused: 'paused the agent', stopped: 'stopped the agent', notified: NOTIFY.done, trimmed: 'trimmed',
 };
 /** A Watch rule's would-be outcome, by its response: it only blocks when the response is Block. */
 const WOULD_TEXT: Record<string, string> = {
   block: 'would have been blocked', pause: 'would have paused the agent', stop: 'would have stopped the agent', notify: `would have ${NOTIFY.done}`,
 };
 
+/** An Old tool results rule's row: it trims, whatever response the row carries, so it never reads as blocked or alerted. */
+const isTrim = (a: { ruleType: string; response: string }) => a.ruleType === 'trim_results' || a.response === 'trim';
+
 /** A call's rule note: "would have been blocked: model not on the allowlist". */
 function callRule(e: RunEvent): TimelineRow['rule'] {
   const all = e.ruleActions ?? [];
   // A rule that acted leads; else a Watch rule that would have blocked; else whatever came first.
-  const a = all.find((x) => x.mode === 'enforce') ?? all.find((x) => x.outcome === 'would_block') ?? all[0];
+  // A trim lets the call through, so a rule that stopped it leads over one that only trimmed it.
+  const a = all.find((x) => x.mode === 'enforce' && !isTrim(x)) ?? all.find((x) => x.mode === 'enforce') ?? all.find((x) => x.outcome === 'would_block') ?? all[0];
   if (!a) return undefined;
   const more = all.filter((x) => x !== a);
   const why = reasonText(a.reason) ?? (a.ruleName ?? RULE_LABELS[a.ruleType as GovernanceRuleType] ?? 'a rule').toLowerCase();
-  const did = a.mode === 'enforce' ? CALL_OUTCOME_TEXT[a.outcome] : WOULD_TEXT[a.response];
+  const did = isTrim(a) ? (a.mode === 'enforce' ? CALL_OUTCOME_TEXT.trimmed : 'would have been trimmed') : a.mode === 'enforce' ? CALL_OUTCOME_TEXT[a.outcome] : WOULD_TEXT[a.response];
   const tail = `${why}${more.length ? ` (+${more.length} more)` : ''}`;
   const text = `${did ?? 'a rule acted'}: ${tail}`;
   const watchBlock = a.mode !== 'enforce' && a.response === 'block';
@@ -606,6 +610,7 @@ export function ruleActivityRow(a: RunRuleAction): { lead: string; count: number
   const why = reasonText(a.reason);
   const n = a.occurrences;
   const would = a.mode === 'enforce' ? '' : 'would have ';
+  if (isTrim(a)) return { lead: `${name} ${would}trimmed`, count: n, tail: plural(n, 'request') };
   if (a.response === 'block') return { lead: `${name} ${a.mode === 'enforce' ? 'blocked' : 'would have blocked'}`, count: n, tail: `${plural(n, 'call')}${why ? `: ${why}` : ''}` };
   return { lead: `${name} ${would}${RESPONSE_DONE[a.response] ?? 'acted'}${n > 1 ? ` ×${n}` : ''}${why ? `: ${why}` : ''}`, count: null, tail: '' };
 }
