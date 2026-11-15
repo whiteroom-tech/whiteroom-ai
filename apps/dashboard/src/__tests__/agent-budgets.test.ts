@@ -27,6 +27,9 @@ describe('agent budget helpers', () => {
     expect(refusalText('There’s no agent lead-agent in this fleet.')).toBe('That agent isn’t in this fleet.');
     expect(refusalText("There's no agent a-1 in this fleet.")).toBe('That agent isn’t in this fleet.');
     expect(refusalText('A fleet can have at most 30 rules.')).toBe('This fleet already has the most rules it can have. Remove one in Controls first.');
+    expect(refusalText('lead-agent already has 50 rules of its own.')).toBe('This agent already has the most rules it can have. Remove one in Controls first.');
+    expect(refusalText('A fleet can have up to 1,000 rules.')).toBe('This fleet already has the most rules it can have. Remove one in Controls first.');
+    expect(refusalText('You can have up to 50 rules for all agents.')).toBe('This fleet already has the most rules it can have. Remove one in Controls first.');
     expect(refusalText('budget_usd must be a number above 0 and at most 1000000, or null to clear it.')).toBeNull();
     expect(refusalText(undefined)).toBeNull();
   });
