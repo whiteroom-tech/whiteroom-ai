@@ -263,6 +263,7 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
       </PageHeader>
       <div className="wr-page-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, display: 'grid', gap: 16, alignContent: 'start' }}>
         {s && (
+          <div className="wr-run-head">
           <p className="wr-run-summary">
             {s.started} · {s.length}
             {s.calls !== undefined && <> · <strong>{s.calls}</strong> model {s.calls === 1 ? 'call' : 'calls'}</>}
@@ -271,9 +272,14 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
             {!!s.blocked && <> · <strong>{s.blocked}</strong> blocked</>}
             {s.wouldBlock && <> · {s.wouldBlock.atLeast && 'at least '}<strong>{s.wouldBlock.n}</strong> would have blocked</>}
             {s.wouldAct !== undefined && <> · {wouldActText(s.wouldAct)}</>}
-            {s.models.map((m) => <span key={m}> · <span className="wr-run-summary__model">{m}</span></span>)}
             {s.outcome && <> · Job <strong>{s.outcome.toLowerCase()}</strong>, as your system reported</>}
           </p>
+          {s.models.length > 0 && (
+            <p className="wr-run-models">
+              {s.models.map((m, i) => <span key={m}>{i > 0 && ' · '}<span className="wr-run-summary__model">{m}</span></span>)}
+            </p>
+          )}
+          </div>
         )}
         {!!run?.notRecordedCalls && run.notRecordedCalls > 0 && (
           <p className="wr-run-flags">

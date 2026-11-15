@@ -4,7 +4,7 @@ import { RULE_ACTIVITY } from '@/lib/vocab';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Button, DataTable, Icon, SegmentedControl, SelectChip, Toast, FONT_MONO } from '@whiteroom/ui';
+import { Button, DataTable, Hint, Icon, SegmentedControl, SelectChip, Toast, FONT_MONO } from '@whiteroom/ui';
 import { counted, fmtCount, fmtTime, plural } from '@/lib/format';
 import { exportCallsPage, fleetReport, isAuthError, listRuns, runDays, runHours } from '@/lib/whiteroom/client';
 import type { AuditIntegrity, RunDayCount, RunHourCount, RunSummary, VerifyAuditResult } from '@/lib/whiteroom/types';
@@ -602,7 +602,7 @@ export function RunsTable({ preview, retentionDays }: {
                   // The day is in the group header above, so the row shows the time.
                   { key: 'started', header: 'Started', width: '110px', render: (r) => <span title={fmtStarted(r.startedAt)}>{fmtTime(r.startedAt)}</span> },
                   { key: 'length', header: 'Length', width: '90px', numeric: true, render: (r) => fmtClockLength(r.lengthSeconds) },
-                  { key: 'spend', header: 'Spend', width: '100px', numeric: true, render: (r) => { const v = usd(r.spendMicros / 1e6); return <span style={{ color: v === '<$0.01' ? 'var(--tx3)' : undefined }} title={r.unpricedAttempts ? 'Some calls have no price on file, so this is a lower bound' : undefined}>{v}{r.unpricedAttempts ? '+' : ''}</span>; } },
+                  { key: 'spend', header: <>Spend<Hint text="A + means some calls have no price on file, so the real spend is higher. <$0.01 is under one cent." /></>, width: '100px', numeric: true, render: (r) => { const v = usd(r.spendMicros / 1e6); return <span style={{ color: v === '<$0.01' ? 'var(--tx3)' : undefined }} title={r.unpricedAttempts ? 'Some calls have no price on file, so this is a lower bound' : undefined}>{v}{r.unpricedAttempts ? '+' : ''}</span>; } },
                   { key: 'stood', header: 'What stood out', width: 'minmax(260px, 2.2fr)', render: (r) => <StandOutCell run={r} /> },
                 ]}
               />

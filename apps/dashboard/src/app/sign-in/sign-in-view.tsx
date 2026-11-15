@@ -273,7 +273,8 @@ export function SignInView({ freeSignUp = false, landOnRoot = false }: SignInVie
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@company.com"
                     autoComplete="email"
-                    className="w-full rounded-lg px-4 py-3 text-sm outline-none"
+                    aria-label="Email address"
+                    className="wr-signin-email w-full rounded-lg px-4 py-3 text-sm"
                     style={{ background: 'var(--sunk)', border: '1px solid var(--line)', color: 'var(--tx)' }}
                   />
                   <button

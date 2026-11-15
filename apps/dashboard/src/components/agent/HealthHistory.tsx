@@ -48,7 +48,7 @@ export function HealthHistory({ fleetId, agentId, authKey, preview }: { fleetId:
       <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 6 }}>
         {shown.map((e, i) => (
           <li key={`${e.at}-${i}`} style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 'var(--fs-sm)' }}>
-            <span className="wr-agent-cap" style={{ minWidth: 104 }}>{formatInZone(new Date(e.at), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</span>
+            <span className="wr-agent-cap" style={{ minWidth: 116 }}>{formatInZone(new Date(e.at), { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).replace(/\s(AM|PM)$/, (m) => m.toLowerCase())}</span>
             <span><strong style={{ fontWeight: 600 }}>{checkName(e.detector)}</strong>: {EVENT_LABEL[e.event] ?? e.event}{e.actor ? ` by ${whoActed(e.actor, actions)}` : ''}</span>
           </li>
         ))}

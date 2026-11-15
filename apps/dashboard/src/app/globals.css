@@ -173,6 +173,13 @@
 .wr-sidebar__avatar { width: 28px; height: 28px; flex: none; display: grid; place-items: center; border-radius: 99px; background: var(--sunk); border: 1px solid var(--line2); font-size: var(--fs-sm); font-weight: 600; color: var(--tx); }
 
 /* Read by screen readers, not shown. */
+/* Page not found, and a page that failed (app/not-found.tsx, app/error.tsx). */
+.wr-stop { min-height: 100dvh; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px 16px; background: var(--bg); color: var(--tx); text-align: center; }
+.wr-stop__title { margin: 12px 0 0; font-family: var(--font-display); font-size: var(--fs-section); font-weight: 600; }
+.wr-stop__text { margin: 0 0 8px; max-width: 360px; font-size: var(--fs-md); color: var(--tx2); }
+/* Keyboard users' first Tab stop: jumps past the sidebar to the page. */
+.wr-skip { position: absolute; left: 8px; top: -64px; z-index: 2000; padding: 8px 12px; border-radius: 7px; background: var(--card); border: 1px solid var(--line2); color: var(--tx); font-size: var(--fs-sm); font-weight: 500; text-decoration: none; }
+.wr-skip:focus { top: 8px; outline: 2px solid var(--brand); outline-offset: 2px; }
 .wr-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 /* Keep the shared navigation usable on narrow screens without squeezing content. */
@@ -335,7 +342,7 @@
 .wr-btn--danger { background: transparent; color: var(--bad); }
 .wr-btn--danger:hover:not(:disabled), .wr-btn--danger:active:not(:disabled) { background: var(--bad-dim); }
 .wr-btn--danger-fill { background: var(--bad); color: var(--on-brand); font-weight: 600; }
-.wr-btn:disabled { opacity: .45; cursor: not-allowed; }
+.wr-btn:disabled { opacity: .6; cursor: not-allowed; }
 /* A disabled filled button looks like a disabled secondary one; at 45% the
    brand fill still read as the page's main action. Busy ("Resuming…") is
    disabled too but keeps its fill. */
@@ -346,7 +353,7 @@
 .wr-seg__item { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 0; border-radius: 5px; background: transparent; color: var(--tx2); font: inherit; font-size: var(--fs-sm); font-weight: 500; white-space: nowrap; cursor: pointer; transition: color .12s; }
 .wr-seg__item:hover:not(:disabled) { color: var(--tx); }
 .wr-seg__item.is-on { background: var(--raised); color: var(--tx); box-shadow: inset 0 0 0 1px var(--line2); }
-.wr-seg__item:disabled { opacity: .45; cursor: not-allowed; }
+.wr-seg__item:disabled { opacity: .6; cursor: not-allowed; }
 .wr-dot { width: 6px; height: 6px; border-radius: 99px; flex: none; }
 .wr-dot--warn { background: var(--warn); }
 .wr-dot--ok { background: var(--ok); }
@@ -582,6 +589,7 @@ a.wr-btn { text-decoration: none; }
 .wr-key-list .wr-key-endpoint { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 720px) { .wr-key-list > li { flex-wrap: wrap; } .wr-key-list .wr-key-endpoint { flex-basis: 100%; order: 5; } }
 .wr-input { min-height: 2.125rem; padding: 0 12px; border-radius: 7px; background: var(--sunk); border: 1px solid var(--line2); color: var(--tx); font-size: var(--fs-md); }
+.wr-signin-email:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
 .wr-input:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
 
 /* Narrow screens: segmented controls and panel headers wrap instead of
@@ -762,6 +770,8 @@ button.ctl-row.is-on, button.ctl-row.is-on:hover { background: var(--brand-dim);
 .ctl-row.is-block { box-shadow: inset 3px 0 0 var(--brand); }
 .ctl-row__main { flex: 1 1 360px; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
 .ctl-row__side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; margin-left: auto; }
+.ctl-row__chev { display: inline-flex; color: var(--tx3); transform: rotate(-90deg); }
+.ctl-phone-hint { display: none; margin: 0; }
 .ctl-row__state { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; }
 .ctl-row__count { font-size: var(--fs-sm); color: var(--tx2); }
 /* A rule's category: 12px by the owner's choice (Nov 14), so it reads as a tag above the row's state. */
@@ -819,6 +829,9 @@ button.ctl-row.is-on, button.ctl-row.is-on:hover { background: var(--brand-dim);
   .ctl-row { padding: 12px 16px; }
   .ctl-card__head, .ctl-owner, .ctl-disc { padding-left: 16px; padding-right: 16px; }
   .ctl-editor { position: static; max-height: none; margin-top: 0; padding: 16px; }
+  /* The pick-a-rule hint sits above the lists on a phone, not under them. */
+  .ctl-phone-hint { display: block; }
+  .ctl-editor.is-empty .ctl-ed-pick, .ctl-editor.is-empty.is-bare { display: none; }
   /* The editor is a bottom sheet over the page and the tab bar, the list
      dimmed above it: ‹ Controls, the scrim or Escape goes back. */
   .ctl-editor.is-sheet { position: fixed; left: 0; right: 0; bottom: 0; top: 40px; z-index: 40; max-height: none; overflow-y: auto; border: 1px solid var(--line2); border-bottom: 0; border-radius: 16px 16px 0 0; padding: 0 16px env(safe-area-inset-bottom, 0px); box-shadow: 0 -8px 24px var(--shadow); animation: gov-sheet-up .2s ease-out; }
@@ -847,7 +860,7 @@ button.ctl-row.is-on, button.ctl-row.is-on:hover { background: var(--brand-dim);
 .wr-runchart__key.is-flag { background: var(--warn); }
 .wr-runchart__key.is-rule { height: 4px; background: var(--warn); }
 .wr-runchart__paging { display: inline-flex; gap: 2px; }
-.wr-runchart__paging [aria-disabled="true"] { opacity: .4; cursor: default; }
+.wr-runchart__paging [aria-disabled="true"] { opacity: .6; cursor: default; }
 .wr-runchart .wr-panel__title:focus { outline: none; }
 .wr-runchart .wr-panel__title:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 3px; }
 .wr-runchart__actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -909,6 +922,8 @@ section[aria-labelledby="runs-table-title"] .wr-panel__title { white-space: norm
 .wr-run-crumb + .citadel-page-header { min-height: 3.5rem !important; }
 .wr-run-summary { margin-block: 0; font-size: var(--fs-card); line-height: 1.5; color: var(--tx); }
 .wr-run-summary strong { font-weight: 600; font-variant-numeric: tabular-nums; }
+.wr-run-head { display: grid; gap: 4px; }
+.wr-run-models { margin-block: 0; }
 .wr-run-summary__model { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--tx2); white-space: nowrap; }
 .wr-run-flags { display: flex; align-items: flex-start; gap: 8px; margin-block: 0; font-size: var(--fs-sm); color: var(--tx2); }
 .wr-run-flags strong { color: var(--tx); font-weight: 600; }

@@ -95,7 +95,10 @@ describe('phone menu (AppShell)', () => {
   it('focus goes into the menu and comes back to More; the page behind is inert; a link closes it', async () => {
     nav.path = '/home';
     await render(shell());
-    const page = el.querySelector('main')!.parentElement!;
+    const page = el.querySelector<HTMLElement>('#wr-content')!;
+    // The page column is the one main region, and the skip link (first in the shell) points at it.
+    expect(page.tagName).toBe('MAIN');
+    expect(el.querySelector('.wr-shell')!.firstElementChild!.getAttribute('href')).toBe('#wr-content');
     more().focus();
     await act(async () => { more().click(); });
     expect(el.querySelector('#wr-main-nav')!.contains(document.activeElement)).toBe(true);
