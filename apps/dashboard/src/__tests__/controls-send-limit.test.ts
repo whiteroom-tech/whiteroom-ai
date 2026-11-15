@@ -108,14 +108,14 @@ describe('a typed allowed domain', () => {
 
   it('turns the engine’s entry refusals into the same words, and keeps any other reason as it is', () => {
     // The engine's own words (E7 ENTRY_REFUSALS), entry first.
-    expect(domainRefusal('"co.uk": that ending is shared by many sites. Enter a domain under it.')).toBe('co.uk: That ending is shared by many sites, like co.uk. Type the full domain, like acme.co.uk.');
-    expect(domainRefusal('"https://x.io": enter just the domain, without http:// or the like.')).toBe('https://x.io: Type just the domain, like acme.com, without https://.');
-    expect(domainRefusal('"x.io:25": enter the domain without a port.')).toBe('x.io:25: Leave out the port. Type just the domain, like acme.com.');
-    expect(domainRefusal('"x.io/a": enter the domain without a path.')).toBe('x.io/a: Leave out the path. Type just the domain, like acme.com.');
-    expect(domainRefusal('"*.x.io": enter the domain without *. A domain already covers the names under it.')).toBe('*.x.io: Leave out the *. acme.com already covers mail.acme.com.');
-    expect(domainRefusal('"a@x.io": enter a domain, not an email address.')).toBe('a@x.io: Type the domain, not an address: acme.com, not bob@acme.com.');
-    expect(domainRefusal('"10.0.0.1": enter a domain, not an IP address.')).toBe('10.0.0.1: Use a domain name, not an IP address.');
-    expect(domainRefusal('"a b": that isn\'t a domain.')).toBe('a b: That isn’t a domain. Type one like acme.com.');
+    expect(domainRefusal('"co.uk": that ending is shared by many sites. Enter a domain under it.')).toBe('“co.uk”: That ending is shared by many sites, like co.uk. Type the full domain, like acme.co.uk.');
+    expect(domainRefusal('"https://x.io": enter just the domain, without http:// or the like.')).toBe('“https://x.io”: Type just the domain, like acme.com, without https://.');
+    expect(domainRefusal('"x.io:25": enter the domain without a port.')).toBe('“x.io:25”: Leave out the port. Type just the domain, like acme.com.');
+    expect(domainRefusal('"x.io/a": enter the domain without a path.')).toBe('“x.io/a”: Leave out the path. Type just the domain, like acme.com.');
+    expect(domainRefusal('"*.x.io": enter the domain without *. A domain already covers the names under it.')).toBe('“*.x.io”: Leave out the *. acme.com already covers mail.acme.com.');
+    expect(domainRefusal('"a@x.io": enter a domain, not an email address.')).toBe('“a@x.io”: Type the domain, not an address: acme.com, not bob@acme.com.');
+    expect(domainRefusal('"10.0.0.1": enter a domain, not an IP address.')).toBe('“10.0.0.1”: Use a domain name, not an IP address.');
+    expect(domainRefusal('"a b": that isn\'t a domain.')).toBe('“a b”: That isn’t a domain. Type one like acme.com.');
     // Anything else keeps its words, even when it mentions a port, a path, an IP or an address.
     for (const other of ['You can have up to 50 rules for all agents.', 'The port 443 path is busy; try again.', 'domains can hold at most 100 entries.', '"x": something else about an IP address.', 'This rule\'s domains are hidden here, so its settings can\'t be saved from here.']) {
       expect(domainRefusal(other), other).toBe(other);
@@ -150,6 +150,8 @@ describe('Seen, not on the list', () => {
 
   it('says when it is full', () => {
     expect(seenFullLine({ rows: [], full: true })).toBe('More than 500 domains seen. Showing the first 500.');
+    // The engine's flag decides: exactly 500 rows with full false isn't "more than 500".
+    expect(seenFullLine({ rows: Array.from({ length: 500 }), full: false })).toBeNull();
     expect(seenFullLine({ rows: Array.from({ length: 500 }) })).toBe('More than 500 domains seen. Showing the first 500.');
     expect(seenFullLine({ rows: [], fleetFull: true })).toBe('Your fleet has seen too many domains to list more. New ones aren’t shown.');
     expect(seenFullLine({ rows: [row('gmail.com')] })).toBeNull();

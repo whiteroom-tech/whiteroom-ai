@@ -107,7 +107,8 @@ export function toolsWithNoDomain(rows: readonly SendSeenRow[], tools: readonly 
 
 /** The line under Seen when no more rows are added; null while there's room. */
 export function seenFullLine(res: { rows: readonly unknown[]; full?: boolean; fleetFull?: boolean }): string | null {
-  if (res.full || res.rows.length >= SEEN_FULL_AT) return `More than ${SEEN_FULL_AT} domains seen. Showing the first ${SEEN_FULL_AT}.`;
+  // The engine's flag decides; the row count only stands in when an engine leaves the flag out.
+  if (res.full === true || (res.full === undefined && res.rows.length >= SEEN_FULL_AT)) return `More than ${SEEN_FULL_AT} domains seen. Showing the first ${SEEN_FULL_AT}.`;
   if (res.fleetFull) return 'Your fleet has seen too many domains to list more. New ones aren’t shown.';
   return null;
 }
@@ -149,7 +150,7 @@ export function domainRefusal(reason: string): string {
   // Only that form is one of its entry refusals: any other reason is shown in its own words.
   const named = /^"([^"]{1,80})":\s*([\s\S]*)$/.exec(reason);
   const plain = named ? refusalWords(named[2]) : null;
-  return plain && named ? `${named[1]}: ${plain}` : reason;
+  return plain && named ? `“${named[1]}”: ${plain}` : reason;
 }
 
 function refusalWords(reason: string): string | null {

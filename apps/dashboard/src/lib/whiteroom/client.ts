@@ -809,7 +809,7 @@ export async function sendSeenList(fleetId: string, ruleId: string, key?: string
   const res = await apiCall<Partial<SendSeenListResult>>({ action: 'send_seen_list', fleet_id: fleetId, rule_id: ruleId }, key);
   const rows = (Array.isArray(res.rows) ? res.rows : []).filter((r): r is SendSeenRow => !!r && typeof r === 'object'
     && typeof r.tool === 'string' && typeof r.domain === 'string' && typeof r.firstSeen === 'string');
-  return { ruleId, rows, full: res.full === true, fleetFull: res.fleetFull === true };
+  return { ruleId, rows, ...(typeof res.full === 'boolean' && { full: res.full }), fleetFull: res.fleetFull === true };
 }
 
 export function governanceCreateRule(

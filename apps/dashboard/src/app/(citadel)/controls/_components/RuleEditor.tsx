@@ -135,6 +135,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
   };
   const seenRows = send && seen?.status === 'ok' ? seenNotOnList(seen.rows, send.domains) : [];
   const noDomain = send && seen?.status === 'ok' ? toolsWithNoDomain(seen.rows, send.tools) : [];
+  const fullLine = send && seen?.status === 'ok' ? seenFullLine(seen) : null;
   const addSeen = (row: SendSeenRow) => {
     if (!send || send.domains.length >= SEND_DOMAINS_MAX || send.domains.includes(row.domain)) return;
     setParams({ domains: [...send.domains, row.domain] });
@@ -364,7 +365,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
               {send.domains.length >= SEND_DOMAINS_MAX && <p style={help}>A rule allows up to {SEND_DOMAINS_MAX} domains. Remove one to add another.</p>}
             </>
           ) : <p style={help}>Nothing new.</p>)}
-          {seen.status === 'ok' && seenFullLine(seen) && <p style={help}>{seenFullLine(seen)}</p>}
+          {fullLine && <p style={help}>{fullLine}</p>}
         </section>
       )}
 

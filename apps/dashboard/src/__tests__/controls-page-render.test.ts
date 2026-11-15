@@ -86,6 +86,8 @@ const api = vi.hoisted(() => ({
   toolsReplies: null as Array<(tools: string[]) => void> | null,
   /** governance_list's ruleTypes (undefined: an older engine that doesn't say). */
   ruleTypes: undefined as string[] | undefined,
+  /** send_seen_list fails (an engine blip). */
+  seenFail: false,
   /** send_seen_list's rows per rule id, and the rule ids it was asked for. */
   seenRows: {} as Record<string, Array<{ tool: string; domain: string; agentId: string | null; firstSeen: string; canAdd?: boolean }>>,
   seenFull: false,
@@ -117,7 +119,7 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
   governanceUpdateRule: api.update,
   governanceDeleteRule: api.remove,
   governanceCreateRule: api.create,
-  sendSeenList: async (_f: string, ruleId: string) => { api.seenAsked.push(ruleId); return { ruleId, rows: api.seenRows[ruleId] ?? [], full: api.seenFull }; },
+  sendSeenList: async (_f: string, ruleId: string) => { api.seenAsked.push(ruleId); if (api.seenFail) throw new Error('down'); return { ruleId, rows: api.seenRows[ruleId] ?? [], full: api.seenFull }; },
   toolsSeen: async () => { api.toolsAsked++; if (api.toolsHang) await new Promise(() => {}); if (api.toolsReplies) return new Promise<string[]>((r) => api.toolsReplies!.push(r)); if (api.toolsFail) throw new Error('down'); return api.tools; },
 }));
 
@@ -164,7 +166,7 @@ beforeEach(() => {
   sessionStorage.clear();
   nav.params = new URLSearchParams(); nav.replace.mockClear(); nav.push.mockClear();
   api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.hourly = []; api.listGate = null; api.listFail = false; api.empty = false; api.would = {}; api.agentCalls = {}; api.history = []; api.totals = null; api.unknown = []; api.tools = []; api.toolsAsked = 0; api.toolsFail = false; api.toolsHang = false; api.toolsReplies = null; session.key = 'k';
-  api.ruleTypes = undefined; api.seenRows = {}; api.seenFull = false; api.seenAsked = [];
+  api.ruleTypes = undefined; api.seenRows = {}; api.seenFull = false; api.seenAsked = []; api.seenFail = false;
   api.oldEngine = false; api.wouldBatches = []; api.wouldSingle = 0; resetBatchSupport();
   document.body.innerHTML = '';
 });
@@ -2382,6 +2384,76 @@ describe('Controls: Where tools can send data', () => {
     m.root.unmount();
   });
 
+  it('a failed Seen read says so, and Try again reads it again', async () => {
+    api.created.push(sendRule());
+    api.seenRows = { s1: seenRows };
+    api.seenFail = true;
+    const m = await mount();
+    await m.click(m.row('sends to a domain'));
+    expect(m.text()).toContain('Couldn’t load this list.');
+    expect(seenRow(m, 'gmail.com')).toBeUndefined();
+    api.seenFail = false;
+    await m.click(m.button('Try again'));
+    expect(api.seenAsked).toEqual(['s1', 's1']);
+    expect(seenRow(m, 'gmail.com')).toBeTruthy();
+    m.root.unmount();
+  });
+
+  it('reads Seen again after a save, and never shows one rule’s rows on another', async () => {
+    api.created.push(sendRule(), sendRule({ id: 's2', appliesTo: ['lead-agent'] }, { tools: ['upload_file'] }));
+    api.seenRows = { s1: seenRows, s2: [] };
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => {
+      const prev = api.created.find((r) => r.id === id)!;
+      const next = { ...prev, ...ch, version: prev.version + 1 } as GovernanceRule;
+      api.created = api.created.map((r) => (r.id === id ? next : r));
+      return { rule: next };
+    });
+    const m = await mount();
+    await m.click(m.row('send_email or post_message'));
+    await m.click(seenRow(m, 'gmail.com')!.querySelector('button')!);
+    // The engine drops the row the list now allows.
+    api.seenRows = { s1: seenRows.slice(1), s2: [] };
+    await m.click(m.button('Save'));
+    await flush();
+    expect(api.seenAsked).toEqual(['s1', 's1']);
+    expect(seenRow(m, 'gmail.com')).toBeUndefined();
+    await m.click(m.row('upload_file'));
+    expect(api.seenAsked.at(-1)).toBe('s2');
+    expect(m.text()).toContain('Nothing new.');
+    expect(seenRow(m, 'Couldn’t read the domain')).toBeUndefined();
+    m.root.unmount();
+  });
+
+  it('shows the engine’s refusal of a domain on Save in plain words', async () => {
+    api.created.push(sendRule());
+    api.update.mockRejectedValue(new WhiteRoomApiError('HTTP 400', 400, '"co.uk": that ending is shared by many sites. Enter a domain under it.'));
+    const m = await mount();
+    await m.open('sends to a domain');
+    await type(m.el.querySelector('input[aria-label="Domain"]') as HTMLInputElement, 'co.uk');
+    await m.click(m.button('Add'));
+    await m.click(m.button('Save'));
+    await flush();
+    expect(m.text()).toContain('Couldn’t save the rule. “co.uk”: That ending is shared by many sites, like co.uk. Type the full domain, like acme.co.uk.');
+    m.root.unmount();
+  });
+
+  it('a removed rule whose domains were hidden offers no Undo that would add it back empty', async () => {
+    api.history = [{ id: 'hs', ruleId: 'gone', ruleType: 'send_limit', description: 'Removed Where tools can send data rule', by: 'user:u1', time: '2026-11-14T00:00:00Z',
+      before: { mode: 'watch', response: 'notify', alsoNotify: false, appliesTo: 'all', params: { tools: ['send_email'], domains: [], domainCount: 2 } }, after: null }];
+    const m = await mount();
+    expect(m.el.querySelector('aside')!.textContent).toContain('Where tools can send data');
+    expect(m.button('Add it back')).toBeUndefined();
+    m.root.unmount();
+    document.body.innerHTML = '';
+    // With the list, the same removal can be added back.
+    (api.history[0].before as { params: Record<string, unknown> }).params = { tools: ['send_email'], domains: ['acme.com'] };
+    const shown = await mount();
+    expect(shown.button('Add it back')).toBeTruthy();
+    shown.root.unmount();
+    return;
+    m.root.unmount();
+  });
+
   it('a caller without the secret sees the count, read only, with no Seen list, and never saves the list', async () => {
     api.created.push(sendRule({}, { domains: [], domainCount: 3 }));
     saving();
@@ -2393,6 +2465,9 @@ describe('Controls: Where tools can send data', () => {
     expect(m.button('Change')!.closest('fieldset')!.disabled).toBe(true);
     expect(m.button('Save')!.disabled).toBe(true);
     expect(m.el.querySelector('input[aria-label="Domain"]')).toBeNull();
+    // Who can't change either, so the rule can't be moved or copied with an empty list; nor removed (with an Undo that would add it back empty).
+    expect(m.el.querySelector('select[aria-label="Which agents this rule applies to"]')!.closest('fieldset')!.disabled).toBe(true);
+    expect([...m.el.querySelectorAll('aside button')].filter((b) => b.textContent === 'Remove rule').every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
     expect(api.update).not.toHaveBeenCalled();
     m.root.unmount();
   });
