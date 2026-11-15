@@ -2587,8 +2587,10 @@ describe('Controls: Outside content, then send data', () => {
     await m.click(m.row(WHEN));
     await m.click(m.seg('Enforce'));
     await m.click(m.button('Save'));
-    const turnOn = m.button('Turn on alerts');
-    if (turnOn) await m.click(turnOn);
+    // Turning on Enforce asks first, as for any rule; for this one it turns on alerts.
+    expect(m.text()).toContain('Turn on alerts for this rule?');
+    expect(api.update).not.toHaveBeenCalled();
+    await m.click(m.button('Turn on alerts'));
     expect(api.update).toHaveBeenCalledWith('f1', 'o1', { mode: 'enforce', ifVersion: 1 }, 'k');
     m.root.unmount();
   });
@@ -2604,8 +2606,10 @@ describe('Controls: Outside content, then send data', () => {
     expect(m.text()).toContain('When enforced: Only alert me');
     api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...api.created.find((r) => r.id === id)!, ...ch, version: 2 } }));
     await m.click(m.button('Save'));
-    const confirm = m.button('Save the change');
-    if (confirm) await m.click(confirm);
+    // Block → Only alert me is weaker, so Save asks first.
+    expect(m.text()).toContain('Make the Outside content, then send data rule weaker?');
+    expect(api.update).not.toHaveBeenCalled();
+    await m.click(m.button('Save the change'));
     expect(api.update).toHaveBeenCalledWith('f1', 'o1', { response: 'notify', ifVersion: 1 }, 'k');
     m.root.unmount();
   });
