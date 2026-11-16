@@ -28,7 +28,7 @@ jobs:
             dir: packages/cli
           - name: dashboard
             dir: apps/dashboard
-          # The published packages support Node 20 and later (their engines field).
+          # The SDK and CLI are published, and their users run Node 20 and later.
           - name: sdk (Node 20)
             dir: packages/sdk
             node: "20"
