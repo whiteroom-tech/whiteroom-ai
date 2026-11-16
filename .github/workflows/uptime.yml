@@ -81,6 +81,8 @@ jobs:
           status=0
           check "whiteroom.tech" "https://whiteroom.tech/" "WhiteRoom" || status=1
           check "app.whiteroom.tech" "https://app.whiteroom.tech/sign-in" "Sign in" || status=1
-          # /health includes the database, so a DB outage shows up here.
-          check "proxy.whiteroom.tech" "https://proxy.whiteroom.tech/health" '"db":"ok"' || status=1
+          # /health answers "ok" only while the database is reachable too, so a DB outage shows up here.
+          check "proxy.whiteroom.tech" "https://proxy.whiteroom.tech/health" '"status":"ok"' || status=1
+          check "eu.app.whiteroom.tech" "https://eu.app.whiteroom.tech/sign-in" "Sign in" || status=1
+          check "eu.proxy.whiteroom.tech" "https://eu.proxy.whiteroom.tech/health" '"status":"ok"' || status=1
           exit $status

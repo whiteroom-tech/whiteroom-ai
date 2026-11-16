@@ -2,17 +2,17 @@
 
 There are two independent watchdogs, so an outage gets noticed even when GCP itself is the problem.
 
-**Cloud Monitoring** runs in project `whiteroom-prod` and is created by `setup.sh`. It emails info@whiteroom.tech.
+**Cloud Monitoring** is created by `setup.sh`, one region per run: `whiteroom-prod` by default, and `PROJECT=whiteroom-eu ops/monitoring/setup.sh` for the EU (`eu.app.whiteroom.tech`, `eu.proxy.whiteroom.tech`, Cloud SQL `whiteroom-db-eu`; the website is US only). It emails info@whiteroom.tech. The table shows the US names.
 
 | Alert | Fires when |
 |---|---|
 | Down: whiteroom.tech | `/` isn't 200 with "WhiteRoom" in the page, from more than one region for 2 minutes |
 | Down: app.whiteroom.tech | `/sign-in` isn't 200 with "Sign in" in the page, as above |
-| Down: proxy.whiteroom.tech | `/health` isn't 200 with `"db":"ok"`, as above (this covers the database too) |
+| Down: proxy.whiteroom.tech | `/health` isn't 200 with `"status":"ok"`, as above (this covers the database too: it answers `degraded` without it) |
 | Down: Cloud SQL whiteroom-db-v2 | the instance reports down for 5 minutes, or stops reporting for 10 |
 | Cloud Run 5xx errors | a service returns more than 20 5xx responses in 5 minutes |
 | TLS certificate expiring | a host's certificate expires within 14 days |
 
-Uptime checks run every minute. The setup is idempotent: after editing `setup.sh`, run `ops/monitoring/setup.sh` again to add whatever is missing. To change a check or policy that already exists, delete it in the console (Monitoring → Uptime checks or Alerting) and rerun the script.
+Uptime checks run every minute. The setup is idempotent: after editing `setup.sh`, run `ops/monitoring/setup.sh` again to add whatever is missing. A rerun also brings the text each uptime check looks for up to date. To change anything else on a check or policy that already exists, delete it in the console (Monitoring → Uptime checks or Alerting) and rerun the script.
 
-**GitHub Actions** (`.github/workflows/uptime.yml`) checks the same three URLs every 10 minutes from outside GCP. It opens an `outage` issue per host while that host is down and closes it once the host recovers. It keeps working if the GCP project is suspended or billing lapses, which would also silence Cloud Monitoring. GitHub can delay scheduled runs by several minutes, so treat this as the backup.
+**GitHub Actions** (`.github/workflows/uptime.yml`) checks the same URLs, US and EU, every 10 minutes from outside GCP. It opens an `outage` issue per host while that host is down and closes it once the host recovers. It keeps working if the GCP project is suspended or billing lapses, which would also silence Cloud Monitoring. GitHub can delay scheduled runs by several minutes, so treat this as the backup.
