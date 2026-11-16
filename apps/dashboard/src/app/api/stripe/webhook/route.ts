@@ -5,6 +5,10 @@ import { activateTrial, enqueueEntitlementSync, markOutboxDelivered, withUserEnt
 import { ACTIVE_STATUS_LIST, isActiveStatus, lapseSuspendOn, planItem } from '@/lib/plans';
 import { cancelClosing, cancelStripeSubscription, getClosing, reportRefundNeeded } from '@/lib/account-closing';
 import { isClosingOpen } from '@/lib/closing-shared';
+import { readCapped } from '@/lib/read-capped';
+
+/** Far above any Stripe event; anyone can post here before the signature is checked. */
+const MAX_BODY_BYTES = 1024 * 1024;
 
 // Signature verification runs over the exact bytes Stripe signed, and the
 // Node crypto it uses isn't available on the edge runtime.
@@ -43,7 +47,9 @@ export async function POST(req: Request): Promise<Response> {
   // drops whitespace, and the signature is over the original bytes — so a
   // parsed body fails verification every time, for reasons that look nothing
   // like the cause.
-  const payload = await req.text();
+  const raw = await readCapped(req, MAX_BODY_BYTES);
+  if (!raw) return new Response('Payload too large', { status: 413 });
+  const payload = new TextDecoder().decode(raw);
 
   let event: Stripe.Event;
   try {

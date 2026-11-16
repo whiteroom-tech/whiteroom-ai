@@ -25,6 +25,7 @@ import { CONTROL_SECRET_HEADER, CONTROL_USER_HEADER, controlAccessError, control
 import { rateLimitHeaders } from '@/lib/rate-limit-headers';
 import { recordControlAction } from '@/lib/control-actions';
 import { auth } from '@/auth';
+import { readCapped } from '@/lib/read-capped';
 
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -57,12 +58,10 @@ export async function POST(req: Request) {
     return Response.json({ error: 'No fleet session.' }, { status: 401 });
   }
 
-  // Engine actions are small JSON bodies; refuse anything bigger before reading it.
-  const length = Number(req.headers.get('content-length') ?? 0);
-  if (length > MAX_BODY_BYTES) return Response.json({ error: 'Request too large.' }, { status: 413 });
-  // Counted in bytes, and checked again after reading: content-length can be absent (chunked).
-  const raw = await req.arrayBuffer();
-  if (raw.byteLength > MAX_BODY_BYTES) return Response.json({ error: 'Request too large.' }, { status: 413 });
+  // Engine actions are small JSON bodies. A bigger one is refused, and reading
+  // stops at the limit: content-length can be absent (chunked) or wrong.
+  const raw = await readCapped(req, MAX_BODY_BYTES);
+  if (!raw) return Response.json({ error: 'Request too large.' }, { status: 413 });
   const body = new TextDecoder().decode(raw);
 
   const headers = engineAuthHeaders(token);
@@ -129,14 +128,18 @@ export async function POST(req: Request) {
 
   // A control change the engine accepted: keep who made it, so pages can show
   // their name. Control replies are small, so read them whole.
-  // Everything here is best effort: the change already happened, so a failed
-  // lookup or record must never turn it into an error the user would retry.
+  // Recording is best effort: the change already happened, so a failed lookup
+  // or record must never turn it into an error the user would retry.
   if (allowed && upstream.ok) {
     let reply: string;
     try {
       reply = await upstream.text();
     } catch {
-      return Response.json({ success: true }, { status: upstream.status, headers: { 'Cache-Control': 'no-store' } });
+      // The engine answered 2xx but its reply was lost, and a 2xx reply can
+      // still be a refusal ({ error }). Saying "success" here would be a
+      // guess. The page shows that the change may not have been saved and
+      // reloads; the client never sends a change again on a 502.
+      return Response.json({ error: 'outcome_unknown' }, { status: 502, headers: { 'Cache-Control': 'no-store' } });
     }
     try {
       if (actorId) await recordControlAction(actorId, allowed.fleetId, allowed.action, body, reply);
@@ -150,11 +153,14 @@ export async function POST(req: Request) {
   // Pass the engine's status and body through unchanged (a 401 here means
   // the ENGINE rejected the token, and the client treats it as an auth error
   // just like a direct call).
+  // Retry-After rides along: the client times its retry of a handoff 503 by it.
+  const retryAfter = upstream.headers.get('retry-after');
   return new Response(upstream.body, {
     status: upstream.status,
     headers: {
       'Content-Type': upstream.headers.get('content-type') ?? 'application/json',
       'Cache-Control': 'no-store',
+      ...(retryAfter && { 'Retry-After': retryAfter }),
     },
   });
 }

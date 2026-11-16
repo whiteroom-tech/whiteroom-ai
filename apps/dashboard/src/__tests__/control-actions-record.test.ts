@@ -129,6 +129,38 @@ describe('engine route records accepted control changes', () => {
     vi.unstubAllEnvs();
   });
 
+  it('says the outcome is unknown when the engine\'s reply is lost, and records nothing', async () => {
+    const lost = new Response(new ReadableStream({ start(c) { c.error(new Error('connection reset')); } }), { status: 200, headers: { 'content-type': 'application/json' } });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(lost));
+    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
+    const res = await call({ action: 'stop_agent', fleet_id: 'f1', agent_id: 'a' });
+    // Not success: a 2xx whose body never arrived may have been a refusal.
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'outcome_unknown' });
+    expect(inserts()).toHaveLength(0);
+  });
+
+  it('passes the engine\'s Retry-After through, and adds none of its own', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"whiteroom":{"reason":"whiteroom_handoff"}}', { status: 503, headers: { 'content-type': 'application/json', 'retry-after': '1' } })));
+    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
+    expect((await call({ action: 'fleet_report', fleet_id: 'f1' })).headers.get('Retry-After')).toBe('1');
+    engine(200);
+    expect((await call({ action: 'fleet_report', fleet_id: 'f1' })).headers.get('Retry-After')).toBeNull();
+  });
+
+  it('refuses a body over 64 KB without a declared length, before the engine is called', async () => {
+    const f = vi.fn();
+    vi.stubGlobal('fetch', f);
+    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
+    let sent = 0;
+    const endless = new ReadableStream<Uint8Array>({ pull(c) { sent++; c.enqueue(new Uint8Array(16 * 1024)); } });
+    const res = await POST(new Request('http://localhost/api/fleet/engine', { method: 'POST', body: endless, duplex: 'half' } as RequestInit));
+    expect(res.status).toBe(413);
+    expect(f).not.toHaveBeenCalled();
+    // Reading stopped at the limit: the endless body wasn't buffered.
+    expect(sent).toBeLessThan(10);
+  });
+
   it('still answers success when finding the person fails after the change', async () => {
     engine(200);
     mocks.auth.mockRejectedValue(new Error('session store down'));
