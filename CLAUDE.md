@@ -24,7 +24,7 @@ commit does not clear it.
   install and build on their own. Run commands from the package directory.
 - Because of that, per-package Dependabot `directory:` entries are correct
   here. (The engine repo is the opposite.)
-- CI runs typecheck, lint, build and test per package on Node 20 / npm 10.
+- CI runs typecheck, lint, build and test per package on Node 24 / npm 11. The SDK and CLI also run on Node 20 / npm 10, the oldest version they support.
   Don't regenerate a lockfile with npm 11; CI's `npm ci` can reject it.
 
 ## Dashboard database

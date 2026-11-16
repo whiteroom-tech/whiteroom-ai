@@ -138,7 +138,7 @@ jobs:
             - Keep the versions Dependabot chose. Don't revert, pin back, or bump anything else.
             - Fix the cause, for example a tsconfig or type change a new major needs, a renamed API,
               or a package that relied on a dependency it never declared.
-            - Lockfiles: CI runs `npm ci` on npm 10. If a lockfile is broken or out of sync, restore
+            - Lockfiles: CI runs `npm ci` on npm 11 (and on npm 10 for the SDK and CLI). If a lockfile is broken or out of sync, restore
               it from origin/main (`git checkout origin/main -- <path>/package-lock.json`) and run
               `npm install --package-lock-only` in that directory, rather than editing it by hand.
             - Don't touch .github/, and don't add or remove dependencies unless a package
