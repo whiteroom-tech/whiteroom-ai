@@ -21,4 +21,9 @@ describe('readCapped', () => {
     const big = new ReadableStream<Uint8Array>({ start(c) { c.enqueue(new Uint8Array(64)); c.close(); } });
     expect(await readCapped(req(big, { 'content-length': '2' }), 5)).toBeNull();
   });
+
+  it('a body that breaks off mid-send is refused, not thrown', async () => {
+    const broken = new ReadableStream<Uint8Array>({ start(c) { c.enqueue(new Uint8Array(2)); }, pull(c) { c.error(new Error('client went away')); } });
+    expect(await readCapped(req(broken), 64)).toBeNull();
+  });
 });
