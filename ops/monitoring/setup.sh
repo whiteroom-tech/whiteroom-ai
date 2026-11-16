@@ -3,8 +3,10 @@
 # one region per run: the US project by default, PROJECT=whiteroom-eu for the EU.
 #
 # Idempotent: anything that already exists (matched by display name) is left
-# alone, so rerun it after editing to add what's missing. To change an
-# existing check or policy, delete it in the console first.
+# alone, so rerun it after editing to add what's missing. The one exception is
+# the text an uptime check looks for, which a rerun brings up to date. To
+# change anything else on an existing check or policy, delete it in the
+# console first.
 #
 # Usage: ops/monitoring/setup.sh                       (needs gcloud auth and jq)
 #        PROJECT=whiteroom-eu ops/monitoring/setup.sh
@@ -72,6 +74,11 @@ uptime_check() {
         timeout: "10s"
       }')" | jq -r .name)"
     echo "created uptime check $name" >&2
+  else
+    # The text a check looks for follows this file: a check made before
+    # /health changed its answer would otherwise fail every probe.
+    api PATCH "${existing#projects/*/}?updateMask=contentMatchers" "$(jq -n --arg content "$content" \
+      '{contentMatchers: [{content: $content, matcher: "CONTAINS_STRING"}]}')" >/dev/null
   fi
   basename "$existing"
 }
