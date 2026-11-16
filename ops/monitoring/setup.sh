@@ -1,17 +1,34 @@
 #!/usr/bin/env bash
-# Uptime checks and alert policies for WhiteRoom prod in Cloud Monitoring.
+# Uptime checks and alert policies for WhiteRoom prod in Cloud Monitoring,
+# one region per run: the US project by default, PROJECT=whiteroom-eu for the EU.
 #
 # Idempotent: anything that already exists (matched by display name) is left
 # alone, so rerun it after editing to add what's missing. To change an
 # existing check or policy, delete it in the console first.
 #
-# Usage: ops/monitoring/setup.sh            (needs gcloud auth and jq)
+# Usage: ops/monitoring/setup.sh                       (needs gcloud auth and jq)
+#        PROJECT=whiteroom-eu ops/monitoring/setup.sh
 # Env:   PROJECT (default whiteroom-prod), ALERT_EMAIL (default info@whiteroom.tech)
 set -euo pipefail
 
 PROJECT="${PROJECT:-whiteroom-prod}"
 ALERT_EMAIL="${ALERT_EMAIL:-info@whiteroom.tech}"
-SQL_INSTANCE="whiteroom-db-v2"
+case "$PROJECT" in
+  whiteroom-prod)
+    REGION="us-central1"; SQL_INSTANCE="whiteroom-db-v2"
+    DASHBOARD_HOST="app.whiteroom.tech"; PROXY_HOST="proxy.whiteroom.tech"
+    # The website is served from the US project only.
+    WEBSITE_HOST="whiteroom.tech"
+    FRONT='All three hosts sit behind the `whiteroom-lb` load balancer, so if all three are down at once, look at the LB first.'
+    CERTS='Certificates are managed on the `whiteroom-lb` load balancer; check its certificate status.' ;;
+  whiteroom-eu)
+    REGION="europe-west1"; SQL_INSTANCE="whiteroom-db-eu"
+    DASHBOARD_HOST="eu.app.whiteroom.tech"; PROXY_HOST="eu.proxy.whiteroom.tech"
+    WEBSITE_HOST=""
+    FRONT='Both hosts are Cloud Run domain mappings, with no load balancer in front.'
+    CERTS='Certificates are managed by the Cloud Run domain mappings; check each mapping.' ;;
+  *) echo "unknown PROJECT: $PROJECT" >&2; exit 1 ;;
+esac
 API="https://monitoring.googleapis.com/v3/projects/$PROJECT"
 TOKEN="$(gcloud auth print-access-token)"
 
@@ -59,10 +76,11 @@ uptime_check() {
   basename "$existing"
 }
 
-WEBSITE_ID="$(uptime_check "Website whiteroom.tech" whiteroom.tech / "WhiteRoom")"
-DASHBOARD_ID="$(uptime_check "Dashboard app.whiteroom.tech" app.whiteroom.tech /sign-in "Sign in")"
-# /health also pings the database, so a DB outage shows up here too.
-PROXY_ID="$(uptime_check "Proxy proxy.whiteroom.tech" proxy.whiteroom.tech /health '"db":"ok"')"
+if [ -n "$WEBSITE_HOST" ]; then WEBSITE_ID="$(uptime_check "Website $WEBSITE_HOST" "$WEBSITE_HOST" / "WhiteRoom")"; fi
+DASHBOARD_ID="$(uptime_check "Dashboard $DASHBOARD_HOST" "$DASHBOARD_HOST" /sign-in "Sign in")"
+# /health answers {"status":"ok"} only while the database is reachable too
+# ("degraded" otherwise), so a DB outage shows up here.
+PROXY_ID="$(uptime_check "Proxy $PROXY_HOST" "$PROXY_HOST" /health '"status":"ok"')"
 
 # ---------- Alert policies ----------
 
@@ -102,22 +120,24 @@ uptime_condition() { # uptime_condition CHECK_ID TITLE
   }]'
 }
 
-RUNBOOK_RUN='Check the service in Cloud Run (revisions, logs, `status.traffic`). If traffic is pinned to an old revision: `gcloud run services update-traffic SERVICE --to-latest --region REGION --project whiteroom-prod`. All three hosts sit behind the `whiteroom-lb` load balancer, so if all three are down at once, look at the LB first.'
+RUNBOOK_RUN="Check the service in Cloud Run (revisions, logs, \`status.traffic\`). If traffic is pinned to an old revision: \`gcloud run services update-traffic SERVICE --to-latest --region $REGION --project $PROJECT\`. $FRONT"
 
-policy "Down: whiteroom.tech" \
-  "The public website failed its uptime check from more than one region. Cloud Run service \`whiteroom-tech\` (northamerica-northeast1). $RUNBOOK_RUN" \
-  "$(uptime_condition "$WEBSITE_ID" "whiteroom.tech failing")"
+if [ -n "$WEBSITE_HOST" ]; then
+  policy "Down: $WEBSITE_HOST" \
+    "The public website failed its uptime check from more than one region. Cloud Run service \`whiteroom-tech\` (northamerica-northeast1). $RUNBOOK_RUN" \
+    "$(uptime_condition "$WEBSITE_ID" "$WEBSITE_HOST failing")"
+fi
 
-policy "Down: app.whiteroom.tech" \
-  "The dashboard sign-in page failed its uptime check from more than one region. Cloud Run service \`whiteroom-dashboard\` (us-central1). $RUNBOOK_RUN" \
-  "$(uptime_condition "$DASHBOARD_ID" "app.whiteroom.tech failing")"
+policy "Down: $DASHBOARD_HOST" \
+  "The dashboard sign-in page failed its uptime check from more than one region. Cloud Run service \`whiteroom-dashboard\` ($REGION). $RUNBOOK_RUN" \
+  "$(uptime_condition "$DASHBOARD_ID" "$DASHBOARD_HOST failing")"
 
-policy "Down: proxy.whiteroom.tech" \
-  "The proxy's /health failed from more than one region. It checks the database too, so also look at Cloud SQL \`$SQL_INSTANCE\`. The engine exits on startup if it can't reach the DB. Cloud Run service \`whiteroom-engine\` (us-central1). $RUNBOOK_RUN" \
-  "$(uptime_condition "$PROXY_ID" "proxy.whiteroom.tech/health failing")"
+policy "Down: $PROXY_HOST" \
+  "The proxy's /health failed from more than one region. It checks the database too, so also look at Cloud SQL \`$SQL_INSTANCE\`. The engine exits on startup if it can't reach the DB. Cloud Run service \`whiteroom-engine\` ($REGION). $RUNBOOK_RUN" \
+  "$(uptime_condition "$PROXY_ID" "$PROXY_HOST/health failing")"
 
 policy "TLS certificate expiring" \
-  "A certificate served on a WhiteRoom host expires within 14 days. Certificates are managed on the \`whiteroom-lb\` load balancer; check its certificate status." \
+  "A certificate served on a WhiteRoom host expires within 14 days. $CERTS" \
   "$(jq -n '[{
     displayName: "Certificate expires in under 14 days",
     conditionThreshold: {
