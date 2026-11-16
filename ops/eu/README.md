@@ -1,9 +1,11 @@
 # EU deployment
 
 EU customers use their own copy of WhiteRoom in the GCP project `whiteroom-eu`,
-in `europe-west1` (Belgium). Their data never leaves the EU: the project's
-location policy (`gcp.resourceLocations: in:eu-locations`) refuses anything
-created outside the EU.
+in `europe-west1` (Belgium). Their WhiteRoom data is stored in the EU: the
+project's location policy (`gcp.resourceLocations: in:eu-locations`) refuses
+anything created outside the EU. Calls still go to the model provider the
+customer picks, and sign-in email and billing use the providers on the
+subprocessors page, so this is not a promise that all processing stays in the EU.
 
 | | US (`whiteroom-prod`) | EU (`whiteroom-eu`) |
 |---|---|---|

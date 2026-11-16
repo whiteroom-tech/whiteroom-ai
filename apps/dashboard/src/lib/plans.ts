@@ -200,16 +200,16 @@ export const PLANS: Record<PlanId, Plan> = {
     priceLine: '10% of what WhiteRoom saves you. 30 days free once you go live; then $300 a month per organization.',
     blurb: '',
     limits: { maxFleets: 10, maxAgentsPerFleet: RUNAWAY_AGENT_GUARD, includedAgents: 7, retentionDays: 365 },
-    features: ['Up to 7 agents; larger fleets: talk to us', 'Up to 10 fleets', 'Audit log with session replay', '12 months of data', 'Priority support'],
+    features: ['Up to 7 agents; larger fleets: talk to us', 'Up to 10 fleets', 'Audit log with full run history', '12 months of data', 'Priority support'],
   },
   enterprise: {
     id: 'enterprise',
     name: 'Enterprise',
     pricing: null,
     priceLine: 'Custom. Talk to us.',
-    blurb: 'Custom contract: self-hosted data plane, compliance reporting, SSO.',
+    blurb: 'Custom contract: signed audit export and dedicated support. Your own cloud? Talk to us.',
     limits: { maxFleets: 100, maxAgentsPerFleet: 1000, includedAgents: null, retentionDays: 365 },
-    features: ['Self-hosted data plane', 'Compliance reporting', 'SSO and SAML', 'Dedicated support and SLA'],
+    features: ['Signed audit export', 'Dedicated support', 'Your own cloud? Talk to us'],
   },
 };
 
