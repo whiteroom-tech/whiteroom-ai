@@ -26,4 +26,9 @@ describe('readCapped', () => {
     const broken = new ReadableStream<Uint8Array>({ start(c) { c.enqueue(new Uint8Array(2)); }, pull(c) { c.error(new Error('client went away')); } });
     expect(await readCapped(req(broken), 64)).toBe('unreadable');
   });
+
+  it('a body over the limit is too large even when cancelling the rest fails', async () => {
+    const big = new ReadableStream<Uint8Array>({ start(c) { c.enqueue(new Uint8Array(64)); }, cancel() { throw new Error('already gone'); } });
+    expect(await readCapped(req(big), 5)).toBe('too_large');
+  });
 });

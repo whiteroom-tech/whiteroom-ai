@@ -161,6 +161,17 @@ describe('engine route records accepted control changes', () => {
     expect(sent).toBeLessThan(10);
   });
 
+  it('answers 400 to an upload that breaks off, and 413 to one that declares too much, before the engine is called', async () => {
+    const f = vi.fn();
+    vi.stubGlobal('fetch', f);
+    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
+    const cutOff = await POST(new Request('http://localhost/api/fleet/engine', { method: 'POST', body: new ReadableStream<Uint8Array>({ start(c) { c.enqueue(new Uint8Array(2)); }, pull(c) { c.error(new Error('client went away')); } }), duplex: 'half' } as RequestInit));
+    expect(cutOff.status).toBe(400);
+    const declared = await POST(new Request('http://localhost/api/fleet/engine', { method: 'POST', body: '{}', headers: { 'content-length': String(64 * 1024 + 1) } }));
+    expect(declared.status).toBe(413);
+    expect(f).not.toHaveBeenCalled();
+  });
+
   it('still answers success when finding the person fails after the change', async () => {
     engine(200);
     mocks.auth.mockRejectedValue(new Error('session store down'));

@@ -15,7 +15,7 @@ export async function readCapped(req: Request, maxBytes: number): Promise<Uint8A
       const { done, value } = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > maxBytes) { await reader.cancel(); return 'too_large'; }
+      if (size > maxBytes) { await reader.cancel().catch(() => {}); return 'too_large'; }
       chunks.push(value);
     }
   } catch {
