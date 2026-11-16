@@ -924,12 +924,13 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
 
   const skippedCard = skippedRules.length > 0 && card(
     <>Not running <span className="wr-panel__count">{skippedRules.length}</span></>,
-    null,
+    // The engine can't say which agents a rule it doesn't know covered, so these aren't filtered.
+    agentFilter ? "For the whole fleet, whichever agent is picked." : null,
     <div>{skippedRules.map((r) => (
       <div key={r.id} className="ctl-row ctl-row--static">
         <span className="ctl-row__main"><span>{isKnownRuleType(r.ruleType) ? RULE_LABELS[r.ruleType] : UNKNOWN_RULE}</span></span>
         <span className="ctl-cap">Not running on this engine version</span>
-        <span className="ctl-mtag is-off">{r.mode === "enforce" ? "Enforce" : r.mode === "watch" ? "Watch" : "Off"}</span>
+        {Object.hasOwn(MODE_LABEL, r.mode) && <span className="ctl-mtag is-off">{MODE_LABEL[r.mode as GovernanceRule["mode"]]}</span>}
       </div>
     ))}</div>,
   );

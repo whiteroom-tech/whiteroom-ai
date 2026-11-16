@@ -486,9 +486,19 @@ describe('Controls page', () => {
       `${RULE_LABELS.spend_cap}Not running on this engine versionEnforce`,
       'A rule this version can’t showNot running on this engine versionWatch',
     ]);
+    expect(card.textContent).not.toContain('whole fleet');
     // Plain rows: nothing to open or edit, and not counted among the working rules.
     expect(card.querySelector('button')).toBeNull();
     expect(m.text()).toContain('5 rules · 2 Enforce · 3 Watch');
+    m.root.unmount();
+    // With one agent picked they still show, said to be for the whole fleet; a mode this build doesn't know gets no tag.
+    api.skipped = [{ id: 'rs3', ruleType: 'spend_cap', mode: 'a_newer_mode' }];
+    nav.params = new URLSearchParams('agent=lead-agent');
+    m = await mount();
+    const filtered = [...m.el.querySelectorAll('.ctl-card')].find((c) => c.querySelector('.ctl-card__title')?.textContent === 'Not running 1')!;
+    expect(filtered.textContent).toContain('For the whole fleet, whichever agent is picked.');
+    expect(filtered.querySelector('.ctl-mtag')).toBeNull();
+    nav.params = new URLSearchParams();
     m.root.unmount();
   });
 
