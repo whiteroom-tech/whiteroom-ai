@@ -61,7 +61,8 @@ export async function POST(req: Request) {
   // Engine actions are small JSON bodies. A bigger one is refused, and reading
   // stops at the limit: content-length can be absent (chunked) or wrong.
   const raw = await readCapped(req, MAX_BODY_BYTES);
-  if (!raw) return Response.json({ error: 'Request too large.' }, { status: 413 });
+  if (raw === 'too_large') return Response.json({ error: 'Request too large.' }, { status: 413 });
+  if (raw === 'unreadable') return Response.json({ error: 'The request was cut off.' }, { status: 400 });
   const body = new TextDecoder().decode(raw);
 
   const headers = engineAuthHeaders(token);

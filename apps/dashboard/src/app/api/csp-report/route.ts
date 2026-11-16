@@ -13,7 +13,7 @@ const field = (v: unknown, max: number) => String(v ?? '').replace(/[\x00-\x1f\x
 
 export async function POST(req: Request): Promise<Response> {
   const raw = await readCapped(req, MAX_BYTES);
-  if (!raw) return new Response(null, { status: 413 });
+  if (typeof raw === 'string') return new Response(null, { status: raw === 'too_large' ? 413 : 400 });
   try {
     const parsed = JSON.parse(new TextDecoder().decode(raw)) as unknown;
     // report-uri sends { "csp-report": {...} }; the Reporting API sends [{ body: {...} }].

@@ -48,7 +48,8 @@ export async function POST(req: Request): Promise<Response> {
   // parsed body fails verification every time, for reasons that look nothing
   // like the cause.
   const raw = await readCapped(req, MAX_BODY_BYTES);
-  if (!raw) return new Response('Payload too large', { status: 413 });
+  if (raw === 'too_large') return new Response('Payload too large', { status: 413 });
+  if (raw === 'unreadable') return new Response('Payload cut off', { status: 400 });
   const payload = new TextDecoder().decode(raw);
 
   let event: Stripe.Event;
