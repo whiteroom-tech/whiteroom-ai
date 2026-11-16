@@ -16,6 +16,10 @@ describe('CSP report endpoint', () => {
     expect((await post('x'.repeat(9000))).status).toBe(413);
     expect((await post('not json')).status).toBe(204);
   });
+  it('answers 400 to a report that breaks off mid-send', async () => {
+    const res = await POST(new Request('https://app.test/api/csp-report', { method: 'POST', duplex: 'half', body: new ReadableStream<Uint8Array>({ start(c) { c.enqueue(new Uint8Array(2)); }, pull(c) { c.error(new Error('client went away')); } }) } as RequestInit));
+    expect(res.status).toBe(400);
+  });
   it('reads the Reporting API format, logs at most five, and strips control characters', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const one = { body: { effectiveDirective: 'script-src-elem', blockedURL: 'inline', documentURL: 'https://app.test/runs\n[csp] forged' } };

@@ -130,6 +130,27 @@ beforeEach(() => {
 });
 
 describe('stripe webhook: subscription upsert', () => {
+  it('answers 400 to a delivery that breaks off, so it reads as cut off and not as too large', async () => {
+    mocks.constructEvent.mockClear();
+    const res = await POST(new Request('https://app.whiteroom.tech/api/stripe/webhook', {
+      method: 'POST', headers: { 'stripe-signature': 't=1,v1=sig' }, duplex: 'half',
+      body: new ReadableStream<Uint8Array>({ start(c) { c.enqueue(new Uint8Array(2)); }, pull(c) { c.error(new Error('client went away')); } }),
+    } as RequestInit));
+    expect(res.status).toBe(400);
+    expect(mocks.constructEvent).not.toHaveBeenCalled();
+  });
+
+  it('refuses a body over 1 MB before checking its signature', async () => {
+    mocks.constructEvent.mockClear();
+    const res = await POST(new Request('https://app.whiteroom.tech/api/stripe/webhook', {
+      method: 'POST',
+      headers: { 'stripe-signature': 't=1,v1=sig' },
+      body: 'x'.repeat(1024 * 1024 + 1),
+    }));
+    expect(res.status).toBe(413);
+    expect(mocks.constructEvent).not.toHaveBeenCalled();
+  });
+
   it('maps a savings-share subscription to its plan, with no agent quantity', async () => {
     expect((await deliver(subscription([{ price: 'price_pro_share', quantity: 1 }]))).status).toBe(200);
     expect(written()).toEqual({ plan: 'pro', writesBilledAgents: false });

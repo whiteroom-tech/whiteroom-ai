@@ -4,34 +4,16 @@
 // no cookies. Anyone can post here, so the body is capped and nothing is
 // stored.
 
-const MAX_BYTES = 8 * 1024;
+import { readCapped } from '@/lib/read-capped';
 
-/** The body, or null once it passes MAX_BYTES; stops reading there instead of buffering the rest. */
-async function readCapped(req: Request): Promise<Uint8Array | null> {
-  if (Number(req.headers.get('content-length') ?? 0) > MAX_BYTES) return null;
-  if (!req.body) return new Uint8Array();
-  const reader = req.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > MAX_BYTES) { await reader.cancel(); return null; }
-    chunks.push(value);
-  }
-  const out = new Uint8Array(size);
-  let at = 0;
-  for (const c of chunks) { out.set(c, at); at += c.byteLength; }
-  return out;
-}
+const MAX_BYTES = 8 * 1024;
 
 /** A report field for the log: control characters out (no forged log lines), no query string, bounded. */
 const field = (v: unknown, max: number) => String(v ?? '').replace(/[\x00-\x1f\x7f]/g, ' ').split('?')[0].slice(0, max);
 
 export async function POST(req: Request): Promise<Response> {
-  const raw = await readCapped(req);
-  if (!raw) return new Response(null, { status: 413 });
+  const raw = await readCapped(req, MAX_BYTES);
+  if (typeof raw === 'string') return new Response(null, { status: raw === 'too_large' ? 413 : 400 });
   try {
     const parsed = JSON.parse(new TextDecoder().decode(raw)) as unknown;
     // report-uri sends { "csp-report": {...} }; the Reporting API sends [{ body: {...} }].
