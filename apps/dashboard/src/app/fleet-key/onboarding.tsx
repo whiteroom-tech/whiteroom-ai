@@ -108,12 +108,14 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
     setRemoveBusy(true); setRemoveError('');
     try {
       const result = await deleteProviderKey(auth, prefix);
-      if (!result.success) {
+      if (!result.success && !result.pending) {
         setRemoveError(result.error || 'Could not remove that key.'); return;
       }
+      // Off but not saved yet (pending): it stays in the list, marked, so it can be tried again.
+      if (result.pending) setRemoveError(result.error || 'This key is off for now, but we couldn’t save that. Try again in a minute.');
       if (issued?.proxyUrl.includes(prefix)) setIssued(null);
       const remaining = await refresh();
-      await setByok(remaining.length > 0);
+      await setByok(remaining.some((key) => !key.pending));
     } catch (e) {
       setRemoveError(e instanceof Error ? e.message : 'Network error.');
     } finally {
@@ -163,7 +165,10 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, previewKeys }: {
                 <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>added {fmtDay(k.createdAt)}</span>
                 <KeyScopeNote agentId={k.agentId} />
                 <span className="wr-key-endpoint" style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }} title={k.endpoint}>{k.endpoint ?? ''}</span>
-                <Button variant="danger" size={28} className="wr-btn--outline-bad" disabled={removeBusy} onClick={() => setRemoving(k)} style={{ marginLeft: 'auto' }}>Remove&hellip;</Button>
+                {k.pending && <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Off, saving&hellip;</span>}
+                {k.pending
+                  ? <Button size={28} disabled={removeBusy} onClick={() => void disconnect(k)} style={{ marginLeft: 'auto' }}>Try again</Button>
+                  : <Button variant="danger" size={28} className="wr-btn--outline-bad" disabled={removeBusy} onClick={() => setRemoving(k)} style={{ marginLeft: 'auto' }}>Remove&hellip;</Button>}
               </li>
             ))}
           </ul>

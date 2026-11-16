@@ -25,9 +25,9 @@ import {
 } from "@/lib/whiteroom/client";
 import { wouldActsFor } from "@/lib/batched-reads";
 import type {
-  BlockStreakParams, GovernanceHistoryEntry, GovernanceResponse, GovernanceRule, GovernanceRuleType, KeywordParams, ModelAllowlistParams, RuleActionCounts, RuleActionsResult, RuleWouldActResult, SpendCapParams, UnknownGovernanceRule,
+  BlockStreakParams, GovernanceHistoryEntry, GovernanceListResult, GovernanceResponse, GovernanceRule, GovernanceRuleType, KeywordParams, ModelAllowlistParams, RuleActionCounts, RuleActionsResult, RuleWouldActResult, SpendCapParams, UnknownGovernanceRule,
 } from "@/lib/whiteroom/types";
-import { computeSuggestions, RESPONSE_EFFECT, RESPONSE_LABEL, RULE_LABELS, tallyFromRuleActions, tallyTotal, UNKNOWN_RULE, type GovernanceSuggestions } from "@/lib/governance";
+import { computeSuggestions, RESPONSE_EFFECT, RESPONSE_LABEL, RULE_LABELS, isKnownRuleType, tallyFromRuleActions, tallyTotal, UNKNOWN_RULE, type GovernanceSuggestions } from "@/lib/governance";
 import { FleetLogin } from "@/components/citadel/FleetLogin";
 import { ConfirmDialog } from "@/components/citadel/ConfirmDialog";
 import { fetchControlActors, oldestTime, type ControlActor } from "@/lib/control-actors";
@@ -101,6 +101,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const [rules, setRules] = useState<GovernanceRule[]>([]);
   // Rules of a type this build doesn't know: listed, never opened.
   const [unknownRules, setUnknownRules] = useState<UnknownGovernanceRule[]>([]);
+  /** Rules the engine isn't running: it is an older version than the one that added their type (after a rollback). */
+  const [skippedRules, setSkippedRules] = useState<NonNullable<GovernanceListResult["skippedRules"]>>([]);
   const [history, setHistory] = useState<GovernanceHistoryEntry[]>([]);
   const [agents, setAgents] = useState<string[]>([]);
   const [govV1, setGovV1] = useState(false);
@@ -248,6 +250,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         .then((counts) => { if (req === wouldReq.current) setWouldActs(counts); });
       setRules(d.rules);
       setUnknownRules(d.unknownRules ?? []);
+      setSkippedRules(Array.isArray(d.skippedRules) ? d.skippedRules : []);
       setHistory(d.history);
       void loadActors(d.history);
       setAgents(d.agents);
@@ -919,6 +922,18 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     offCount ? <Button size={32} onClick={() => setOffOpen((v) => !v)} aria-expanded={offOpen}>{offOpen ? "Hide" : "Show"}</Button> : undefined,
   );
 
+  const skippedCard = skippedRules.length > 0 && card(
+    <>Not running <span className="wr-panel__count">{skippedRules.length}</span></>,
+    null,
+    <div>{skippedRules.map((r) => (
+      <div key={r.id} className="ctl-row ctl-row--static">
+        <span className="ctl-row__main"><span>{isKnownRuleType(r.ruleType) ? RULE_LABELS[r.ruleType] : UNKNOWN_RULE}</span></span>
+        <span className="ctl-cap">Not running on this engine version</span>
+        <span className="ctl-mtag is-off">{r.mode === "enforce" ? "Enforce" : r.mode === "watch" ? "Watch" : "Off"}</span>
+      </div>
+    ))}</div>,
+  );
+
   const unknownShown = rulesFor(unknownRules, agentFilter);
   const unknownCard = unknownShown.length > 0 && card(
     <>Other rules <span className="wr-panel__count">{unknownShown.length}</span></>,
@@ -1060,7 +1075,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                   </section>
                 )}
 
-                {rules.length === 0 && unknownShown.length === 0 ? (
+                {rules.length === 0 && unknownShown.length === 0 && skippedRules.length === 0 ? (
                   <section className="wr-panel ctl-card ctl-state">
                     <h2 className="wr-panel__title ctl-card__title">No rules yet</h2>
                     <p className="ctl-cap" style={{ margin: 0 }}>Add a rule to record what your agents do. New rules start in Watch, so nothing is blocked until you say so.</p>
@@ -1069,7 +1084,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                 ) : (
                   <>
                     {!edited && <p className="ctl-cap ctl-phone-hint">Tap a rule to edit it. New rules start in Watch.</p>}
-                    {lists}{unknownCard}
+                    {lists}{unknownCard}{skippedCard}
                   </>
                 )}
               </>
