@@ -198,6 +198,8 @@ export interface ProviderKey {
   endpoint?: string;
   /** Set when the key is for one agent only: its calls are that agent's, whatever name they send. */
   agentId?: string;
+  /** Removed and already off, but the engine couldn't save that yet: removing it again tries the save again. */
+  pending?: boolean;
 }
 
 export interface ListKeysResult {
@@ -222,6 +224,8 @@ export interface DeleteKeyResult {
   success?: boolean;
   removed?: { provider: string; keyHint: string };
   error?: string;
+  /** With `error`: the key is off, but that isn't saved yet. It stays listed, marked pending. */
+  pending?: boolean;
 }
 
 // -- Bedrock cross-account role --
@@ -802,6 +806,8 @@ export interface GovernanceListResult {
   govV1?: boolean;
   /** The rule types this engine accepts (engine E1); absent from older engines, which take the first six. */
   ruleTypes?: string[];
+  /** Stored rules the engine isn't running because it is an older version than the one that added their type. */
+  skippedRules?: Array<{ id: string; ruleType: string; mode: string }>;
 }
 
 /**

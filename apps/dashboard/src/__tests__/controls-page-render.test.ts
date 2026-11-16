@@ -88,6 +88,8 @@ const api = vi.hoisted(() => ({
   toolsReplies: null as Array<(tools: string[]) => void> | null,
   /** governance_list's ruleTypes (undefined: an older engine that doesn't say). */
   ruleTypes: undefined as string[] | undefined,
+  /** governance_list's skippedRules: rules an older engine isn't running. */
+  skipped: undefined as Array<{ id: string; ruleType: string; mode: string }> | undefined,
   /** send_seen_list fails (an engine blip). */
   seenFail: false,
   /** send_seen_list's rows per rule id, and the rule ids it was asked for. */
@@ -101,7 +103,7 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
   // Read as the real governanceList reads the engine's reply (knownRulesOnly).
   governanceList: async () => {
     api.lists++; if (api.listFail) throw new Error('down'); if (api.listGate) await api.listGate;
-    return knownRulesOnly({ fleetId: 'f1', rules: api.empty ? [] : [...RULES.map((r) => api.saved[r.id] ?? r), ...api.created, ...(api.unknown as unknown as GovernanceRule[])], history: api.history as GovernanceListResult['history'], agents: ['lead-agent', 'market-researcher'], govV1: api.govV1, ...(api.ruleTypes && { ruleTypes: api.ruleTypes }) });
+    return knownRulesOnly({ fleetId: 'f1', rules: api.empty ? [] : [...RULES.map((r) => api.saved[r.id] ?? r), ...api.created, ...(api.unknown as unknown as GovernanceRule[])], history: api.history as GovernanceListResult['history'], agents: ['lead-agent', 'market-researcher'], govV1: api.govV1, ...(api.ruleTypes && { ruleTypes: api.ruleTypes }), ...(api.skipped && { skippedRules: api.skipped }) });
   },
   performanceRecommendationGet: () => new Promise(() => {}),
   alertsGet: async () => api.alerts,
@@ -168,7 +170,7 @@ beforeEach(() => {
   sessionStorage.clear();
   nav.params = new URLSearchParams(); nav.replace.mockClear(); nav.push.mockClear();
   api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.hourly = []; api.listGate = null; api.listFail = false; api.empty = false; api.would = {}; api.agentCalls = {}; api.history = []; api.totals = null; api.byRule = {}; api.unknown = []; api.tools = []; api.toolsAsked = 0; api.toolsFail = false; api.toolsHang = false; api.toolsReplies = null; session.key = 'k';
-  api.ruleTypes = undefined; api.seenRows = {}; api.seenFull = false; api.seenAsked = []; api.seenFail = false;
+  api.ruleTypes = undefined; api.skipped = undefined; api.seenRows = {}; api.seenFull = false; api.seenAsked = []; api.seenFail = false;
   api.oldEngine = false; api.wouldBatches = []; api.wouldSingle = 0; resetBatchSupport();
   document.body.innerHTML = '';
 });
@@ -470,6 +472,33 @@ describe('Controls page', () => {
     const dialogs = [...m.el.querySelectorAll('dialog[open]')];
     await m.click([...dialogs.at(-1)!.querySelectorAll('button')].find((b) => b.textContent === 'Remove rule'));
     expect(api.remove).toHaveBeenCalledWith('f1', 'r1', 'k');
+    m.root.unmount();
+  });
+
+  it('shows rules an older engine isn’t running, by name when it knows the type, and nothing when there are none', async () => {
+    let m = await mount();
+    expect(m.text()).not.toContain('Not running');
+    m.root.unmount();
+    api.skipped = [{ id: 'rs1', ruleType: 'spend_cap', mode: 'enforce' }, { id: 'rs2', ruleType: 'from_a_newer_engine', mode: 'watch' }];
+    m = await mount();
+    const card = [...m.el.querySelectorAll('.ctl-card')].find((c) => c.querySelector('.ctl-card__title')?.textContent === 'Not running 2')!;
+    expect([...card.querySelectorAll('.ctl-row')].map((r) => r.textContent)).toEqual([
+      `${RULE_LABELS.spend_cap}Not running on this engine versionEnforce`,
+      'A rule this version can’t showNot running on this engine versionWatch',
+    ]);
+    expect(card.textContent).not.toContain('whole fleet');
+    // Plain rows: nothing to open or edit, and not counted among the working rules.
+    expect(card.querySelector('button')).toBeNull();
+    expect(m.text()).toContain('5 rules · 2 Enforce · 3 Watch');
+    m.root.unmount();
+    // With one agent picked they still show, said to be for the whole fleet; a mode this build doesn't know gets no tag.
+    api.skipped = [{ id: 'rs3', ruleType: 'spend_cap', mode: 'a_newer_mode' }];
+    nav.params = new URLSearchParams('agent=lead-agent');
+    m = await mount();
+    const filtered = [...m.el.querySelectorAll('.ctl-card')].find((c) => c.querySelector('.ctl-card__title')?.textContent === 'Not running 1')!;
+    expect(filtered.textContent).toContain('For the whole fleet, whichever agent is picked.');
+    expect(filtered.querySelector('.ctl-mtag')).toBeNull();
+    nav.params = new URLSearchParams();
     m.root.unmount();
   });
 
