@@ -107,9 +107,13 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         if: steps.gate.outputs.ok == 'true'
         with:
-          # Match CI, so a regenerated lockfile is written by the same npm
-          # that runs `npm ci` there.
-          node-version: "20"
+          node-version: "24"
+
+      # Lockfiles are written by npm 10, the oldest npm CI runs `npm ci` with
+      # (the SDK and CLI jobs on Node 20). npm 11 reads them; the reverse can fail.
+      - name: Use npm 10 for lockfiles
+        if: steps.gate.outputs.ok == 'true'
+        run: npm install -g npm@10
 
       - name: Load result schema
         if: steps.gate.outputs.ok == 'true'
@@ -138,7 +142,7 @@ jobs:
             - Keep the versions Dependabot chose. Don't revert, pin back, or bump anything else.
             - Fix the cause, for example a tsconfig or type change a new major needs, a renamed API,
               or a package that relied on a dependency it never declared.
-            - Lockfiles: CI runs `npm ci` on npm 10. If a lockfile is broken or out of sync, restore
+            - Lockfiles: CI runs `npm ci` on npm 11, and on npm 10 for the SDK and CLI. This runner has npm 10, so a lockfile it writes works for both. If a lockfile is broken or out of sync, restore
               it from origin/main (`git checkout origin/main -- <path>/package-lock.json`) and run
               `npm install --package-lock-only` in that directory, rather than editing it by hand.
             - Don't touch .github/, and don't add or remove dependencies unless a package

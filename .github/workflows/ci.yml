@@ -28,11 +28,18 @@ jobs:
             dir: packages/cli
           - name: dashboard
             dir: apps/dashboard
+          # The SDK and CLI are published, and their users run Node 20 and later.
+          - name: sdk (Node 20)
+            dir: packages/sdk
+            node: "20"
+          - name: cli (Node 20)
+            dir: packages/cli
+            node: "20"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "20"
+          node-version: ${{ matrix.node || '24' }}
           cache: npm
           cache-dependency-path: "**/package-lock.json"
       - name: Install

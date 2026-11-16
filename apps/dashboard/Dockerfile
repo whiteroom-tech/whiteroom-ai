@@ -1,15 +1,15 @@
 # Build context is the repo root (not apps/dashboard) so this can COPY the
 # sibling packages/ui dependency pulled in via a `file:` link — Buildpacks
 # can't do this since they only see a single --path directory.
-# TODO: Pin to a reviewed digest (node:20-alpine@sha256:...) with automated updates
-FROM node:20-alpine AS deps
+# The base image is pinned by digest; Dependabot (docker, in .github/dependabot.yml) moves it.
+FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS deps
 WORKDIR /repo
 COPY packages/ui ./packages/ui
 COPY apps/dashboard/package.json apps/dashboard/package-lock.json ./apps/dashboard/
 WORKDIR /repo/apps/dashboard
 RUN npm ci
 
-FROM node:20-alpine AS builder
+FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS builder
 WORKDIR /repo
 COPY packages/ui ./packages/ui
 # The practice-test contract the CLI ships: the app imports catalog.json, the tests contract.json.
@@ -26,7 +26,7 @@ ARG NEXT_PUBLIC_ANALYTICS=
 ENV NEXT_PUBLIC_PROXY_URL=$NEXT_PUBLIC_PROXY_URL NEXT_PUBLIC_ANALYTICS=$NEXT_PUBLIC_ANALYTICS NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-FROM node:20-alpine AS runner
+FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS runner
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=8080
 COPY --from=builder --chown=node:node /repo/apps/dashboard/public ./apps/dashboard/public
