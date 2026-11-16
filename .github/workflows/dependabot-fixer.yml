@@ -109,7 +109,7 @@ jobs:
         with:
           # Match CI, so a regenerated lockfile is written by the same npm
           # that runs `npm ci` there.
-          node-version: "20"
+          node-version: "24"
 
       - name: Load result schema
         if: steps.gate.outputs.ok == 'true'

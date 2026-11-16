@@ -11,6 +11,13 @@ updates:
       actions:
         patterns: ["*"]
 
+  # The dashboard image's base (apps/dashboard/Dockerfile), pinned by digest
+  - package-ecosystem: docker
+    directory: "/apps/dashboard"
+    schedule:
+      interval: weekly
+    labels: ["dependencies"]
+
   - package-ecosystem: npm
     directory: "/packages/sdk"
     schedule:
