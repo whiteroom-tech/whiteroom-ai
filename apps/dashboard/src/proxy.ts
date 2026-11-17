@@ -7,6 +7,8 @@ import { FREE_INVITE_COOKIE, FREE_INVITE_TTL_MS, inviteCodeMatches, signInviteCo
 import { freePlanMode } from '@/lib/plans';
 import { LEGACY_REDIRECTS, ROUTES, isUnder } from '@/lib/routes';
 import { staffInternalPath, staffPublicPath } from '@/lib/staff-paths';
+import { clientIp } from '@/lib/client-ip';
+import { ipRequestsPerMinute, takeIpRequest } from '@/lib/ip-rate-limit';
 
 function adminHost(): string | undefined {
   return process.env.ADMIN_HOST?.toLowerCase().trim() || undefined;
@@ -117,7 +119,37 @@ function requestHost(request: NextRequest): string {
   ).toLowerCase();
 }
 
+/**
+ * Server-to-server callers, never limited by address: Stripe's webhooks come
+ * from a few shared Stripe addresses, and /api/internal/* from our own
+ * scheduler with a secret. Throttling either would lose billing work.
+ */
+const NOT_ADDRESS_LIMITED = ['/api/stripe/webhook', '/api/internal'];
+
+/** 429 when this request's address is over its per-minute limit (lib/ip-rate-limit.ts), else null. */
+function overAddressLimit(request: NextRequest): NextResponse | null {
+  const limit = ipRequestsPerMinute();
+  if (limit === 0) return null;
+  const { pathname } = request.nextUrl;
+  if (NOT_ADDRESS_LIMITED.some((p) => isUnder(pathname, p))) return null;
+  const ip = clientIp(request.headers.get('x-forwarded-for'));
+  if (!ip) return null;
+  const taken = takeIpRequest(ip, limit);
+  if (taken.ok) return null;
+  return new NextResponse('Too many requests from your network. Wait a minute and try again.', {
+    status: 429,
+    headers: {
+      'Retry-After': String(taken.retryAfterSeconds),
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-store',
+    },
+  });
+}
+
 export function proxy(request: NextRequest) {
+  const limited = overAddressLimit(request);
+  if (limited) return limited;
+
   const ADMIN_HOST = adminHost();
   const CONSOLE_HOST = consoleHost();
   const { pathname, searchParams } = request.nextUrl;

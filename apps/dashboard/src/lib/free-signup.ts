@@ -1,4 +1,5 @@
 import 'server-only';
+import { clientIp } from './client-ip';
 import { createHmac } from 'node:crypto';
 import type { AdapterUser } from 'next-auth/adapters';
 import { cookies, headers } from 'next/headers';
@@ -41,21 +42,11 @@ function utcDayStart(now: Date): Date {
 }
 
 /**
- * The client's address from X-Forwarded-For. The dashboard sits behind
- * Google's load balancer, which appends "<client>, <load balancer>" to
- * whatever the client sent, so the client is the second entry from the end;
- * a lone entry is the client itself. '' when there's no header (local dev).
- *
- * This holds only for requests through the load balancer: a request sent
- * straight to the service's run.app URL can name any address here. The limit
- * it feeds only delays a Sandbox by a day, so that's accepted; restricting
- * the service's ingress to the load balancer closes it.
+ * The client's address, as the per-address Sandbox limit sees it. Through
+ * the load balancer (or, without one, Cloud Run's own front end) the address
+ * can't be chosen by the client; see lib/client-ip.ts and TRUSTED_PROXY_HOPS.
  */
-export function clientIp(forwardedFor: string | null | undefined): string {
-  const parts = (forwardedFor ?? '').split(',').map((p) => p.trim()).filter(Boolean);
-  if (parts.length === 0) return '';
-  return parts.length >= 2 ? parts[parts.length - 2] : parts[0];
-}
+export { clientIp } from './client-ip';
 
 /** A keyed hash of the address, so the address itself is never stored; null without a key (nothing is stored then). */
 export function ipHash(ip: string): string | null {
