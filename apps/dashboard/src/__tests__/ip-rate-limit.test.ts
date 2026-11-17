@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 import { proxy } from '@/proxy';
 import { clientIp, trustedProxyHops } from '@/lib/client-ip';
 import {
-  DEFAULT_IP_REQUESTS_PER_MINUTE, _resetIpRateLimit, ipRequestsPerMinute, takeIpRequest,
+  DEFAULT_IP_REQUESTS_PER_MINUTE, MAX_TRACKED, _resetIpRateLimit, ipRequestsPerMinute, takeIpRequest,
 } from '@/lib/ip-rate-limit';
 
 const MIN = 60_000;
@@ -81,6 +81,22 @@ describe('takeIpRequest', () => {
   it("forgets a minute that's long past", () => {
     for (let i = 0; i < 4; i++) takeIpRequest('a', 4, T0);
     expect(takeIpRequest('a', 4, T0 + 2 * MIN).ok).toBe(true);
+  });
+
+  it('with a full table drops the least recently seen address, and a request moves its address to the back', () => {
+    // Limit 1: a tracked address that has made one request is refused; a
+    // dropped one starts again from nothing and is let through.
+    takeIpRequest('first', 1, T0);
+    for (let i = 1; i < MAX_TRACKED; i++) takeIpRequest(`x${i}`, 1, T0);
+    // The table is full. 'first' asks again: refused, and now the most recent.
+    expect(takeIpRequest('first', 1, T0).ok).toBe(false);
+    // A new address takes a slot from the least recently seen, x1, not 'first'.
+    expect(takeIpRequest('newcomer', 1, T0).ok).toBe(true);
+    expect(takeIpRequest('first', 1, T0).ok).toBe(false);
+    expect(takeIpRequest('x2', 1, T0).ok).toBe(false);
+    // x1 was dropped, so its count is gone: let through again (taking x3's slot).
+    expect(takeIpRequest('x1', 1, T0).ok).toBe(true);
+    expect(takeIpRequest('x3', 1, T0).ok).toBe(true);
   });
 
   it('says how long until the minute ends', () => {

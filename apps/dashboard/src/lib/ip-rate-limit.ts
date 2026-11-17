@@ -17,7 +17,7 @@
 
 const WINDOW_MS = 60_000;
 /** Addresses tracked at once. A full table drops the least recently seen. */
-const MAX_TRACKED = 10_000;
+export const MAX_TRACKED = 10_000;
 /** Requests a minute from one address when IP_REQUESTS_PER_MINUTE isn't set. */
 export const DEFAULT_IP_REQUESTS_PER_MINUTE = 1000;
 
