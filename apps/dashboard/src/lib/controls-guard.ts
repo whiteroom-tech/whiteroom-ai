@@ -4,7 +4,7 @@
 
 import { keywordTotal } from '@/lib/controls-view';
 import { unhandledType } from '@/lib/governance';
-import type { GovernanceHistoryEntry, GovernanceParams, GovernanceResponse, GovernanceRule, GovernanceScope, KeywordParams, ModelAllowlistParams, SendLimitParams, ToolListParams } from '@/lib/whiteroom/types';
+import type { GovernanceHistoryEntry, GovernanceParams, GovernanceResponse, GovernanceRule, GovernanceScope, DataDeletionParams, KeywordParams, ModelAllowlistParams, SendLimitParams, ToolListParams } from '@/lib/whiteroom/types';
 import { plural, HOUR_MS } from '@/lib/format';
 
 /**
@@ -22,6 +22,8 @@ export function canAct(rule: Pick<GovernanceRule, 'mode' | 'ruleType' | 'params'
     case 'keyword': return keywordTotal(rule.params as KeywordParams) > 0;
     // With no tools it judges nothing; with tools and an empty list, every call to them is off the list.
     case 'send_limit': return (rule.params as SendLimitParams).tools.length > 0;
+    // With no tools it reads no commands.
+    case 'data_deletion': return (rule.params as DataDeletionParams).commandTools.length > 0;
     // Only ever alerts (DLP spec 5.3): it never stops a call, whatever is saved.
     case 'outside_then_send': return false;
     // Edits the request and lets it through: it never stops a call, whatever is saved.

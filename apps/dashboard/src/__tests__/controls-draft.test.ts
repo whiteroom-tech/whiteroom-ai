@@ -53,6 +53,9 @@ it.each([
   ['an Outside content, then send data rule with no read list', { ...draft, ruleType: 'outside_then_send', params: { sendTools: ['send_email'] } }],
   ['an Outside content, then send data rule whose send list is a string', { ...draft, ruleType: 'outside_then_send', params: { readTools: [], sendTools: 'send_email' } }],
   ['an Outside content, then send data rule with a tool that isn\'t text', { ...draft, ruleType: 'outside_then_send', params: { readTools: [1], sendTools: [] } }],
+  ['a Data deletion rule with no tool list', { ...draft, ruleType: 'data_deletion', params: {} }],
+  ['a Data deletion rule whose tool list is a string', { ...draft, ruleType: 'data_deletion', params: { commandTools: 'bash' } }],
+  ['a Data deletion rule with a tool that isn\'t text', { ...draft, ruleType: 'data_deletion', params: { commandTools: ['bash', 7] } }],
 ])('a draft the editor couldn\'t open (%s) reads as none', (_name, bad) => {
   sessionStorage.setItem('wr_controls_draft:f1', JSON.stringify({ ruleId: 'r1', version: 1, draft: bad }));
   expect(readDraft('f1')).toBeNull();
@@ -67,6 +70,8 @@ it.each([
   ['keyword', { ruleType: 'keyword', params: { keywords: ['x'], where: 'both', wholeWord: true } }],
   ['outside content, then send data', { ruleType: 'outside_then_send', response: 'notify', params: { readTools: ['web_fetch'], sendTools: ['send_email'] } }],
   ['outside content, then send data with empty lists', { ruleType: 'outside_then_send', response: 'notify', params: { readTools: [], sendTools: [] } }],
+  ['data deletion', { ruleType: 'data_deletion', params: { commandTools: ['run_sql', 'bash'] } }],
+  ['data deletion with no tools yet', { ruleType: 'data_deletion', params: { commandTools: [] } }],
 ])('a well-formed %s draft reads back', (_name, shape) => {
   writeDraft('f1', { ruleId: 'r1', version: 1, draft: { ...draft, ...shape } as RuleDraft });
   expect(readDraft('f1')).not.toBeNull();

@@ -124,7 +124,7 @@ describe('the agent filter and groups', () => {
   });
 
   it('keeps rows in the row order whatever order the Add a rule choices are in', () => {
-    expect(RULE_ROW_ORDER).toEqual(['spend_cap', 'call_rate', 'model_allowlist', 'loop_breaker', 'block_streak', 'trim_results', 'tool_list', 'keyword', 'send_limit', 'outside_then_send']);
+    expect(RULE_ROW_ORDER).toEqual(['spend_cap', 'call_rate', 'model_allowlist', 'loop_breaker', 'block_streak', 'trim_results', 'tool_list', 'keyword', 'send_limit', 'outside_then_send', 'data_deletion']);
     expect([...RULE_ROW_ORDER].sort()).toEqual(Object.keys(RULE_LABELS).sort());
     // Each category's types sit together, in the category order.
     expect([...new Set(RULE_ROW_ORDER.map((t) => RULE_CATEGORY[t]))]).toEqual(CATEGORY_ORDER);
@@ -133,7 +133,7 @@ describe('the agent filter and groups', () => {
       spend_cap: { dailyCap: 190, scope: 'day', unit: 'dollars' }, call_rate: { maxCalls: 60 }, model_allowlist: { allowedModels: ['m'] },
       loop_breaker: { threshold: 100, scope: 'run', ignoreTools: [] }, tool_list: { blockedTools: ['x'] }, keyword: { where: 'incoming', keywords: ['x'], wholeWord: true },
       send_limit: { tools: ['send_email'], domains: [] }, outside_then_send: { readTools: [], sendTools: ['send_email'] },
-      block_streak: { threshold: 3 }, trim_results: { keepRecent: 5, minTokens: 50_000 },
+      block_streak: { threshold: 3 }, trim_results: { keepRecent: 5, minTokens: 50_000 }, data_deletion: { commandTools: ['bash'] },
     } as const;
     const rules = RULE_ROW_ORDER.map((t) => rule({ ruleType: t, params: params[t] as GovernanceRule['params'] }));
     RULE_TEMPLATES.reverse();
@@ -148,7 +148,7 @@ describe('the agent filter and groups', () => {
     expect(RULE_TEMPLATES.map((t) => [t.type, t.title])).toEqual([
       ['spend_cap', 'Cap spending'], ['call_rate', 'Limit calls per minute'], ['model_allowlist', 'Allow only certain models'],
       ['loop_breaker', 'Break loops'], ['tool_list', 'Block tools'], ['keyword', 'Flag keywords'],
-      ['send_limit', 'Limit where tools can send data'], ['outside_then_send', 'Flag sends after outside content'],
+      ['send_limit', 'Limit where tools can send data'], ['outside_then_send', 'Flag sends after outside content'], ['data_deletion', 'Stop agents deleting data'],
       ['block_streak', 'Act on repeated blocks'], ['trim_results', 'Trim old tool results'],
     ]);
   });
@@ -156,7 +156,7 @@ describe('the agent filter and groups', () => {
   it('puts every rule type in one of two categories', () => {
     expect(RULE_CATEGORY).toEqual({
       spend_cap: 'Cost & reliability', call_rate: 'Cost & reliability', model_allowlist: 'Cost & reliability', loop_breaker: 'Cost & reliability',
-      tool_list: 'Data protection', keyword: 'Data protection', send_limit: 'Data protection', outside_then_send: 'Data protection',
+      tool_list: 'Data protection', keyword: 'Data protection', send_limit: 'Data protection', outside_then_send: 'Data protection', data_deletion: 'Data protection',
       block_streak: 'Cost & reliability', trim_results: 'Cost & reliability',
     });
   });

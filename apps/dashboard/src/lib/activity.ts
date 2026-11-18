@@ -200,11 +200,16 @@ function windowText(e: AuditEntry, style: 'between' | 'range' = 'between'): stri
   return style === 'between' ? `between ${from} and ${to}` : `${from}–${to}`;
 }
 
-/** "the spend cap ×3": the rule, why when it adds something, and how many calls it stands for. */
+/**
+ * "the spend cap ×3": the rule, why when it adds something, and how many calls it stands for.
+ * A Data deletion event adds the engine's own words for the tool and the kind of delete
+ * ("run_sql was asked to drop a table"); they never hold the command.
+ */
 function governancePhrase(e: AuditEntry): string {
   const n = occurrences(e);
   const times = n > 1 ? ` ×${n}` : '';
-  return `${blockedByPhrase(e.ruleType, e.reason, true)}${times}`;
+  const what = e.ruleType === 'data_deletion' && typeof e.message === 'string' && e.message ? `: ${e.message.replace(/\.$/, '')}` : '';
+  return `${blockedByPhrase(e.ruleType, e.reason, true)}${times}${what}`;
 }
 
 /** Unknown or absent types degrade to readable prose rather than throwing. */

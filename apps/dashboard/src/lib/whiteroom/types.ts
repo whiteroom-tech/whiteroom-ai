@@ -701,11 +701,11 @@ export interface CustomControlInput {
 
 // -- Fleet governance rules (Controls page) --
 
-export type GovernanceRuleType = 'spend_cap' | 'loop_breaker' | 'model_allowlist' | 'tool_list' | 'call_rate' | 'keyword' | 'send_limit' | 'outside_then_send' | 'block_streak' | 'trim_results';
+export type GovernanceRuleType = 'spend_cap' | 'loop_breaker' | 'model_allowlist' | 'tool_list' | 'call_rate' | 'keyword' | 'send_limit' | 'outside_then_send' | 'block_streak' | 'trim_results' | 'data_deletion';
 export type GovernanceMode = 'off' | 'watch' | 'enforce';
 /** What Enforce does (engine P2.3): notify, block, pause or stop. */
 export type GovernanceResponse = 'notify' | 'block' | 'pause' | 'stop';
-export type GovernanceReason = 'budget_exceeded' | 'loop_detected' | 'model_not_allowed' | 'tool_not_allowed' | 'rate_exceeded' | 'keyword_found' | 'destination_not_allowed' | 'outside_then_send';
+export type GovernanceReason = 'budget_exceeded' | 'loop_detected' | 'model_not_allowed' | 'tool_not_allowed' | 'rate_exceeded' | 'keyword_found' | 'destination_not_allowed' | 'outside_then_send' | 'data_deletion';
 export type GovernanceScope = 'all' | string[];
 
 export interface SpendCapParams { dailyCap: number; scope: 'run' | 'day'; unit: 'tokens' | 'dollars' }
@@ -749,7 +749,13 @@ export interface BlockStreakParams { threshold: number }
  * it goes to the model. It holds the notify response but never alerts or blocks.
  */
 export interface TrimResultsParams { keepRecent: number; minTokens: number }
-export type GovernanceParams = SpendCapParams | LoopBreakerParams | ModelAllowlistParams | ToolListParams | CallRateParams | KeywordParams | SendLimitParams | OutsideThenSendParams | BlockStreakParams | TrimResultsParams;
+/**
+ * Data deletion: a tool in commandTools (the tools that run commands or SQL) is
+ * asked to run a command that deletes from a database or a cloud account. No
+ * commandTools is "Not set up".
+ */
+export interface DataDeletionParams { commandTools: string[] }
+export type GovernanceParams = SpendCapParams | LoopBreakerParams | ModelAllowlistParams | ToolListParams | CallRateParams | KeywordParams | SendLimitParams | OutsideThenSendParams | BlockStreakParams | TrimResultsParams | DataDeletionParams;
 
 export interface GovernanceRule {
   id: string;
