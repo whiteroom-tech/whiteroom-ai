@@ -125,6 +125,10 @@ describe('activity feed governance rows', () => {
     const deletion = { agentId: 'a1', ruleType: 'data_deletion' as const, reason: 'data_deletion' as const, message: 'run_sql was asked to drop a table.' };
     expect(eventModel(ev('governance_block', deletion)).said).toBe('was blocked by the Data deletion rule: run_sql was asked to drop a table');
     expect(eventModel(ev('governance_would_block', { ...deletion, occurrences: 3 })).said).toBe('would have been blocked by the Data deletion rule ×3: run_sql was asked to drop a table');
+    // With no words from the engine, the rule alone; another rule's message is never added.
+    for (const message of [undefined, '', 7]) expect(eventModel(ev('governance_block', { ...deletion, message } as Parameters<typeof ev>[1])).said).toBe('was blocked by the Data deletion rule');
+    expect(eventModel(ev('governance_block', { ...deletion, message: 'bash was asked to destroy infrastructure' })).said).toBe('was blocked by the Data deletion rule: bash was asked to destroy infrastructure');
+    expect(eventModel(ev('governance_block', { agentId: 'a1', ruleType: 'tool_list', reason: 'tool_not_allowed', message: 'Tool x isn’t allowed.' })).said).toBe('was blocked by the tool list');
     expect(eventModel(ev('governance_block', { agentId: 'a1', ruleType: 'keyword', reason: 'keyword_found' })).said).toBe('was blocked by the Keywords rule');
     expect(eventModel(ev('governance_block', { agentId: 'a1', ruleType: 'keyword', reason: 'keyword_found', occurrences: 3 })).said).toBe('was blocked by the Keywords rule ×3');
     // The Home chip says the same.

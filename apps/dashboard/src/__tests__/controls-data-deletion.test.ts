@@ -76,7 +76,7 @@ describe('The same actions as Block tools', () => {
   });
 
   it('tells the agent which tool and what kind of delete, never the command', () => {
-    expect(agentGets(deletion({}, { response: 'block' }))).toBe('403 governance_block\nmessage: <tool> was asked to drop a table. Choose a step that can be undone, or ask a person.\nresponse: block\nreason: data_deletion\nretryable: false\nresets: never');
+    expect(agentGets(deletion({}, { response: 'block' }))).toBe('403 governance_block\nmessage: <tool> was asked to <kind of delete>. Choose a step that can be undone, or ask a person.\nresponse: block\nreason: data_deletion\nretryable: false\nresets: never');
     expect(agentGets(deletion({}, { response: 'notify' }))).toBe('Nothing: the call goes through.\nYou get an alert; the agent doesn’t.');
   });
 });

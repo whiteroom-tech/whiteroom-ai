@@ -423,7 +423,7 @@ export function agentGets(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 're
   // A data rule's body says only that it blocked: no list, no limit (DLP spec 5.2).
   // A blocked delete names the tool and the kind of delete, never the command, and says what to do next.
   const message = rule.ruleType === 'send_limit' ? '\nmessage: A data rule blocked this call.'
-    : rule.ruleType === 'data_deletion' ? '\nmessage: <tool> was asked to drop a table. Choose a step that can be undone, or ask a person.' : '';
+    : rule.ruleType === 'data_deletion' ? '\nmessage: <tool> was asked to <kind of delete>. Choose a step that can be undone, or ask a person.' : '';
   return `403 governance_block${message}\nresponse: ${response}\nreason: ${REASON[rule.ruleType]}\nretryable: ${!held && rule.ruleType === 'call_rate'}\nresets: ${resets}`;
 }
 
