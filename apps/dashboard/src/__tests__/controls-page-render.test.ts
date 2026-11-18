@@ -2715,7 +2715,7 @@ describe('Controls: Repeated blocks and Old tool results', () => {
     expect(before).not.toContain('Act on repeated blocks');
     expect(before).not.toContain('Trim old tool results');
     api.ruleTypes = ALL_TYPES;
-    expect((await titles()).slice(-2)).toEqual(['Act on repeated blocks', 'Trim old tool results']);
+    expect(await titles()).toEqual(expect.arrayContaining(['Act on repeated blocks', 'Trim old tool results']));
   });
 
   it('Repeated blocks is added in Watch on Pause where the fleet has it, else on Only alert me, and opens on its number', async () => {

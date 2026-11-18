@@ -621,19 +621,19 @@ export function draftProblem(d: RuleDraft): string | null {
 
 // ── Add a rule ──────────────────────────────────────────────────────
 
-/** "Add a rule" choices, by goal. Rows on Controls follow RULE_ROW_ORDER, not this. */
+/** "Add a rule" choices, by category in the order the rows use (Cost & reliability, then Data protection), then by goal. */
 export const RULE_TEMPLATES: { type: GovernanceRuleType; title: string; desc: string }[] = [
   { type: 'spend_cap', title: 'Cap spending', desc: 'Block calls once an agent spends more than you set in a run or a day.' },
   { type: 'call_rate', title: 'Limit calls per minute', desc: 'Block calls once an agent makes too many in a minute.' },
   { type: 'model_allowlist', title: 'Allow only certain models', desc: 'Block calls to any model you haven’t picked.' },
   { type: 'loop_breaker', title: 'Break loops', desc: 'Catch an agent making the same call over and over.' },
+  { type: 'block_streak', title: 'Act on repeated blocks', desc: 'Catch an agent that keeps making calls your rules block.' },
+  { type: 'trim_results', title: 'Trim old tool results', desc: 'Keep long conversations short by removing old tool results before they go to the model.' },
   { type: 'tool_list', title: 'Block tools', desc: 'Keep agents from running tools you name.' },
   { type: 'keyword', title: 'Flag keywords', desc: 'Get an alert, or block the call, when words you pick show up.' },
   { type: 'send_limit', title: 'Limit where tools can send data', desc: 'For example, email only to your own domain.' },
   { type: 'outside_then_send', title: 'Flag sends after outside content', desc: 'Get an alert when an agent reads a web page, email or file, then tries to send data out.' },
   { type: 'data_deletion', title: 'Stop agents deleting data', desc: 'For example, a dropped table or an emptied storage bucket.' },
-  { type: 'block_streak', title: 'Act on repeated blocks', desc: 'Catch an agent that keeps making calls your rules block.' },
-  { type: 'trim_results', title: 'Trim old tool results', desc: 'Keep long conversations short by removing old tool results before they go to the model.' },
 ];
 
 /** The Add a rule choices this engine takes (governance_list ruleTypes): an engine without a new type never gets offered it. */

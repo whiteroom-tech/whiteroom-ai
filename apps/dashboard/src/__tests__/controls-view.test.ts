@@ -144,13 +144,15 @@ describe('the agent filter and groups', () => {
     }
   });
 
-  it('offers today’s six choices in today’s order, then the new data rules', () => {
+  it('lists the choices by category, in the order the rows use', () => {
     expect(RULE_TEMPLATES.map((t) => [t.type, t.title])).toEqual([
       ['spend_cap', 'Cap spending'], ['call_rate', 'Limit calls per minute'], ['model_allowlist', 'Allow only certain models'],
-      ['loop_breaker', 'Break loops'], ['tool_list', 'Block tools'], ['keyword', 'Flag keywords'],
-      ['send_limit', 'Limit where tools can send data'], ['outside_then_send', 'Flag sends after outside content'], ['data_deletion', 'Stop agents deleting data'],
-      ['block_streak', 'Act on repeated blocks'], ['trim_results', 'Trim old tool results'],
+      ['loop_breaker', 'Break loops'], ['block_streak', 'Act on repeated blocks'], ['trim_results', 'Trim old tool results'],
+      ['tool_list', 'Block tools'], ['keyword', 'Flag keywords'], ['send_limit', 'Limit where tools can send data'],
+      ['outside_then_send', 'Flag sends after outside content'], ['data_deletion', 'Stop agents deleting data'],
     ]);
+    const categories = RULE_TEMPLATES.map((t) => RULE_CATEGORY[t.type]);
+    expect(categories).toEqual([...categories].sort((x, y) => CATEGORY_ORDER.indexOf(x) - CATEGORY_ORDER.indexOf(y)));
   });
 
   it('puts every rule type in one of two categories', () => {
