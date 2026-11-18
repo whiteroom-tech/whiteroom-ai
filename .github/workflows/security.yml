@@ -53,9 +53,16 @@ jobs:
       - name: Install
         working-directory: ${{ matrix.dir }}
         run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
-      - name: npm audit (high+)
+      # What ships must be clean: a high advisory in a production dependency
+      # fails the job. Dev and test tooling is audited too and shown as a
+      # warning, so an advisory there with no fix yet doesn't stop every pull
+      # request (picomatch GHSA-fc5q-39xc-vjpf, November 2026).
+      - name: npm audit, what ships (high+)
         working-directory: ${{ matrix.dir }}
-        run: npm audit --audit-level=high
+        run: npm audit --omit=dev --audit-level=high
+      - name: npm audit, dev tooling (warns)
+        working-directory: ${{ matrix.dir }}
+        run: npm audit --audit-level=high || echo "::warning title=Dev dependency advisory (${{ matrix.name }})::A high advisory in dev or test tooling. It doesn't ship; see this step's log."
 
   dependency-review:
     name: Dependency Review
