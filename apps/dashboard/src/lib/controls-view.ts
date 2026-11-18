@@ -4,7 +4,7 @@
 
 import type {
   BlockStreakParams, CallRateParams, GovernanceMode, GovernanceParams, GovernanceResponse, GovernanceRule, GovernanceRuleType,
-  GovernanceScope, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, OutsideThenSendParams, RuleActionCounts, SendLimitParams, SendSeenRow, SpendCapParams, ToolListParams, TrimResultsParams,
+  DataDeletionParams, GovernanceScope, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, OutsideThenSendParams, RuleActionCounts, SendLimitParams, SendSeenRow, SpendCapParams, ToolListParams, TrimResultsParams,
 } from '@/lib/whiteroom/types';
 import { convertSpendCap, engineTakes, RULE_CATEGORY, UNKNOWN_RULE, unhandledType } from '@/lib/governance';
 import { MODE_LABEL, NOTIFY } from '@/lib/vocab';
@@ -200,6 +200,28 @@ export function looksLikeReader(tool: string): boolean {
 /** The fleet's tools that look like they read outside content, as many as the rule holds. */
 export const readLookingTools = (tools: readonly string[]) => tools.filter(looksLikeReader).slice(0, FLOW_TOOLS_MAX);
 
+// ── Data deletion ───────────────────────────────────────────────────
+
+/** The engine's limit on a Data deletion rule's tools. */
+export const COMMAND_TOOLS_MAX = TOOLS_PER_LIST;
+
+/** What the rule catches, the same in its sentence and under When. */
+export const DELETION_WHEN = 'When an agent is asked to run a command that deletes from a database or cloud account';
+
+/** The docs' list of what the rule catches and what it doesn't. */
+export const DELETION_DOCS_URL = 'https://whiteroom.tech/docs.html#data-deletion';
+
+/** Name parts of a tool that runs commands or SQL. Used only to order and pre-pick tools, never to decide a call. */
+const RUNS_COMMANDS = new Set(['sql', 'query', 'queries', 'database', 'db', 'bash', 'shell', 'sh', 'exec', 'execute', 'command', 'commands', 'cmd', 'terminal']);
+
+/** Whether a tool's name has a part like sql, query, bash, shell, exec or command: `run_sql` and `bashTool` do, `shellfish_menu` doesn't. */
+export function looksLikeCommandRunner(tool: string): boolean {
+  return nameParts(tool).some((p) => RUNS_COMMANDS.has(p));
+}
+
+/** The fleet's tools that look like they run commands or SQL, as many as the rule holds. */
+export const commandLookingTools = (tools: readonly string[]) => tools.filter(looksLikeCommandRunner).slice(0, COMMAND_TOOLS_MAX);
+
 // ── Old tool results ────────────────────────────────────────────────
 
 /**
@@ -262,6 +284,10 @@ export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 
       return (rule.params as OutsideThenSendParams).sendTools.length
         ? { pre: `When ${FLOW_WHEN[0].toLowerCase()}${FLOW_WHEN.slice(1)}, ${v}.`, val: '', post: '' }
         : { pre: 'No send tools picked yet.', val: '', post: '' };
+    case 'data_deletion':
+      return (rule.params as DataDeletionParams).commandTools.length
+        ? { pre: `${DELETION_WHEN}, ${v}.`, val: '', post: '' }
+        : { pre: 'No tools picked yet.', val: '', post: '' };
     case 'block_streak':
       return { pre: 'When an agent has ', val: fmtCount((rule.params as BlockStreakParams).threshold), post: ` calls in a row blocked in a run, ${v}.` };
     case 'trim_results': {
@@ -297,7 +323,7 @@ function ruleOrder(a: GovernanceRule, b: GovernanceRule): number {
 }
 
 /** The order rules of equal strength are listed in on Controls: each category's types together. Its own list, so the Add-a-rule choices can change without moving rows. */
-export const RULE_ROW_ORDER: readonly GovernanceRuleType[] = ['spend_cap', 'call_rate', 'model_allowlist', 'loop_breaker', 'block_streak', 'trim_results', 'tool_list', 'keyword', 'send_limit', 'outside_then_send'];
+export const RULE_ROW_ORDER: readonly GovernanceRuleType[] = ['spend_cap', 'call_rate', 'model_allowlist', 'loop_breaker', 'block_streak', 'trim_results', 'tool_list', 'keyword', 'send_limit', 'outside_then_send', 'data_deletion'];
 
 /** The categories in the order Controls lists them. A type this build doesn't know goes last. */
 export const CATEGORY_ORDER: readonly string[] = ['Cost & reliability', 'Data protection'];
@@ -368,6 +394,7 @@ export function emptyPick(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): st
     case 'send_limit': return (rule.params as SendLimitParams).tools.length ? null : 'a tool';
     // No send tools is "Not set up" (DLP spec 5.3). No read tools is a real rule: the provider's web search and fetch always count.
     case 'outside_then_send': return (rule.params as OutsideThenSendParams).sendTools.length ? null : 'a send tool';
+    case 'data_deletion': return (rule.params as DataDeletionParams).commandTools.length ? null : 'a tool';
     case 'spend_cap': case 'loop_breaker': case 'call_rate': case 'block_streak': case 'trim_results': return null;
     default: return unhandledType(rule.ruleType, null);
   }
@@ -378,7 +405,7 @@ export function emptyPick(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): st
 // Repeated blocks and Old tool results never block a call themselves, so they have no reason of their own.
 const REASON: Record<Exclude<GovernanceRuleType, 'block_streak' | 'trim_results'>, string> = {
   spend_cap: 'budget_exceeded', loop_breaker: 'loop_detected', model_allowlist: 'model_not_allowed', tool_list: 'tool_not_allowed', call_rate: 'rate_exceeded',
-  keyword: 'keyword_found', send_limit: 'destination_not_allowed', outside_then_send: 'outside_then_send',
+  keyword: 'keyword_found', send_limit: 'destination_not_allowed', outside_then_send: 'outside_then_send', data_deletion: 'data_deletion',
 };
 
 /** The engine's 403 for this rule (blockResponseBody); nothing for Only alert me. */
@@ -394,14 +421,16 @@ export function agentGets(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 're
   const held = response === 'pause' || response === 'stop';
   const resets = held ? 'when someone resumes it' : resetsWhen(rule);
   // A data rule's body says only that it blocked: no list, no limit (DLP spec 5.2).
-  const message = rule.ruleType === 'send_limit' ? '\nmessage: A data rule blocked this call.' : '';
+  // A blocked delete names the tool and the kind of delete, never the command, and says what to do next.
+  const message = rule.ruleType === 'send_limit' ? '\nmessage: A data rule blocked this call.'
+    : rule.ruleType === 'data_deletion' ? '\nmessage: <tool> was asked to drop a table. Choose a step that can be undone, or ask a person.' : '';
   return `403 governance_block${message}\nresponse: ${response}\nreason: ${REASON[rule.ruleType]}\nretryable: ${!held && rule.ruleType === 'call_rate'}\nresets: ${resets}`;
 }
 
 function resetsWhen(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): string {
   switch (rule.ruleType) {
     case 'call_rate': return 'once the last minute is back under the limit';
-    case 'model_allowlist': case 'tool_list': case 'keyword': case 'send_limit': case 'outside_then_send': case 'block_streak': case 'trim_results': return 'never';
+    case 'model_allowlist': case 'tool_list': case 'keyword': case 'send_limit': case 'outside_then_send': case 'block_streak': case 'trim_results': case 'data_deletion': return 'never';
     case 'spend_cap': case 'loop_breaker': return (rule.params as SpendCapParams | LoopBreakerParams).scope === 'day' ? 'next day (00:00 UTC)' : 'next run';
     default: return unhandledType(rule.ruleType, 'never');
   }
@@ -420,6 +449,7 @@ export const AGENT_NOTE: Record<GovernanceRuleType, string> = {
   block_streak: 'Acts after the blocked call that reaches the limit.',
   // Never stops a call, so this never shows.
   trim_results: 'It never stops a call.',
+  data_deletion: 'Stops the model’s reply before the agent gets it, so the command never runs. The model call itself is already spent.',
 };
 
 // ── The edit model behind Save ──────────────────────────────────────
@@ -454,7 +484,7 @@ const numberOf = (rule: Pick<GovernanceRule, 'ruleType' | 'params'>): string => 
     case 'call_rate': return String((rule.params as CallRateParams).maxCalls);
     case 'block_streak': return String((rule.params as BlockStreakParams).threshold);
     case 'trim_results': return String((rule.params as TrimResultsParams).keepRecent);
-    case 'model_allowlist': case 'tool_list': case 'keyword': case 'send_limit': case 'outside_then_send': return '';
+    case 'model_allowlist': case 'tool_list': case 'keyword': case 'send_limit': case 'outside_then_send': case 'data_deletion': return '';
     default: return unhandledType(rule.ruleType, '');
   }
 };
@@ -470,7 +500,7 @@ export function draftFrom(rule: GovernanceRule): RuleDraft {
   };
 }
 
-const HAS_NUMBER: Record<GovernanceRuleType, boolean> = { spend_cap: true, loop_breaker: true, call_rate: true, model_allowlist: false, tool_list: false, keyword: false, send_limit: false, outside_then_send: false, block_streak: true, trim_results: true };
+const HAS_NUMBER: Record<GovernanceRuleType, boolean> = { spend_cap: true, loop_breaker: true, call_rate: true, model_allowlist: false, tool_list: false, keyword: false, send_limit: false, outside_then_send: false, block_streak: true, trim_results: true, data_deletion: false };
 const hasNumber = (t: GovernanceRuleType) => HAS_NUMBER[t] === true;
 
 /**
@@ -574,6 +604,7 @@ export function draftProblem(d: RuleDraft): string | null {
     // The engine refuses any other response for this type (DLP spec 5.3).
     if (d.response !== 'notify') return 'This rule can only alert you.';
   }
+  if (d.ruleType === 'data_deletion' && (p.params as DataDeletionParams).commandTools.length > COMMAND_TOOLS_MAX) return `A rule holds up to ${COMMAND_TOOLS_MAX} tools. Remove one to save.`;
   if (d.appliesTo !== 'all' && d.appliesTo.length === 0) return 'Pick at least one agent, or choose All agents.';
   if (d.mode !== 'enforce') return null;
   switch (d.ruleType) {
@@ -582,6 +613,7 @@ export function draftProblem(d: RuleDraft): string | null {
     case 'keyword': return keywordTotal(p.params as KeywordParams) === 0 ? 'Pick at least one keyword before you turn on Enforce.' : null;
     case 'send_limit': return (p.params as SendLimitParams).tools.length === 0 ? 'Pick at least one tool before you turn on Enforce.' : null;
     case 'outside_then_send': return (p.params as OutsideThenSendParams).sendTools.length === 0 ? 'Pick at least one tool under Sends data out before you turn on Enforce.' : null;
+    case 'data_deletion': return (p.params as DataDeletionParams).commandTools.length === 0 ? 'Pick at least one tool before you turn on Enforce.' : null;
     case 'spend_cap': case 'loop_breaker': case 'call_rate': case 'block_streak': case 'trim_results': return null;
     // Never saved: the editor doesn't open a rule of a type it doesn't know.
     default: return unhandledType(d.ruleType, UNKNOWN_RULE);
@@ -600,6 +632,7 @@ export const RULE_TEMPLATES: { type: GovernanceRuleType; title: string; desc: st
   { type: 'keyword', title: 'Flag keywords', desc: 'Get an alert, or block the call, when words you pick show up.' },
   { type: 'send_limit', title: 'Limit where tools can send data', desc: 'For example, email only to your own domain.' },
   { type: 'outside_then_send', title: 'Flag sends after outside content', desc: 'Get an alert when an agent reads a web page, email or file, then tries to send data out.' },
+  { type: 'data_deletion', title: 'Stop agents deleting data', desc: 'For example, a dropped table or an emptied storage bucket.' },
   { type: 'block_streak', title: 'Act on repeated blocks', desc: 'Catch an agent that keeps making calls your rules block.' },
   { type: 'trim_results', title: 'Trim old tool results', desc: 'Keep long conversations short by removing old tool results before they go to the model.' },
 ];
@@ -715,6 +748,10 @@ function looser(prev: GovernanceRule, next: GovernanceRule): string[] {
       if (unsent.length) out.push(`No longer checks ${unsent.join(', ')}`);
       return out;
     }
+    case 'data_deletion': {
+      const freed = (a as DataDeletionParams).commandTools.filter((t) => !(b as DataDeletionParams).commandTools.includes(t));
+      return freed.length ? [`No longer checks ${freed.join(', ')}`] : [];
+    }
     case 'block_streak': {
       const p = a as BlockStreakParams, n = b as BlockStreakParams;
       return n.threshold > p.threshold ? [`Acts after ${fmtCount(n.threshold)} blocked calls in a row instead of ${fmtCount(p.threshold)}`] : [];
@@ -788,6 +825,10 @@ export function ruleCondition(rule: Pick<GovernanceRule, 'ruleType' | 'params'>)
     }
     case 'outside_then_send':
       return (rule.params as OutsideThenSendParams).sendTools.length ? { pre: FLOW_WHEN, val: '', post: '' } : { pre: 'No send tools picked yet', val: '', post: '' };
+    case 'data_deletion': {
+      const n = (rule.params as DataDeletionParams).commandTools.length;
+      return n ? { pre: 'A delete command through ', val: `${fmtCount(n)} ${plural(n, 'tool')}`, post: '' } : { pre: 'No tools picked yet', val: '', post: '' };
+    }
     case 'block_streak': return { pre: 'Blocked ', val: fmtCount((rule.params as BlockStreakParams).threshold), post: '× in a row in a run' };
     case 'trim_results': {
       const p = rule.params as TrimResultsParams;
@@ -856,6 +897,7 @@ export function blocksWhen(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'a
     case 'send_limit': return `only for sends to domains not on its list${only}`;
     // Never blocks (canAct is false), so never the one rule that does: kept for the exhaustive switch.
     case 'outside_then_send': return `only for sends after outside content${only}`;
+    case 'data_deletion': return `only for delete commands through the tools it names${only}`;
     // Never the one rule that blocks either (canAct is false): it needs another rule to block first.
     case 'block_streak': return `only after ${fmtCount((rule.params as BlockStreakParams).threshold)} blocked calls in a row${only}`;
     // Never blocks (canAct is false): kept for the exhaustive switch.
@@ -1061,6 +1103,10 @@ export function whenSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params'>):
     case 'keyword': return ruleCondition(rule);
     case 'send_limit': return ruleCondition(rule);
     case 'outside_then_send': return ruleCondition(rule);
+    case 'data_deletion': {
+      const tools = (rule.params as DataDeletionParams).commandTools;
+      return tools.length ? { pre: 'Is asked to run a delete command through ', val: tools.join(', '), post: '' } : { pre: 'No tools picked yet', val: '', post: '' };
+    }
     case 'block_streak': return { pre: 'Has ', val: fmtCount((rule.params as BlockStreakParams).threshold), post: ' calls in a row blocked in a run' };
     case 'trim_results': {
       const p = rule.params as TrimResultsParams;
@@ -1107,6 +1153,7 @@ const TYPE_RESPONSES: Record<GovernanceRuleType, readonly GovernanceResponse[]> 
   block_streak: ['pause', 'stop', 'notify'],
   // The engine's fixed value; the rule never alerts, so the editor shows no action at all.
   trim_results: ['notify'],
+  data_deletion: ['block', 'pause', 'stop', 'notify'],
 };
 
 /**

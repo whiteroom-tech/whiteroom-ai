@@ -13,7 +13,7 @@ import type { GovernanceMode, GovernanceResponse } from '@/lib/whiteroom/types';
 import Link from 'next/link';
 import { Banner, Button, FONT_MONO, Hint, SegmentedControl } from '@whiteroom/ui';
 import type {
-  GovernanceHistoryEntry, GovernanceRule, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, OutsideThenSendParams, SendLimitParams, SendSeenRow, SpendCapParams, ToolListParams,
+  DataDeletionParams, GovernanceHistoryEntry, GovernanceRule, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, OutsideThenSendParams, SendLimitParams, SendSeenRow, SpendCapParams, ToolListParams,
 } from '@/lib/whiteroom/types';
 import { RESPONSE_LABEL, RULE_LABELS } from '@/lib/governance';
 import { actionAvailableFrom, canAct, keywordBlockCheck, stopCheck } from '@/lib/controls-guard';
@@ -23,10 +23,15 @@ import type { ControlActor } from '@/lib/control-actors';
 import { ROUTES } from '@/lib/routes';
 import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
 import {
-  canAddSeen, domainEntry, domainProblem, domainsHidden, domainTotal, FLOW_TOOLS_MAX, FLOW_WHEN, looksLikeReader, looksLikeSender, SEEN_RESERVED_TEXT, seenFullLine, seenNotOnList, SEND_DOMAINS_MAX, SEND_TOOLS_MAX, toolsWithNoDomain, trims,
+  canAddSeen, COMMAND_TOOLS_MAX, DELETION_DOCS_URL, domainEntry, domainProblem, domainsHidden, domainTotal, FLOW_TOOLS_MAX, FLOW_WHEN, looksLikeCommandRunner, looksLikeReader, looksLikeSender, SEEN_RESERVED_TEXT, seenFullLine, seenNotOnList, SEND_DOMAINS_MAX, SEND_TOOLS_MAX, toolsWithNoDomain, trims,
 } from '@/lib/controls-view';
 import { AGENT_NOTE, isMarker, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, looksLikeDeleteOrChange, newMarker, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, MODE_CHOICES, responseChoices, sendsAlert, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
 import { Chip, field, GroupPicker, InlineSelect, MarkerChip, MODEL_GROUPS, NumberField, ScopeField, ToolPicker } from './pickers';
+
+/** How a rule judged on the reply meets a streamed call and a Bedrock one. */
+const HELD_REPLY_NOTE = 'In Watch, streamed calls are checked after they arrive. In Enforce, a streamed call that can use a listed tool arrives all at once, and a Bedrock one is refused.';
+/** How many tools seen and not on a Data deletion rule are listed before "and N more". */
+const UNLISTED_SHOWN = 5;
 
 /** When each rule acts; Keywords depends on where it looks (KEYWORD_ACTS), Loop breaker on its number (loopActs). */
 const ACTS: Record<Exclude<GovernanceRule['ruleType'], 'keyword' | 'loop_breaker'>, string> = {
@@ -36,6 +41,7 @@ const ACTS: Record<Exclude<GovernanceRule['ruleType'], 'keyword' | 'loop_breaker
   outside_then_send: 'Checks each reply once the agent has read outside content. It never holds a call.',
   block_streak: 'Acts on the blocked call that reaches the limit.',
   trim_results: 'Acts before the request goes to the model.',
+  data_deletion: 'Acts before the agent gets the tool call.',
 };
 const KEYWORD_ACTS: Record<KeywordWhere, string> = {
   incoming: 'Acts before the call reaches the model.',
@@ -50,13 +56,14 @@ const WHEN_NOTES: Record<GovernanceRule['ruleType'], string | null> = {
   call_rate: null,
   loop_breaker: 'Calls to the tools listed under Not counting never count as a loop.',
   keyword: 'Whole words, any case. Images and PDFs aren’t checked. The matched text is never stored, and the agent isn’t told which keyword matched.',
-  tool_list: 'In Watch, streamed calls are checked after they arrive. In Enforce, a streamed call that can use a listed tool arrives all at once, and a Bedrock one is refused.',
+  tool_list: HELD_REPLY_NOTE,
   // Its streaming and Bedrock notes sit under Block, where they matter (DLP spec 3.2).
   send_limit: null,
   // Its help is in the editor, under When (DLP spec 3.3).
   outside_then_send: null,
   block_streak: 'Call rate blocks don’t count.',
   trim_results: 'Native Bedrock Converse calls aren’t trimmed.',
+  data_deletion: HELD_REPLY_NOTE,
 };
 
 /** A Where tools can send data rule's Seen list, as the page has read it. */
@@ -133,6 +140,14 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
   const send = rule.ruleType === 'send_limit' ? (p as SendLimitParams) : null;
   // Outside content, then send data: two tool lists, and it only alerts (DLP spec 3.3).
   const flow = rule.ruleType === 'outside_then_send' ? (p as OutsideThenSendParams) : null;
+  // Data deletion: the tools whose commands it reads, and the fleet's command-looking tools it doesn't read yet.
+  const deletion = rule.ruleType === 'data_deletion' ? (p as DataDeletionParams) : null;
+  const unlisted = deletion ? fleetTools.filter((t) => looksLikeCommandRunner(t) && !deletion.commandTools.includes(t)) : [];
+  const addUnlisted = (tool: string) => {
+    if (!deletion || deletion.commandTools.length >= COMMAND_TOOLS_MAX) return;
+    setParams({ commandTools: [...deletion.commandTools, tool] });
+    onStaged?.(`${tool} added. Save to apply.`);
+  };
   // Old tool results edits requests: no action to pick and no alert (its response is fixed and unused).
   const trim = trims(rule);
   const readOnly = domainsHidden(rule);
@@ -305,6 +320,18 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
             <ToolPicker values={(p as ToolListParams).blockedTools} onChange={(blockedTools) => setParams({ blockedTools })} fleetTools={fleetTools} onShow={onToolPicker} first={looksLikeDeleteOrChange} />
           </>
         )}
+        {deletion && (
+          <>
+            <span style={{ fontSize: 'var(--fs-md)' }}>Tools that run commands or SQL:</span>
+            <ToolPicker values={deletion.commandTools} onChange={(commandTools) => setParams({ commandTools })} fleetTools={fleetTools} onShow={onToolPicker} first={looksLikeCommandRunner} ariaLabel="Add a tool that runs commands or SQL" />
+            {deletion.commandTools.length > COMMAND_TOOLS_MAX && <p style={help}>A rule holds up to {COMMAND_TOOLS_MAX} tools. Remove one to save.</p>}
+            <p style={help}>
+              WhiteRoom reads each command and looks for ones that delete from a database or a cloud account. It catches mistakes, not commands written to hide what they do.{' '}
+              <a href={DELETION_DOCS_URL} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>See what it covers</a>
+            </p>
+            {draft.mode === 'watch' && <p style={help}>Check what it catches in Watch before you enforce it.</p>}
+          </>
+        )}
         {send && (
           <>
             <span style={{ fontSize: 'var(--fs-md)' }}>One of these tools sends to a domain that isn’t on the list:</span>
@@ -425,6 +452,23 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
             </>
           ) : <p style={help}>Nothing new.</p>)}
           {fullLine && <p style={help}>{fullLine}</p>}
+        </section>
+      )}
+
+      {/* Tools the fleet has that look like they run commands and aren't on this rule: it reads nothing from them until they're added. */}
+      {deletion && unlisted.length > 0 && (
+        <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }} aria-labelledby="ctl-unlisted-title">
+          <p className="gov-eyebrow ctl-q" id="ctl-unlisted-title">Seen, not on the list</p>
+          <div className="ctl-seen">
+            {unlisted.slice(0, UNLISTED_SHOWN).map((t) => (
+              <div key={t} className="ctl-seen__row">
+                <span className="ctl-seen__what"><span style={{ fontFamily: FONT_MONO }}>{t}</span></span>
+                <Button size={28} onClick={() => addUnlisted(t)} disabled={saving || deletion.commandTools.length >= COMMAND_TOOLS_MAX} aria-label={`Add ${t} to the list`}>Add to list</Button>
+              </div>
+            ))}
+          </div>
+          {unlisted.length > UNLISTED_SHOWN && <p style={help}>and {unlisted.length - UNLISTED_SHOWN} more</p>}
+          <p style={help}>These look like they run commands or SQL. This rule doesn’t check them until you add them.</p>
         </section>
       )}
 

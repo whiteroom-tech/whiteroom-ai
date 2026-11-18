@@ -30,6 +30,7 @@ export const RULE_LABELS: Record<GovernanceRuleType, string> = {
   outside_then_send: 'Outside content, then send data',
   block_streak: 'Repeated blocks',
   trim_results: 'Old tool results',
+  data_deletion: 'Data deletion',
 };
 
 /** Each rule's category label on Controls, in sentence case (.ctl-cat upper-cases it). */
@@ -44,6 +45,7 @@ export const RULE_CATEGORY: Record<GovernanceRuleType, string> = {
   outside_then_send: 'Data protection',
   block_streak: 'Cost & reliability',
   trim_results: 'Cost & reliability',
+  data_deletion: 'Data protection',
 };
 
 /** What a rule of a type this build doesn't know shows as, wherever rules are listed. */
@@ -91,6 +93,7 @@ export const REASON_LABELS: Record<string, string> = {
   keyword_found: 'keyword found',
   destination_not_allowed: 'domain not on the list',
   outside_then_send: 'sent after outside content',
+  data_deletion: 'delete command',
 };
 
 /**
@@ -106,6 +109,7 @@ const OWN_REASON: Record<Exclude<GovernanceRuleType, 'block_streak' | 'trim_resu
   keyword: 'keyword_found',
   send_limit: 'destination_not_allowed',
   outside_then_send: 'outside_then_send',
+  data_deletion: 'data_deletion',
 };
 
 /**
@@ -114,10 +118,11 @@ const OWN_REASON: Record<Exclude<GovernanceRuleType, 'block_streak' | 'trim_resu
  * else a label ("Spend cap"). A reason that only restates the rule is left
  * out; one that adds something stays ("Spend cap (too many calls)"). The
  * Keywords rule is named as a rule ("the Keywords rule"): its reason only
- * repeated it.
+ * repeated it. So is Data deletion, mid-sentence: "the data deletion" isn't a thing.
  */
 export function blockedByPhrase(ruleType: unknown, reason: unknown, lower: boolean): string {
   if (ruleType === 'keyword') return 'the Keywords rule';
+  if (ruleType === 'data_deletion' && lower) return 'the Data deletion rule';
   const label = ruleLabel(ruleType);
   const r = String(reason ?? '');
   const why = (OWN_REASON as Record<string, string>)[String(ruleType)] === r ? undefined : REASON_LABELS[r];
@@ -189,6 +194,7 @@ export function governanceFromSummary(g: { blocks: number; wouldBlocks: number; 
       outside_then_send: g.byRule.outside_then_send ?? emptyTally(),
       block_streak: g.byRule.block_streak ?? emptyTally(),
       trim_results: g.byRule.trim_results ?? emptyTally(),
+      data_deletion: g.byRule.data_deletion ?? emptyTally(),
     },
   };
 }
@@ -199,7 +205,7 @@ export function governanceCounts(entries: AuditEntry[], sinceMs = 0): Governance
     blocks: 0,
     wouldBlocks: 0,
     byAgent: {},
-    byRule: { spend_cap: emptyTally(), loop_breaker: emptyTally(), model_allowlist: emptyTally(), tool_list: emptyTally(), call_rate: emptyTally(), keyword: emptyTally(), send_limit: emptyTally(), outside_then_send: emptyTally(), block_streak: emptyTally(), trim_results: emptyTally() },
+    byRule: { spend_cap: emptyTally(), loop_breaker: emptyTally(), model_allowlist: emptyTally(), tool_list: emptyTally(), call_rate: emptyTally(), keyword: emptyTally(), send_limit: emptyTally(), outside_then_send: emptyTally(), block_streak: emptyTally(), trim_results: emptyTally(), data_deletion: emptyTally() },
   };
   for (const e of entries) {
     if (!isGovernanceDecision(e)) continue;

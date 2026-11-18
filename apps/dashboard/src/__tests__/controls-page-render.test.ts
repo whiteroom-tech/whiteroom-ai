@@ -2232,7 +2232,8 @@ describe('Controls: category labels', () => {
   // Every type, each with a row in view (the fleet's Tool list is off, in a closed card).
   const streak: GovernanceRule = { ...base, id: 'b1', ruleType: 'block_streak', mode: 'watch', response: 'notify', appliesTo: 'all', params: { threshold: 3 } };
   const trim: GovernanceRule = { ...base, id: 't1', ruleType: 'trim_results', mode: 'watch', response: 'notify', appliesTo: 'all', params: { keepRecent: 5, minTokens: 50_000 } };
-  const everyType = () => { api.created.push(keyword, send, flow, streak, trim); api.saved.r6 = { ...RULES[5], mode: 'watch', params: { blockedTools: ['delete_file'] } }; };
+  const deletion: GovernanceRule = { ...base, id: 'd1', ruleType: 'data_deletion', mode: 'watch', response: 'block', appliesTo: 'all', params: { commandTools: ['run_sql'] } };
+  const everyType = () => { api.created.push(keyword, send, flow, streak, trim, deletion); api.saved.r6 = { ...RULES[5], mode: 'watch', params: { blockedTools: ['delete_file'] } }; };
   const nameToCat = Object.fromEntries(Object.entries(RULE_LABELS).map(([t, name]) => [name, RULE_CATEGORY[t as keyof typeof RULE_CATEGORY]]));
 
   it('shows each row’s category above its count and mode tag, for every type', async () => {
@@ -2265,7 +2266,7 @@ describe('Controls: category labels', () => {
       expect(m.el.querySelector('.gov-edhead__full')!.textContent).toBe(nameToCat[name] + name);
       opened.add(name);
     }
-    expect(opened.size).toBe(10);
+    expect(opened.size).toBe(11);
     m.root.unmount();
   });
 
@@ -2968,6 +2969,103 @@ describe('Controls: Repeated blocks and Old tool results', () => {
     expect(m.row(TRIM).querySelector('.ctl-row__count')!.textContent).toContain('0');
     expect(m.row(TRIM).querySelector('.ctl-row__count')!.textContent).toContain('None caught · 7 days');
     expect(m.el.querySelector('.ctl-lead')!.textContent).toContain('7 caught, 2 blocked this week');
+    m.root.unmount();
+  });
+});
+
+// Data deletion rule (spec Rev 7, section 6).
+describe('Controls: Data deletion', () => {
+  const ALL_TYPES = [...RULE_TEMPLATES.map((t) => t.type)];
+  const TITLE = 'Stop agents deleting data';
+  const deletionRule = (over: Partial<GovernanceRule> = {}, commandTools = ['run_sql']): GovernanceRule => ({
+    ...base, id: 'd1', ruleType: 'data_deletion', mode: 'watch', response: 'block', appliesTo: 'all', params: { commandTools }, ...over,
+  });
+  const creates = () => api.create.mockImplementation(async (_f: string, r: { ruleType: GovernanceRule['ruleType']; mode: GovernanceRule['mode']; response?: GovernanceRule['response']; params?: GovernanceRule['params'] }) => {
+    const rule: GovernanceRule = { ...base, id: 'new', ruleType: r.ruleType, mode: r.mode, response: r.response ?? 'block', appliesTo: 'all', params: r.params! };
+    api.created.push(rule);
+    return { rule };
+  });
+  const addIt = async () => {
+    const m = await mount();
+    await m.click(m.button('Add rule'));
+    await m.click([...m.el.querySelectorAll('button.gov-template')].find((b) => b.textContent?.includes(TITLE)));
+    return m;
+  };
+
+  it('is offered in Add a rule only when the engine’s ruleTypes has it, as a data protection choice', async () => {
+    const choice = async () => {
+      const m = await mount();
+      await m.click(m.button('Add rule'));
+      const text = [...m.el.querySelectorAll('button.gov-template')].find((b) => b.textContent?.includes(TITLE))?.textContent;
+      m.root.unmount();
+      document.body.innerHTML = '';
+      return text;
+    };
+    expect(await choice()).toBeUndefined();
+    api.ruleTypes = ALL_TYPES.filter((t) => t !== 'data_deletion');
+    expect(await choice()).toBeUndefined();
+    api.ruleTypes = ALL_TYPES;
+    expect(await choice()).toBe(`${TITLE}Data protectionFor example, a dropped table or an emptied storage bucket.`);
+  });
+
+  it('is added in Watch with the tools that look like they run commands or SQL picked', async () => {
+    api.ruleTypes = ALL_TYPES;
+    api.tools = ['search_docs', 'run_sql', 'send_email', 'bash', 'delete_record'];
+    creates();
+    const m = await addIt();
+    expect(api.create).toHaveBeenCalledWith('f1', { ruleType: 'data_deletion', mode: 'watch', params: { commandTools: ['run_sql', 'bash'] } }, 'k');
+    expect(m.text()).toContain('Data deletion rule added in Watch. Check its tools.');
+    // A new rule opens with When expanded: the picker and what the rule reads.
+    expect(m.text()).toContain('Tools that run commands or SQL:');
+    expect(m.text()).toContain('It catches mistakes, not commands written to hide what they do.');
+    expect(m.text()).toContain('Check what it catches in Watch before you enforce it.');
+    expect(m.el.querySelector('a[href="https://whiteroom.tech/docs.html#data-deletion"]')?.textContent).toBe('See what it covers');
+    m.root.unmount();
+  });
+
+  it('with no such tool seen yet, it is added with none and says to pick them', async () => {
+    api.ruleTypes = ALL_TYPES;
+    api.tools = ['search_docs', 'send_email'];
+    creates();
+    const m = await addIt();
+    expect(api.create).toHaveBeenCalledWith('f1', { ruleType: 'data_deletion', mode: 'watch', params: { commandTools: [] } }, 'k');
+    expect(m.text()).toContain('Data deletion rule added in Watch. Pick its tools.');
+    m.root.unmount();
+  });
+
+  it('lists the fleet’s command tools that aren’t on the rule, five at most, and adds one when asked', async () => {
+    api.tools = ['run_sql', 'bash', 'shell_exec', 'db_query', 'terminal', 'cmd_runner', 'psql_exec', 'send_email'];
+    api.created.push(deletionRule());
+    const m = await mount();
+    await m.click(m.row('Data deletion'));
+    const rows = () => [...m.el.querySelectorAll('.ctl-seen__row')].map((r) => r.querySelector('.ctl-seen__what')!.textContent);
+    expect(m.text()).toContain('Seen, not on the list');
+    expect(rows()).toEqual(['bash', 'shell_exec', 'db_query', 'terminal', 'cmd_runner']);
+    expect(m.text()).toContain('and 1 more');
+    expect(m.text()).toContain('This rule doesn’t check them until you add them.');
+    await m.click(m.el.querySelector('button[aria-label="Add bash to the list"]') ?? undefined);
+    expect(rows()).toEqual(['shell_exec', 'db_query', 'terminal', 'cmd_runner', 'psql_exec']);
+    expect(m.text()).not.toContain('and 1 more');
+    expect(m.text()).toContain('bash added. Save to apply.');
+    m.root.unmount();
+  });
+
+  it('shows no such list when every command tool is on the rule', async () => {
+    api.tools = ['run_sql', 'send_email'];
+    api.created.push(deletionRule());
+    const m = await mount();
+    await m.click(m.row('Data deletion'));
+    expect(m.text()).not.toContain('Seen, not on the list');
+    m.root.unmount();
+  });
+
+  it('offers the same actions as Block tools when enforced', async () => {
+    api.govV1 = true;
+    api.created.push(deletionRule({ mode: 'enforce' }));
+    const m = await mount();
+    await m.click(m.row('Data deletion'));
+    const options = [...m.el.querySelectorAll('select[aria-label="When enforced"] option')].map((o) => o.textContent);
+    expect(options.map((o) => o!.split(' · ')[0])).toEqual(['Block the call', 'Pause the agent', 'Stop the agent', 'Only alert me']);
     m.root.unmount();
   });
 });

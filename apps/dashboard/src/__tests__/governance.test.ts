@@ -69,7 +69,7 @@ describe('call rate rules', () => {
 
 describe('rule actions from one source', () => {
   it('takes the per-rule split from the same rows as the totals', () => {
-    const fallback = { spend_cap: { blocks: 9, wouldBlocks: 9 }, loop_breaker: { blocks: 0, wouldBlocks: 0 }, model_allowlist: { blocks: 0, wouldBlocks: 0 }, tool_list: { blocks: 0, wouldBlocks: 0 }, call_rate: { blocks: 0, wouldBlocks: 0 }, keyword: { blocks: 0, wouldBlocks: 0 }, send_limit: { blocks: 0, wouldBlocks: 0 }, outside_then_send: { blocks: 0, wouldBlocks: 0 }, block_streak: { blocks: 0, wouldBlocks: 0 }, trim_results: { blocks: 0, wouldBlocks: 0 } };
+    const fallback = { spend_cap: { blocks: 9, wouldBlocks: 9 }, loop_breaker: { blocks: 0, wouldBlocks: 0 }, model_allowlist: { blocks: 0, wouldBlocks: 0 }, tool_list: { blocks: 0, wouldBlocks: 0 }, call_rate: { blocks: 0, wouldBlocks: 0 }, keyword: { blocks: 0, wouldBlocks: 0 }, send_limit: { blocks: 0, wouldBlocks: 0 }, outside_then_send: { blocks: 0, wouldBlocks: 0 }, block_streak: { blocks: 0, wouldBlocks: 0 }, trim_results: { blocks: 0, wouldBlocks: 0 }, data_deletion: { blocks: 0, wouldBlocks: 0 } };
     const c = countsFromRuleActions({
       fleetId: 'f',
       totals: { blocked: 4, paused: 0, stopped: 0, toldYou: 0, wouldAct: 2 },
@@ -121,6 +121,10 @@ describe('activity feed governance rows', () => {
     expect(m.code).toBe('W/B');
     expect(m.said).toBe('would have been blocked by the model allowlist');
     expect(eventModel(ev('governance_would_block', { agentId: 'a1', ruleType: 'keyword', reason: 'keyword_found' })).said).toBe('would have been blocked by the Keywords rule');
+    // Data deletion says which tool and what kind of delete, in the engine's words.
+    const deletion = { agentId: 'a1', ruleType: 'data_deletion' as const, reason: 'data_deletion' as const, message: 'run_sql was asked to drop a table.' };
+    expect(eventModel(ev('governance_block', deletion)).said).toBe('was blocked by the Data deletion rule: run_sql was asked to drop a table');
+    expect(eventModel(ev('governance_would_block', { ...deletion, occurrences: 3 })).said).toBe('would have been blocked by the Data deletion rule ×3: run_sql was asked to drop a table');
     expect(eventModel(ev('governance_block', { agentId: 'a1', ruleType: 'keyword', reason: 'keyword_found' })).said).toBe('was blocked by the Keywords rule');
     expect(eventModel(ev('governance_block', { agentId: 'a1', ruleType: 'keyword', reason: 'keyword_found', occurrences: 3 })).said).toBe('was blocked by the Keywords rule ×3');
     // The Home chip says the same.
@@ -184,7 +188,7 @@ describe('rule responses and rule actions (P2.3/P2.4)', () => {
   });
 
   it('takes durable counts from rule_actions, keeping the audit log’s per-rule split', () => {
-    const byRule = { spend_cap: { blocks: 1, wouldBlocks: 0 }, loop_breaker: { blocks: 0, wouldBlocks: 0 }, model_allowlist: { blocks: 0, wouldBlocks: 0 }, tool_list: { blocks: 0, wouldBlocks: 0 }, call_rate: { blocks: 0, wouldBlocks: 0 }, keyword: { blocks: 0, wouldBlocks: 0 }, send_limit: { blocks: 0, wouldBlocks: 0 }, outside_then_send: { blocks: 0, wouldBlocks: 0 }, block_streak: { blocks: 0, wouldBlocks: 0 }, trim_results: { blocks: 0, wouldBlocks: 0 } };
+    const byRule = { spend_cap: { blocks: 1, wouldBlocks: 0 }, loop_breaker: { blocks: 0, wouldBlocks: 0 }, model_allowlist: { blocks: 0, wouldBlocks: 0 }, tool_list: { blocks: 0, wouldBlocks: 0 }, call_rate: { blocks: 0, wouldBlocks: 0 }, keyword: { blocks: 0, wouldBlocks: 0 }, send_limit: { blocks: 0, wouldBlocks: 0 }, outside_then_send: { blocks: 0, wouldBlocks: 0 }, block_streak: { blocks: 0, wouldBlocks: 0 }, trim_results: { blocks: 0, wouldBlocks: 0 }, data_deletion: { blocks: 0, wouldBlocks: 0 } };
     const c = countsFromRuleActions({
       fleetId: 'f',
       totals: { blocked: 5, paused: 1, stopped: 0, toldYou: 2, wouldAct: 3 },

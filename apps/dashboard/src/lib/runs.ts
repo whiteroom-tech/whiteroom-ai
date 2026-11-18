@@ -427,6 +427,7 @@ const REASON_TEXT: Record<string, string> = {
   keyword_found: 'a keyword was found',
   destination_not_allowed: 'a domain not on the list',
   outside_then_send: 'a send after outside content',
+  data_deletion: 'a command that deletes data',
 };
 export function reasonText(reason: string | null | undefined): string | null {
   return reason ? REASON_TEXT[reason] ?? REASON_LABELS[reason] ?? null : null;

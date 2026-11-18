@@ -37,7 +37,7 @@ import { localDay } from "@/lib/runs";
 import { ROUTES } from "@/lib/routes";
 import { UNNAMED_CALLS_REFUSED } from "@/lib/setup";
 import {
-  appliesNow, deleteLookingTools, draftChanges, draftFrom, draftParams, draftProblem, isDirty, money, NO_ACTIONS, rulesFor, ruleSentenceText, spendOverlap,
+  appliesNow, commandLookingTools, deleteLookingTools, draftChanges, draftFrom, draftParams, draftProblem, isDirty, money, NO_ACTIONS, rulesFor, ruleSentenceText, spendOverlap,
   type RuleDraft,
   stopping, trims,
   weakenings,
@@ -332,6 +332,10 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     return () => { cancelled = true; };
   }, [seenKey, seenVersion, seenTry, authKey]);
   const seenState = seenKey && seen?.key === seenKey ? seen.state : seenKey ? ({ status: "loading" } as const) : undefined;
+
+  // A Data deletion rule's editor lists the fleet's command tools that aren't on it, so its tools are read when it opens.
+  const readsToolsOnOpen = selected?.ruleType === "data_deletion";
+  useEffect(() => { if (readsToolsOnOpen) void readFleetTools(); }, [readsToolsOnOpen, readFleetTools]);
 
   // Suggested rules come from real traffic; the performance store is optional, so a failure just means none.
   useEffect(() => {
@@ -696,12 +700,14 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       // Tools already read are used as they are; else the read gets 2 s, then the rule is added as before.
       // "Limit where tools can send data" starts the same way, with the tools that look like they send;
       // "Flag sends after outside content" with those that look like they read, and those that send.
+      // "Stop agents deleting data" with the tools that look like they run commands or SQL.
       const flow = ruleType === "outside_then_send";
-      const tools = ruleType === "tool_list" || ruleType === "send_limit" || flow ? (fleetTools.length ? fleetTools : await within(TOOLS_WAIT_MS, readFleetTools(), [])) : [];
-      const picked = ruleType === "tool_list" ? deleteLookingTools(tools) : ruleType === "send_limit" ? sendLookingTools(tools) : [];
+      const deletion = ruleType === "data_deletion";
+      const tools = ruleType === "tool_list" || ruleType === "send_limit" || flow || deletion ? (fleetTools.length ? fleetTools : await within(TOOLS_WAIT_MS, readFleetTools(), [])) : [];
+      const picked = ruleType === "tool_list" ? deleteLookingTools(tools) : ruleType === "send_limit" ? sendLookingTools(tools) : deletion ? commandLookingTools(tools) : [];
       const readPicked = flow ? readLookingTools(tools) : [], sendPicked = flow ? sendLookingTools(tools) : [];
       const params = ruleType === "tool_list" && picked.length > 0 ? { blockedTools: picked } : ruleType === "send_limit" ? { tools: picked, domains: [] }
-        : flow ? { readTools: readPicked, sendTools: sendPicked } : ruleType === "block_streak" ? { threshold: 3 } : ruleType === "trim_results" ? { keepRecent: 5, minTokens: 50_000 } : undefined;
+        : flow ? { readTools: readPicked, sendTools: sendPicked } : deletion ? { commandTools: picked } : ruleType === "block_streak" ? { threshold: 3 } : ruleType === "trim_results" ? { keepRecent: 5, minTokens: 50_000 } : undefined;
       // New rules start in Watch; while viewing one agent, they start for that agent. A data rule
       // starts on Only alert me, the engine's default for it (DLP spec 5.2); Outside content, then
       // send data has no other response (5.3). Repeated blocks and Old tool results start on the
@@ -719,6 +725,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       setDraft(draftFrom(rule));
       setNotice(null);
       if (picked.length || readPicked.length || sendPicked.length) showToast(`${RULE_LABELS[ruleType]} rule added in Watch. Check its tools.`);
+      // With no tools it reads nothing: say so, since the rule looks added.
+      else if (deletion) showToast(`${RULE_LABELS[ruleType]} rule added in Watch. Pick its tools.`);
       void fetchData();
     } catch (e) { setAdding("closed"); handleError(e, "add the rule"); void fetchData(); }
   };
@@ -1357,7 +1365,7 @@ const actWords = (rule: Pick<GovernanceRule, "ruleType" | "response" | "params">
 const RULE_PLURAL: Record<GovernanceRuleType, string> = {
   spend_cap: "spend caps", loop_breaker: "loop breakers", call_rate: "call rate rules", model_allowlist: "model allowlists", tool_list: "tool lists", keyword: "Keywords rules",
   send_limit: "Where tools can send data rules", outside_then_send: "Outside content, then send data rules",
-  block_streak: "Repeated blocks rules", trim_results: "Old tool results rules",
+  block_streak: "Repeated blocks rules", trim_results: "Old tool results rules", data_deletion: "Data deletion rules",
 };
 
 /** "6 agents will lose this rule", for moving a rule from all agents to some. */
