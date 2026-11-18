@@ -17,10 +17,10 @@ const deletion = (params: Partial<DataDeletionParams> = {}, rest: Partial<Govern
 
 describe('Data deletion: names and sentences', () => {
   it('says what it catches in the row, under When and in full, and "would" until it is enforced', () => {
-    expect(ruleConditionText(deletion())).toBe('A delete command through 3 tools');
-    expect(ruleConditionText(deletion({ commandTools: ['bash'] }))).toBe('A delete command through 1 tool');
+    expect(ruleConditionText(deletion())).toBe('A delete command on 3 tools');
+    expect(ruleConditionText(deletion({ commandTools: ['bash'] }))).toBe('A delete command on 1 tool');
     const w = whenSentence(deletion());
-    expect(w.pre + w.val + w.post).toBe('Is asked to run a delete command through run_sql, bash, psql_exec');
+    expect(w.pre + w.val + w.post).toBe('Is asked to run a delete command with run_sql, bash, psql_exec');
     expect(ruleSentenceText(deletion())).toBe('When an agent is asked to run a command that deletes from a database or a cloud account, it would block the call.');
     expect(ruleSentenceText(deletion({}, { mode: 'enforce', response: 'pause' }))).toBe('When an agent is asked to run a command that deletes from a database or a cloud account, pause the agent.');
   });
@@ -68,7 +68,7 @@ describe('The same actions as Tool list', () => {
   });
 
   it('says when it blocks, for the box naming the one rule that does', () => {
-    expect(blocksWhen(deletion({}, { appliesTo: ['db-agent'] }))).toBe('only for delete commands through the tools it names, for db-agent');
+    expect(blocksWhen(deletion({}, { appliesTo: ['db-agent'] }))).toBe('only for delete commands on the tools it names, for db-agent');
   });
 
   it('tells the agent which tool and what kind of delete, never the command', () => {

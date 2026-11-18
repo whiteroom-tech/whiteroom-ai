@@ -62,6 +62,8 @@ const TOOLS_PER_LIST = 50;
 
 /** The engine's limits on a Where tools can send data rule: 50 tools, 100 allowed domains. */
 export const SEND_TOOLS_MAX = TOOLS_PER_LIST;
+/** What Save says, and the editor under the list, when a rule's tool list is over its limit. */
+export const toolsFull = (max: number) => `A rule holds up to ${max} tools. Remove one to save.`;
 export const SEND_DOMAINS_MAX = 100;
 const SEEN_FULL_AT = 500;
 
@@ -438,7 +440,7 @@ export const AGENT_NOTE: Record<GovernanceRuleType, string> = {
   loop_breaker: 'Stops after the repeated call. Non-retryable within the same run.',
   model_allowlist: 'Stops before the call. The agent must switch to an allowed model.',
   call_rate: 'Stops the call that goes over the limit. Refused calls count too, so an agent that keeps retrying stays over until it slows down.',
-  tool_list: 'Stops the model’s reply before the agent gets it, so the tool never runs. The model call itself is already spent.',
+  tool_list: 'Stops the model’s reply before the agent gets it, so the tool never runs. You still pay for that model call.',
   keyword: 'Stops the call before the model sees it, or the reply before the agent does. The agent isn’t told which keyword matched.',
   send_limit: 'Stops the model’s reply before the agent gets it, so the tool never sends. The agent isn’t told the list.',
   // Only alerts (DLP spec 5.3), so this never shows: What the agent sees is "Nothing".
@@ -446,7 +448,7 @@ export const AGENT_NOTE: Record<GovernanceRuleType, string> = {
   block_streak: 'Acts after the blocked call that reaches the limit.',
   // Never stops a call, so this never shows.
   trim_results: 'It never stops a call.',
-  data_deletion: 'Stops the model’s reply before the agent gets it, so the command never runs. The model call itself is already spent.',
+  data_deletion: 'Stops the model’s reply before the agent gets it, so the command never runs. You still pay for that model call.',
 };
 
 // ── The edit model behind Save ──────────────────────────────────────
@@ -592,7 +594,7 @@ export function draftProblem(d: RuleDraft): string | null {
   if ('error' in p) return p.error;
   if (d.ruleType === 'send_limit') {
     const s = p.params as SendLimitParams;
-    if (s.tools.length > SEND_TOOLS_MAX) return `A rule holds up to ${SEND_TOOLS_MAX} tools. Remove one to save.`;
+    if (s.tools.length > SEND_TOOLS_MAX) return toolsFull(SEND_TOOLS_MAX);
     if (s.domains.length > SEND_DOMAINS_MAX) return `A rule allows up to ${SEND_DOMAINS_MAX} domains. Remove one to save.`;
   }
   if (d.ruleType === 'outside_then_send') {
@@ -601,7 +603,7 @@ export function draftProblem(d: RuleDraft): string | null {
     // The engine refuses any other response for this type (DLP spec 5.3).
     if (d.response !== 'notify') return 'This rule can only alert you.';
   }
-  if (d.ruleType === 'data_deletion' && (p.params as DataDeletionParams).commandTools.length > COMMAND_TOOLS_MAX) return `A rule holds up to ${COMMAND_TOOLS_MAX} tools. Remove one to save.`;
+  if (d.ruleType === 'data_deletion' && (p.params as DataDeletionParams).commandTools.length > COMMAND_TOOLS_MAX) return toolsFull(COMMAND_TOOLS_MAX);
   if (d.appliesTo !== 'all' && d.appliesTo.length === 0) return 'Pick at least one agent, or choose All agents.';
   if (d.mode !== 'enforce') return null;
   switch (d.ruleType) {
@@ -824,7 +826,7 @@ export function ruleCondition(rule: Pick<GovernanceRule, 'ruleType' | 'params'>)
       return (rule.params as OutsideThenSendParams).sendTools.length ? { pre: FLOW_WHEN, val: '', post: '' } : { pre: 'No send tools picked yet', val: '', post: '' };
     case 'data_deletion': {
       const n = (rule.params as DataDeletionParams).commandTools.length;
-      return n ? { pre: 'A delete command through ', val: fmtCount(n), post: ` ${plural(n, 'tool')}` } : { pre: 'No tools picked yet', val: '', post: '' };
+      return n ? { pre: 'A delete command on ', val: fmtCount(n), post: ` ${plural(n, 'tool')}` } : { pre: 'No tools picked yet', val: '', post: '' };
     }
     case 'block_streak': return { pre: 'Blocked ', val: fmtCount((rule.params as BlockStreakParams).threshold), post: '× in a row in a run' };
     case 'trim_results': {
@@ -894,7 +896,7 @@ export function blocksWhen(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'a
     case 'send_limit': return `only for sends to domains not on its list${only}`;
     // Never blocks (canAct is false), so never the one rule that does: kept for the exhaustive switch.
     case 'outside_then_send': return `only for sends after outside content${only}`;
-    case 'data_deletion': return `only for delete commands through the tools it names${only}`;
+    case 'data_deletion': return `only for delete commands on the tools it names${only}`;
     // Never the one rule that blocks either (canAct is false): it needs another rule to block first.
     case 'block_streak': return `only after ${fmtCount((rule.params as BlockStreakParams).threshold)} blocked calls in a row${only}`;
     // Never blocks (canAct is false): kept for the exhaustive switch.
@@ -1102,7 +1104,7 @@ export function whenSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params'>):
     case 'outside_then_send': return ruleCondition(rule);
     case 'data_deletion': {
       const tools = (rule.params as DataDeletionParams).commandTools;
-      return tools.length ? { pre: 'Is asked to run a delete command through ', val: tools.join(', '), post: '' } : { pre: 'No tools picked yet', val: '', post: '' };
+      return tools.length ? { pre: 'Is asked to run a delete command with ', val: tools.join(', '), post: '' } : { pre: 'No tools picked yet', val: '', post: '' };
     }
     case 'block_streak': return { pre: 'Has ', val: fmtCount((rule.params as BlockStreakParams).threshold), post: ' calls in a row blocked in a run' };
     case 'trim_results': {
