@@ -23,7 +23,7 @@ import type { ControlActor } from '@/lib/control-actors';
 import { ROUTES } from '@/lib/routes';
 import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
 import {
-  canAddSeen, COMMAND_TOOLS_MAX, DELETION_DOCS_URL, domainEntry, domainProblem, domainsHidden, domainTotal, FLOW_TOOLS_MAX, FLOW_WHEN, looksLikeCommandRunner, looksLikeReader, looksLikeSender, SEEN_RESERVED_TEXT, seenFullLine, seenNotOnList, SEND_DOMAINS_MAX, SEND_TOOLS_MAX, toolsWithNoDomain, trims,
+  canAddSeen, COMMAND_TOOLS_MAX, DELETION_DOCS_URL, domainEntry, domainProblem, domainsHidden, domainTotal, FLOW_TOOLS_MAX, FLOW_WHEN, looksLikeCommandRunner, looksLikeReader, looksLikeSender, SEEN_RESERVED_TEXT, seenFullLine, seenNotOnList, SEND_DOMAINS_MAX, SEND_TOOLS_MAX, toolsFull, toolsWithNoDomain, trims,
 } from '@/lib/controls-view';
 import { AGENT_NOTE, isMarker, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, looksLikeDeleteOrChange, newMarker, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, MODE_CHOICES, responseChoices, sendsAlert, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
 import { Chip, field, GroupPicker, InlineSelect, MarkerChip, MODEL_GROUPS, NumberField, ScopeField, ToolPicker } from './pickers';
@@ -324,7 +324,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
           <>
             <span style={{ fontSize: 'var(--fs-md)' }}>Tools that run commands or SQL:</span>
             <ToolPicker values={deletion.commandTools} onChange={(commandTools) => setParams({ commandTools })} fleetTools={fleetTools} onShow={onToolPicker} first={looksLikeCommandRunner} ariaLabel="Add a tool that runs commands or SQL" />
-            {deletion.commandTools.length > COMMAND_TOOLS_MAX && <p style={help}>A rule holds up to {COMMAND_TOOLS_MAX} tools. Remove one to save.</p>}
+            {deletion.commandTools.length > COMMAND_TOOLS_MAX && <p style={help}>{toolsFull(COMMAND_TOOLS_MAX)}</p>}
             <p style={help}>
               Looks for commands that delete from a database or a cloud account. It catches mistakes, not commands written to hide what they do.{' '}
               <a href={DELETION_DOCS_URL} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>See what it covers</a>
@@ -336,7 +336,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
           <>
             <span style={{ fontSize: 'var(--fs-md)' }}>One of these tools sends to a domain that isn’t on the list:</span>
             <ToolPicker values={send.tools} onChange={(tools) => setParams({ tools })} fleetTools={fleetTools} onShow={onToolPicker} first={looksLikeSender} />
-            {send.tools.length > SEND_TOOLS_MAX && <p style={help}>A rule holds up to {SEND_TOOLS_MAX} tools. Remove one to save.</p>}
+            {send.tools.length > SEND_TOOLS_MAX && <p style={help}>{toolsFull(SEND_TOOLS_MAX)}</p>}
             {noDomain.map((t) => (
               <p key={t} style={help}><span style={{ fontFamily: FONT_MONO }}>{t}</span>: no domain found. Block would stop every call it makes.</p>
             ))}
