@@ -3050,6 +3050,20 @@ describe('Controls: Data deletion', () => {
     m.root.unmount();
   });
 
+  it('at 50 tools, Add to list is off and nothing is added', async () => {
+    const full = Array.from({ length: 50 }, (_, i) => `sql_${i}`);
+    api.tools = [...full, 'bash'];
+    api.created.push(deletionRule({}, full));
+    const m = await mount();
+    await m.click(m.row('Data deletion'));
+    const add = m.el.querySelector<HTMLButtonElement>('button[aria-label="Add bash to the list"]')!;
+    expect(add.disabled).toBe(true);
+    await m.click(add);
+    expect(m.text()).not.toContain('bash added. Save to apply.');
+    expect([...m.el.querySelectorAll('.ctl-seen__row')]).toHaveLength(1);
+    m.root.unmount();
+  });
+
   it('shows no such list when every command tool is on the rule', async () => {
     api.tools = ['run_sql', 'send_email'];
     api.created.push(deletionRule());
