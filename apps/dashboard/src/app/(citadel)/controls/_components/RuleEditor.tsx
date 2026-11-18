@@ -75,6 +75,9 @@ const help = { margin: 0, fontSize: 'var(--fs-sm)', lineHeight: 1.5, color: 'var
 const usd = (n: number) => `$${n < 10 ? n.toFixed(2) : Math.round(n).toLocaleString('en-US')}`;
 const sentenceRow = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, fontSize: 'var(--fs-md)' } as const;
 
+/** Shown on an empty Data deletion list when none of the fleet's tools has a command-like name. */
+export const NO_COMMAND_TOOLS_NOTE = 'None of your agents’ tools look like they run commands or SQL. Add one with + Add tool.';
+
 export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPicker, govV1, alertChannel, history, ruleHistory, actors, undoOf, onUndo, fleetDailySpend = null, agentSpend = [], status, startOpen = false, dirty, error, saving, onSave, onDiscard, onClose, onRemove, seen, onSeenRetry, onStaged }: {
   rule: GovernanceRule;
   /** Where tools can send data: its Seen list (the owner's only; absent otherwise). */
@@ -324,6 +327,8 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
           <>
             <span style={{ fontSize: 'var(--fs-md)' }}>Tools that run commands or SQL:</span>
             <ToolPicker values={deletion.commandTools} onChange={(commandTools) => setParams({ commandTools })} fleetTools={fleetTools} onShow={onToolPicker} first={looksLikeCommandRunner} ariaLabel="Add a tool that runs commands or SQL" />
+            {/* Nothing was pre-picked and nothing is suggested below: say why, so the empty list doesn't read as broken. */}
+            {deletion.commandTools.length === 0 && fleetTools.length > 0 && !fleetTools.some(looksLikeCommandRunner) && <p style={help}>{NO_COMMAND_TOOLS_NOTE}</p>}
             {deletion.commandTools.length > COMMAND_TOOLS_MAX && <p style={help}>{toolsFull(COMMAND_TOOLS_MAX)}</p>}
             <p style={help}>
               Looks for commands that delete from a database or a cloud account. It catches mistakes, not commands written to hide what they do.{' '}

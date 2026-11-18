@@ -3030,6 +3030,27 @@ describe('Controls: Data deletion', () => {
     const m = await addIt();
     expect(api.create).toHaveBeenCalledWith('f1', { ruleType: 'data_deletion', mode: 'watch', params: { commandTools: [] } }, 'k');
     expect(m.text()).toContain('Data deletion rule added in Watch. Pick its tools.');
+    expect(m.text()).toContain('None of your agents’ tools look like they run commands or SQL. Add one with + Add tool.');
+    m.root.unmount();
+  });
+
+  it('says nothing about missing command tools when the fleet has one, or once a tool is on the rule', async () => {
+    const note = 'None of your agents’ tools look like they run commands or SQL. Add one with + Add tool.';
+    api.tools = ['run_sql', 'send_email'];
+    api.created.push(deletionRule({}, []));
+    let m = await mount();
+    await m.click(m.button('Show'));
+    await m.click(m.row('Data deletion'));
+    expect(m.text()).toContain('Tools that run commands or SQL');
+    expect(m.text()).not.toContain(note);
+    m.root.unmount();
+    document.body.innerHTML = '';
+    api.tools = ['search_docs', 'send_email'];
+    api.created.length = 0;
+    api.created.push(deletionRule({}, ['my_runner']));
+    m = await mount();
+    await m.click(m.row('Data deletion'));
+    expect(m.text()).not.toContain(note);
     m.root.unmount();
   });
 
