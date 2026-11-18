@@ -23,6 +23,9 @@ import { newMarker } from '@/lib/controls-view';
 // Watch for all agents, one alerting in Enforce for support-triage, and one
 // with no send tools (Not set up); ?state=flow-old is an engine that doesn't
 // take outside_then_send (Add a rule leaves it out).
+// Data deletion (data_deletion): ?state=deletion adds one in Watch for all
+// agents, one blocking in Enforce for ops-scheduler, and one with no tools
+// (Not set up); ?state=deletion-old is an engine that doesn't take it.
 // Repeated blocks (block_streak) and Old tool results (trim_results) are always
 // there: one pausing in Watch, one trimming in Enforce for market-researcher.
 const state = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('state') : null;
@@ -44,6 +47,7 @@ let rules: GovernanceRule[] = state === 'empty' ? [] : [
   { ...base, id: 't1', version: 1, ruleType: 'trim_results', mode: 'enforce', response: 'notify', appliesTo: ['market-researcher'], params: { keepRecent: 5, minTokens: 50_000 } },
   ...(state?.startsWith('send') ? sendRules() : []),
   ...(state === 'flow' ? flowRules() : []),
+  ...(state === 'deletion' ? deletionRules() : []),
   ...(state === 'unknown' ? [{ ...base, id: 'r12', version: 1, ruleType: 'made_up_type', mode: 'enforce', response: 'block', appliesTo: 'all', params: {} } as unknown as GovernanceRule] : []),
 ];
 function sendRules(): GovernanceRule[] {
@@ -65,6 +69,13 @@ function flowRules(): GovernanceRule[] {
       params: { readTools: ['web_fetch'], sendTools: [] } },
   ];
 }
+function deletionRules(): GovernanceRule[] {
+  return [
+    { ...base, id: 'd1', version: 1, ruleType: 'data_deletion', mode: 'watch', response: 'block', appliesTo: 'all', params: { commandTools: ['run_sql'] } },
+    { ...base, id: 'd2', version: 1, ruleType: 'data_deletion', mode: 'enforce', response: 'block', appliesTo: ['ops-scheduler'], params: { commandTools: ['bash', 'psql_exec'] } },
+    { ...base, id: 'd3', version: 1, ruleType: 'data_deletion', mode: 'watch', response: 'block', appliesTo: ['code-reviewer'], params: { commandTools: [] } },
+  ];
+}
 const SEEN: Record<string, { tool: string; domain: string; agentId: string; firstSeen: string; canAdd?: boolean }[]> = {
   s1: state === 'send-cap'
     ? Array.from({ length: 500 }, (_, i) => ({ tool: 'http_request', domain: `vendor-${String(i + 1).padStart(3, '0')}.com`, agentId: 'support-triage', firstSeen: day(1 + (i % 9)) }))
@@ -76,7 +87,7 @@ const SEEN: Record<string, { tool: string; domain: string; agentId: string; firs
     ],
   s2: [{ tool: 'post_message', domain: '(none)', agentId: 'support-triage', firstSeen: day(1) }],
 };
-const RULE_TYPES = ['spend_cap', 'loop_breaker', 'model_allowlist', 'tool_list', 'call_rate', 'keyword', ...(state === 'send-old' ? [] : ['send_limit']), ...(state === 'flow-old' ? [] : ['outside_then_send']), 'block_streak', 'trim_results'];
+const RULE_TYPES = ['spend_cap', 'loop_breaker', 'model_allowlist', 'tool_list', 'call_rate', 'keyword', ...(state === 'send-old' ? [] : ['send_limit']), ...(state === 'flow-old' ? [] : ['outside_then_send']), 'block_streak', 'trim_results', ...(state === 'deletion-old' ? [] : ['data_deletion'])];
 const AGENTS = ['code-reviewer', 'contract-summarizer', 'invoice-reconciler', 'lead-agent', 'market-researcher', 'ops-scheduler', 'support-triage'];
 const history = state === 'empty' ? [] : [
   { id: 'h5', ruleId: 'r10', ruleType: 'loop_breaker', description: 'Added new Loop breaker rule', by: 'user:u1', time: new Date(Date.now() - 40 * 60_000).toISOString() },
@@ -101,7 +112,7 @@ function engine(body: Record<string, unknown>): unknown {
         spend_cap: { dailyCap: 50, scope: 'day', unit: 'dollars' }, loop_breaker: { threshold: 100, scope: 'run', ignoreTools: [] },
         model_allowlist: { allowedModels: [] }, tool_list: { blockedTools: [] }, call_rate: { maxCalls: 60 }, keyword: { keywords: [], where: 'incoming', wholeWord: true },
         send_limit: { tools: [], domains: [] }, outside_then_send: { readTools: [], sendTools: [] },
-        block_streak: { threshold: 3 }, trim_results: { keepRecent: 5, minTokens: 50_000 },
+        block_streak: { threshold: 3 }, trim_results: { keepRecent: 5, minTokens: 50_000 }, data_deletion: { commandTools: [] },
       };
       const rule = { ...base, changedAt: new Date().toISOString(), id: `n${++version}`, version: 1, ruleType: type, mode: 'watch', response: (body.response as GovernanceRule['response']) ?? (type === 'outside_then_send' ? 'notify' : 'block'), appliesTo: (body.applies_to as GovernanceRule['appliesTo']) ?? 'all', params: (body.params as GovernanceRule['params']) ?? defaults[type] } as GovernanceRule;
       rules = [...rules, rule];
@@ -120,7 +131,7 @@ function engine(body: Record<string, unknown>): unknown {
     // The fleet's own tools for the pickers; with ?state=empty the read fails, as on an older engine.
     case 'send_seen_list': if (state === 'send-hidden') throw new Error('Only this fleet’s owner can read this.');
       return { ruleId: body.rule_id, rows: SEEN[String(body.rule_id)] ?? [], full: state === 'send-cap' && body.rule_id === 's1' };
-    case 'tools_seen': if (state === 'empty') throw new Error('Unknown action'); return { tools: ['search_claims', 'update_claim', 'delete_attachment', 'send_email', 'read_file', ...(state?.startsWith('send') || state?.startsWith('flow') ? ['post_message', 'http_request'] : []), ...(state?.startsWith('flow') ? ['web_fetch', 'read_inbox'] : [])] };
+    case 'tools_seen': if (state === 'empty') throw new Error('Unknown action'); return { tools: ['search_claims', 'update_claim', 'delete_attachment', 'send_email', 'read_file', ...(state?.startsWith('deletion') ? ['run_sql', 'bash', 'psql_exec', 'db_query', 'shell_exec', 'terminal', 'cmd_runner', 'exec_command'] : []), ...(state?.startsWith('send') || state?.startsWith('flow') ? ['post_message', 'http_request'] : []), ...(state?.startsWith('flow') ? ['web_fetch', 'read_inbox'] : [])] };
     case 'rule_would_act': return { fleetId: base.fleetId, ruleId: body.rule_id, byAgent: body.rule_id === 'r2' ? { 'code-reviewer': 44 } : {}, unversioned: false, since: day(4) };
     // Sample counts: the allowlist caught 60 calls from code-reviewer; one loop breaker caught 12 from lead-agent.
     case 'rule_actions': return { fleetId: base.fleetId, totals: counts({ wouldAct: 72, trimmed: 38 }), byAgent: { 'code-reviewer': counts({ wouldAct: 60 }), 'lead-agent': counts({ wouldAct: 12 }), 'market-researcher': counts({ trimmed: 38 }) },
