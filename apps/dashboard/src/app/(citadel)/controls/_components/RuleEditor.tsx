@@ -326,7 +326,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
             <ToolPicker values={deletion.commandTools} onChange={(commandTools) => setParams({ commandTools })} fleetTools={fleetTools} onShow={onToolPicker} first={looksLikeCommandRunner} ariaLabel="Add a tool that runs commands or SQL" />
             {deletion.commandTools.length > COMMAND_TOOLS_MAX && <p style={help}>A rule holds up to {COMMAND_TOOLS_MAX} tools. Remove one to save.</p>}
             <p style={help}>
-              WhiteRoom reads each command and looks for ones that delete from a database or a cloud account. It catches mistakes, not commands written to hide what they do.{' '}
+              Looks for commands that delete from a database or a cloud account. It catches mistakes, not commands written to hide what they do.{' '}
               <a href={DELETION_DOCS_URL} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>See what it covers</a>
             </p>
             {draft.mode === 'watch' && <p style={help}>Check what it catches in Watch before you enforce it.</p>}

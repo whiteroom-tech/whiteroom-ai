@@ -827,7 +827,7 @@ export function ruleCondition(rule: Pick<GovernanceRule, 'ruleType' | 'params'>)
       return (rule.params as OutsideThenSendParams).sendTools.length ? { pre: FLOW_WHEN, val: '', post: '' } : { pre: 'No send tools picked yet', val: '', post: '' };
     case 'data_deletion': {
       const n = (rule.params as DataDeletionParams).commandTools.length;
-      return n ? { pre: 'A delete command through ', val: `${fmtCount(n)} ${plural(n, 'tool')}`, post: '' } : { pre: 'No tools picked yet', val: '', post: '' };
+      return n ? { pre: 'A delete command through ', val: fmtCount(n), post: ` ${plural(n, 'tool')}` } : { pre: 'No tools picked yet', val: '', post: '' };
     }
     case 'block_streak': return { pre: 'Blocked ', val: fmtCount((rule.params as BlockStreakParams).threshold), post: '× in a row in a run' };
     case 'trim_results': {
