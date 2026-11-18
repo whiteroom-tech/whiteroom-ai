@@ -6,7 +6,7 @@ import type {
   BlockStreakParams, CallRateParams, GovernanceMode, GovernanceParams, GovernanceResponse, GovernanceRule, GovernanceRuleType,
   GovernanceScope, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, OutsideThenSendParams, RuleActionCounts, SendLimitParams, SendSeenRow, SpendCapParams, ToolListParams, TrimResultsParams,
 } from '@/lib/whiteroom/types';
-import { convertSpendCap, engineTakes, UNKNOWN_RULE, unhandledType } from '@/lib/governance';
+import { convertSpendCap, engineTakes, RULE_CATEGORY, UNKNOWN_RULE, unhandledType } from '@/lib/governance';
 import { MODE_LABEL, NOTIFY } from '@/lib/vocab';
 import { DAY_MS, fmtCount, ordinal, plural } from '@/lib/format';
 
@@ -288,15 +288,30 @@ export function rulesFor<R extends Pick<GovernanceRule, 'appliesTo'>>(rules: rea
   return agent === null ? [...rules] : rules.filter((r) => r.appliesTo === 'all' || r.appliesTo.includes(agent));
 }
 
+/** Category first (Cost & reliability, then Data protection), then how strongly the rule acts, then its type. */
 function ruleOrder(a: GovernanceRule, b: GovernanceRule): number {
-  const byType = typeRank(a.ruleType) - typeRank(b.ruleType);
-  if (byType || a.ruleType !== 'spend_cap') return byType;
+  const by = categoryRank(a.ruleType) - categoryRank(b.ruleType) || strengthRank(a) - strengthRank(b) || typeRank(a.ruleType) - typeRank(b.ruleType);
+  if (by || a.ruleType !== 'spend_cap') return by;
   const pa = a.params as SpendCapParams, pb = b.params as SpendCapParams;
   return pa.scope.localeCompare(pb.scope) || pa.unit.localeCompare(pb.unit) || pa.dailyCap - pb.dailyCap;
 }
 
-/** The order rules are listed in on Controls, by type. Its own list, so the Add-a-rule choices can change without moving rows. */
-export const RULE_ROW_ORDER: readonly GovernanceRuleType[] = ['spend_cap', 'call_rate', 'model_allowlist', 'loop_breaker', 'tool_list', 'keyword', 'send_limit', 'outside_then_send', 'block_streak', 'trim_results'];
+/** The order rules of equal strength are listed in on Controls: each category's types together. Its own list, so the Add-a-rule choices can change without moving rows. */
+export const RULE_ROW_ORDER: readonly GovernanceRuleType[] = ['spend_cap', 'call_rate', 'model_allowlist', 'loop_breaker', 'block_streak', 'trim_results', 'tool_list', 'keyword', 'send_limit', 'outside_then_send'];
+
+/** The categories in the order Controls lists them. A type this build doesn't know goes last. */
+export const CATEGORY_ORDER: readonly string[] = ['Cost & reliability', 'Data protection'];
+
+function categoryRank(t: GovernanceRuleType): number {
+  const i = CATEGORY_ORDER.indexOf(RULE_CATEGORY[t]);
+  return i < 0 ? CATEGORY_ORDER.length : i;
+}
+
+/** Strongest first: Stop, Pause, Block, Only alert me, Watch, Off. Trimming changes the call, so it sits with Block. */
+function strengthRank(r: Pick<GovernanceRule, 'mode' | 'response' | 'ruleType'>): number {
+  if (r.mode !== 'enforce') return r.mode === 'watch' ? 4 : 5;
+  return trims(r) ? 2 : 3 - RESPONSE_RANK[r.response ?? 'block'];
+}
 
 function typeRank(t: GovernanceRuleType): number {
   const i = RULE_ROW_ORDER.indexOf(t);
@@ -794,13 +809,13 @@ export const notSetUp = (r: Pick<GovernanceRule, 'ruleType' | 'params' | 'applie
 /**
  * The page's three cards: rules for all agents, rules for specific agents
  * (each agent's own, under its name; a rule for two agents shows under
- * both), and "Off and not set up". Enforce first within a group, then the
- * "Add a rule" order.
+ * both), and "Off and not set up". Within a group: by category, strongest
+ * first, then the row order.
  */
 export function ruleGroups(rules: readonly GovernanceRule[]): {
   all: GovernanceRule[]; byAgent: { agent: string; rules: GovernanceRule[] }[]; off: GovernanceRule[]; unset: GovernanceRule[];
 } {
-  const sorted = [...rules].sort((a, b) => MODE_ORDER[a.mode] - MODE_ORDER[b.mode] || ruleOrder(a, b));
+  const sorted = [...rules].sort(ruleOrder);
   const on = sorted.filter((r) => r.mode !== 'off' && !notSetUp(r));
   const owners = [...new Set(on.flatMap((r) => (r.appliesTo === 'all' ? [] : r.appliesTo)))].sort((a, b) => a.localeCompare(b));
   return {
@@ -810,7 +825,6 @@ export function ruleGroups(rules: readonly GovernanceRule[]): {
     unset: sorted.filter(notSetUp),
   };
 }
-const MODE_ORDER: Record<GovernanceMode, number> = { enforce: 0, watch: 1, off: 2 };
 
 /** An on rule that only alerts: it acts, but never stops a call, so it isn't counted as Enforce. */
 export const alertOnly = (r: Pick<GovernanceRule, 'mode' | 'response'> & { ruleType?: GovernanceRuleType }) => r.mode === 'enforce' && r.response === 'notify' && !trims(r);

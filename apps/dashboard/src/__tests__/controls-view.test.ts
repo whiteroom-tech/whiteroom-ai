@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   agentGets, appliesNow, changeResponse, changeUnit, draftChanges, draftParams, typedNumber, draftFrom, draftProblem, isDirty, ruleSentence, rulesFor, ruleSentenceText, spendOverlap,
   blocksWhen, duplicateRules, keywordGaps, keywordsShort, leadCounts, modeCount, ruleCondition, ruleConditionText, ruleGroups, rowCount, ruleStatus, whoFor,
-  RULE_ROW_ORDER, RULE_TEMPLATES,
+  CATEGORY_ORDER, RULE_ROW_ORDER, RULE_TEMPLATES,
 } from '@/lib/controls-view';
 import { RULE_CATEGORY, RULE_LABELS } from '@/lib/governance';
 import type { GovernanceRule } from '@/lib/whiteroom/types';
@@ -107,10 +107,28 @@ describe('the agent filter and groups', () => {
     expect(ruleGroups([kw, allow, day200, loop, run50k, rate, day190]).all).toEqual([day190, day200, run50k, rate, allow, loop, kw]);
   });
 
-  it('keeps rows in today’s order whatever order the Add a rule choices are in', () => {
-    // Today's six in today's order, then the new types (DLP spec 6).
-    expect(RULE_ROW_ORDER).toEqual(['spend_cap', 'call_rate', 'model_allowlist', 'loop_breaker', 'tool_list', 'keyword', 'send_limit', 'outside_then_send', 'block_streak', 'trim_results']);
+  it('lists Cost & reliability before Data protection, and the strongest rule first in each', () => {
+    const cap = (id: string, over: Partial<GovernanceRule>) => rule({ id, mode: 'enforce', ...over });
+    const kw = (id: string, over: Partial<GovernanceRule>) => rule({ id, mode: 'enforce', ruleType: 'keyword', params: { where: 'incoming', keywords: ['x'], wholeWord: true }, ...over });
+    const rules = [
+      kw('kw-watch', { mode: 'watch' }), kw('kw-alert', { response: 'notify' }), kw('kw-block', {}), kw('kw-stop', { response: 'stop' }),
+      cap('cap-watch', { mode: 'watch' }), cap('cap-alert', { response: 'notify' }), cap('cap-block', { response: 'block' }), cap('cap-pause', { response: 'pause' }), cap('cap-stop', { response: 'stop' }),
+      rule({ id: 'trim', mode: 'enforce', ruleType: 'trim_results', params: { keepRecent: 5, minTokens: 50_000 } }),
+    ];
+    const want = ['cap-stop', 'cap-pause', 'cap-block', 'trim', 'cap-alert', 'cap-watch', 'kw-stop', 'kw-block', 'kw-alert', 'kw-watch'];
+    expect(ruleGroups(rules).all.map((r) => r.id)).toEqual(want);
+    expect(ruleGroups([...rules].reverse()).all.map((r) => r.id)).toEqual(want);
+    // The same order under an agent's name and in the Off card.
+    expect(ruleGroups(rules.map((r) => ({ ...r, appliesTo: ['a'] }))).byAgent[0].rules.map((r) => r.id)).toEqual(want);
+    expect(ruleGroups([kw('kw-off', { mode: 'off' }), cap('cap-off', { mode: 'off' })]).off.map((r) => r.id)).toEqual(['cap-off', 'kw-off']);
+  });
+
+  it('keeps rows in the row order whatever order the Add a rule choices are in', () => {
+    expect(RULE_ROW_ORDER).toEqual(['spend_cap', 'call_rate', 'model_allowlist', 'loop_breaker', 'block_streak', 'trim_results', 'tool_list', 'keyword', 'send_limit', 'outside_then_send']);
     expect([...RULE_ROW_ORDER].sort()).toEqual(Object.keys(RULE_LABELS).sort());
+    // Each category's types sit together, in the category order.
+    expect([...new Set(RULE_ROW_ORDER.map((t) => RULE_CATEGORY[t]))]).toEqual(CATEGORY_ORDER);
+    expect([...new Set(Object.values(RULE_CATEGORY))].sort()).toEqual([...CATEGORY_ORDER].sort());
     const params = {
       spend_cap: { dailyCap: 190, scope: 'day', unit: 'dollars' }, call_rate: { maxCalls: 60 }, model_allowlist: { allowedModels: ['m'] },
       loop_breaker: { threshold: 100, scope: 'run', ignoreTools: [] }, tool_list: { blockedTools: ['x'] }, keyword: { where: 'incoming', keywords: ['x'], wholeWord: true },
