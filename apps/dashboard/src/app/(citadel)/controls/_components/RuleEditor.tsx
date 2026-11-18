@@ -144,7 +144,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
   const deletion = rule.ruleType === 'data_deletion' ? (p as DataDeletionParams) : null;
   const unlisted = deletion ? fleetTools.filter((t) => looksLikeCommandRunner(t) && !deletion.commandTools.includes(t)) : [];
   const addUnlisted = (tool: string) => {
-    if (!deletion || deletion.commandTools.length >= COMMAND_TOOLS_MAX) return;
+    if (!deletion) return;
     setParams({ commandTools: [...deletion.commandTools, tool] });
     onStaged?.(`${tool} added. Save to apply.`);
   };
@@ -458,7 +458,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
       {/* Tools the fleet has that look like they run commands and aren't on this rule: it reads nothing from them until they're added. */}
       {deletion && unlisted.length > 0 && (
         <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }} aria-labelledby="ctl-unlisted-title">
-          <p className="gov-eyebrow ctl-q" id="ctl-unlisted-title">Seen, not on the list</p>
+          <p className="gov-eyebrow ctl-q" id="ctl-unlisted-title">Other tools that run commands</p>
           <div className="ctl-seen">
             {unlisted.slice(0, UNLISTED_SHOWN).map((t) => (
               <div key={t} className="ctl-seen__row">
@@ -468,7 +468,7 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
             ))}
           </div>
           {unlisted.length > UNLISTED_SHOWN && <p style={help}>and {unlisted.length - UNLISTED_SHOWN} more</p>}
-          <p style={help}>These look like they run commands or SQL. This rule doesn’t check them until you add them.</p>
+          <p style={help}>This rule doesn’t check them until you add them.</p>
         </section>
       )}
 

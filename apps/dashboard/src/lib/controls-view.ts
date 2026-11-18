@@ -205,9 +205,6 @@ export const readLookingTools = (tools: readonly string[]) => tools.filter(looks
 /** The engine's limit on a Data deletion rule's tools. */
 export const COMMAND_TOOLS_MAX = TOOLS_PER_LIST;
 
-/** What the rule catches, the same in its sentence and under When. */
-export const DELETION_WHEN = 'When an agent is asked to run a command that deletes from a database or cloud account';
-
 /** The docs' list of what the rule catches and what it doesn't. */
 export const DELETION_DOCS_URL = 'https://whiteroom.tech/docs.html#data-deletion';
 
@@ -286,7 +283,7 @@ export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 
         : { pre: 'No send tools picked yet.', val: '', post: '' };
     case 'data_deletion':
       return (rule.params as DataDeletionParams).commandTools.length
-        ? { pre: `${DELETION_WHEN}, ${v}.`, val: '', post: '' }
+        ? { pre: `When an agent is asked to run a command that deletes from a database or a cloud account, ${v}.`, val: '', post: '' }
         : { pre: 'No tools picked yet.', val: '', post: '' };
     case 'block_streak':
       return { pre: 'When an agent has ', val: fmtCount((rule.params as BlockStreakParams).threshold), post: ` calls in a row blocked in a run, ${v}.` };
@@ -421,9 +418,9 @@ export function agentGets(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 're
   const held = response === 'pause' || response === 'stop';
   const resets = held ? 'when someone resumes it' : resetsWhen(rule);
   // A data rule's body says only that it blocked: no list, no limit (DLP spec 5.2).
-  // A blocked delete names the tool and the kind of delete, never the command, and says what to do next.
+  // A blocked delete names the tool and the kind of delete, never the command. Only Block says what to do next: a held agent has no next step.
   const message = rule.ruleType === 'send_limit' ? '\nmessage: A data rule blocked this call.'
-    : rule.ruleType === 'data_deletion' ? '\nmessage: <tool> was asked to <kind of delete>. Choose a step that can be undone, or ask a person.' : '';
+    : rule.ruleType === 'data_deletion' ? `\nmessage: <tool> was asked to <kind of delete>.${held ? '' : ' Choose a step that can be undone, or ask a person.'}` : '';
   return `403 governance_block${message}\nresponse: ${response}\nreason: ${REASON[rule.ruleType]}\nretryable: ${!held && rule.ruleType === 'call_rate'}\nresets: ${resets}`;
 }
 

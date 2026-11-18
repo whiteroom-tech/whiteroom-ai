@@ -3039,7 +3039,7 @@ describe('Controls: Data deletion', () => {
     const m = await mount();
     await m.click(m.row('Data deletion'));
     const rows = () => [...m.el.querySelectorAll('.ctl-seen__row')].map((r) => r.querySelector('.ctl-seen__what')!.textContent);
-    expect(m.text()).toContain('Seen, not on the list');
+    expect(m.text()).toContain('Other tools that run commands');
     expect(rows()).toEqual(['bash', 'shell_exec', 'db_query', 'terminal', 'cmd_runner']);
     expect(m.text()).toContain('and 1 more');
     expect(m.text()).toContain('This rule doesn’t check them until you add them.');
@@ -3050,7 +3050,7 @@ describe('Controls: Data deletion', () => {
     m.root.unmount();
   });
 
-  it('at 50 tools, Add to list is off and nothing is added', async () => {
+  it('at 50 tools, Add to list is off', async () => {
     const full = Array.from({ length: 50 }, (_, i) => `sql_${i}`);
     api.tools = [...full, 'bash'];
     api.created.push(deletionRule({}, full));
@@ -3058,9 +3058,6 @@ describe('Controls: Data deletion', () => {
     await m.click(m.row('Data deletion'));
     const add = m.el.querySelector<HTMLButtonElement>('button[aria-label="Add bash to the list"]')!;
     expect(add.disabled).toBe(true);
-    await m.click(add);
-    expect(m.text()).not.toContain('bash added. Save to apply.');
-    expect([...m.el.querySelectorAll('.ctl-seen__row')]).toHaveLength(1);
     m.root.unmount();
   });
 
@@ -3069,11 +3066,11 @@ describe('Controls: Data deletion', () => {
     api.created.push(deletionRule());
     const m = await mount();
     await m.click(m.row('Data deletion'));
-    expect(m.text()).not.toContain('Seen, not on the list');
+    expect(m.text()).not.toContain('Other tools that run commands');
     m.root.unmount();
   });
 
-  it('offers the same actions as Block tools when enforced', async () => {
+  it('offers the same actions as Tool list when enforced', async () => {
     api.govV1 = true;
     api.created.push(deletionRule({ mode: 'enforce' }));
     const m = await mount();

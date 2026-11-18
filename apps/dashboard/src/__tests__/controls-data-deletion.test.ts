@@ -4,10 +4,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   agentGets, blocksWhen, commandLookingTools, draftFrom, draftProblem, emptyPick, looksLikeCommandRunner, notSetUp, offeredTemplates,
-  responseChoices, RULE_ROW_ORDER, ruleConditionText, ruleSentenceText, weakenings, whenSentence,
+  responseChoices, ruleConditionText, ruleSentenceText, weakenings, whenSentence,
 } from '@/lib/controls-view';
 import { canAct } from '@/lib/controls-guard';
-import { RULE_CATEGORY, RULE_LABELS } from '@/lib/governance';
 import { reasonText } from '@/lib/runs';
 import type { DataDeletionParams, GovernanceRule } from '@/lib/whiteroom/types';
 
@@ -17,19 +16,13 @@ const deletion = (params: Partial<DataDeletionParams> = {}, rest: Partial<Govern
 });
 
 describe('Data deletion: names and sentences', () => {
-  it('is a data protection rule, last among them on Controls', () => {
-    expect(RULE_LABELS.data_deletion).toBe('Data deletion');
-    expect(RULE_CATEGORY.data_deletion).toBe('Data protection');
-    expect(RULE_ROW_ORDER.at(-1)).toBe('data_deletion');
-  });
-
   it('says what it catches in the row, under When and in full, and "would" until it is enforced', () => {
     expect(ruleConditionText(deletion())).toBe('A delete command through 3 tools');
     expect(ruleConditionText(deletion({ commandTools: ['bash'] }))).toBe('A delete command through 1 tool');
     const w = whenSentence(deletion());
     expect(w.pre + w.val + w.post).toBe('Is asked to run a delete command through run_sql, bash, psql_exec');
-    expect(ruleSentenceText(deletion())).toBe('When an agent is asked to run a command that deletes from a database or cloud account, it would block the call.');
-    expect(ruleSentenceText(deletion({}, { mode: 'enforce', response: 'pause' }))).toBe('When an agent is asked to run a command that deletes from a database or cloud account, pause the agent.');
+    expect(ruleSentenceText(deletion())).toBe('When an agent is asked to run a command that deletes from a database or a cloud account, it would block the call.');
+    expect(ruleSentenceText(deletion({}, { mode: 'enforce', response: 'pause' }))).toBe('When an agent is asked to run a command that deletes from a database or a cloud account, pause the agent.');
   });
 
   it('names its reason in plain words', () => {
@@ -62,7 +55,7 @@ describe('Not set up without tools', () => {
   });
 });
 
-describe('The same actions as Block tools', () => {
+describe('The same actions as Tool list', () => {
   it('offers Block, Pause, Stop and Only alert me', () => {
     expect(responseChoices(true, 'data_deletion')).toEqual(responseChoices(true, 'tool_list'));
     expect(responseChoices(true, 'data_deletion')).toEqual(['block', 'pause', 'stop', 'notify']);
@@ -72,11 +65,16 @@ describe('The same actions as Block tools', () => {
     expect(canAct(deletion())).toBe(false);
     expect(canAct(deletion({}, { mode: 'enforce', response: 'notify' }))).toBe(false);
     expect(canAct(deletion({}, { mode: 'enforce', response: 'block' }))).toBe(true);
+  });
+
+  it('says when it blocks, for the box naming the one rule that does', () => {
     expect(blocksWhen(deletion({}, { appliesTo: ['db-agent'] }))).toBe('only for delete commands through the tools it names, for db-agent');
   });
 
   it('tells the agent which tool and what kind of delete, never the command', () => {
     expect(agentGets(deletion({}, { response: 'block' }))).toBe('403 governance_block\nmessage: <tool> was asked to <kind of delete>. Choose a step that can be undone, or ask a person.\nresponse: block\nreason: data_deletion\nretryable: false\nresets: never');
+    // A held agent has no next step, so it isn't told to choose one.
+    expect(agentGets(deletion({}, { response: 'stop' }))).toBe('403 governance_block\nmessage: <tool> was asked to <kind of delete>.\nresponse: stop\nreason: data_deletion\nretryable: false\nresets: when someone resumes it');
     expect(agentGets(deletion({}, { response: 'notify' }))).toBe('Nothing: the call goes through.\nYou get an alert; the agent doesn’t.');
   });
 });

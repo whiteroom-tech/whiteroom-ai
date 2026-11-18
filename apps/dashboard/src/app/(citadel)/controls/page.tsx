@@ -333,9 +333,10 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   }, [seenKey, seenVersion, seenTry, authKey]);
   const seenState = seenKey && seen?.key === seenKey ? seen.state : seenKey ? ({ status: "loading" } as const) : undefined;
 
-  // A Data deletion rule's editor lists the fleet's command tools that aren't on it, so its tools are read when it opens.
-  const readsToolsOnOpen = selected?.ruleType === "data_deletion";
-  useEffect(() => { if (readsToolsOnOpen) void readFleetTools(); }, [readsToolsOnOpen, readFleetTools]);
+  // A Data deletion rule's editor lists the fleet's command tools that aren't on it, so its tools are read each time one opens
+  // (a read that failed is asked for again; one that worked is kept).
+  const opensDeletionRule = selected?.ruleType === "data_deletion" ? selected.id : null;
+  useEffect(() => { if (opensDeletionRule) void readFleetTools(); }, [opensDeletionRule, readFleetTools]);
 
   // Suggested rules come from real traffic; the performance store is optional, so a failure just means none.
   useEffect(() => {
