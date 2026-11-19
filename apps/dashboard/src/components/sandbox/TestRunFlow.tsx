@@ -1139,10 +1139,10 @@ export function TestRunFlow({ previewUserId, previewPastTests, previewRun, previ
             <div className={s.prod}>
               <div className={s.prodTitle} style={{ fontFamily: FONT_DISPLAY }}>Ready to go live</div>
               {liveCloud ? <CloudGoLive provider={liveCloud} /> : language === 'env' ? <>
-              <p>On your live fleet, agents with a system prompt need no code change. Set this, with your proxy key from <Link className={s.linkBtn} href={ROUTES.fleetKey}>Fleet key</Link>, and run your agent as before.</p>
+              <p>On your live fleet, agents with a system prompt need no code change. Set this, with your proxy URL from <Link className={s.linkBtn} href={ROUTES.fleetKey}>Fleet key</Link>, and run your agent as before.</p>
               <pre className={s.recipe} style={{ fontFamily: FONT_MONO }}>{SETUP_LINES[directProvider]}</pre>
               </> : <>
-              <p>To run this agent on your live fleet, use this instead, with your proxy key from <Link className={s.linkBtn} href={ROUTES.fleetKey}>Fleet key</Link>. Its name is already filled in.</p>
+              <p>To run this agent on your live fleet, use this instead, with your proxy URL from <Link className={s.linkBtn} href={ROUTES.fleetKey}>Fleet key</Link>. Its name is already filled in.</p>
               <pre className={s.recipe} style={{ fontFamily: FONT_MONO }}>{liveRecipe(directProvider, agentId, codeLanguage)}</pre>
               </>}
               <div className={s.btnRow} style={{ marginTop: 8 }}>

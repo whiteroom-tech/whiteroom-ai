@@ -4,6 +4,7 @@
 
 import { azureOpenAIEndpoint } from '@/lib/azure-endpoint';
 import { bedrockMantleEndpoint } from '@/lib/bedrock-endpoint';
+import type { ProviderKey } from '@/lib/whiteroom/types';
 
 export type ProviderTab = 'direct' | 'azure' | 'aws';
 
@@ -67,6 +68,44 @@ export function issuedEnvHint(provider: string, url: string): string {
   if (provider === 'azure' || provider === 'azure-openai') return `export AZURE_OPENAI_ENDPOINT=${url}`;
   if (provider === 'openai') return `export OPENAI_BASE_URL=${url}/v1`;
   return `export ANTHROPIC_BASE_URL=${url}`;
+}
+
+/** The Fleet key tab a connected key's recipe is on. */
+export function providerTab(provider: string): ProviderTab {
+  if (provider === 'azure' || provider === 'azure-openai') return 'azure';
+  if (provider === 'bedrock-mantle') return 'aws';
+  return 'direct';
+}
+
+/** A proxy URL as it comes back when a key is connected: the only time it can be shown. */
+export interface IssuedUrl {
+  proxyUrl: string;
+  keyHint: string;
+  provider: string;
+}
+
+/**
+ * What a tab's recipe can say about its proxy URL. The engine keeps only a
+ * hash of it, so the page has it just after a key is connected ("issued") and
+ * never again ("shown-once": keys are connected, their URLs can't be shown;
+ * keyHint names the key when the tab has exactly one). "none": no key yet.
+ */
+export type ProxyUrlState =
+  | { kind: 'issued'; issued: IssuedUrl }
+  | { kind: 'shown-once'; keyHint: string | null }
+  | { kind: 'none' };
+
+export function proxyUrlState(tab: ProviderTab, issued: IssuedUrl | null, keys: ProviderKey[] | null): ProxyUrlState {
+  if (issued && providerTab(issued.provider) === tab) return { kind: 'issued', issued };
+  // A key that is off (pending removal) has no working URL to point at.
+  const own = (keys ?? []).filter((k) => !k.pending && providerTab(k.provider) === tab);
+  if (own.length === 0) return { kind: 'none' };
+  return { kind: 'shown-once', keyHint: own.length === 1 ? own[0].keyHint : null };
+}
+
+/** A recipe with the issued proxy URL in place of the placeholder; unchanged when there is none to show. */
+export function withProxyUrl(text: string, placeholder: string, state: ProxyUrlState): string {
+  return state.kind === 'issued' ? text.replaceAll(placeholder, state.issued.proxyUrl) : text;
 }
 
 /**
