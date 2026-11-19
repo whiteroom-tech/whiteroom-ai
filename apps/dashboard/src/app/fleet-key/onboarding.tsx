@@ -562,17 +562,19 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, no
                 <>
                   <UrlHint urlState={urlState} />
                   <ClientSetup urlState={urlState}><BedrockSteps urlState={urlState} /></ClientSetup>
+                  {urlState.kind === 'issued' && <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{KEY_HEADER_LINE}</span>}
                   {urlState.kind === 'issued' && <AgentNaming {...agentNamingFor(urlState.issued.provider)} />}
                 </>
               ) : (
                 <>
                   <UrlHint urlState={urlState} />
                   <ClientSetup urlState={urlState}>
-                  <RecipeStep label={proxyUrlStepLabel(urlState)} code={withProxyUrl(`export AZURE_OPENAI_ENDPOINT=${PROXY_KEY_URL}`, PROXY_KEY_URL, urlState)} />
-                  <RecipeStep label="Your Azure API key stays the same" code="export AZURE_OPENAI_API_KEY=<your-azure-api-key>" />
-                  <RecipeStep label="The AzureOpenAI client picks both up; nothing else changes" code={`from openai import AzureOpenAI\n\nclient = AzureOpenAI(\n    api_version="2024-10-21",  # your usual api-version\n    ${AGENT_PY_HEADERS},  # optional if your agent has a system prompt\n)\nclient.chat.completions.create(\n    model="<your-deployment-name>",\n    messages=[{"role": "user", "content": "Hello"}],\n)`} />
-                  <RecipeStep label="Or with the OpenAI SDK against Azure's v1 API" code={withProxyUrl(`from openai import OpenAI\n\nclient = OpenAI(\n    base_url="${PROXY_KEY_URL}/openai/v1",\n    api_key="<your-azure-api-key>",\n    ${AGENT_PY_HEADERS},  # optional if your agent has a system prompt\n)`, PROXY_KEY_URL, urlState)} />
+                    <RecipeStep label={proxyUrlStepLabel(urlState)} code={withProxyUrl(`export AZURE_OPENAI_ENDPOINT=${PROXY_KEY_URL}`, PROXY_KEY_URL, urlState)} />
+                    <RecipeStep label="Your Azure API key stays the same" code="export AZURE_OPENAI_API_KEY=<your-azure-api-key>" />
+                    <RecipeStep label="The AzureOpenAI client picks both up; nothing else changes" code={`from openai import AzureOpenAI\n\nclient = AzureOpenAI(\n    api_version="2024-10-21",  # your usual api-version\n    ${AGENT_PY_HEADERS},  # optional if your agent has a system prompt\n)\nclient.chat.completions.create(\n    model="<your-deployment-name>",\n    messages=[{"role": "user", "content": "Hello"}],\n)`} />
+                    <RecipeStep label="Or with the OpenAI SDK against Azure's v1 API" code={withProxyUrl(`from openai import OpenAI\n\nclient = OpenAI(\n    base_url="${PROXY_KEY_URL}/openai/v1",\n    api_key="<your-azure-api-key>",\n    ${AGENT_PY_HEADERS},  # optional if your agent has a system prompt\n)`, PROXY_KEY_URL, urlState)} />
                   </ClientSetup>
+                  {urlState.kind === 'issued' && <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{KEY_HEADER_LINE}</span>}
                   {urlState.kind === 'issued' && <AgentNaming {...agentNamingFor(urlState.issued.provider)} />}
                 </>
               )}

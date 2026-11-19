@@ -149,6 +149,7 @@ describe('Fleet key: one setup card', () => {
     expect(el.textContent).not.toContain('(shown when you connect your key)');
     expect(el.querySelector('#provider-keys')!.textContent).not.toContain(URL_ISSUED);
     expect(count(el.textContent ?? '', 'Agents without a system prompt')).toBe(1);
+    expect(count(after(), 'X-WhiteRoom-Key header')).toBe(1);
     await act(async () => { root.unmount(); });
   });
 
@@ -163,6 +164,22 @@ describe('Fleet key: one setup card', () => {
     await click('Anthropic or OpenAI');
     expect(after()).toContain(`export ANTHROPIC_BASE_URL=${URL_ISSUED}`);
     expect(count(el.textContent ?? '', URL_ISSUED)).toBe(1);
+    await act(async () => { root.unmount(); });
+  });
+
+  it('Bedrock cross-account role: its own card replaces Provider keys, and an issued URL survives the trip', async () => {
+    api.store.mockImplementation(async () => { api.keys = [key({ provider: 'bedrock-mantle' })]; return { success: true, proxyUrl: URL_ISSUED, provider: 'bedrock-mantle', keyHint: '5678' }; });
+    const { el, root, type, click, after } = await mount();
+    await click('AWS Bedrock');
+    await type('#provider-keys input[aria-label="Region"]', 'us-east-1');
+    await type('#provider-keys input[type="password"]', 'bedrock-placeholder-not-a-real-key');
+    await click('Connect');
+    await click('Cross-account role (any model)');
+    expect(el.querySelector('#provider-keys')).toBeNull();
+    expect(el.textContent).not.toContain(URL_ISSUED);
+    expect([...el.querySelectorAll('.wr-scard__title')].map((h) => h.textContent)).toEqual(['Point your agent at WhiteRoom', 'Cross-account role', 'Your WhiteRoom fleet key']);
+    await click('API key (Claude)');
+    expect(after()).toContain(`export ANTHROPIC_BASE_URL=${URL_ISSUED}`);
     await act(async () => { root.unmount(); });
   });
 
