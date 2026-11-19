@@ -144,6 +144,9 @@ describe('Fleet key: one setup card', () => {
     await type(`#provider-keys input[aria-label="${field}"]`, fieldValue);
     await type('#provider-keys input[type="password"]', secret);
     await click('Connect');
+    // The same element, now open: what's inside wasn't remounted.
+    expect(el.querySelector('section#point details')).toBe(folded);
+    expect(folded?.hasAttribute('open')).toBe(true);
     for (const line of lines) expect(after()).toContain(line);
     expect(el.textContent).not.toContain(PLACEHOLDER);
     expect(el.textContent).not.toContain('(shown when you connect your key)');

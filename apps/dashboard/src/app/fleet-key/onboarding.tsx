@@ -695,12 +695,12 @@ function BedrockSteps({ urlState }: { urlState: ProxyUrlState }) {
 /**
  * A cloud tab's client lines. Open, with the real URL in them, just after a
  * key is connected; otherwise folded away, since all they can show is a
- * placeholder where the URL goes.
+ * placeholder where the URL goes. One wrapper either way, so what's inside
+ * (the language picked) isn't remounted when a key connects.
  */
 function ClientSetup({ urlState, children }: { urlState: ProxyUrlState; children: React.ReactNode }) {
-  if (urlState.kind === 'issued') return <>{children}</>;
   return (
-    <details style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
+    <details open={urlState.kind === 'issued'} style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
       <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Client setup</summary>
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 14, marginTop: 10 }}>{children}</div>
     </details>
