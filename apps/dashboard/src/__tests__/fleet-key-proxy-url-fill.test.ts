@@ -176,6 +176,34 @@ describe('Fleet key connect card', () => {
   });
 });
 
+describe('Fleet key: the issued URL is said once', () => {
+  const count = (text: string, part: string) => text.split(part).length - 1;
+
+  it('on the key’s own tab: only the setup card carries it, and Provider keys points up to it', async () => {
+    api.store.mockImplementation(async () => { api.keys = [key()]; return { success: true, proxyUrl: URL_ISSUED, provider: 'anthropic', keyHint: '5678' }; });
+    const { el, root, type, click } = await mount();
+    await type('#provider-keys input[type="password"]', 'sk-ant-placeholder-not-a-real-key');
+    await click('Connect');
+    expect(count(el.textContent ?? '', URL_ISSUED)).toBe(1);
+    const keys = el.querySelector('#provider-keys')!;
+    expect(keys.textContent).toContain('Key ending 5678 connected. Its proxy URL is in the setup above. It’s shown once, so copy it now.');
+    expect([...keys.querySelectorAll('a')].find((a) => a.textContent === 'the setup above')?.getAttribute('href')).toBe('#point');
+    expect(el.querySelector('section#point')).not.toBeNull();
+    await act(async () => { root.unmount(); });
+  });
+
+  it('on another tab: Provider keys still shows it, since that tab’s setup can’t', async () => {
+    api.store.mockImplementation(async () => { api.keys = [key()]; return { success: true, proxyUrl: URL_ISSUED, provider: 'anthropic', keyHint: '5678' }; });
+    const { el, root, type, click, card } = await mount();
+    await type('#provider-keys input[type="password"]', 'sk-ant-placeholder-not-a-real-key');
+    await click('Connect');
+    await click('Azure OpenAI');
+    expect(card()).not.toContain(URL_ISSUED);
+    expect(el.querySelector('#provider-keys')!.textContent).toContain(`export ANTHROPIC_BASE_URL=${URL_ISSUED}`);
+    await act(async () => { root.unmount(); });
+  });
+});
+
 describe('“proxy URL”, not “proxy key”, where other pages send people to Fleet key', () => {
   const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 
