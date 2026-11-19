@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { setByok } from '@/lib/users';
-import { EMPTY_KEY_FORM, PROVIDER_LABELS, agentNamingFor, canSubmitKey, issuedEnvHint, keyFormReducer, keyFormRequest, proxyUrlState, withProxyUrl } from '@/lib/provider-key-form';
+import { EMPTY_KEY_FORM, PROVIDER_LABELS, agentNamingFor, canSubmitKey, issuedEnvHint, keyFormReducer, keyFormRequest, providerTab, proxyUrlState, withProxyUrl } from '@/lib/provider-key-form';
 import { KeyScopeNote } from '@/components/citadel/StopNotes';
 import type { IssuedUrl, ProviderKeyRequest, ProviderTab, ProxyUrlState } from '@/lib/provider-key-form';
 import { EMPTY_ROLE_FORM, bedrockRoleRequest, canSubmitRoleForm, generateExternalId, roleFormReducer } from '@/lib/bedrock-role-form';
@@ -149,13 +149,23 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, issued, setIssued, onKeys,
 
         {issued && (
           <Banner variant="info" icon="check">
-            <div style={{ display: 'grid', gap: 8 }}>
-              <span>Key ending {issued.keyHint} connected. Point your agent at this URL. It&rsquo;s shown once, so copy it now.</span>
-              <CopyChip text={issued.proxyUrl} label="Copy the proxy URL" />
-              <CopyChip text={issuedEnvHint(issued.provider, issued.proxyUrl)} label="Copy the environment line" />
-              <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{KEY_HEADER_LINE}</span>
-              <AgentNaming {...agentNamingFor(issued.provider)} />
-            </div>
+            {providerTab(issued.provider) === tab ? (
+              // This tab's recipe above already carries the URL: saying it twice read as two different things.
+              <div style={{ display: 'grid', gap: 8 }}>
+                <span>Key ending {issued.keyHint} connected. Its proxy URL is in <a href="#point" className="wr-link">the setup above</a>. It&rsquo;s shown once, so copy it now.</span>
+                <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{KEY_HEADER_LINE}</span>
+                {/* Only the Anthropic or OpenAI setup above has the naming recipes; Azure and Bedrock keep theirs here. */}
+                {tab !== 'direct' && <AgentNaming {...agentNamingFor(issued.provider)} />}
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: 8 }}>
+                <span>Key ending {issued.keyHint} connected. Point your agent at this URL. It&rsquo;s shown once, so copy it now.</span>
+                <CopyChip text={issued.proxyUrl} label="Copy the proxy URL" />
+                <CopyChip text={issuedEnvHint(issued.provider, issued.proxyUrl)} label="Copy the environment line" />
+                <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{KEY_HEADER_LINE}</span>
+                <AgentNaming {...agentNamingFor(issued.provider)} />
+              </div>
+            )}
           </Banner>
         )}
 
@@ -534,7 +544,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, no
             <RotateDialog kind="api-key" preview={!!previewKeys} open={rotating} onClose={() => setRotating(false)} onDone={(result) => { setRotating(false); setShowKey(false); setRotated(result); }} />
           </SettingsCard>
 
-          <SettingsCard id="point" title="Point your agent at WhiteRoom">
+          <SettingsCard id="point" anchor title="Point your agent at WhiteRoom">
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 14 }}>
               <SegmentedControl<ProviderTab> label="Provider" value={tab} onChange={setTab} options={PROVIDER_TABS} />
               {tab === 'direct' ? (
