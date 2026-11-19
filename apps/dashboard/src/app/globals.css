@@ -1058,6 +1058,10 @@ section[aria-labelledby="run-what-happened"] .wr-panel__title, section[aria-labe
 .wr-setup-page .wr-key-field { flex: 1 1 260px; min-height: 2.5rem; background: var(--card); border-color: var(--line2); border-radius: 8px; }
 .wr-setup-page .wr-key-list > li { background: none; padding: 10px 12px 10px 20px; border-radius: 10px; }
 .wr-setup-page .wr-scard__body .wr-seg { justify-self: start; }
+/* Provider keys, a section of the setup card (Fleet key). */
+.wr-keys { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding-top: 14px; border-top: 1px solid var(--line); }
+.wr-keys__head { display: flex; justify-content: space-between; align-items: center; gap: 8px 16px; flex-wrap: wrap; }
+.wr-keys__title { margin: 0; font-size: var(--fs-md); font-weight: 600; color: var(--tx); }
 
 /* ── Mockup parity: Home ── (components/home; StatusPill's rules are with the other primitives) */
 .wr-home { padding: 24px 40px 56px; display: flex; flex-direction: column; gap: 0; }
