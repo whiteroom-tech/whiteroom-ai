@@ -204,6 +204,37 @@ describe('Fleet key: the issued URL is said once', () => {
   });
 });
 
+describe('Fleet key: Azure and Bedrock keys on their own tab', () => {
+  it.each([
+    ['Azure OpenAI', 'azure-openai', 'Azure endpoint', 'https://example-resource.openai.azure.com', 'azure-placeholder-not-a-real-key'],
+    ['AWS Bedrock', 'bedrock-mantle', 'Region', 'us-east-1', 'bedrock-placeholder-not-a-real-key'],
+  ])('%s: the URL is in the setup only, and Provider keys keeps the naming recipes', async (tabLabel, provider, field, fieldValue, secret) => {
+    api.store.mockImplementation(async () => { api.keys = [key({ provider })]; return { success: true, proxyUrl: URL_ISSUED, provider, keyHint: '5678' }; });
+    const { el, root, type, click, card } = await mount();
+    await click(tabLabel);
+    await type(`#provider-keys input[aria-label="${field}"]`, fieldValue);
+    await type('#provider-keys input[type="password"]', secret);
+    await click('Connect');
+    const keys = el.querySelector('#provider-keys')!;
+    expect(card()).toContain(URL_ISSUED);
+    expect(keys.textContent).not.toContain(URL_ISSUED);
+    expect(keys.textContent).toContain('Its proxy URL is in the setup above.');
+    expect(keys.textContent).toContain('Agents without a system prompt');
+    expect(el.querySelector('section#point')).not.toBeNull();
+    await act(async () => { root.unmount(); });
+  });
+
+  it('Anthropic or OpenAI: the naming recipes are not repeated under Provider keys', async () => {
+    api.store.mockImplementation(async () => { api.keys = [key()]; return { success: true, proxyUrl: URL_ISSUED, provider: 'anthropic', keyHint: '5678' }; });
+    const { el, root, type, click, card } = await mount();
+    await type('#provider-keys input[type="password"]', 'sk-ant-placeholder-not-a-real-key');
+    await click('Connect');
+    expect(card()).toContain('Agents without a system prompt');
+    expect(el.querySelector('#provider-keys')!.textContent).not.toContain('Agents without a system prompt');
+    await act(async () => { root.unmount(); });
+  });
+});
+
 describe('“proxy URL”, not “proxy key”, where other pages send people to Fleet key', () => {
   const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 

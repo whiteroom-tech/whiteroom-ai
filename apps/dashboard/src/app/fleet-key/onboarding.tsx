@@ -154,6 +154,8 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, issued, setIssued, onKeys,
               <div style={{ display: 'grid', gap: 8 }}>
                 <span>Key ending {issued.keyHint} connected. Its proxy URL is in <a href="#point" className="wr-link">the setup above</a>. It&rsquo;s shown once, so copy it now.</span>
                 <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{KEY_HEADER_LINE}</span>
+                {/* Only the Anthropic or OpenAI setup above has the naming recipes; Azure and Bedrock keep theirs here. */}
+                {tab !== 'direct' && <AgentNaming {...agentNamingFor(issued.provider)} />}
               </div>
             ) : (
               <div style={{ display: 'grid', gap: 8 }}>
