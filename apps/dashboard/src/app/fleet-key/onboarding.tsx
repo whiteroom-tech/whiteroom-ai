@@ -542,9 +542,12 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, no
                 </>
               )}
 
-              {/* After a rotation the old token is gone: the keys come back on the reload. */}
-              {!rotated && !roleMode && (
-                <ByokCard apiKey={apiKey} fleetId={fleetId} fleetToken={fleetToken} tab={tab} issued={issued} setIssued={setIssued} onKeys={setKeys} previewKeys={previewKeys} />
+              {/* After a rotation the old token is gone: the keys come back on the reload. In Bedrock role
+                  mode the section is hidden, not unmounted: it may hold new URLs that are shown only once. */}
+              {!rotated && (
+                <div hidden={roleMode}>
+                  <ByokCard apiKey={apiKey} fleetId={fleetId} fleetToken={fleetToken} tab={tab} issued={issued} setIssued={setIssued} onKeys={setKeys} previewKeys={previewKeys} />
+                </div>
               )}
 
               {roleMode ? null : tab === 'direct' ? (

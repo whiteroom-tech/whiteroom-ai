@@ -16,10 +16,10 @@ import './support/dialog';
 
 const URL_ISSUED = 'https://proxy.whiteroom.tech/sk-wr-placeholder-issued';
 const key = (over: Partial<ProviderKey> = {}): ProviderKey => ({ wrKey: 'sk-wr-placeholder...', provider: 'anthropic', keyHint: '5678', createdAt: '2026-11-01T00:00:00Z', ...over });
-const api = vi.hoisted(() => ({ keys: [] as unknown[], store: vi.fn(), rotate: vi.fn() }));
+const api = vi.hoisted(() => ({ keys: [] as unknown[], store: vi.fn(), rotate: vi.fn(), replace: vi.fn() }));
 
 vi.mock('@/auth', () => ({ auth: async () => null, signIn: vi.fn(), signOut: vi.fn(), handlers: {} }));
-vi.mock('@/lib/owner-credentials', () => ({ rotateApiKey: api.rotate, replaceProxyUrls: vi.fn() }));
+vi.mock('@/lib/owner-credentials', () => ({ rotateApiKey: api.rotate, replaceProxyUrls: api.replace }));
 vi.mock('@/lib/users', () => ({ setByok: vi.fn(async () => {}) }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {}, refresh: () => {} }), useSearchParams: () => new URLSearchParams() }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
@@ -54,7 +54,7 @@ async function mount() {
   return { el, root, type, click, card, after };
 }
 
-beforeEach(() => { api.keys = []; api.store.mockReset(); api.rotate.mockReset(); document.body.innerHTML = ''; });
+beforeEach(() => { api.keys = []; api.store.mockReset(); api.rotate.mockReset(); api.replace.mockReset(); document.body.innerHTML = ''; });
 
 describe('proxyUrlState', () => {
   it('has nothing to say before a key is connected, or while keys load', () => {
@@ -175,11 +175,28 @@ describe('Fleet key: one setup card', () => {
     await type('#provider-keys input[type="password"]', 'bedrock-placeholder-not-a-real-key');
     await click('Connect');
     await click('Cross-account role (any model)');
-    expect(el.querySelector('#provider-keys')).toBeNull();
+    expect(el.querySelector('#provider-keys')!.closest('[hidden]')).not.toBeNull();
     expect(el.textContent).not.toContain(URL_ISSUED);
     expect([...el.querySelectorAll('.wr-scard__title')].map((h) => h.textContent)).toEqual(['Point your agent at WhiteRoom', 'Cross-account role', 'Your WhiteRoom fleet key']);
     await click('API key (Claude)');
     expect(after()).toContain(`export ANTHROPIC_BASE_URL=${URL_ISSUED}`);
+    await act(async () => { root.unmount(); });
+  });
+
+  it('Bedrock cross-account role: new URLs from Replace URLs, shown once, are still there on the way back', async () => {
+    api.keys = [key()];
+    api.replace.mockResolvedValue({ ok: true, proxyKeys: [{ prefix: 'sk-wr-0000000000000000', provider: 'anthropic', keyHint: '5678', cloudIdentity: false, wrKey: 'sk-wr-placeholder-replaced' }], disconnected: [] });
+    const { el, root, click } = await mount();
+    await click('Replace URLs…');
+    await click('Replace URLs');
+    const section = el.querySelector('#provider-keys')!;
+    expect(section.textContent).toContain('sk-wr-placeholder-replaced');
+    await click('AWS Bedrock');
+    await click('Cross-account role (any model)');
+    await click('API key (Claude)');
+    expect(el.querySelector('#provider-keys')).toBe(section);
+    expect(section.closest('[hidden]')).toBeNull();
+    expect(section.textContent).toContain('sk-wr-placeholder-replaced');
     await act(async () => { root.unmount(); });
   });
 
