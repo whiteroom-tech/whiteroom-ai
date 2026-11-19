@@ -543,7 +543,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, no
                   {!rotated && urlState.kind === 'none' && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Connect your Anthropic or OpenAI key under <Below to="provider-keys">Provider keys below</Below> to get its proxy URL. Each provider key gets its own. Your agent keeps sending its own key.</p>}
                   <UrlHint urlState={urlState} />
                   {urlState.kind === 'issued' ? (
-                    <CopyChip text={issuedEnvHint(urlState.issued.provider, urlState.issued.proxyUrl)} label="Copy the setup line" />
+                    <CopyChip text={issuedEnvHint(urlState.issued.provider, urlState.issued.proxyUrl)} label={`Copy the ${PROVIDER_LABELS[urlState.issued.provider] ?? urlState.issued.provider} setup line`} />
                   ) : (
                     <>
                       <CopyChip text={SETUP_LINES.anthropic} label="Copy the Anthropic setup line" />
