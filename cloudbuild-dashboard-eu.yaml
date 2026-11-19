@@ -49,6 +49,12 @@ substitutions:
   _DB: whiteroom-eu:europe-west1:whiteroom-db-eu
   _URL: https://eu.app.whiteroom.tech
   _ENGINE: https://eu.proxy.whiteroom.tech
+  # Where Verify reaches the candidate revision. Empty: its own run.app tag
+  # URL, as today. Once the EU load balancer exists, run.app stops answering
+  # the internet and this becomes https://candidate.eu.app.whiteroom.tech,
+  # which the load balancer routes to the "candidate" tag (engine repo,
+  # ops/edge/README.md, "Building the EU door" step 5).
+  _CANDIDATE_URL: ''
 
 steps:
   # NEXT_PUBLIC_ANALYTICS=off only works if the checkout declares the build
@@ -130,8 +136,11 @@ steps:
           echo "  gcloud run services update ${_SERVICE} --no-invoker-iam-check --region=${_REGION} --project=${_PROJECT}"
           exit 1
         fi
-        url="$$(describe "status.traffic[].url" | tr ';,' '\n\n' | grep -m1 'candidate---' || true)"
-        [[ -n "$$url" ]] || url="$$(describe status.url)"   # first deploy: no tag
+        url="${_CANDIDATE_URL}"
+        if [[ -z "$$url" ]]; then
+          url="$$(describe "status.traffic[].url" | tr ';,' '\n\n' | grep -m1 'candidate---' || true)"
+          [[ -n "$$url" ]] || url="$$(describe status.url)"   # first deploy: no tag
+        fi
         for i in 1 2 3 4 5 6; do
           if curl -fsS -m 15 "$$url/sign-in" | grep -q "Sign in"; then echo "candidate renders /sign-in: $$url"; exit 0; fi
           echo "candidate not rendering /sign-in yet, retrying"; sleep 10
@@ -140,6 +149,8 @@ steps:
 
   # Moves all traffic to the new revision, then checks the live URL. If that
   # check fails, traffic goes straight back to the revision that was serving.
+  # The live URL is the public one (_URL), which keeps working once the
+  # dashboard only answers through the EU load balancer; run.app wouldn't.
   - id: Promote
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
     entrypoint: bash
@@ -149,7 +160,7 @@ steps:
         set -euo pipefail
         prev="$$(cat /workspace/prev || true)"
         gcloud run services update-traffic ${_SERVICE} --to-latest --region=${_REGION} --project=${_PROJECT} --quiet
-        url="$$(gcloud run services describe ${_SERVICE} --region=${_REGION} --project=${_PROJECT} --format='value(status.url)')"
+        url="${_URL}"
         for i in 1 2 3 4 5 6; do
           if curl -fsS -m 15 "$$url/sign-in" | grep -q "Sign in"; then echo "live: $$url serves ${COMMIT_SHA}"; exit 0; fi
           sleep 10
