@@ -47,9 +47,11 @@ async function mount() {
     const b = [...document.querySelectorAll('button')].find((x) => x.textContent === label) as HTMLButtonElement;
     await act(async () => { b.click(); });
   };
-  /** The "Point your agent at WhiteRoom" card: the one above Provider keys. */
-  const card = () => el.querySelector('#provider-keys')!.previousElementSibling!.textContent ?? '';
-  return { el, root, type, click, card };
+  /** The setup card: what to do, Provider keys, then the line a key gives back. */
+  const card = () => el.querySelector('section#point')!.textContent ?? '';
+  /** The card's text after the Provider keys section: the setup the key gives back. */
+  const after = () => card().split(el.querySelector('#provider-keys')!.textContent ?? '\u0000')[1] ?? '';
+  return { el, root, type, click, card, after };
 }
 
 beforeEach(() => { api.keys = []; api.store.mockReset(); api.rotate.mockReset(); document.body.innerHTML = ''; });
@@ -86,83 +88,94 @@ describe('proxyUrlState', () => {
   });
 });
 
-describe('Fleet key connect card', () => {
-  it('with no key: says how to get the proxy URL, and never calls it a proxy key', async () => {
+const PLACEHOLDER = '<your-proxy-key>';
+const count = (text: string, part: string) => text.split(part).length - 1;
+
+describe('Fleet key: one setup card', () => {
+  it('holds Provider keys inside it, above the fleet key card', async () => {
     const { el, root } = await mount();
-    expect(el.textContent).toContain('to get its proxy URL');
+    const point = el.querySelector('section#point')!;
+    expect(point.querySelector('section#provider-keys')).not.toBeNull();
+    const cards = [...el.querySelectorAll('.wr-scard__title')].map((h) => h.textContent);
+    expect(cards).toEqual(['Point your agent at WhiteRoom', 'Your WhiteRoom fleet key']);
+    await act(async () => { root.unmount(); });
+  });
+
+  it('with no key: says what to do, with no placeholder line and no “proxy key”', async () => {
+    const { el, root, card } = await mount();
+    expect(card()).toContain('Connect your Anthropic or OpenAI key under Provider keys below. You get back one line to set where your agent runs.');
+    expect(el.textContent).not.toContain(PLACEHOLDER);
     expect(el.textContent).not.toMatch(/proxy key\b/i);
-    expect(el.textContent).toContain('export ANTHROPIC_BASE_URL=https://proxy.whiteroom.tech/<your-proxy-key>');
     await act(async () => { root.unmount(); });
   });
 
-  it('with a key connected earlier: says the URL was shown once and how to get a new one', async () => {
+  it('with a key connected earlier: says the URL was shown once, with no placeholder line', async () => {
     api.keys = [key()];
-    const { el, root } = await mount();
-    expect(el.textContent).toContain('The proxy URL for your key ending 5678 was shown once, when you added it. Lost it? Choose Replace URLs under Provider keys below.');
-    expect(el.textContent).not.toContain('to get its proxy URL');
+    const { el, root, after } = await mount();
+    expect(after()).toContain('The proxy URL for your key ending 5678 was shown once, when you added it. Lost it? Choose Replace URLs under Provider keys.');
+    expect(el.textContent).not.toContain(PLACEHOLDER);
     await act(async () => { root.unmount(); });
   });
 
-  it('right after a key is connected: the setup line carries the real URL', async () => {
-    api.store.mockImplementation(async () => { api.keys = [key()]; return { success: true, proxyUrl: URL_ISSUED, provider: 'anthropic', keyHint: '5678' }; });
-    const { el, root } = await mount();
-    const input = el.querySelector('#provider-keys input[type="password"]') as HTMLInputElement;
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'sk-ant-placeholder-not-a-real-key');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    const submit = [...el.querySelectorAll('#provider-keys button')].find((b) => /connect/i.test(b.textContent ?? '')) as HTMLButtonElement;
-    await act(async () => { submit.click(); });
-    const card = el.querySelector('#provider-keys')!.previousElementSibling!;
-    expect(card.textContent).toContain('The proxy URL for your key ending 5678 is filled in below.');
-    expect(card.textContent).toContain(`export ANTHROPIC_BASE_URL=${URL_ISSUED}`);
-    expect(card.textContent).not.toContain('<your-proxy-key>');
-    await act(async () => { root.unmount(); });
-  });
-
-  it('names the provider on the filled line’s copy button', async () => {
+  it('right after a key is connected: one line with the real URL, under the keys', async () => {
     api.store.mockImplementation(async () => { api.keys = [key({ provider: 'openai' })]; return { success: true, proxyUrl: URL_ISSUED, provider: 'openai', keyHint: '5678' }; });
-    const { el, root, type, click, card } = await mount();
+    const { el, root, type, click, after } = await mount();
     await type('#provider-keys input[type="password"]', 'sk-placeholder-not-a-real-key');
     await click('Connect');
-    expect(card()).toContain(`export OPENAI_BASE_URL=${URL_ISSUED}/v1`);
+    expect(after()).toContain('Key ending 5678 connected. Set this where your agent runs. It’s shown once, so copy it now.');
+    expect(after()).toContain(`export OPENAI_BASE_URL=${URL_ISSUED}/v1`);
+    expect(count(el.textContent ?? '', URL_ISSUED)).toBe(1);
     expect(el.querySelector('[aria-label="Copy the OpenAI setup line"]')).not.toBeNull();
+    expect(count(el.textContent ?? '', 'Agents without a system prompt')).toBe(1);
     await act(async () => { root.unmount(); });
   });
 
-  it('Azure: both snippets carry the issued URL, and the step no longer says where it will appear', async () => {
-    api.keys = [key({ provider: 'azure-openai', keyHint: 'b7e1' })];
-    api.store.mockImplementation(async () => ({ success: true, proxyUrl: URL_ISSUED, provider: 'azure-openai', keyHint: 'c0de' }));
-    const { root, type, click, card } = await mount();
+  it.each([
+    ['Azure OpenAI', 'azure-openai', 'Azure endpoint', 'https://example-resource.openai.azure.com', 'azure-placeholder-not-a-real-key', [`export AZURE_OPENAI_ENDPOINT=${URL_ISSUED}`, `base_url="${URL_ISSUED}/openai/v1"`]],
+    ['AWS Bedrock', 'bedrock-mantle', 'Region', 'us-east-1', 'bedrock-placeholder-not-a-real-key', [`export ANTHROPIC_BASE_URL=${URL_ISSUED}`, `base_url="${URL_ISSUED}"`]],
+  ])('%s: the client lines are folded until a key is connected, then open with the real URL', async (tabLabel, provider, field, fieldValue, secret, lines) => {
+    api.store.mockImplementation(async () => { api.keys = [key({ provider })]; return { success: true, proxyUrl: URL_ISSUED, provider, keyHint: '5678' }; });
+    const { el, root, type, click, after } = await mount();
+    await click(tabLabel);
+    const folded = el.querySelector('section#point details');
+    expect(folded?.querySelector('summary')?.textContent).toBe('Client setup');
+    expect(folded?.hasAttribute('open')).toBe(false);
+    expect(folded?.textContent).toContain('Set your proxy URL (shown when you connect your key)');
+    await type(`#provider-keys input[aria-label="${field}"]`, fieldValue);
+    await type('#provider-keys input[type="password"]', secret);
+    await click('Connect');
+    for (const line of lines) expect(after()).toContain(line);
+    expect(el.textContent).not.toContain(PLACEHOLDER);
+    expect(el.textContent).not.toContain('(shown when you connect your key)');
+    expect(el.querySelector('#provider-keys')!.textContent).not.toContain(URL_ISSUED);
+    expect(count(el.textContent ?? '', 'Agents without a system prompt')).toBe(1);
+    await act(async () => { root.unmount(); });
+  });
+
+  it('from another tab: Provider keys shows the issued URL, since that tab’s setup can’t', async () => {
+    api.store.mockImplementation(async () => { api.keys = [key()]; return { success: true, proxyUrl: URL_ISSUED, provider: 'anthropic', keyHint: '5678' }; });
+    const { el, root, type, click, after } = await mount();
+    await type('#provider-keys input[type="password"]', 'sk-ant-placeholder-not-a-real-key');
+    await click('Connect');
     await click('Azure OpenAI');
-    expect(card()).toContain('The proxy URL for your key ending b7e1 was shown once');
-    expect(card()).toContain('Set your proxy URL (shown when you connect your key)');
-    await click('+ Add a provider key');
-    await type('#provider-keys input[aria-label="Azure endpoint"]', 'https://example-resource.openai.azure.com');
-    await type('#provider-keys input[type="password"]', 'azure-placeholder-not-a-real-key');
-    await click('Connect');
-    expect(card()).toContain('The proxy URL for your key ending c0de is filled in below.');
-    expect(card()).toContain(`export AZURE_OPENAI_ENDPOINT=${URL_ISSUED}`);
-    expect(card()).toContain(`base_url="${URL_ISSUED}/openai/v1"`);
-    expect(card()).not.toContain('<your-proxy-key>');
-    expect(card()).not.toContain('(shown when you connect your key)');
+    expect(after()).not.toContain(URL_ISSUED);
+    expect(el.querySelector('#provider-keys')!.textContent).toContain(`export ANTHROPIC_BASE_URL=${URL_ISSUED}`);
+    await click('Anthropic or OpenAI');
+    expect(after()).toContain(`export ANTHROPIC_BASE_URL=${URL_ISSUED}`);
+    expect(count(el.textContent ?? '', URL_ISSUED)).toBe(1);
     await act(async () => { root.unmount(); });
   });
 
-  it('Bedrock API key: the base URL line and the client snippet carry the issued URL', async () => {
-    api.store.mockImplementation(async () => { api.keys = [key({ provider: 'bedrock-mantle' })]; return { success: true, proxyUrl: URL_ISSUED, provider: 'bedrock-mantle', keyHint: '5678' }; });
-    const { root, type, click, card } = await mount();
-    await click('AWS Bedrock');
-    await type('#provider-keys input[aria-label="Region"]', 'us-east-1');
-    await type('#provider-keys input[type="password"]', 'bedrock-placeholder-not-a-real-key');
-    await click('Connect');
-    expect(card()).toContain(`export ANTHROPIC_BASE_URL=${URL_ISSUED}`);
-    expect(card()).toContain(`base_url="${URL_ISSUED}"`);
-    expect(card()).not.toContain('<your-proxy-key>');
+  it('keeps the Provider keys section mounted across tabs, so a shown-once result isn’t lost', async () => {
+    api.keys = [key()];
+    const { el, root, click } = await mount();
+    const before = el.querySelector('#provider-keys');
+    await click('Azure OpenAI');
+    expect(el.querySelector('#provider-keys')).toBe(before);
     await act(async () => { root.unmount(); });
   });
 
-  it('after a fleet key rotation: says nothing about URLs whose card is hidden', async () => {
+  it('after a fleet key rotation: the keys are hidden and nothing is said about their URLs', async () => {
     api.keys = [key()];
     api.rotate.mockResolvedValue({ ok: true, apiKey: 'sk-wr-placeholder-new', proxyKeys: [], disconnected: [] });
     const { el, root, click } = await mount();
@@ -172,65 +185,6 @@ describe('Fleet key connect card', () => {
     expect(el.querySelector('#provider-keys')).toBeNull();
     expect(el.textContent).not.toContain('was shown once');
     expect(el.textContent).not.toContain('Provider keys below');
-    await act(async () => { root.unmount(); });
-  });
-});
-
-describe('Fleet key: the issued URL is said once', () => {
-  const count = (text: string, part: string) => text.split(part).length - 1;
-
-  it('on the key’s own tab: only the setup card carries it, and Provider keys points up to it', async () => {
-    api.store.mockImplementation(async () => { api.keys = [key()]; return { success: true, proxyUrl: URL_ISSUED, provider: 'anthropic', keyHint: '5678' }; });
-    const { el, root, type, click } = await mount();
-    await type('#provider-keys input[type="password"]', 'sk-ant-placeholder-not-a-real-key');
-    await click('Connect');
-    expect(count(el.textContent ?? '', URL_ISSUED)).toBe(1);
-    const keys = el.querySelector('#provider-keys')!;
-    expect(keys.textContent).toContain('Key ending 5678 connected. Its proxy URL is in the setup above. It’s shown once, so copy it now.');
-    expect([...keys.querySelectorAll('a')].find((a) => a.textContent === 'the setup above')?.getAttribute('href')).toBe('#point');
-    expect(el.querySelector('section#point')).not.toBeNull();
-    await act(async () => { root.unmount(); });
-  });
-
-  it('on another tab: Provider keys still shows it, since that tab’s setup can’t', async () => {
-    api.store.mockImplementation(async () => { api.keys = [key()]; return { success: true, proxyUrl: URL_ISSUED, provider: 'anthropic', keyHint: '5678' }; });
-    const { el, root, type, click, card } = await mount();
-    await type('#provider-keys input[type="password"]', 'sk-ant-placeholder-not-a-real-key');
-    await click('Connect');
-    await click('Azure OpenAI');
-    expect(card()).not.toContain(URL_ISSUED);
-    expect(el.querySelector('#provider-keys')!.textContent).toContain(`export ANTHROPIC_BASE_URL=${URL_ISSUED}`);
-    await act(async () => { root.unmount(); });
-  });
-});
-
-describe('Fleet key: Azure and Bedrock keys on their own tab', () => {
-  it.each([
-    ['Azure OpenAI', 'azure-openai', 'Azure endpoint', 'https://example-resource.openai.azure.com', 'azure-placeholder-not-a-real-key'],
-    ['AWS Bedrock', 'bedrock-mantle', 'Region', 'us-east-1', 'bedrock-placeholder-not-a-real-key'],
-  ])('%s: the URL is in the setup only, and Provider keys keeps the naming recipes', async (tabLabel, provider, field, fieldValue, secret) => {
-    api.store.mockImplementation(async () => { api.keys = [key({ provider })]; return { success: true, proxyUrl: URL_ISSUED, provider, keyHint: '5678' }; });
-    const { el, root, type, click, card } = await mount();
-    await click(tabLabel);
-    await type(`#provider-keys input[aria-label="${field}"]`, fieldValue);
-    await type('#provider-keys input[type="password"]', secret);
-    await click('Connect');
-    const keys = el.querySelector('#provider-keys')!;
-    expect(card()).toContain(URL_ISSUED);
-    expect(keys.textContent).not.toContain(URL_ISSUED);
-    expect(keys.textContent).toContain('Its proxy URL is in the setup above.');
-    expect(keys.textContent).toContain('Agents without a system prompt');
-    expect(el.querySelector('section#point')).not.toBeNull();
-    await act(async () => { root.unmount(); });
-  });
-
-  it('Anthropic or OpenAI: the naming recipes are not repeated under Provider keys', async () => {
-    api.store.mockImplementation(async () => { api.keys = [key()]; return { success: true, proxyUrl: URL_ISSUED, provider: 'anthropic', keyHint: '5678' }; });
-    const { el, root, type, click, card } = await mount();
-    await type('#provider-keys input[type="password"]', 'sk-ant-placeholder-not-a-real-key');
-    await click('Connect');
-    expect(card()).toContain('Agents without a system prompt');
-    expect(el.querySelector('#provider-keys')!.textContent).not.toContain('Agents without a system prompt');
     await act(async () => { root.unmount(); });
   });
 });

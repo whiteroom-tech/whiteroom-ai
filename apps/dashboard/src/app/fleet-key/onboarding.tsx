@@ -26,7 +26,6 @@ import {
   KEY_HEADER_LINE,
   PROXY_KEY_URL,
   SETUP_GUIDE_URL,
-  SETUP_LINES,
   bedrockRoleTrustPolicy,
 } from '@/lib/setup';
 import { AgentNaming } from '@/components/citadel/AgentNaming';
@@ -131,41 +130,33 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, issued, setIssued, onKeys,
   const showForm = adding || keys?.length === 0;
 
   return (
-    <SettingsCard
-      id="provider-keys"
-      anchor
-      title="Provider keys"
-      sub="Bring your own key. Each key gets its own proxy URL; WhiteRoom stores only a hash and the last 4 characters, never the key itself."
-      right={keys && keys.length > 0 && !adding ? (
-        <>
-          <Button size={28} onClick={() => setReplacing(true)}>Replace URLs&hellip;</Button>
-          <Button size={28} onClick={() => setAdding(true)}>+ Add a provider key</Button>
-        </>
-      ) : undefined}
-    >
+    <section id="provider-keys" aria-labelledby="provider-keys-title" className="wr-keys">
+      <div className="wr-keys__head">
+        <div style={{ minWidth: 0 }}>
+          <h3 id="provider-keys-title" className="wr-keys__title">Provider keys</h3>
+          <p className="wr-scard__sub">Each key gets its own proxy URL. WhiteRoom stores only a hash and the last 4 characters, never the key itself.</p>
+        </div>
+        {keys && keys.length > 0 && !adding && (
+          <div className="wr-scard__right">
+            <Button size={28} onClick={() => setReplacing(true)}>Replace URLs&hellip;</Button>
+            <Button size={28} onClick={() => setAdding(true)}>+ Add a provider key</Button>
+          </div>
+        )}
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 12 }}>
 
         {replaced && <RotationResult result={replaced} onDismiss={() => setReplaced(null)} />}
 
-        {issued && (
+        {/* On its own tab the URL is in the setup just under this section. From another tab, it is shown here. */}
+        {issued && providerTab(issued.provider) !== tab && (
           <Banner variant="info" icon="check">
-            {providerTab(issued.provider) === tab ? (
-              // This tab's recipe above already carries the URL: saying it twice read as two different things.
-              <div style={{ display: 'grid', gap: 8 }}>
-                <span>Key ending {issued.keyHint} connected. Its proxy URL is in <a href="#point" className="wr-link">the setup above</a>. It&rsquo;s shown once, so copy it now.</span>
-                <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{KEY_HEADER_LINE}</span>
-                {/* Only the Anthropic or OpenAI setup above has the naming recipes; Azure and Bedrock keep theirs here. */}
-                {tab !== 'direct' && <AgentNaming {...agentNamingFor(issued.provider)} />}
-              </div>
-            ) : (
-              <div style={{ display: 'grid', gap: 8 }}>
-                <span>Key ending {issued.keyHint} connected. Point your agent at this URL. It&rsquo;s shown once, so copy it now.</span>
-                <CopyChip text={issued.proxyUrl} label="Copy the proxy URL" />
-                <CopyChip text={issuedEnvHint(issued.provider, issued.proxyUrl)} label="Copy the environment line" />
-                <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{KEY_HEADER_LINE}</span>
-                <AgentNaming {...agentNamingFor(issued.provider)} />
-              </div>
-            )}
+            <div style={{ display: 'grid', gap: 8 }}>
+              <span>Key ending {issued.keyHint} connected. Point your agent at this URL. It&rsquo;s shown once, so copy it now.</span>
+              <CopyChip text={issued.proxyUrl} label="Copy the proxy URL" />
+              <CopyChip text={issuedEnvHint(issued.provider, issued.proxyUrl)} label="Copy the environment line" />
+              <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{KEY_HEADER_LINE}</span>
+              <AgentNaming {...agentNamingFor(issued.provider)} />
+            </div>
           </Banner>
         )}
 
@@ -211,7 +202,7 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, issued, setIssued, onKeys,
         onClose={() => setReplacing(false)}
         onDone={(result) => { setReplacing(false); setIssued(null); setReplaced(result); void refresh().catch(() => {}); }}
       />
-    </SettingsCard>
+    </section>
   );
 }
 
@@ -497,6 +488,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, no
   const [issued, setIssued] = useState<IssuedUrl | null>(null);
   const [keys, setKeys] = useState<ProviderKey[] | null>(previewKeys ?? null);
   // After a rotation the cards are hidden until the reload, so nothing is said about their URLs.
+  const roleMode = tab === 'aws' && bedrockMode === 'role';
   const urlState: ProxyUrlState = rotated ? { kind: 'none' } : proxyUrlState(tab, issued, keys);
 
   useEffect(() => {
@@ -527,6 +519,69 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, no
             <Banner variant="info" icon="check">Welcome, {name}. Your account is ready: point an agent at WhiteRoom below and it appears on <a href={ROUTES.home} className="wr-link">Home</a> on its first call.</Banner>
           )}
 
+          <SettingsCard id="point" anchor title="Point your agent at WhiteRoom">
+            {/* One card, in the order it's done: what this is, the key, then the line that key gives back.
+                The Provider keys section keeps one place in this list, so a tab change doesn't remount it. */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 14 }}>
+              <SegmentedControl<ProviderTab> label="Provider" value={tab} onChange={setTab} options={PROVIDER_TABS} />
+              {tab === 'direct' ? (
+                <>
+                  <p style={{ margin: 0 }}>Change one URL so your agent&rsquo;s calls go through WhiteRoom. Agents with a system prompt need no code changes.</p>
+                  {!rotated && urlState.kind === 'none' && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Connect your Anthropic or OpenAI key under <Below to="provider-keys">Provider keys below</Below>. You get back one line to set where your agent runs. Your agent keeps sending its own key.</p>}
+                </>
+              ) : tab === 'aws' ? (
+                <>
+                  <SegmentedControl<BedrockMode> label="Bedrock access" value={bedrockMode} onChange={setBedrockMode} options={BEDROCK_MODE_TABS} size={24} />
+                  {bedrockMode === 'api-key' ? <BedrockLead linked={!rotated} /> : <BedrockRoleRecipe linked={!rotated} />}
+                </>
+              ) : (
+                <>
+                  <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
+                    Add your Azure OpenAI key and resource endpoint (Azure portal → your resource → Keys and Endpoint) under <Below to="provider-keys" linked={!rotated}>Provider keys below</Below>. You get back a proxy URL: point your agent at it instead of Azure, and keep your key, deployment names and api-version as they are.
+                  </p>
+                </>
+              )}
+
+              {/* After a rotation the old token is gone: the keys come back on the reload. */}
+              {!rotated && !roleMode && (
+                <ByokCard apiKey={apiKey} fleetId={fleetId} fleetToken={fleetToken} tab={tab} issued={issued} setIssued={setIssued} onKeys={setKeys} previewKeys={previewKeys} />
+              )}
+
+              {roleMode ? null : tab === 'direct' ? (
+                <>
+                  <UrlHint urlState={urlState} />
+                  {urlState.kind === 'issued' && (
+                    <>
+                      <CopyChip text={issuedEnvHint(urlState.issued.provider, urlState.issued.proxyUrl)} label={`Copy the ${PROVIDER_LABELS[urlState.issued.provider] ?? urlState.issued.provider} setup line`} />
+                      <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{KEY_HEADER_LINE}</span>
+                    </>
+                  )}
+                  <AgentNaming />
+                </>
+              ) : tab === 'aws' ? (
+                <>
+                  <UrlHint urlState={urlState} />
+                  <ClientSetup urlState={urlState}><BedrockSteps urlState={urlState} /></ClientSetup>
+                  {urlState.kind === 'issued' && <AgentNaming {...agentNamingFor(urlState.issued.provider)} />}
+                </>
+              ) : (
+                <>
+                  <UrlHint urlState={urlState} />
+                  <ClientSetup urlState={urlState}>
+                  <RecipeStep label={proxyUrlStepLabel(urlState)} code={withProxyUrl(`export AZURE_OPENAI_ENDPOINT=${PROXY_KEY_URL}`, PROXY_KEY_URL, urlState)} />
+                  <RecipeStep label="Your Azure API key stays the same" code="export AZURE_OPENAI_API_KEY=<your-azure-api-key>" />
+                  <RecipeStep label="The AzureOpenAI client picks both up; nothing else changes" code={`from openai import AzureOpenAI\n\nclient = AzureOpenAI(\n    api_version="2024-10-21",  # your usual api-version\n    ${AGENT_PY_HEADERS},  # optional if your agent has a system prompt\n)\nclient.chat.completions.create(\n    model="<your-deployment-name>",\n    messages=[{"role": "user", "content": "Hello"}],\n)`} />
+                  <RecipeStep label="Or with the OpenAI SDK against Azure's v1 API" code={withProxyUrl(`from openai import OpenAI\n\nclient = OpenAI(\n    base_url="${PROXY_KEY_URL}/openai/v1",\n    api_key="<your-azure-api-key>",\n    ${AGENT_PY_HEADERS},  # optional if your agent has a system prompt\n)`, PROXY_KEY_URL, urlState)} />
+                  </ClientSetup>
+                  {urlState.kind === 'issued' && <AgentNaming {...agentNamingFor(urlState.issued.provider)} />}
+                </>
+              )}
+              <ConnectCaveat caveat={caveat} />
+            </div>
+          </SettingsCard>
+
+          {!rotated && roleMode && <BedrockRoleCard apiKey={apiKey} fleetId={fleetId} fleetToken={fleetToken} />}
+
           <SettingsCard id="fleet-key" title="Your WhiteRoom fleet key" sub="For CLI commands and API requests" right={!rotated ? <Button variant="danger" className="wr-btn--outline-bad" onClick={() => setRotating(true)}>Rotate&hellip;</Button> : undefined}>
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 10 }}>
               {rotated && <RotationResult result={rotated} onDismiss={() => window.location.reload()} />}
@@ -543,52 +598,6 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, no
             </div>
             <RotateDialog kind="api-key" preview={!!previewKeys} open={rotating} onClose={() => setRotating(false)} onDone={(result) => { setRotating(false); setShowKey(false); setRotated(result); }} />
           </SettingsCard>
-
-          <SettingsCard id="point" anchor title="Point your agent at WhiteRoom">
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 14 }}>
-              <SegmentedControl<ProviderTab> label="Provider" value={tab} onChange={setTab} options={PROVIDER_TABS} />
-              {tab === 'direct' ? (
-                <>
-                  <p style={{ margin: 0 }}>Change one URL so your agent&rsquo;s calls go through WhiteRoom. Agents with a system prompt need no code changes.</p>
-                  {!rotated && urlState.kind === 'none' && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Connect your Anthropic or OpenAI key under <Below to="provider-keys">Provider keys below</Below> to get its proxy URL. Each provider key gets its own. Your agent keeps sending its own key.</p>}
-                  <UrlHint urlState={urlState} />
-                  {urlState.kind === 'issued' ? (
-                    <CopyChip text={issuedEnvHint(urlState.issued.provider, urlState.issued.proxyUrl)} label={`Copy the ${PROVIDER_LABELS[urlState.issued.provider] ?? urlState.issued.provider} setup line`} />
-                  ) : (
-                    <>
-                      <CopyChip text={SETUP_LINES.anthropic} label="Copy the Anthropic setup line" />
-                      <CopyChip text={SETUP_LINES.openai} label="Copy the OpenAI setup line" />
-                    </>
-                  )}
-                  <AgentNaming />
-                </>
-              ) : tab === 'aws' ? (
-                <>
-                  <SegmentedControl<BedrockMode> label="Bedrock access" value={bedrockMode} onChange={setBedrockMode} options={BEDROCK_MODE_TABS} size={24} />
-                  {bedrockMode === 'api-key' ? <BedrockRecipe linked={!rotated} urlState={urlState} /> : <BedrockRoleRecipe linked={!rotated} />}
-                </>
-              ) : (
-                <>
-                  <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-                    Add your Azure OpenAI key and resource endpoint (Azure portal → your resource → Keys and Endpoint) under <Below to="provider-keys" linked={!rotated}>Provider keys below</Below>. You get back a proxy URL: point your agent at it instead of Azure, and keep your key, deployment names and api-version as they are.
-                  </p>
-                  <UrlHint urlState={urlState} />
-                  <RecipeStep label={proxyUrlStepLabel(urlState)} code={withProxyUrl(`export AZURE_OPENAI_ENDPOINT=${PROXY_KEY_URL}`, PROXY_KEY_URL, urlState)} />
-                  <RecipeStep label="Your Azure API key stays the same" code="export AZURE_OPENAI_API_KEY=<your-azure-api-key>" />
-                  <RecipeStep label="The AzureOpenAI client picks both up; nothing else changes" code={`from openai import AzureOpenAI\n\nclient = AzureOpenAI(\n    api_version="2024-10-21",  # your usual api-version\n    ${AGENT_PY_HEADERS},  # optional if your agent has a system prompt\n)\nclient.chat.completions.create(\n    model="<your-deployment-name>",\n    messages=[{"role": "user", "content": "Hello"}],\n)`} />
-                  <RecipeStep label="Or with the OpenAI SDK against Azure's v1 API" code={withProxyUrl(`from openai import OpenAI\n\nclient = OpenAI(\n    base_url="${PROXY_KEY_URL}/openai/v1",\n    api_key="<your-azure-api-key>",\n    ${AGENT_PY_HEADERS},  # optional if your agent has a system prompt\n)`, PROXY_KEY_URL, urlState)} />
-                </>
-              )}
-              <ConnectCaveat caveat={caveat} />
-            </div>
-          </SettingsCard>
-
-          {/* After a rotation the old token is gone: the cards come back on the reload. */}
-          {rotated ? null : tab === 'aws' && bedrockMode === 'role' ? (
-            <BedrockRoleCard apiKey={apiKey} fleetId={fleetId} fleetToken={fleetToken} />
-          ) : (
-            <ByokCard apiKey={apiKey} fleetId={fleetId} fleetToken={fleetToken} tab={tab} issued={issued} setIssued={setIssued} onKeys={setKeys} previewKeys={previewKeys} />
-          )}
 
           <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
             <a href={SETUP_GUIDE_URL} className="wr-link">Setup guide</a>
@@ -629,29 +638,24 @@ function proxyUrlStepLabel(urlState: ProxyUrlState): string {
 }
 
 /**
- * Where a tab's proxy URL is, once a key is connected: filled in below (just
- * issued), or shown once and gone. Without this the placeholder lines read as
- * if the URL were somewhere on the page.
+ * Where a tab's proxy URL is, once a key is connected: in the line under
+ * this (just issued), or shown once and gone.
  */
 function UrlHint({ urlState }: { urlState: ProxyUrlState }) {
   if (urlState.kind === 'none') return null;
+  if (urlState.kind === 'issued') {
+    return <Banner variant="info" icon="check">Key ending {urlState.issued.keyHint} connected. Set this where your agent runs. It&rsquo;s shown once, so copy it now.</Banner>;
+  }
   return (
     <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-      {urlState.kind === 'issued' ? (
-        <>The proxy URL for your key ending {urlState.issued.keyHint} is filled in below. It&rsquo;s shown once, so copy it now.</>
-      ) : (
-        <>
-          {urlState.keyHint ? <>The proxy URL for your key ending {urlState.keyHint} was shown once, when you added it. Lost it?</> : <>Each key&rsquo;s proxy URL was shown once, when you added it. Lost one?</>}
-          {' '}Choose Replace URLs under <Below to="provider-keys">Provider keys below</Below>.
-        </>
-      )}
+      {urlState.keyHint ? <>The proxy URL for your key ending {urlState.keyHint} was shown once, when you added it. Lost it?</> : <>Each key&rsquo;s proxy URL was shown once, when you added it. Lost one?</>}
+      {' '}Choose Replace URLs under <Below to="provider-keys">Provider keys</Below>.
     </p>
   );
 }
 
-/** Claude on AWS Bedrock: the Anthropic SDK, pointed at the proxy URL with the Bedrock API key. */
-function BedrockRecipe({ linked, urlState }: { linked: boolean; urlState: ProxyUrlState }) {
-  const [lang, setLang] = useState<Lang>('python');
+/** Claude on AWS Bedrock: the Anthropic SDK, pointed at the proxy URL with the Bedrock API key. What to connect, above Provider keys. */
+function BedrockLead({ linked }: { linked: boolean }) {
   return (
     <>
       <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
@@ -663,7 +667,15 @@ function BedrockRecipe({ linked, urlState }: { linked: boolean; urlState: ProxyU
         <li>{BEDROCK_NOTES.custody}</li>
         <li>{BEDROCK_NOTES.model}</li>
       </ul>
-      <UrlHint urlState={urlState} />
+    </>
+  );
+}
+
+/** The Bedrock client lines, under Provider keys. */
+function BedrockSteps({ urlState }: { urlState: ProxyUrlState }) {
+  const [lang, setLang] = useState<Lang>('python');
+  return (
+    <>
       <RecipeStep label={proxyUrlStepLabel(urlState)} code={withProxyUrl(BEDROCK_LINES.baseUrl, PROXY_KEY_URL, urlState)} />
       <RecipeStep label={`Use your Bedrock API key (${BEDROCK_KEY_ENV}) as the API key`} code={BEDROCK_LINES.apiKey} />
       <div style={{ display: 'grid', gap: 6 }}>
@@ -672,6 +684,21 @@ function BedrockRecipe({ linked, urlState }: { linked: boolean; urlState: ProxyU
         <CopyChip text={withProxyUrl(BEDROCK_LINES[lang], PROXY_KEY_URL, urlState)} label={`Copy the Bedrock ${lang === 'python' ? 'Python' : 'TypeScript'} client`} />
       </div>
     </>
+  );
+}
+
+/**
+ * A cloud tab's client lines. Open, with the real URL in them, just after a
+ * key is connected; otherwise folded away, since all they can show is a
+ * placeholder where the URL goes.
+ */
+function ClientSetup({ urlState, children }: { urlState: ProxyUrlState; children: React.ReactNode }) {
+  if (urlState.kind === 'issued') return <>{children}</>;
+  return (
+    <details style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
+      <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Client setup</summary>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 14, marginTop: 10 }}>{children}</div>
+    </details>
   );
 }
 
