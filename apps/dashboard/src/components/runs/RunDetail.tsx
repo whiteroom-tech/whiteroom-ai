@@ -293,9 +293,10 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
             {run.flags.some((f) => f.eventIds?.length) ? (
               <span className="wr-run-flags__list">
                 <strong>Stood out:</strong>
+                {/* One flag to a line, each with its own jump, so a button never sits between two flags. */}
                 {run.flags.map((f, i) => (
                   <span key={`${f.signal}-${i}`} className="wr-run-flags__item">
-                    {flagText(f)}{i < run.flags!.length - 1 ? ' ·' : '.'}
+                    <span>{flagText(f)}</span>
                     {!!f.eventIds?.length && <Button size={28} onClick={() => jumpTo(f.eventIds![0])} aria-label={`See in timeline: ${flagText(f)}`}>See in timeline</Button>}
                   </span>
                 ))}
