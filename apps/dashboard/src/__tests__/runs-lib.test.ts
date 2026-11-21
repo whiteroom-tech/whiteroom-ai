@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { activityRow } from '@/lib/home';
-import { addDays, flagText, ignoresFlagged, ignoresRuleActivity, unusualSummary, collectRuns, dayLabel, eventFeedSheets, localDay, runsWindow, stripDays, validDay, TIME_ZONE_NAME, clampSpan, oldestKept, stripEndFor, MAX_SPAN_DAYS, fmtLength, fmtStarted, loadRunPage, parseRunId, runHref, runsTitle, runsExportHeader, runsDays, runsExportRow, standOut, timelineRow, timelineRows, runSummary, ruleActivityRow, ruleActivityFooter, ruleActivityLink, runSheets, collectRunEvents, flagsNote, fmtClockLength, spanLabel, exportDays, runName, notRecordedTotalsNote, type RunPageQuery } from '@/lib/runs';
+import { addDays, flagText, ignoresFlagged, ignoresRuleActivity, unusualSummary, collectRuns, dayLabel, eventFeedSheets, localDay, runsWindow, stripDays, validDay, TIME_ZONE_NAME, clampSpan, oldestKept, stripEndFor, MAX_SPAN_DAYS, fmtLength, fmtStarted, loadRunPage, parseRunId, runHref, runsTitle, runsExportHeader, runsDays, runsExportRow, standOut, timelineRow, timelineRows, runSummary, ruleActivityRow, ruleActivityFooter, ruleActivityLink, runSheets, collectRunEvents, flagsNote, fmtClockLength, spanLabel, exportDays, runName, notRecordedTotalsNote, callToolErrorsText, type RunPageQuery } from '@/lib/runs';
 import { startsNewGroup } from '@whiteroom/ui';
 import type { AuditEntry, RunEventsResult, RunFlag, RunSummary } from '@/lib/whiteroom/types';
 
@@ -477,5 +477,30 @@ describe('runs by hour', () => {
     expect([0, 9, 12, 23].map(hourLabel)).toEqual(['12 am', '9 am', '12 pm', '11 pm']);
     expect(ignoresHour([{ startedAt: at(9) }], 9)).toBe(false);
     expect(ignoresHour([{ startedAt: at(9) }, { startedAt: at(10) }], 9)).toBe(true);
+  });
+});
+
+describe('failed tool steps in the timeline', () => {
+  const base = { id: 'call:9', kind: 'call' as const, at: '2026-10-01T14:00:00Z', type: 'complete' };
+  it('names the tools whose results came back as errors, once each', () => {
+    expect(callToolErrorsText({ toolErrors: ['lookup_order'] })).toBe(' · lookup_order returned an error');
+    expect(callToolErrorsText({ toolErrors: ['a', 'b', 'a'] })).toBe(' · a, b returned errors');
+    expect(callToolErrorsText({ toolErrors: ['a', 'b', 'c', 'd', 'e'] })).toBe(' · a, b, c +2 more returned errors');
+  });
+  it('says nothing when none failed, none were read, or the engine is older', () => {
+    for (const toolErrors of [[], null, undefined]) {
+      const row = timelineRow({ ...base, toolErrors, requestedTools: ['send_reply'] });
+      expect(row.text).toBe('Model call · asked for send_reply');
+      expect(row.tag).toBeUndefined();
+    }
+  });
+  it('tags the call Tool error, unless the call has its own outcome tag', () => {
+    expect(timelineRow({ ...base, toolErrors: ['lookup_order'] }).tag).toEqual({ label: 'Tool error', tone: 'warn' });
+    const failed = timelineRow({ ...base, type: 'upstream_error', toolErrors: ['lookup_order'] });
+    expect(failed.tag?.label).not.toBe('Tool error');
+    expect(failed.text).toContain('lookup_order returned an error');
+  });
+  it('leaves flag text alone when a flag carries its calls', () => {
+    expect(flagText({ signal: 'planted_instruction', tool: 'get_ticket', eventIds: ['call:1'] })).toBe('Suspicious instruction in a result from get_ticket');
   });
 });

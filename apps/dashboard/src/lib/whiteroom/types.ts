@@ -886,8 +886,12 @@ export interface RunSummary {
   outcome?: 'success' | 'failure';
 }
 
-/** A run flag: flags only, nothing was blocked. */
-export type RunFlag =
+/**
+ * A run flag: flags only, nothing was blocked. On Run detail, eventIds are the
+ * timeline ids of the calls behind it, in timeline order (absent from the runs
+ * list and older engines; the first is where See in timeline goes).
+ */
+export type RunFlag = { eventIds?: string[] } & (
   | { signal: 'repeating_call'; tool: string; calls: number }
   | { signal: 'error_streak'; calls: number }
   /** The run's last call failed or was blocked and the agent made no call for 30 minutes after (Agent Health item 7). */
@@ -897,7 +901,8 @@ export type RunFlag =
   /** A result from this tool looked like it was giving the agent instructions (Agent Health item 2). */
   | { signal: 'planted_instruction'; tool: string }
   /** The agent reported success right after a step with this tool failed (Agent Health item 4). */
-  | { signal: 'done_after_failure'; tool: string };
+  | { signal: 'done_after_failure'; tool: string }
+);
 
 export interface RunDaysResult {
   fleetId: string;
@@ -932,6 +937,8 @@ export interface RunEvent {
   durationMs?: number | null;
   /** Calls: the rules that acted, or would have, on this call (engine PR 298). */
   ruleActions?: CallRuleAction[];
+  /** Calls: tools whose results this call's request sent back as errors (the step before failed). Null when not read; absent on older engines. */
+  toolErrors?: string[] | null;
   detail?: Record<string, unknown>;
 }
 

@@ -449,6 +449,14 @@ export function callToolsText(e: Pick<RunEvent, 'requestedTools'>): string {
   return ` · asked for ${named.slice(0, 4).join(', ')}${named.length > 4 ? ` +${named.length - 4} more` : ''}`;
 }
 
+/** " · lookup_order returned an error": the tools whose results this call's request sent back as errors. */
+export function callToolErrorsText(e: Pick<RunEvent, 'toolErrors'>): string {
+  const names = [...new Set(e.toolErrors ?? [])];
+  if (!names.length) return '';
+  const shown = names.slice(0, 3).join(', ') + (names.length > 3 ? ` +${names.length - 3} more` : '');
+  return ` · ${shown} returned ${names.length === 1 ? 'an error' : 'errors'}`;
+}
+
 /** What a rule did to a call, past tense: "would have been blocked", "blocked", "paused the agent". */
 const CALL_OUTCOME_TEXT: Record<CallRuleAction['outcome'], string> = {
   would_block: 'would have been blocked', blocked: 'blocked', paused: 'paused the agent', stopped: 'stopped the agent', notified: NOTIFY.done, trimmed: 'trimmed',
@@ -477,6 +485,9 @@ function callRule(e: RunEvent): TimelineRow['rule'] {
   return { text, screen: watchBlock ? tail : text, mode: a.mode === 'enforce' ? 'enforce' : 'watch' };
 }
 
+/** The tag on a call whose request carried a failed tool step, when nothing else is tagged. */
+const TOOL_ERROR_TAG = { label: 'Tool error', tone: 'warn' } as const;
+
 const START_EVENT = /^(watch_start|run_started)$/;
 // A rule that really acted (a Watch "would block" is not one).
 const BAD_EVENT = /^governance_(block|blocked|pause|stop)$/;
@@ -498,11 +509,13 @@ export function timelineRow(e: RunEvent, prevModel: string | null = null): Timel
     const outcome = CALL_OUTCOME[e.type];
     const bad = e.type === 'governance_blocked' || e.type === 'upstream_error' || e.type === 'stream_interrupted';
     const rule = callRule(e);
+    // A failed tool step shows on the call that carried its result back: the step before this call.
+    const toolErrors = callToolErrorsText(e);
     return {
       id: e.id, time: clock(e.at), sameTime: false, glyph: bad ? 'bad' : 'call',
-      text: `Model call${e.model && e.model !== prevModel ? ` · ${e.model}` : ''}${tools}`,
+      text: `Model call${e.model && e.model !== prevModel ? ` · ${e.model}` : ''}${toolErrors}${tools}`,
       // The rule note already says it was blocked; the tag would repeat it.
-      tag: rule && e.type === 'governance_blocked' ? undefined : outcome,
+      tag: rule && e.type === 'governance_blocked' ? undefined : outcome ?? (toolErrors && !rule ? TOOL_ERROR_TAG : undefined),
       rule,
     };
   }
