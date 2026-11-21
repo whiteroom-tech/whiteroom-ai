@@ -99,3 +99,40 @@ describe('run page', () => {
     root.unmount();
   });
 });
+
+describe('flags that point at their calls', () => {
+  it('keeps the one-line Stood out when no flag has calls', async () => {
+    const { el, root } = await mount({ ...DATA, run: { ...DATA.run, flags: [{ signal: 'planted_instruction', tool: 'get_ticket' }] } });
+    const line = [...el.querySelectorAll('.wr-run-flags')].find((p) => p.textContent?.startsWith('Stood out'));
+    expect(line?.textContent).toMatch(/^Stood out: Suspicious instruction in a result from get_ticket\. Flags don’t block/);
+    expect(line?.querySelector('button')).toBeNull();
+    expect(el.querySelector('.wr-run-flags__list')).toBeNull();
+    root.unmount();
+  });
+
+  it('gives each flag with calls a See in timeline that highlights its first call', async () => {
+    const flags = [
+      { signal: 'planted_instruction' as const, tool: 'get_ticket', eventIds: ['call:2'] },
+      { signal: 'done_after_failure' as const, tool: 'close_ticket', eventIds: [] },
+    ];
+    const { el, root } = await mount({ ...DATA, run: { ...DATA.run, flags } });
+    const list = el.querySelector('.wr-run-flags__list')!;
+    expect(list.textContent).toContain('Suspicious instruction in a result from get_ticket ·See in timeline');
+    expect(list.textContent).toContain('Said done after close_ticket failed.');
+    const buttons = [...list.querySelectorAll('button')];
+    expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual(['See in timeline: Suspicious instruction in a result from get_ticket']);
+    await act(async () => { buttons[0].click(); });
+    expect(el.querySelector('.wr-timeline > li.is-highlighted')?.id).toBe('run-event-call:2');
+    root.unmount();
+  });
+
+  it('marks the call that carried a failed tool step back', async () => {
+    const events = [...DATA.events.slice(0, 2), { id: 'call:2', kind: 'call' as const, at: now, type: 'complete', model: 'claude-sonnet-4-5', toolErrors: ['lookup_order'], requestedTools: ['send_reply'] }];
+    const { el, root } = await mount({ ...DATA, run: { ...DATA.run, ruleActions: [] }, events });
+    const rows = [...el.querySelectorAll('.wr-timeline > li')];
+    expect(rows[2].querySelector('.wr-timeline__text')?.textContent).toBe('Model call · lookup_order returned an error · asked for send_reply');
+    expect(rows[2].textContent).toContain('Tool error');
+    expect(rows[1].textContent).not.toContain('Tool error');
+    root.unmount();
+  });
+});

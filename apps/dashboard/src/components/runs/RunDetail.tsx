@@ -290,7 +290,20 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
         {!!run?.flags?.length && (
           <p className="wr-run-flags">
             <span style={{ display: 'flex', color: 'var(--warn)' }}><Icon name="alert" size={14} /></span>
-            <span><strong>Stood out:</strong> {run.flags.map(flagText).join(' · ')}. {flagsNote(run.ruleActions)}</span>
+            {run.flags.some((f) => f.eventIds?.length) ? (
+              <span className="wr-run-flags__list">
+                <strong>Stood out:</strong>
+                {run.flags.map((f, i) => (
+                  <span key={`${f.signal}-${i}`} className="wr-run-flags__item">
+                    {flagText(f)}{i < run.flags!.length - 1 ? ' ·' : '.'}
+                    {!!f.eventIds?.length && <Button size={28} onClick={() => jumpTo(f.eventIds![0])} aria-label={`See in timeline: ${flagText(f)}`}>See in timeline</Button>}
+                  </span>
+                ))}
+                <span>{flagsNote(run.ruleActions)}</span>
+              </span>
+            ) : (
+              <span><strong>Stood out:</strong> {run.flags.map(flagText).join(' · ')}. {flagsNote(run.ruleActions)}</span>
+            )}
           </p>
         )}
         {failing && data && <RefreshFailed since={updatedAt} />}

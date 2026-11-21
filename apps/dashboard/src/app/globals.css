@@ -928,6 +928,8 @@ section[aria-labelledby="runs-table-title"] .wr-panel__title { white-space: norm
 .wr-run-summary__model { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--tx2); white-space: nowrap; }
 .wr-run-flags { display: flex; align-items: flex-start; gap: 8px; margin-block: 0; font-size: var(--fs-sm); color: var(--tx2); }
 .wr-run-flags strong { color: var(--tx); font-weight: 600; }
+.wr-run-flags__list { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.wr-run-flags__item { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .wr-run-mtag { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); line-height: 1.5; font-weight: 500; white-space: nowrap; color: var(--tx2); }
 .wr-run-mtag::before { content: ""; width: 8px; height: 8px; border-radius: 99px; border: 1.5px solid currentColor; }
 .wr-run-mtag.is-block { padding: 2px 10px; border-radius: 6px; background: var(--brand); color: var(--on-brand); font-weight: 600; }
