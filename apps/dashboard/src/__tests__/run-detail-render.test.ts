@@ -117,8 +117,12 @@ describe('flags that point at their calls', () => {
     ];
     const { el, root } = await mount({ ...DATA, run: { ...DATA.run, flags } });
     const list = el.querySelector('.wr-run-flags__list')!;
-    expect(list.textContent).toContain('Suspicious instruction in a result from get_ticket ·See in timeline');
-    expect(list.textContent).toContain('Said done after close_ticket failed.');
+    // One flag to a line, no separators left between a flag and a button.
+    expect([...list.querySelectorAll('.wr-run-flags__item')].map((i) => i.textContent)).toEqual([
+      'Suspicious instruction in a result from get_ticketSee in timeline',
+      'Said done after close_ticket failed',
+    ]);
+    expect(list.textContent).not.toContain('·');
     const buttons = [...list.querySelectorAll('button')];
     expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual(['See in timeline: Suspicious instruction in a result from get_ticket']);
     await act(async () => { buttons[0].click(); });
