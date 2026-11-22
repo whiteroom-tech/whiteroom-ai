@@ -82,25 +82,46 @@ export interface IssuedUrl {
   proxyUrl: string;
   keyHint: string;
   provider: string;
+  /** The dashboard saved it, so it can be revealed again later; otherwise this is the only time it shows. */
+  saved?: boolean;
+}
+
+/** A listed key's prefix: the engine's `wrKey` without its trailing dots. */
+export const keyPrefix = (k: Pick<ProviderKey, 'wrKey'>) => k.wrKey.replace(/\.+$/, '');
+
+/** Whether a listed key's proxy URL is saved, given the saved keys' prefixes. */
+export function savedPrefixFor(k: Pick<ProviderKey, 'wrKey'>, saved: readonly string[]): string | null {
+  const prefix = keyPrefix(k);
+  if (prefix.length < 12) return null;
+  return saved.find((p) => p === prefix || p.startsWith(prefix) || prefix.startsWith(p)) ?? null;
+}
+
+/** A proxy URL with its key hidden: enough to recognise it. */
+export function maskProxyUrl(origin: string, prefix: string): string {
+  return `${origin}/${prefix.slice(0, 10)}…`;
 }
 
 /**
- * What a tab's recipe can say about its proxy URL. The engine keeps only a
- * hash of it, so the page has it just after a key is connected ("issued") and
- * never again ("shown-once": keys are connected, their URLs can't be shown;
- * keyHint names the key when the tab has exactly one). "none": no key yet.
+ * What a tab's recipe can say about its proxy URL. The page has it just after
+ * a key is connected ("issued"). Later it is with the key in Provider keys,
+ * behind Reveal ("saved"), unless the key was connected before URLs were
+ * saved ("shown-once": the URL can't be shown; keyHint names the key when
+ * the tab has exactly one such key). "none": no key yet.
  */
 export type ProxyUrlState =
   | { kind: 'issued'; issued: IssuedUrl }
+  | { kind: 'saved' }
   | { kind: 'shown-once'; keyHint: string | null }
   | { kind: 'none' };
 
-export function proxyUrlState(tab: ProviderTab, issued: IssuedUrl | null, keys: ProviderKey[] | null): ProxyUrlState {
+export function proxyUrlState(tab: ProviderTab, issued: IssuedUrl | null, keys: ProviderKey[] | null, saved: readonly string[] = []): ProxyUrlState {
   if (issued && providerTab(issued.provider) === tab) return { kind: 'issued', issued };
   // A key that is off (pending removal) has no working URL to point at.
   const own = (keys ?? []).filter((k) => !k.pending && providerTab(k.provider) === tab);
   if (own.length === 0) return { kind: 'none' };
-  return { kind: 'shown-once', keyHint: own.length === 1 ? own[0].keyHint : null };
+  const lost = own.filter((k) => !savedPrefixFor(k, saved));
+  if (lost.length === 0) return { kind: 'saved' };
+  return { kind: 'shown-once', keyHint: lost.length === 1 ? lost[0].keyHint : null };
 }
 
 /** A recipe with the issued proxy URL in place of the placeholder; unchanged when there is none to show. */

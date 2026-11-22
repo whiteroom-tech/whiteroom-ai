@@ -13,6 +13,7 @@ import { controlAccessError, CONTROL_SECRET_HEADER, CONTROL_USER_HEADER } from '
 import { plainUnlessSealed, readCred, sealCred } from '@/lib/cred-seal';
 import { db } from '@/lib/db';
 import { setFleetAuthCookie } from '@/lib/fleet-session';
+import { replaceProxyKeys } from '@/lib/proxy-key-store';
 import { engineAuthHeaders, PROXY_URL } from '@/lib/whiteroom/client';
 
 /** A proxy key as the engine summarises it; `wrKey` only on a newly issued one, shown once. */
@@ -30,8 +31,9 @@ export type CredentialChange =
    * `proxyKeysLost`: the change happened but its new proxy URLs didn't reach us.
    * `notSaved`: the change happened but the new key couldn't be saved to the
    * account, so this answer is the only copy of it.
+   * `proxyKeysSaved`: the new proxy URLs are saved, so they can be revealed again on Fleet key.
    */
-  | { ok: true; apiKey?: string; proxyKeys: CredentialKey[]; disconnected: CredentialKey[]; proxyKeysLost?: boolean; notSaved?: boolean }
+  | { ok: true; apiKey?: string; proxyKeys: CredentialKey[]; disconnected: CredentialKey[]; proxyKeysLost?: boolean; notSaved?: boolean; proxyKeysSaved?: boolean }
   /**
    * `cloudIdentityKeys`: keys on the engine's cloud identity, which need their own consent to reissue.
    * `unconfirmedApiKey`: the answer was lost and the outcome is unknown; if the old key stops
@@ -81,6 +83,13 @@ function refused(status: number, json: Record<string, unknown>): CredentialChang
 
 const keys = (v: unknown): CredentialKey[] => (Array.isArray(v) ? (v as CredentialKey[]) : []);
 
+/** The old proxy URLs are dead: drops their saved copies and saves the new ones. True when every new one is saved. */
+async function keepProxyKeys(o: Owner, json: Record<string, unknown>): Promise<boolean> {
+  const issued = keys(json.proxyKeys).flatMap((k) => (typeof k.wrKey === 'string' ? [k.wrKey] : []));
+  const saved = await replaceProxyKeys(o.userId, o.fleetId, issued);
+  return saved && issued.length > 0;
+}
+
 /**
  * Saves the account's new API key and fleet token (encrypted) and points this
  * browser's session at the token. The engine has already switched, so a
@@ -122,9 +131,10 @@ async function saveCredentials(userId: string, apiKey: string, token: string): P
 async function rotated(o: Owner, apiKey: string, token: string, json: Record<string, unknown>, proxyKeysLost = false): Promise<CredentialChange> {
   const saved = await saveCredentials(o.userId, apiKey, token);
   await dropOtherLinks(o.fleetId, o.userId);
+  const proxyKeysSaved = await keepProxyKeys(o, json);
   return {
     ok: true, apiKey, proxyKeys: keys(json.proxyKeys), disconnected: keys(json.disconnected),
-    ...(proxyKeysLost && { proxyKeysLost }), ...(!saved && { notSaved: true }),
+    ...(proxyKeysLost && { proxyKeysLost }), ...(!saved && { notSaved: true }), ...(proxyKeysSaved && { proxyKeysSaved }),
   };
 }
 
@@ -216,7 +226,8 @@ export async function replaceProxyUrls(input: { disconnect: string[]; reissueClo
       reissue_cloud_identity_keys: input.reissueCloudIdentityKeys,
     });
     if (res.status !== 200) return refused(res.status, res.json);
-    return { ok: true, proxyKeys: keys(res.json.proxyKeys), disconnected: keys(res.json.disconnected) };
+    const proxyKeysSaved = await keepProxyKeys(o, res.json);
+    return { ok: true, proxyKeys: keys(res.json.proxyKeys), disconnected: keys(res.json.disconnected), ...(proxyKeysSaved && { proxyKeysSaved }) };
   } catch {
     // The request went out, so the URLs may or may not have changed.
     return { ok: false, error: 'WhiteRoom didn’t answer, so it isn’t known whether the URLs changed. If your agents’ proxy URLs stop working, replace them again to get new ones shown.' };

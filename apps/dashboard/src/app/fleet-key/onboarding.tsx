@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { setByok } from '@/lib/users';
-import { EMPTY_KEY_FORM, PROVIDER_LABELS, agentNamingFor, canSubmitKey, issuedEnvHint, keyFormReducer, keyFormRequest, providerTab, proxyUrlState, withProxyUrl } from '@/lib/provider-key-form';
+import { EMPTY_KEY_FORM, PROVIDER_LABELS, agentNamingFor, canSubmitKey, issuedEnvHint, keyFormReducer, keyFormRequest, keyPrefix, maskProxyUrl, providerTab, proxyUrlState, savedPrefixFor, withProxyUrl } from '@/lib/provider-key-form';
+import { dropProxyKey, rememberProxyKey, revealProxyKey, revealableProxyKeys } from '@/lib/proxy-keys';
 import { KeyScopeNote } from '@/components/citadel/StopNotes';
 import type { IssuedUrl, ProviderKeyRequest, ProviderTab, ProxyUrlState } from '@/lib/provider-key-form';
 import { EMPTY_ROLE_FORM, bedrockRoleRequest, canSubmitRoleForm, generateExternalId, roleFormReducer } from '@/lib/bedrock-role-form';
@@ -25,6 +26,7 @@ import {
   BEDROCK_ROLE_SUPPORT,
   KEY_HEADER_LINE,
   PROXY_KEY_URL,
+  PROXY_ORIGIN,
   SETUP_GUIDE_URL,
   bedrockRoleTrustPolicy,
 } from '@/lib/setup';
@@ -57,13 +59,18 @@ interface Props {
 // projects) sit side by side rather than one replacing the other. Only a hash
 // and the last four characters are stored — the raw key never leaves the
 // customer's control except as a per-request forward to the provider.
-function ByokCard({ apiKey, fleetId, fleetToken, tab, issued, setIssued, onKeys, previewKeys }: {
+// Each key's proxy URL is saved encrypted by the dashboard (lib/proxy-keys.ts),
+// so it stays with the key here, behind Reveal.
+function ByokCard({ apiKey, fleetId, fleetToken, tab, issued, setIssued, onKeys, saved, setSaved, previewKeys }: {
   apiKey: string; fleetId: string; fleetToken: string | null; tab: ProviderTab;
   /** The URL just issued, held by the page: the connect card above fills its lines with it. */
   issued: IssuedUrl | null;
   setIssued: (issued: IssuedUrl | null) => void;
   /** The connected keys, each time they load. */
   onKeys: (keys: ProviderKey[]) => void;
+  /** Prefixes of the keys whose proxy URL is saved, held by the page (the connect card reads it too). */
+  saved: string[];
+  setSaved: (update: (prev: string[]) => string[]) => void;
   /** /dev/fleet-key: sample keys, and nothing is fetched or changed. */
   previewKeys?: ProviderKey[];
 }) {
@@ -87,7 +94,8 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, issued, setIssued, onKeys,
   useEffect(() => {
     if (previewKeys) return;
     refresh().catch(() => setKeys([]));
-  }, [refresh, previewKeys]);
+    revealableProxyKeys().then((list) => setSaved(() => list), () => {});
+  }, [refresh, previewKeys, setSaved]);
 
   /** Stores the key; null when it connected, otherwise the reason it didn't. */
   async function connect(req: ProviderKeyRequest): Promise<string | null> {
@@ -96,7 +104,11 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, issued, setIssued, onKeys,
       const result = await storeProviderKey(auth, req.key, req.endpoint, req.provider, req.boundAgent);
       if (!result.success || !result.proxyUrl) return result.error || 'Could not connect that key.';
       const provider = result.provider ?? req.provider ?? (req.key.startsWith('sk-ant-') ? 'anthropic' : 'openai');
-      setIssued({ proxyUrl: result.proxyUrl, keyHint: result.keyHint ?? req.key.slice(-4), provider });
+      // Saved so it can be revealed again; if that fails, this is the one time it shows.
+      const proxyKey = result.proxyKey ?? result.proxyUrl.split('/').pop() ?? '';
+      const kept = await rememberProxyKey(proxyKey).catch(() => false);
+      if (kept) setSaved((prev) => [...prev, proxyKey.slice(0, 22)]);
+      setIssued({ proxyUrl: result.proxyUrl, keyHint: result.keyHint ?? req.key.slice(-4), provider, saved: kept });
       setAdding(false);
       await refresh();
       await setByok(true);
@@ -118,6 +130,7 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, issued, setIssued, onKeys,
       // Off but not saved yet (pending): it stays in the list, marked, so it can be tried again.
       if (result.pending) setRemoveError(result.error || 'This key is off for now, but we couldn’t save that. Try again in a minute.');
       if (issued?.proxyUrl.includes(prefix)) setIssued(null);
+      if (!result.pending) void dropProxyKey(savedPrefixFor(k, saved) ?? prefix).catch(() => {});
       const remaining = await refresh();
       await setByok(remaining.some((key) => !key.pending));
     } catch (e) {
@@ -151,7 +164,7 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, issued, setIssued, onKeys,
         {issued && providerTab(issued.provider) !== tab && (
           <Banner variant="info" icon="check">
             <div style={{ display: 'grid', gap: 8 }}>
-              <span>Key ending {issued.keyHint} connected. Point your agent at this URL. It&rsquo;s shown once, so copy it now.</span>
+              <span>Key ending {issued.keyHint} connected. Point your agent at this URL. {issued.saved ? 'It stays with the key below.' : 'It’s shown once, so copy it now.'}</span>
               <CopyChip text={issued.proxyUrl} label="Copy the proxy URL" />
               <CopyChip text={issuedEnvHint(issued.provider, issued.proxyUrl)} label="Copy the environment line" />
               <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{KEY_HEADER_LINE}</span>
@@ -166,15 +179,18 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, issued, setIssued, onKeys,
           <ul className="wr-key-list">
             {keys.map((k) => (
               <li key={`${k.wrKey}-${k.createdAt}`}>
-                <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600 }}>{PROVIDER_LABELS[k.provider] ?? k.provider}</span>
-                <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>key ending {k.keyHint}</span>
-                <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>added {fmtDay(k.createdAt)}</span>
-                <KeyScopeNote agentId={k.agentId} />
-                <span className="wr-key-endpoint" style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }} title={k.endpoint}>{k.endpoint ?? ''}</span>
-                {k.pending && <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Off, saving&hellip;</span>}
-                {k.pending
-                  ? <Button size={28} disabled={removeBusy} onClick={() => void disconnect(k)} style={{ marginLeft: 'auto' }}>Try again</Button>
-                  : <Button variant="danger" size={28} className="wr-btn--outline-bad" disabled={removeBusy} onClick={() => setRemoving(k)} style={{ marginLeft: 'auto' }}>Remove&hellip;</Button>}
+                <div className="wr-key-row">
+                  <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600 }}>{PROVIDER_LABELS[k.provider] ?? k.provider}</span>
+                  <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>key ending {k.keyHint}</span>
+                  <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>added {fmtDay(k.createdAt)}</span>
+                  <KeyScopeNote agentId={k.agentId} />
+                  <span className="wr-key-endpoint" style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }} title={k.endpoint}>{k.endpoint ?? ''}</span>
+                  {k.pending && <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Off, saving&hellip;</span>}
+                  {k.pending
+                    ? <Button size={28} disabled={removeBusy} onClick={() => void disconnect(k)} style={{ marginLeft: 'auto' }}>Try again</Button>
+                    : <Button variant="danger" size={28} className="wr-btn--outline-bad" disabled={removeBusy} onClick={() => setRemoving(k)} style={{ marginLeft: 'auto' }}>Remove&hellip;</Button>}
+                </div>
+                {!k.pending && <ProxyUrlLine k={k} savedPrefix={savedPrefixFor(k, saved)} preview={!!previewKeys} />}
               </li>
             ))}
           </ul>
@@ -200,9 +216,54 @@ function ByokCard({ apiKey, fleetId, fleetToken, tab, issued, setIssued, onKeys,
         preview={!!previewKeys}
         open={replacing}
         onClose={() => setReplacing(false)}
-        onDone={(result) => { setReplacing(false); setIssued(null); setReplaced(result); void refresh().catch(() => {}); }}
+        onDone={(result) => {
+          setReplacing(false); setIssued(null); setReplaced(result); void refresh().catch(() => {});
+          // Old URLs are gone; the new ones are revealable when the dashboard saved them.
+          setSaved(() => (result.proxyKeysSaved ? result.proxyKeys.flatMap((k) => (k.wrKey ? [k.wrKey.slice(0, 22)] : [])) : []));
+        }}
       />
     </section>
+  );
+}
+
+/**
+ * A connected key's proxy URL: hidden until Reveal, then the URL and its
+ * setup line, each with Copy. A key connected before URLs were saved has none
+ * to show.
+ */
+function ProxyUrlLine({ k, savedPrefix, preview }: { k: ProviderKey; savedPrefix: string | null; preview: boolean }) {
+  const [proxyKey, setProxyKey] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const what = `${PROVIDER_LABELS[k.provider] ?? k.provider} key ending ${k.keyHint}`;
+  // Connected before URLs were saved: the setup under the keys says it was shown once and how to get a new one.
+  if (!savedPrefix) return null;
+  async function reveal() {
+    if (proxyKey) { setProxyKey(null); return; }
+    setBusy(true); setError('');
+    try {
+      const key = preview ? `${savedPrefix}${'0'.repeat(24)}` : await revealProxyKey(savedPrefix!);
+      if (key) setProxyKey(key);
+      else setError('Couldn’t load this proxy URL. Try again in a minute.');
+    } catch {
+      setError('Couldn’t load this proxy URL. Try again in a minute.');
+    } finally {
+      setBusy(false);
+    }
+  }
+  const url = proxyKey ? `${PROXY_ORIGIN}/${proxyKey}` : '';
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 8 }}>
+      <div className="wr-key-url">
+        <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Proxy URL</span>
+        <code className="wr-key-field">{proxyKey ? url : maskProxyUrl(PROXY_ORIGIN, savedPrefix)}</code>
+        <Button size={28} onClick={() => void reveal()} aria-pressed={!!proxyKey} busy={busy} busyLabel="Loading…" aria-label={`${proxyKey ? 'Hide' : 'Reveal'} the proxy URL for the ${what}`}>{proxyKey ? 'Hide' : 'Reveal'}</Button>
+        {/* Reveal first, as with the fleet key: copying a secret you can't see is easy to do by accident. */}
+        <CopyValueButton text={url} what={`the proxy URL for the ${what}`} disabled={!proxyKey} title={proxyKey ? undefined : 'Reveal the URL to copy it'} />
+      </div>
+      {proxyKey && <CopyChip text={issuedEnvHint(k.provider, url)} label={`Copy the setup line for the ${what}`} />}
+      {error && <p role="alert" style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--bad)' }}>{error}</p>}
+    </div>
   );
 }
 
@@ -487,9 +548,11 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, no
   // with the issued URL, and it survives the card unmounting on a tab change.
   const [issued, setIssued] = useState<IssuedUrl | null>(null);
   const [keys, setKeys] = useState<ProviderKey[] | null>(previewKeys ?? null);
+  // Prefixes of the keys whose proxy URL the dashboard saved. The preview shows its first key as saved.
+  const [saved, setSaved] = useState<string[]>(previewKeys?.[0] ? [keyPrefix(previewKeys[0])] : []);
   // After a rotation the cards are hidden until the reload, so nothing is said about their URLs.
   const roleMode = tab === 'aws' && bedrockMode === 'role';
-  const urlState: ProxyUrlState = rotated ? { kind: 'none' } : proxyUrlState(tab, issued, keys);
+  const urlState: ProxyUrlState = rotated ? { kind: 'none' } : proxyUrlState(tab, issued, keys, saved);
 
   useEffect(() => {
     // Hand the fresh fleet token to server-side custody: POST it to the
@@ -546,7 +609,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, no
                   mode the section is hidden, not unmounted: it may hold new URLs that are shown only once. */}
               {!rotated && (
                 <div hidden={roleMode}>
-                  <ByokCard apiKey={apiKey} fleetId={fleetId} fleetToken={fleetToken} tab={tab} issued={issued} setIssued={setIssued} onKeys={setKeys} previewKeys={previewKeys} />
+                  <ByokCard apiKey={apiKey} fleetId={fleetId} fleetToken={fleetToken} tab={tab} issued={issued} setIssued={setIssued} onKeys={setKeys} saved={saved} setSaved={setSaved} previewKeys={previewKeys} />
                 </div>
               )}
 
@@ -587,7 +650,7 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, no
 
           {!rotated && roleMode && <BedrockRoleCard apiKey={apiKey} fleetId={fleetId} fleetToken={fleetToken} />}
 
-          <SettingsCard id="fleet-key" title="Your WhiteRoom fleet key" sub="For CLI commands and API requests" right={!rotated ? <Button variant="danger" className="wr-btn--outline-bad" onClick={() => setRotating(true)}>Rotate&hellip;</Button> : undefined}>
+          <SettingsCard id="fleet-key" title="Your WhiteRoom fleet key" sub="Only for CLI commands and API requests. Your agents use a proxy URL, not this key." right={!rotated ? <Button variant="danger" className="wr-btn--outline-bad" onClick={() => setRotating(true)}>Rotate&hellip;</Button> : undefined}>
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 10 }}>
               {rotated && <RotationResult result={rotated} onDismiss={() => window.location.reload()} />}
               {/* After a rotation the old key is dead: only the new one, in the banner, is offered. */}
@@ -649,7 +712,10 @@ function proxyUrlStepLabel(urlState: ProxyUrlState): string {
 function UrlHint({ urlState }: { urlState: ProxyUrlState }) {
   if (urlState.kind === 'none') return null;
   if (urlState.kind === 'issued') {
-    return <Banner variant="info" icon="check">Key ending {urlState.issued.keyHint} connected. Set this where your agent runs. It&rsquo;s shown once, so copy it now.</Banner>;
+    return <Banner variant="info" icon="check">Key ending {urlState.issued.keyHint} connected. Set this where your agent runs. {urlState.issued.saved ? 'You can see it again any time under Provider keys.' : 'It’s shown once, so copy it now.'}</Banner>;
+  }
+  if (urlState.kind === 'saved') {
+    return <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>Your proxy URL is with your key under <Below to="provider-keys">Provider keys</Below>. Choose Reveal, then set it where your agent runs.</p>;
   }
   return (
     <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>

@@ -12,7 +12,7 @@ import { db } from '@/lib/db';
 // the column and user, so an envelope can't be moved to another row's column
 // or account. Envelope: "v1:" + base64(iv | tag | ciphertext).
 
-export type CredColumn = 'users.api_key' | 'users.fleet_token' | 'user_fleets.fleet_token';
+export type CredColumn = 'users.api_key' | 'users.fleet_token' | 'user_fleets.fleet_token' | 'proxy_keys.proxy_key';
 
 const VERSION = 'v1:';
 
