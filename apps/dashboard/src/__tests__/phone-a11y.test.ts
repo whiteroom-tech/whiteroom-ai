@@ -24,6 +24,7 @@ vi.mock('@/lib/organization-actions', () => ({ myOrganizationSummary: async () =
 vi.mock('@/lib/account', () => ({ getAccountClosing: async () => null, cancelAccountDeletion: async () => ({ ok: true }) }));
 
 const { PhoneTabBar, TABS, MORE } = await import('@/components/PhoneTabBar');
+const { NAV } = await import('@/components/nav-items');
 const { AppShell } = await import('@/components/AppShell');
 const { SegmentedControl } = await import('@whiteroom/ui');
 const { AgentActions } = await import('@/components/home/AgentActions');
@@ -39,8 +40,10 @@ const render = async (node: React.ReactElement) => { await act(async () => { roo
 
 describe('phone tab bar', () => {
   it('has the four everyday pages and More for the rest', () => {
-    expect(TABS.map((t) => t.label)).toEqual(['Home', 'Performance', 'Runs', 'Controls']);
+    expect(TABS.map((t) => t.label)).toEqual(['Home', 'Controls', 'Performance', 'Runs']);
     expect(MORE.map((t) => t.label)).toEqual(['Sandbox', 'Fleet key', 'Settings']);
+    // Same order as the sidebar, so a page sits in the same place on every screen size.
+    expect([...TABS, ...MORE].map((t) => t.key)).toEqual(NAV.flatMap((g) => g.items).map((i) => i.key));
   });
 
   it('marks the page you are on, and More for a page in the menu', async () => {
