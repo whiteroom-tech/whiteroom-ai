@@ -24,19 +24,20 @@ interface NavItem {
   also?: string[];
 }
 
-export const NAV: { group: string; items: NavItem[] }[] = [
+/** The sidebar's groups, top to bottom. The first has no heading: the two pages people open most. */
+export const NAV: { group: string | null; items: NavItem[] }[] = [
   {
-    group: 'Monitor',
+    group: null,
     items: [
       { key: 'home', href: ROUTES.home, label: 'Home', tip: 'Does anything need you, and what is the fleet doing right now', also: ['/fleet'] },
-      { key: 'performance', href: ROUTES.performance, label: 'Performance', tip: 'Cost, savings, errors and unusual behaviour over time' },
-      { key: 'runs', href: ROUTES.runs, label: 'Runs', tip: 'Every stretch of work by every agent, and what happened in it' },
+      { key: 'controls', href: ROUTES.controls, label: 'Controls', tip: 'Rules for your agents, and what they do when one is broken' },
     ],
   },
   {
-    group: 'Govern',
+    group: 'Monitor',
     items: [
-      { key: 'controls', href: ROUTES.controls, label: 'Controls', tip: 'Rules for your agents, and what they do when one is broken' },
+      { key: 'performance', href: ROUTES.performance, label: 'Performance', tip: 'Cost, savings, errors and unusual behaviour over time' },
+      { key: 'runs', href: ROUTES.runs, label: 'Runs', tip: 'Every stretch of work by every agent, and what happened in it' },
     ],
   },
   {
