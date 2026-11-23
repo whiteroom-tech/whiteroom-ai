@@ -5,8 +5,11 @@ import { usePathname } from 'next/navigation';
 import { isNavActive } from '@/lib/routes';
 import { NAV, NavIcon, type NavKey } from '@/components/nav-items';
 
-/** On phones, the four pages people check most sit in the tab bar; More opens the menu with the rest. */
-export const TAB_KEYS: readonly NavKey[] = ['home', 'performance', 'runs', 'controls'];
+/**
+ * On phones, the four pages people check most sit in the tab bar, in the
+ * sidebar's order; More opens the menu with the rest.
+ */
+export const TAB_KEYS: readonly NavKey[] = ['home', 'controls', 'performance', 'runs'];
 const ITEMS = NAV.flatMap((g) => g.items);
 export const TABS = TAB_KEYS.map((k) => ITEMS.find((i) => i.key === k)!);
 export const MORE = ITEMS.filter((i) => !TAB_KEYS.includes(i.key));
