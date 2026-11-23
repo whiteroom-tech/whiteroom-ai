@@ -161,7 +161,9 @@ export function RotationResult({ result, onDismiss }: { result: Extract<Credenti
       <div style={{ display: 'grid', gap: 8 }}>
         <span>
           {result.apiKey ? 'Your fleet key is rotated. ' : 'Your proxy URLs are replaced. '}
-          These are shown once, so copy them now and update your agents.
+          {result.proxyKeysSaved && !result.apiKey
+            ? 'Update your agents with the new ones. You can see them again any time under Provider keys.'
+            : 'These are shown once, so copy them now and update your agents.'}
         </span>
         {result.notSaved && <strong>Your new key couldn’t be saved to your account, so this is the only copy. Copy it before you leave this page.</strong>}
         {result.apiKey && <CopyChip text={result.apiKey} display="New fleet key (hidden)" label="Copy the new fleet key" />}

@@ -65,6 +65,36 @@ describe('rotateApiKey', () => {
     expect(mocks.cookie).toHaveBeenCalledWith('wr_new');
   });
 
+  it('a rotation drops the saved proxy URLs and saves the new ones encrypted', async () => {
+    fetchMock.mockResolvedValue(Response.json({ success: true, fleetToken: 'wr_new', proxyKeys: NEW_KEYS, disconnected: [] }));
+    const result = await rotateApiKey({ disconnect: [], reissueCloudIdentityKeys: false });
+    expect(result).toMatchObject({ ok: true, proxyKeysSaved: true });
+    expect(updates().map(([sql]) => String(sql))).toContain('DELETE FROM proxy_keys WHERE fleet_id = $1');
+    const insert = mocks.query.mock.calls.find(([sql]) => String(sql).startsWith('INSERT INTO proxy_keys'))!;
+    expect(insert[1].slice(0, 3)).toEqual(['u1', 'f1', 'sk-wr-aaaaaaaaaaaaaaaa']);
+    expect(String(insert[1][3])).toMatch(/^v1:/);
+  });
+
+  it('a rotation whose new proxy URLs can’t be saved is still reported, as shown once', async () => {
+    fetchMock.mockResolvedValue(Response.json({ success: true, fleetToken: 'wr_new', proxyKeys: NEW_KEYS, disconnected: [] }));
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (String(sql).startsWith('SELECT')) return { rows: [{ fleet_id: 'f1', fleet_token: null, fleet_token_enc: sealCred('users.fleet_token', 'u1', 'wr_old') }] };
+      if (/proxy_keys/.test(String(sql))) throw new Error('relation "proxy_keys" does not exist');
+      return { rows: [], rowCount: 1 };
+    });
+    const result = await rotateApiKey({ disconnect: [], reissueCloudIdentityKeys: false });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.apiKey).toMatch(/^sk-wr-[0-9a-f]{64}$/);
+    expect(result.proxyKeys).toEqual(NEW_KEYS);
+    expect(result).not.toHaveProperty('proxyKeysSaved');
+    expect(result).not.toHaveProperty('notSaved');
+  });
+
+  it('a rotation that issued no proxy URLs doesn’t say any were saved', async () => {
+    fetchMock.mockResolvedValue(Response.json({ success: true, fleetToken: 'wr_new', proxyKeys: [], disconnected: [] }));
+    expect(await rotateApiKey({ disconnect: [], reissueCloudIdentityKeys: false })).not.toHaveProperty('proxyKeysSaved');
+  });
+
   it('asks for separate consent for cloud-identity keys, and saves nothing until given', async () => {
     const cloud = [{ prefix: 'sk-wr-dddddddddddddddd', provider: 'bedrock-sigv4', keyHint: 'none', cloudIdentity: true }];
     fetchMock.mockResolvedValueOnce(Response.json({ error: 'confirm', cloudIdentityKeys: cloud }, { status: 409 }));
@@ -173,7 +203,7 @@ describe('rotateApiKey when something after the engine fails', () => {
       return { rows: [], rowCount: 1 };
     });
     expect(await run()).toMatchObject({ ok: true });
-    expect(mocks.query.mock.calls.filter(([q]) => String(q).startsWith('DELETE'))).toHaveLength(3);
+    expect(mocks.query.mock.calls.filter(([q]) => String(q).startsWith('DELETE FROM user_fleets'))).toHaveLength(3);
   });
 
   it('a 200 without a token keeps the proxy URLs it did return', async () => {
@@ -220,13 +250,27 @@ describe('disconnect list', () => {
 });
 
 describe('replaceProxyUrls', () => {
-  it('replaces the proxy URLs only: nothing saved, the session untouched', async () => {
+  it('replaces the proxy URLs only: the account’s key and session are untouched', async () => {
     fetchMock.mockResolvedValue(Response.json({ success: true, proxyKeys: NEW_KEYS, disconnected: [] }));
     const result = await replaceProxyUrls({ disconnect: [], reissueCloudIdentityKeys: true });
-    expect(result).toEqual({ ok: true, proxyKeys: NEW_KEYS, disconnected: [] });
+    expect(result).toEqual({ ok: true, proxyKeys: NEW_KEYS, disconnected: [], proxyKeysSaved: true });
     expect(sent()[0].body).toEqual({ action: 'rotate_proxy_keys', disconnect: [], reissue_cloud_identity_keys: true, fleet_id: 'f1' });
-    expect(updates()).toEqual([]);
+    // Only the saved proxy URLs change: the old copies go, the new one is saved encrypted.
+    expect(updates().map(([sql]) => String(sql))).toEqual(['DELETE FROM proxy_keys WHERE fleet_id = $1']);
+    const insert = mocks.query.mock.calls.find(([sql]) => String(sql).startsWith('INSERT INTO proxy_keys'))!;
+    expect(insert[1].slice(0, 3)).toEqual(['u1', 'f1', 'sk-wr-aaaaaaaaaaaaaaaa']);
+    expect(String(insert[1][3])).toMatch(/^v1:/);
     expect(mocks.cookie).not.toHaveBeenCalled();
+  });
+
+  it('new URLs that couldn’t be saved are still returned, as shown once', async () => {
+    fetchMock.mockResolvedValue(Response.json({ success: true, proxyKeys: NEW_KEYS, disconnected: [] }));
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (String(sql).startsWith('SELECT')) return { rows: [{ fleet_id: 'f1', fleet_token: 'wr_old', fleet_token_enc: null }] };
+      if (/proxy_keys/.test(String(sql))) throw new Error('relation "proxy_keys" does not exist');
+      return { rows: [], rowCount: 1 };
+    });
+    expect(await replaceProxyUrls({ disconnect: [], reissueCloudIdentityKeys: false })).toEqual({ ok: true, proxyKeys: NEW_KEYS, disconnected: [] });
   });
 
   it('a request that went out unanswered says the outcome is unknown', async () => {
