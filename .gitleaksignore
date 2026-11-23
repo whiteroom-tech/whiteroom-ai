@@ -15,3 +15,6 @@ e04e7e26e3ce3b0a3a9102336b57ffe079e4f312:packages/cli/test/fixtures/contract.jso
 fa71527e8949fbe43fd7eaa6334e912cb22f2f06:apps/dashboard/src/__tests__/sandbox-practice-inpage.test.ts:generic-api-key:33
 fa71527e8949fbe43fd7eaa6334e912cb22f2f06:apps/dashboard/src/__tests__/sandbox-practice-inpage.test.ts:generic-api-key:94
 fa71527e8949fbe43fd7eaa6334e912cb22f2f06:apps/dashboard/src/app/dev/sandbox-v2/states.ts:generic-api-key:118
+# False positive: a placeholder key prefix ("sk-wr-1a2b3c4d5e6f7a8b...") in the /dev/fleet-key preview on the open PR #468.
+# Checked: an obvious sample value, not a credential. Here because CI scans every branch, so this PR's scan sees it.
+051e15eee0d08457426602b3ac546ba9689eb0be:apps/dashboard/src/app/dev/fleet-key/preview.tsx:generic-api-key:9

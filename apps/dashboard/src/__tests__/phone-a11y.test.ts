@@ -73,6 +73,20 @@ describe('phone menu (AppShell)', () => {
   const more = () => el.querySelector('.wr-tabbar button') as HTMLButtonElement;
   const shell = () => h(AppShell, null, h('div', null, 'page'));
 
+  it('lists Home and Controls first with no heading, then Monitor and Setup', async () => {
+    nav.path = '/home';
+    await render(shell());
+    const groups = [...el.querySelectorAll('#wr-main-nav nav > div')].map((g) => ({
+      heading: g.querySelector('.wr-sidebar__eyebrow')?.textContent ?? null,
+      links: [...g.querySelectorAll('a')].map((a) => a.textContent),
+    }));
+    expect(groups).toEqual([
+      { heading: null, links: ['Home', 'Controls'] },
+      { heading: 'Monitor', links: ['Performance', 'Runs'] },
+      { heading: 'Setup', links: ['Sandbox', 'Fleet key', 'Settings'] },
+    ]);
+  });
+
   it('More opens the menu; Escape, the scrim and going to a page close it', async () => {
     nav.path = '/home';
     await render(shell());

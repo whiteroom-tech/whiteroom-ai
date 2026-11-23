@@ -54,8 +54,8 @@ export function Sidebar() {
 
       <nav aria-label="Pages" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         {NAV.map(({ group, items }) => (
-          <div key={group} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <div className="wr-sidebar__eyebrow">{group}</div>
+          <div key={group ?? 'top'} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {group && <div className="wr-sidebar__eyebrow">{group}</div>}
             {items.map((item) => {
               const active = isNavActive(pathname, item.href, item.also);
               return (
