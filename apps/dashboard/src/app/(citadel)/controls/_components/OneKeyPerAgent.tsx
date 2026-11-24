@@ -22,16 +22,20 @@ export function OneKeyPerAgent({ fleetId, authKey, onAuthError }: { fleetId: str
   const [data, setData] = useState<AgentKeyRuleResult | null>(null);
   const [names, setNames] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const load = useCallback(async () => {
+  // Returns whether it read. A failed read keeps what the card showed, so a
+  // blip after a change doesn't hide the switch; the first read failing
+  // leaves it hidden (an engine without the rule).
+  const load = useCallback(async (): Promise<boolean> => {
     try {
       const [rule, named] = await Promise.all([agentKeyRuleGet(fleetId, authKey), agentNamesGet(fleetId, authKey)]);
       setData(rule);
       setNames(named ?? {});
+      return true;
     } catch (e) {
       if (isAuthError(e)) onAuthError?.();
-      setData(null);
+      return false;
     }
   }, [fleetId, authKey, onAuthError]);
 
@@ -43,11 +47,15 @@ export function OneKeyPerAgent({ fleetId, authKey, onAuthError }: { fleetId: str
     setNote(null);
     try {
       await agentKeyRuleSet(fleetId, mode, authKey);
-      await load();
+      // Saved: show the new mode even if the counts can't be read just now.
+      if (!(await load())) {
+        setData((d) => (d ? { ...d, mode } : d));
+        setNote({ ok: true, text: 'Saved. The counts couldn’t be refreshed; reload the page to see them.' });
+      }
     } catch (e) {
-      setNote(e instanceof WhiteRoomApiError && e.reason ? e.reason
+      setNote({ ok: false, text: e instanceof WhiteRoomApiError && e.reason ? e.reason
         : controlFailure(e) === 'refused' && e instanceof Error ? e.message
-        : 'Couldn’t change it. Nothing changed. Try again.');
+        : 'Couldn’t change it. Nothing changed. Try again.' });
     } finally {
       setSaving(false);
     }
@@ -75,7 +83,7 @@ export function OneKeyPerAgent({ fleetId, authKey, onAuthError }: { fleetId: str
           options={[{ value: 'off', label: 'Off' }, { value: 'watch', label: 'Watch' }]}
         />
       </div>
-      {note && <p className="ctl-cap" role="alert" style={{ margin: 0, color: 'var(--bad)' }}>{note}</p>}
+      {note && <p className="ctl-cap" role={note.ok ? 'status' : 'alert'} style={{ margin: 0, color: note.ok ? 'var(--tx2)' : 'var(--bad)' }}>{note.text}</p>}
       {!s.recorded ? (
         <p className="ctl-cap" style={{ margin: 0 }}>Calls aren’t recorded with their key yet. Counts start after the next update.</p>
       ) : n === 0 ? (
