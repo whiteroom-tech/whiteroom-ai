@@ -137,7 +137,7 @@ export function OneKeyPerAgentView({ data, names, note, onChange }: { data: Agen
                   <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
                     <Link href={`/agents/${encodeURIComponent(a.agentId)}`} className="wr-link">{d.name ?? <span style={{ fontFamily: FONT_MONO }}>{d.id}</span>}</Link>
                     {d.name && <span className="wr-agent-title__id">{d.id}</span>}
-                    <span className="ctl-cap"> · {a.unboundCredentials.map(credentialWords).join(', ')}</span>
+                    {a.unboundCredentials.length > 0 && <span className="ctl-cap"> · {a.unboundCredentials.map(credentialWords).join(', ')}</span>}
                   </span>
                   <span className="ctl-cap">{a.unboundCalls.toLocaleString('en-US')}</span>
                 </li>
