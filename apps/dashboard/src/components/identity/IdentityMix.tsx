@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { Panel } from '@whiteroom/ui';
-import { identityMix } from '@/lib/whiteroom/client';
+import { identityMix, isAuthError } from '@/lib/whiteroom/client';
 import { identityLines, percentText, type IdentityLine, type IdentityMixRow } from '@/lib/agent-identity';
 
 export type MixState = { kind: 'loading' } | { kind: 'ok'; lines: IdentityLine[] } | { kind: 'failed' };
 
 /** How a run's or an agent's calls were identified, read again when the run or agent changes. Hidden on engines without identity_mix. */
-function useIdentityMix(fleetId: string, target: { agentId: string } | { runId: string }, authKey?: string, preview?: IdentityMixRow[]): MixState {
+function useIdentityMix(fleetId: string, target: { agentId: string } | { runId: string }, authKey?: string, preview?: IdentityMixRow[], onAuthError?: (msg: string) => void): MixState {
   const runId = 'runId' in target ? target.runId : null;
   const agentId = 'agentId' in target ? target.agentId : null;
   const [state, setState] = useState<MixState>(preview ? { kind: 'ok', lines: identityLines(preview) } : { kind: 'loading' });
@@ -18,16 +18,21 @@ function useIdentityMix(fleetId: string, target: { agentId: string } | { runId: 
     setState({ kind: 'loading' });
     identityMix(fleetId, runId !== null ? { runId } : { agentId: agentId! }, authKey).then(
       (rows) => { if (live) setState({ kind: 'ok', lines: identityLines(rows) }); },
-      () => { if (live) setState({ kind: 'failed' }); },
+      (e) => {
+        if (!live) return;
+        setState({ kind: 'failed' });
+        // An expired session signs out, as every other read on the page does.
+        if (isAuthError(e)) onAuthError?.('Session expired. Please sign in again.');
+      },
     );
     return () => { live = false; };
-  }, [fleetId, runId, agentId, authKey, preview]);
+  }, [fleetId, runId, agentId, authKey, preview, onAuthError]);
   return state;
 }
 
 /** Agent page: "How it connects" over the last 7 days, each way with its share of calls. */
-export function AgentIdentityPanel({ fleetId, agentId, authKey, preview }: { fleetId: string; agentId: string; authKey?: string; preview?: IdentityMixRow[] }) {
-  return <AgentIdentityView state={useIdentityMix(fleetId, { agentId }, authKey, preview)} />;
+export function AgentIdentityPanel({ fleetId, agentId, authKey, preview, onAuthError }: { fleetId: string; agentId: string; authKey?: string; preview?: IdentityMixRow[]; onAuthError?: (msg: string) => void }) {
+  return <AgentIdentityView state={useIdentityMix(fleetId, { agentId }, authKey, preview, onAuthError)} />;
 }
 
 /** The panel for a read: hidden when it failed (an engine without identity_mix). */
@@ -54,8 +59,8 @@ export function AgentIdentityView({ state }: { state: MixState }) {
 }
 
 /** Run page: one line, "Identity: Own key", or each way with its share when the run mixed them. */
-export function RunIdentityLine({ fleetId, runId, authKey }: { fleetId: string; runId: string; authKey?: string }) {
-  const state = useIdentityMix(fleetId, { runId }, authKey);
+export function RunIdentityLine({ fleetId, runId, authKey, onAuthError }: { fleetId: string; runId: string; authKey?: string; onAuthError?: (msg: string) => void }) {
+  const state = useIdentityMix(fleetId, { runId }, authKey, undefined, onAuthError);
   if (state.kind !== 'ok') return null;
   const text = runIdentityText(state.lines);
   if (!text) return null;

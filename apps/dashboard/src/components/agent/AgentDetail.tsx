@@ -507,7 +507,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
 
               <div className="wr-agent-col">
                 <RecentRuns agentId={agentId} state={runs} />
-                {!preview && <AgentIdentityPanel fleetId={fleetId} agentId={agentId} authKey={authKey} />}
+                {!preview && <AgentIdentityPanel fleetId={fleetId} agentId={agentId} authKey={authKey} onAuthError={onAuthError} />}
                 <Panel title="Recent activity" bodyPadding={0}>
                   <ActivityRows rows={activity} empty="Nothing yet for this agent." />
                 </Panel>

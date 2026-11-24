@@ -275,7 +275,7 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
               {s.wouldAct !== undefined && <> · {wouldActText(s.wouldAct)}</>}
               {s.outcome && <> · Job <strong>{s.outcome.toLowerCase()}</strong>, as your system reported</>}
             </p>
-            {!preview && <RunIdentityLine fleetId={fleetId} runId={runId} authKey={authKey} />}
+            {!preview && <RunIdentityLine fleetId={fleetId} runId={runId} authKey={authKey} onAuthError={onAuthError} />}
             {s.models.length > 0 && (
               <p className="wr-run-models">
                 {s.models.map((m, i) => <span key={m}>{i > 0 && ' · '}<span className="wr-run-summary__model">{m}</span></span>)}

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { SegmentedControl, FONT_MONO } from '@whiteroom/ui';
-import { agentKeyRuleGet, agentKeyRuleSet, agentNamesGet, controlFailure, isAuthError, WhiteRoomApiError } from '@/lib/whiteroom/client';
+import { agentKeyRuleGet, agentKeyRuleSet, agentNamesGet, changeFailureText, isAuthError } from '@/lib/whiteroom/client';
 import { agentDisplay, credentialWords, type AgentKeyMode, type AgentKeyRuleResult } from '@/lib/agent-identity';
 import { fmtDay } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
@@ -67,9 +67,7 @@ export async function changeAgentKeyMode(
   try {
     await set(fleetId, mode, authKey);
   } catch (e) {
-    return { keepMode: false, note: { ok: false, text: e instanceof WhiteRoomApiError && e.reason ? e.reason
-      : controlFailure(e) === 'refused' && e instanceof Error ? e.message
-      : 'Couldn’t change it. Nothing changed. Try again.' } };
+    return { keepMode: false, note: { ok: false, text: changeFailureText(e, 'Couldn’t change it. Nothing changed. Try again.') } };
   }
   if (await reload()) return { keepMode: false, note: null };
   return { keepMode: true, note: { ok: true, text: 'Saved. The counts couldn’t be refreshed; reload the page to see them.' } };
