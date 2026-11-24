@@ -52,8 +52,9 @@ export async function runEstimate(
       const run = await replayGet(fleetId, id, authKey);
       if (run.status === 'done' && run.result) return { result: run.result };
       if (run.status === 'failed') return { error: 'The estimate stopped before it finished. Try again.' };
-    } catch {
-      // A missed read is retried on the next poll.
+    } catch (e) {
+      // A reply this page can't read won't read on the next poll either; a missed read is retried.
+      if (e instanceof WhiteRoomApiError && e.status === 200) return { error: 'This page can’t read the estimate. Reload it and try again.' };
     }
   }
   return { error: 'The estimate is taking too long. Try again later.' };
@@ -70,7 +71,11 @@ export function ReplayEstimate({ fleetId, authKey, ruleType, params, appliesTo, 
 }) {
   const [state, setState] = useState<State>({ kind: 'idle' });
   const alive = useRef(true);
-  useEffect(() => () => { alive.current = false; }, []);
+  // Set on every mount: StrictMode mounts, cleans up and mounts again.
+  useEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
   if (!REPLAY_RULE_TYPES.has(ruleType)) return null;
 
   const current = JSON.stringify([params, appliesTo]);
@@ -82,6 +87,7 @@ export function ReplayEstimate({ fleetId, authKey, ruleType, params, appliesTo, 
   };
   // A result for settings since changed no longer applies.
   const shown = state.kind === 'done' && state.for !== current ? { kind: 'idle' as const } : state;
+  const partial = shown.kind === 'done' ? partialLine(shown.result.partial) : null;
 
   return (
     <div className="wr-replay" aria-live="polite">
@@ -94,7 +100,7 @@ export function ReplayEstimate({ fleetId, authKey, ruleType, params, appliesTo, 
       {shown.kind === 'done' && (
         <p className="wr-replay__line">
           {replayLine(shown.result)} <span className="wr-replay__note">Estimate.</span>
-          {partialLine(shown.result.partial) && <span className="wr-replay__note"> {partialLine(shown.result.partial)}</span>}
+          {partial && <span className="wr-replay__note"> {partial}</span>}
         </p>
       )}
       {shown.kind === 'error' && <p className="wr-replay__line wr-replay__line--err">{shown.message}</p>}

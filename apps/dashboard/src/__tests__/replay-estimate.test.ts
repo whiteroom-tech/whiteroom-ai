@@ -35,7 +35,9 @@ describe('client calls', () => {
     fetchMock.mockResolvedValue(reply({ replay: run() }));
     await expect(replayGet('f1', 'rp_1', 'k')).resolves.toMatchObject({ status: 'done', result: { matched: 3 } });
     expect(sent()).toEqual({ action: 'replay_get', fleet_id: 'f1', replay_id: 'rp_1' });
-    for (const bad of [{ replay: null }, { replay: run({ status: 'odd' }) }, { replay: run({ result: null }) }, { replay: run({ result: { matched: 'x' } }) }]) {
+    for (const bad of [{ replay: null }, { replay: run({ status: 'odd' }) }, { replay: run({ result: null }) }, { replay: run({ result: { matched: 'x' } }) },
+      { replay: run({ result: result({ records: 'x' as never }) }) }, { replay: run({ result: { ...result(), supported: undefined } }) },
+      { replay: run({ result: result({ partial: [null as never] }) }) }, { replay: run({ result: result({ partial: [{ calls: 1 } as never] }) }) }]) {
       fetchMock.mockResolvedValue(reply(bad));
       await expect(replayGet('f1', 'rp_1', 'k')).rejects.toBeInstanceOf(WhiteRoomApiError);
     }
@@ -90,8 +92,14 @@ describe('runEstimate', () => {
     fetchMock.mockResolvedValueOnce(reply({ supported: false }));
     await expect(runEstimate('f1', rule, 'k', { sleep })).resolves.toEqual({ error: 'This kind of rule can’t be estimated yet.' });
     let t = 0;
-    fetchMock.mockResolvedValueOnce(reply({ success: true, supported: true, replay_id: 'rp_1' })).mockResolvedValue(reply({ replay: run({ status: 'running', result: null }) }));
+    fetchMock.mockResolvedValueOnce(reply({ success: true, supported: true, replay_id: 'rp_1' })).mockImplementation(async () => reply({ replay: run({ status: 'running', result: null }) }));
     await expect(runEstimate('f1', rule, 'k', { sleep, now: () => (t += 60_000) })).resolves.toEqual({ error: 'The estimate is taking too long. Try again later.' });
+  });
+
+  it('stops at once on a reply it can’t read, instead of asking again until it times out', async () => {
+    fetchMock.mockResolvedValueOnce(reply({ success: true, supported: true, replay_id: 'rp_1' })).mockResolvedValue(reply({ replay: run({ result: { matched: 1 } }) }));
+    await expect(runEstimate('f1', rule, 'k', { sleep })).resolves.toEqual({ error: 'This page can’t read the estimate. Reload it and try again.' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('stops quietly once the editor is closed', async () => {

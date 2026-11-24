@@ -892,9 +892,13 @@ export async function replayStart(fleetId: string, rule: { ruleType: string; par
 export async function replayGet(fleetId: string, replayId: string, key?: string): Promise<ReplayRun> {
   const res = await apiCall<{ replay?: ReplayRun | null }>({ action: 'replay_get', fleet_id: fleetId, replay_id: replayId }, key);
   const r = res?.replay;
-  const okResult = (x: unknown) => x === null || (typeof x === 'object' && x !== null
-    && typeof (x as ReplayResult).evaluated === 'number' && typeof (x as ReplayResult).matched === 'number'
-    && ((x as ReplayResult).partial === null || Array.isArray((x as ReplayResult).partial)));
+  const okResult = (x: unknown) => {
+    if (x === null) return true;
+    const v = x as ReplayResult | null;
+    return typeof v === 'object' && v !== null && v.supported === true
+      && typeof v.records === 'number' && typeof v.evaluated === 'number' && typeof v.matched === 'number'
+      && (v.partial === null || (Array.isArray(v.partial) && v.partial.every((p) => p !== null && typeof p === 'object' && typeof p.kind === 'string')));
+  };
   if (!r || typeof r.id !== 'string' || !['running', 'done', 'failed'].includes(r.status) || !okResult(r.result ?? null)) {
     throw new WhiteRoomApiError('Unexpected replay_get reply', 200);
   }
