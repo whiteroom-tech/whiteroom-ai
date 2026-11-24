@@ -3,8 +3,11 @@
 // display-name rules the engine applies (agent_rename), so the form can say
 // what's wrong before sending.
 
-export type IdentityCredential = 'bound_key' | 'fleet_key' | 'none' | 'session' | 'not_recorded';
-export type IdentityNameSource = 'explicit' | 'inferred' | 'unresolved';
+export const IDENTITY_CREDENTIALS = ['bound_key', 'fleet_key', 'none', 'session', 'not_recorded'] as const;
+export const IDENTITY_NAME_SOURCES = ['explicit', 'inferred', 'unresolved'] as const;
+export const UNBOUND_CREDENTIALS = ['fleet_key', 'none', 'session', 'not_recorded'] as const;
+export type IdentityCredential = (typeof IDENTITY_CREDENTIALS)[number];
+export type IdentityNameSource = (typeof IDENTITY_NAME_SOURCES)[number];
 
 export interface IdentityMixRow {
   credential: IdentityCredential;

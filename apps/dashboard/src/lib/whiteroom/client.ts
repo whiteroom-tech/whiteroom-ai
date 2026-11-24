@@ -5,7 +5,7 @@
 //   - anything else (fleet tokens) -> Authorization: Bearer
 //   - no key -> unauthenticated (e.g. token_login)
 
-import type { AgentKeyMode, AgentKeyRuleResult, IdentityMixRow } from '@/lib/agent-identity';
+import { IDENTITY_CREDENTIALS, IDENTITY_NAME_SOURCES, UNBOUND_CREDENTIALS, type AgentKeyMode, type AgentKeyRuleResult, type IdentityMixRow } from '@/lib/agent-identity';
 import type {
   AuditExportPage,
   CallExportPage,
@@ -809,13 +809,27 @@ export async function agentRename(fleetId: string, agentId: string, name: string
 
 /** How an agent's calls were identified: one run (`runId`), or its last 7 days of production calls. */
 export async function identityMix(fleetId: string, target: { agentId: string } | { runId: string }, key?: string): Promise<IdentityMixRow[]> {
-  const res = await apiCall<{ rows?: IdentityMixRow[] }>({ action: 'identity_mix', fleet_id: fleetId, ...('runId' in target ? { run_id: target.runId } : { agent_id: target.agentId }) }, key);
-  return Array.isArray(res.rows) ? res.rows : [];
+  const res = await apiCall<{ rows?: unknown }>({ action: 'identity_mix', fleet_id: fleetId, ...('runId' in target ? { run_id: target.runId } : { agent_id: target.agentId }) }, key);
+  // A value this build doesn't know (a newer engine) reads as not known; a malformed row is left out.
+  return Array.isArray(res.rows) ? res.rows.flatMap((r) => {
+    const row = r as Partial<Record<keyof IdentityMixRow, unknown>> | null;
+    if (!row || typeof row.calls !== 'number' || !Number.isFinite(row.calls) || row.calls < 0) return [];
+    const credential = (IDENTITY_CREDENTIALS as readonly unknown[]).includes(row.credential) ? row.credential as IdentityMixRow['credential'] : 'none';
+    const nameSource = (IDENTITY_NAME_SOURCES as readonly unknown[]).includes(row.nameSource) && (IDENTITY_CREDENTIALS as readonly unknown[]).includes(row.credential) ? row.nameSource as IdentityMixRow['nameSource'] : 'unresolved';
+    return [{ credential, nameSource, calls: row.calls, lastAt: typeof row.lastAt === 'string' ? row.lastAt : null }];
+  }) : [];
 }
 
 /** "One key per agent": its mode, and the production calls that came in without the agent's own key. */
-export function agentKeyRuleGet(fleetId: string, key?: string): Promise<AgentKeyRuleResult> {
-  return apiCall<AgentKeyRuleResult>({ action: 'agent_key_rule_get', fleet_id: fleetId }, key);
+export async function agentKeyRuleGet(fleetId: string, key?: string): Promise<AgentKeyRuleResult> {
+  const res = await apiCall<AgentKeyRuleResult>({ action: 'agent_key_rule_get', fleet_id: fleetId }, key);
+  // A reply this build can't read is treated like an engine without the rule: the card stays hidden.
+  const s = res?.summary;
+  const ok = res && typeof res.applies === 'boolean' && (res.mode === 'off' || res.mode === 'watch')
+    && (s === null || (s && typeof s.unboundCalls === 'number' && Array.isArray(s.agents) && s.byCredential && typeof s.byCredential === 'object'
+      && s.agents.every((a) => a && typeof a.agentId === 'string' && typeof a.unboundCalls === 'number' && Array.isArray(a.unboundCredentials))));
+  if (!ok) throw new WhiteRoomApiError('Unexpected agent_key_rule_get reply', 200);
+  return { ...res, summary: s ? { ...s, agents: s.agents.map((a) => ({ ...a, unboundCredentials: a.unboundCredentials.filter((c) => (UNBOUND_CREDENTIALS as readonly string[]).includes(c)) })) } : null };
 }
 
 /** Switches "One key per agent". The owner's call (dashboard only on the engine). */
