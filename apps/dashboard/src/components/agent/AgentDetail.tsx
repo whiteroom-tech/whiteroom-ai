@@ -352,9 +352,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   const back = from === 'runs'
     ? <Link href={ROUTES.runs} className="wr-crumb">&larr; Runs</Link>
     : <Link href={ROUTES.home} className="wr-crumb">&larr; Home</Link>;
-  const title = name
-    ? <span>{name}<span className="wr-agent-title__id">{agentId}</span></span>
-    : <span style={{ fontFamily: FONT_MONO }}>{agentId}</span>;
+  const title = <AgentTitle agentId={agentId} name={name} />;
   // "← Home" sits on its own line above the title, as on the run page.
   const crumb = <div className="wr-agent-crumb">{back}</div>;
 
@@ -538,4 +536,11 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
       />
     </>
   );
+}
+
+/** The page title: the agent's display name with its id beside it, or the id alone (gap-closing spec A2). */
+export function AgentTitle({ agentId, name }: { agentId: string; name: string | null }) {
+  return name && name !== agentId
+    ? <span>{name}<span className="wr-agent-title__id">{agentId}</span></span>
+    : <span style={{ fontFamily: FONT_MONO }}>{agentId}</span>;
 }
