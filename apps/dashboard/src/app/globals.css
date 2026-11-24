@@ -1007,6 +1007,10 @@ section[aria-labelledby="run-what-happened"] .wr-panel__title, section[aria-labe
 .wr-score-table .is-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .wr-agent-health { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 0; font-size: var(--fs-sm); color: var(--tx2); }
 .wr-agent-health__label { font-weight: 600; color: var(--tx); }
+/* Agent page › How it connects (gap-closing spec 0.2). */
+.wr-identity-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.wr-identity-list__row { display: flex; justify-content: space-between; gap: 12px; font-size: var(--fs-md); }
+.wr-agent-title__id { font-family: var(--font-mono); color: var(--tx2); font-size: var(--fs-sm); font-weight: 400; margin-left: 8px; }
 .wr-agent-health[data-tone="warn"] .wr-agent-health__label { color: var(--warn); }
 .wr-agent-col { display: grid; gap: 16px; align-content: start; min-width: 0; }
 .wr-agent-cap { font-size: var(--fs-sm); font-weight: 500; color: var(--tx2); }

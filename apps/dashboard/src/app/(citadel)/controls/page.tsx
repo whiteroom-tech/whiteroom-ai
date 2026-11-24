@@ -18,6 +18,7 @@ import { RuleEditor, type SeenState } from "./_components/RuleEditor";
 import { AddRuleDialog } from "./_components/AddRuleDialog";
 import { RuleCategory } from "./_components/RuleCategory";
 import { ChoiceDialog } from "./_components/ChoiceDialog";
+import { OneKeyPerAgent } from "./_components/OneKeyPerAgent";
 import { useFleetAuth } from "@/hooks/useFleetAuth";
 import {
   WhiteRoomApiError, alertsGet, controlFailure, governanceCreateRule, governanceDeleteRule, governanceList, governanceUpdateRule, isAuthError,
@@ -1099,6 +1100,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                 )}
               </>
             )}
+
+            {listed && <OneKeyPerAgent fleetId={fleetId} authKey={authKey} onAuthError={onAuthError} />}
 
             <p className="ctl-cap" style={{ margin: 0 }}>Not covered: Claude Code signed in with OAuth.</p>
           </div>

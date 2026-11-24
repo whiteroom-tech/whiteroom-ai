@@ -5,6 +5,7 @@
 //   - anything else (fleet tokens) -> Authorization: Bearer
 //   - no key -> unauthenticated (e.g. token_login)
 
+import type { AgentKeyMode, AgentKeyRuleResult, IdentityMixRow } from '@/lib/agent-identity';
 import type {
   AuditExportPage,
   CallExportPage,
@@ -771,6 +772,45 @@ export async function agentBudgetSet(fleetId: string, agentId: string, budgetUsd
   requireSuccess(await apiCall<{ success?: boolean; error?: string }>({
     action: 'agent_budget_set', fleet_id: fleetId, agent_id: agentId, budget_usd: budgetUsd, ...(budgetTokens !== undefined && { budget_tokens: budgetTokens }),
   }, key));
+}
+
+// -- Agent identity (gap-closing spec A2, A3, 0.2) --
+
+/**
+ * Display names by agent id. Null from an engine without agent_names_get, or
+ * on an odd reply: pages then show ids, as before, and offer no renaming.
+ */
+export async function agentNamesGet(fleetId: string, key?: string): Promise<Record<string, string> | null> {
+  try {
+    const res = await apiCall<{ names?: unknown }>({ action: 'agent_names_get', fleet_id: fleetId }, key);
+    if (!res.names || typeof res.names !== 'object') return null;
+    return Object.fromEntries(Object.entries(res.names as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === 'string'));
+  } catch (e) {
+    if (isAuthError(e)) throw e;
+    return null;
+  }
+}
+
+/** Sets an agent's display name; null clears it. The owner's call (dashboard only on the engine). */
+export async function agentRename(fleetId: string, agentId: string, name: string | null, key?: string): Promise<string | null> {
+  const res = requireSuccess(await apiCall<{ success?: boolean; error?: string; name?: string | null }>({ action: 'agent_rename', fleet_id: fleetId, agent_id: agentId, name }, key));
+  return res.name ?? null;
+}
+
+/** How an agent's calls were identified: one run (`runId`), or its last 7 days of production calls. */
+export async function identityMix(fleetId: string, target: { agentId: string } | { runId: string }, key?: string): Promise<IdentityMixRow[]> {
+  const res = await apiCall<{ rows?: IdentityMixRow[] }>({ action: 'identity_mix', fleet_id: fleetId, ...('runId' in target ? { run_id: target.runId } : { agent_id: target.agentId }) }, key);
+  return Array.isArray(res.rows) ? res.rows : [];
+}
+
+/** "One key per agent": its mode, and the production calls that came in without the agent's own key. */
+export function agentKeyRuleGet(fleetId: string, key?: string): Promise<AgentKeyRuleResult> {
+  return apiCall<AgentKeyRuleResult>({ action: 'agent_key_rule_get', fleet_id: fleetId }, key);
+}
+
+/** Switches "One key per agent". The owner's call (dashboard only on the engine). */
+export async function agentKeyRuleSet(fleetId: string, mode: AgentKeyMode, key?: string): Promise<void> {
+  requireSuccess(await apiCall<{ success?: boolean; error?: string }>({ action: 'agent_key_rule_set', fleet_id: fleetId, mode }, key));
 }
 
 // -- Fleet governance rules (Controls page) --
