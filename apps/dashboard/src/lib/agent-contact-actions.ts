@@ -6,7 +6,7 @@
 import { auth } from '@/auth';
 import { controlAccessError } from '@/lib/control-auth';
 import { getFleetAuthCookie } from '@/lib/fleet-session';
-import { AGENT_ID, contactCandidates, isContactAllowed, storedContact, writeContact, type ContactPerson } from '@/lib/agent-contacts';
+import { AGENT_ID, clearStaleContact, contactCandidates, isContactAllowed, storedContact, writeContact, type ContactPerson } from '@/lib/agent-contacts';
 
 export type ContactView =
   | { ok: true; contact: ContactPerson | null; candidates: ContactPerson[] }
@@ -33,7 +33,7 @@ export async function agentContactView(fleetId: string, agentId: string): Promis
     const contact = candidates.find((c) => c.userId === stored) ?? null;
     // A contact who's no longer allowed (left the organization) is cleared
     // here as well as when a notice is sent, so the table never keeps them.
-    if (stored && !contact) await writeContact(fleetId, agentId, null, o.userId);
+    if (stored && !contact) await clearStaleContact(fleetId, agentId, stored);
     return { ok: true, candidates, contact };
   } catch {
     return { ok: false, error: 'Couldn’t load the contact. Try again.' };

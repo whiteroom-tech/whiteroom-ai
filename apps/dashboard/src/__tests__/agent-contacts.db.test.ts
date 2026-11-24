@@ -94,6 +94,14 @@ suite('agent contacts against Postgres', () => {
     expect(await contacts.storedContact('f1', 'a1')).toBeNull();
   });
 
+  it('clears a stale contact only if it is still the stored one', async () => {
+    await contacts.writeContact('f1', 'a1', 'owner', 'owner');
+    await contacts.clearStaleContact('f1', 'a1', 'mate');
+    expect(await contacts.storedContact('f1', 'a1')).toBe('owner');
+    await contacts.clearStaleContact('f1', 'a1', 'owner');
+    expect(await contacts.storedContact('f1', 'a1')).toBeNull();
+  });
+
   it('has no recipient for a fleet nobody owns', async () => {
     expect(await contacts.noticeRecipient('nobody', 'a1')).toBeNull();
   });

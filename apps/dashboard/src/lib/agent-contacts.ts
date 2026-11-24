@@ -66,6 +66,14 @@ export async function writeContact(fleetId: string, agentId: string, contactUser
 }
 
 /**
+ * Clears a contact only if it is still `staleUserId`, so a contact the owner
+ * set a moment ago (another tab) is never the one removed.
+ */
+export async function clearStaleContact(fleetId: string, agentId: string, staleUserId: string, q: Queryable = db()): Promise<void> {
+  await q.query('DELETE FROM agent_contacts WHERE fleet_id = $1 AND agent_id = $2 AND contact_user_id = $3', [fleetId, agentId, staleUserId]);
+}
+
+/**
  * Who a notice about this agent goes to, checked now: its contact while they
  * are still the owner or in the owner's organization, else the owner. A
  * contact no longer allowed is cleared. Null: the fleet has no owner.
@@ -76,6 +84,6 @@ export async function noticeRecipient(fleetId: string, agentId: string, q: Query
   const contact = await storedContact(fleetId, agentId, q);
   if (!contact) return { userId: owner, via: 'owner' };
   if (await isContactAllowed(owner, contact, q)) return { userId: contact, via: contact === owner ? 'owner' : 'contact' };
-  await q.query('DELETE FROM agent_contacts WHERE fleet_id = $1 AND agent_id = $2 AND contact_user_id = $3', [fleetId, agentId, contact]);
+  await clearStaleContact(fleetId, agentId, contact, q);
   return { userId: owner, via: 'owner' };
 }
