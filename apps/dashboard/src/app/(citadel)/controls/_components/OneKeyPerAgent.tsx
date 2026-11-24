@@ -193,16 +193,21 @@ export function OneKeyPerAgentView({ data, names, note, readiness = null, busy =
 
 const DAY_MS = 86_400_000;
 
+/** " Ready Nov 27 at the earliest.", or nothing for a time that can't be read. */
+function readyBy(ms: number): string {
+  const day = Number.isFinite(ms) ? fmtDay(ms) : '';
+  return day ? ` Ready ${day} at the earliest.` : '';
+}
+
 /** One line per blocker, in plain words. A blocker this build doesn't know isn't shown, but still keeps Enforce closed. */
 export function blockerText(b: ReadinessBlocker, days: number): string | null {
   switch (b.kind) {
     case 'not_recorded': return 'Calls aren’t recorded with their key yet.';
     case 'not_watching': return `Turn on Watch first. Enforce opens after ${days} days in Watch.`;
-    case 'watch_too_short': return `Watch needs ${days} days. Ready ${fmtDay(b.readyAt)} at the earliest.`;
+    case 'watch_too_short': return `Watch needs ${days} days.${readyBy(Date.parse(b.readyAt))}`;
     case 'unbound_calls': return `${b.calls.toLocaleString('en-US')} ${b.calls === 1 ? 'call' : 'calls'} in the last ${days} days came in without the agent’s own key.`;
     case 'capture_gaps': {
-      const after = b.lastAt ? ` Ready ${fmtDay(Date.parse(b.lastAt) + days * DAY_MS)} at the earliest.` : '';
-      return `Some calls weren’t recorded in the last ${days} days.${after}`;
+      return `Some calls weren’t recorded in the last ${days} days.${b.lastAt ? readyBy(Date.parse(b.lastAt) + days * DAY_MS) : ''}`;
     }
     // Listed agent by agent below.
     case 'agents_not_seen': return null;

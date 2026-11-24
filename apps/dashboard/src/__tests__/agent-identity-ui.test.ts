@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { agentKeyReadiness, agentKeyRuleGet, agentKeyRuleSet, agentNamesGet, agentRename, agentRetire, changeFailureText, ControlDeniedError, identityMix, WhiteRoomApiError } from '@/lib/whiteroom/client';
 import { AgentIdentityView, readIdentityMix, RunIdentityLine, runIdentityText } from '@/components/identity/IdentityMix';
 import { AgentNamePanel, namesDiffer, saveAgentName } from '@/components/identity/AgentNamePanel';
-import { changeAgentKeyMode, OneKeyPerAgentView } from '@/app/(citadel)/controls/_components/OneKeyPerAgent';
+import { blockerText, changeAgentKeyMode, OneKeyPerAgentView } from '@/app/(citadel)/controls/_components/OneKeyPerAgent';
 import { AgentTitle } from '@/components/agent/AgentTitle';
 import { identityLines, type AgentKeyReadiness, type AgentKeyRuleResult } from '@/lib/agent-identity';
 
@@ -266,6 +266,11 @@ describe('One key per agent card', () => {
     expect(html).toContain('Night job');
     expect(html).toContain('Mark retired');
     expect(html).toMatch(/old-bot.*Retired.*Undo/);
+  });
+
+  it('leaves out a date it can’t read instead of a blank one', () => {
+    expect(blockerText({ kind: 'capture_gaps', gaps: 1, lastAt: 'not a time' }, 7)).toBe('Some calls weren’t recorded in the last 7 days.');
+    expect(blockerText({ kind: 'watch_too_short', readyAt: 'soon' }, 7)).toBe('Watch needs 7 days.');
   });
 
   it('opens Enforce once ready, and in Enforce says calls without a key are refused', () => {
