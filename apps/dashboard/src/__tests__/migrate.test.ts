@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { MIGRATIONS_DIR, parseArgs, psqlEnv, readMigrations } from '../../scripts/migrate';
 
@@ -10,6 +13,19 @@ describe('migration runner', () => {
     expect(files.map((f) => f.name)).toEqual([...files.map((f) => f.name)].sort());
     expect(files.filter((f) => f.noTransaction).map((f) => f.name)).toEqual(['013_outbox_not_before.sql']);
     expect(files.every((f) => /^[0-9a-f]{64}$/.test(f.sha256))).toBe(true);
+  });
+
+  it('a .sql file not named NNN_name.sql stops the run instead of being skipped', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wr-migrate-names-'));
+    try {
+      writeFileSync(join(dir, '001_a.sql'), 'SELECT 1;');
+      writeFileSync(join(dir, 'README.md'), 'not a migration');
+      expect(readMigrations(dir).map((f) => f.name)).toEqual(['001_a.sql']);
+      writeFileSync(join(dir, '19_b.sql'), 'SELECT 1;');
+      expect(() => readMigrations(dir)).toThrow(/Not named like NNN_name.sql .*: 19_b.sql/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('dry run by default; --apply and --baseline <file>; anything else refused', () => {

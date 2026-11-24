@@ -71,8 +71,11 @@ export class MigrateError extends Error {}
 const code = (sql: string) => sql.replace(/--[^\n]*/g, '');
 
 export function readMigrations(dir = MIGRATIONS_DIR): MigrationFile[] {
-  return readdirSync(dir)
-    .filter((f) => FILE_RE.test(f))
+  const names = readdirSync(dir).filter((f) => f.endsWith('.sql'));
+  // A misnamed file would otherwise be skipped without a word.
+  const misnamed = names.filter((f) => !FILE_RE.test(f));
+  if (misnamed.length) throw new MigrateError(`Not named like NNN_name.sql (three digits, lower case): ${misnamed.join(', ')}. Rename it so the runner sees it.`);
+  return names
     .sort()
     .map((name) => {
       const sql = readFileSync(join(dir, name), 'utf8');
