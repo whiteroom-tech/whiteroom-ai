@@ -28,7 +28,7 @@ import { agentContactView, setAgentContact } from '@/lib/agent-contact-actions';
 
 beforeEach(() => {
   Object.assign(m, { session: { user: { id: 'owner' } }, token: 'tok', denied: null, allowed: true, stored: 'mate' });
-  m.write.mockReset();
+  m.write.mockReset().mockResolvedValue(true);
   m.clear.mockReset();
 });
 
@@ -51,6 +51,11 @@ describe('agent contact actions', () => {
     m.token = null;
     expect((await setAgentContact('f1', 'a1', 'mate')).ok).toBe(false);
     expect(m.write).not.toHaveBeenCalled();
+  });
+
+  it('says so when the fleet keeps as many contacts as it can', async () => {
+    m.write.mockResolvedValueOnce(false);
+    expect(await setAgentContact('f1', 'a1', 'mate')).toEqual({ ok: false, error: 'This fleet has as many contacts as it can keep. Clear one first.' });
   });
 
   it('refuse a person outside the owner’s organization, and a bad agent id', async () => {

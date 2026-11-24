@@ -82,6 +82,7 @@ jobs:
           # restarts, so a socket check can pass just before the server goes away.
           for i in $(seq 1 60); do docker exec pg pg_isready -h 127.0.0.1 -U postgres -q && break; sleep 1; done
           docker exec pg createdb -h 127.0.0.1 -U postgres wr_migrate_test
+          docker exec pg createdb -h 127.0.0.1 -U postgres wr_contacts_test
       - name: Migration runner against Postgres
         if: matrix.dir == 'apps/dashboard'
         working-directory: apps/dashboard
@@ -91,3 +92,13 @@ jobs:
           DB_PORT: "5432"
           PGUSER: postgres
         run: npx vitest run src/__tests__/migrate.db.test.ts
+      - name: Agent contacts against Postgres
+        if: matrix.dir == 'apps/dashboard'
+        working-directory: apps/dashboard
+        env:
+          WR_TEST_DATABASE: wr_contacts_test
+          DB_HOST: 127.0.0.1
+          DB_PORT: "5432"
+          DB_USER: postgres
+          PGUSER: postgres
+        run: npx vitest run src/__tests__/agent-contacts.db.test.ts

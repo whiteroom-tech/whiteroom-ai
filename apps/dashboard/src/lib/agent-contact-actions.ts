@@ -50,7 +50,8 @@ export async function setAgentContact(fleetId: string, agentId: string, contactU
     if (contactUserId !== null && !(await isContactAllowed(o.userId, contactUserId))) {
       return { ok: false, error: 'A contact must be you or a member of your organization.' };
     }
-    await writeContact(fleetId, agentId, contactUserId === o.userId ? null : contactUserId, o.userId);
+    const saved = await writeContact(fleetId, agentId, contactUserId === o.userId ? null : contactUserId, o.userId);
+    if (!saved) return { ok: false, error: 'This fleet has as many contacts as it can keep. Clear one first.' };
     return { ok: true };
   } catch {
     return { ok: false, error: 'Couldn’t save. Try again.' };

@@ -130,6 +130,15 @@ suite('agent contacts against Postgres', () => {
     expect(await contacts.storedContact('f1', 'a2')).toBe('mate');
   });
 
+  it('keeps at most MAX_CONTACTS_PER_FLEET contacts, while changing one already set always works', async () => {
+    const values = Array.from({ length: contacts.MAX_CONTACTS_PER_FLEET }, (_, i) => `('f1', 'agent-${i}', 'mate', 'owner')`).join(',');
+    await q(`INSERT INTO agent_contacts (fleet_id, agent_id, contact_user_id, set_by) VALUES ${values}`);
+    expect(await contacts.writeContact('f1', 'one-more', 'mate', 'owner')).toBe(false);
+    expect(await contacts.writeContact('f1', 'agent-0', 'owner', 'owner')).toBe(true);
+    expect(await contacts.writeContact('f1', 'agent-1', null, 'owner')).toBe(true);
+    expect(await contacts.writeContact('f1', 'one-more', 'mate', 'owner')).toBe(true);
+  });
+
   it('has no recipient for a fleet nobody owns', async () => {
     expect(await contacts.noticeRecipient('nobody', 'a1')).toBeNull();
   });

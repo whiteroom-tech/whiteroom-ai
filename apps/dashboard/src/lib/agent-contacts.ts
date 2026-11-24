@@ -55,17 +55,29 @@ export async function storedContact(fleetId: string, agentId: string, q: Queryab
   return rows[0]?.contact_user_id ?? null;
 }
 
-/** Sets or (null) clears a contact. The caller has checked the owner and the person. */
-export async function writeContact(fleetId: string, agentId: string, contactUserId: string | null, by: string, q: Queryable = db()): Promise<void> {
+/**
+ * Most contacts a fleet keeps. The agent id isn't checked against the engine
+ * (it may have no calls yet), so this bounds what a script calling the
+ * action could add.
+ */
+export const MAX_CONTACTS_PER_FLEET = 1000;
+
+/** Sets or (null) clears a contact. The caller has checked the owner and the person. False: the fleet is at its cap. */
+export async function writeContact(fleetId: string, agentId: string, contactUserId: string | null, by: string, q: Queryable = db()): Promise<boolean> {
   if (contactUserId === null) {
     await q.query('DELETE FROM agent_contacts WHERE fleet_id = $1 AND agent_id = $2', [fleetId, agentId]);
-    return;
+    return true;
   }
+  // A new row only while the fleet is under its cap; changing an existing one always works.
+  const { rows } = await q.query(
+    `SELECT count(*)::int AS n, bool_or(agent_id = $2) AS has FROM agent_contacts WHERE fleet_id = $1`, [fleetId, agentId]);
+  if (!rows[0]?.has && Number(rows[0]?.n ?? 0) >= MAX_CONTACTS_PER_FLEET) return false;
   await q.query(
     `INSERT INTO agent_contacts (fleet_id, agent_id, contact_user_id, set_by) VALUES ($1, $2, $3, $4)
      ON CONFLICT (fleet_id, agent_id) DO UPDATE SET contact_user_id = EXCLUDED.contact_user_id, set_by = EXCLUDED.set_by, set_at = now()`,
     [fleetId, agentId, contactUserId, by],
   );
+  return true;
 }
 
 /**
@@ -116,4 +128,18 @@ export function removedAgentOf(action: string, body: string, reply: string): { f
 /** Removes an agent's contact (it was removed from the fleet). */
 export async function forgetAgentContact(fleetId: string, agentId: string, q: Queryable = db()): Promise<void> {
   await q.query('DELETE FROM agent_contacts WHERE fleet_id = $1 AND agent_id = $2', [fleetId, agentId]);
+}
+
+/**
+ * The cleanup after a control action the engine accepted (api/fleet/engine):
+ * a removed agent's contact goes. Only for the fleet the action was
+ * authorised on. Never throws: the change already happened.
+ */
+export async function afterControlAccepted(
+  allowed: { action: string; fleetId: string }, body: string, reply: string,
+  forget: (fleetId: string, agentId: string) => Promise<void> = forgetAgentContact,
+): Promise<void> {
+  const removed = removedAgentOf(allowed.action, body, reply);
+  if (!removed || removed.fleetId !== allowed.fleetId) return;
+  try { await forget(removed.fleetId, removed.agentId); } catch { /* left; noticeRecipient still checks it */ }
 }

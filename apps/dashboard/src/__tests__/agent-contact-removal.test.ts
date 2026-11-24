@@ -6,7 +6,7 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/lib/db', () => ({ db: () => ({ query: vi.fn() }) }));
 vi.mock('@/lib/control-auth', () => ({ fleetOwners: vi.fn() }));
 
-import { removedAgentOf } from '@/lib/agent-contacts';
+import { afterControlAccepted, removedAgentOf } from '@/lib/agent-contacts';
 
 const body = (o: Record<string, unknown>) => JSON.stringify({ action: 'deregister_agent', fleet_id: 'f1', agent_id: 'a1', ...o });
 
@@ -21,5 +21,26 @@ describe('removedAgentOf', () => {
     expect(removedAgentOf('pause_agent', body({}), JSON.stringify({ success: true }))).toBeNull();
     expect(removedAgentOf('deregister_agent', 'not json', JSON.stringify({ success: true }))).toBeNull();
     expect(removedAgentOf('deregister_agent', body({ agent_id: 'not an id!' }), JSON.stringify({ success: true }))).toBeNull();
+  });
+});
+
+describe('afterControlAccepted', () => {
+  const ok = JSON.stringify({ success: true });
+  it('forgets the removed agent’s contact for the fleet the action was allowed on', async () => {
+    const forget = vi.fn(async () => {});
+    await afterControlAccepted({ action: 'deregister_agent', fleetId: 'f1' }, body({}), ok, forget);
+    expect(forget).toHaveBeenCalledWith('f1', 'a1');
+  });
+
+  it('touches nothing for another fleet’s id in the body, a refusal, or another action', async () => {
+    const forget = vi.fn(async () => {});
+    await afterControlAccepted({ action: 'deregister_agent', fleetId: 'f2' }, body({}), ok, forget);
+    await afterControlAccepted({ action: 'deregister_agent', fleetId: 'f1' }, body({}), JSON.stringify({ error: 'no' }), forget);
+    await afterControlAccepted({ action: 'pause_agent', fleetId: 'f1' }, body({}), ok, forget);
+    expect(forget).not.toHaveBeenCalled();
+  });
+
+  it('never throws when the delete fails: the removal already happened', async () => {
+    await expect(afterControlAccepted({ action: 'deregister_agent', fleetId: 'f1' }, body({}), ok, async () => { throw new Error('db down'); })).resolves.toBeUndefined();
   });
 });
