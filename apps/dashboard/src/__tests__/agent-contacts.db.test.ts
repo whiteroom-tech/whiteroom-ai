@@ -33,7 +33,8 @@ CREATE TABLE organizations (id text PRIMARY KEY, name text NOT NULL);
 CREATE TABLE organization_members (
   org_id text NOT NULL REFERENCES organizations(id), user_id text NOT NULL REFERENCES users(id),
   role text NOT NULL DEFAULT 'member', status text NOT NULL DEFAULT 'active', PRIMARY KEY (org_id, user_id)
-);`;
+);
+CREATE UNIQUE INDEX organization_members_one_active_idx ON organization_members (user_id) WHERE status = 'active';`;
 
 const suite = DB ? describe : describe.skip;
 
@@ -100,6 +101,25 @@ suite('agent contacts against Postgres', () => {
     expect(await contacts.storedContact('f1', 'a1')).toBe('owner');
     await contacts.clearStaleContact('f1', 'a1', 'owner');
     expect(await contacts.storedContact('f1', 'a1')).toBeNull();
+  });
+
+  it('leaves out and refuses a member whose membership isn’t active', async () => {
+    await q(`INSERT INTO users (id, email) VALUES ('invitee', 'invitee@example.com')`);
+    await q(`INSERT INTO organization_members (org_id, user_id, status) VALUES ('o1', 'invitee', 'invited')`);
+    expect((await contacts.contactCandidates('owner')).map((c) => c.userId)).not.toContain('invitee');
+    expect(await contacts.isContactAllowed('owner', 'invitee')).toBe(false);
+  });
+
+  it('lists the same people it allows, and a user can be active in only one organization', async () => {
+    const listed = (await contacts.contactCandidates('owner')).map((c) => c.userId);
+    for (const u of ['owner', 'mate', 'stranger', 'rival']) expect(await contacts.isContactAllowed('owner', u)).toBe(listed.includes(u));
+    await q(`INSERT INTO organizations (id, name) VALUES ('o2', 'Other')`);
+    await expect(q(`INSERT INTO organization_members (org_id, user_id) VALUES ('o2', 'owner')`)).rejects.toThrow();
+  });
+
+  it('sends to the owner when the stored contact is the owner', async () => {
+    await contacts.writeContact('f1', 'a1', 'owner', 'owner');
+    expect(await contacts.noticeRecipient('f1', 'a1')).toEqual({ userId: 'owner', via: 'owner' });
   });
 
   it('has no recipient for a fleet nobody owns', async () => {

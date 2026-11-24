@@ -22,12 +22,15 @@ export interface ContactPerson {
 /** Who can be an agent's contact: the owner, then the active members of the owner's organization. */
 export async function contactCandidates(ownerId: string, q: Queryable = db()): Promise<ContactPerson[]> {
   const { rows } = await q.query(
+    // The same rule as isContactAllowed: anyone active in an organization the
+    // owner is active in. A user is active in at most one (006's
+    // organization_members_one_active_idx), so this is that one.
     `SELECT u.id AS "userId", u.email, u.name, (u.id = $1) AS owner
        FROM users u
       WHERE u.id = $1
-         OR u.id IN (SELECT m.user_id FROM organization_members m
-                      WHERE m.status = 'active'
-                        AND m.org_id = (SELECT org_id FROM organization_members WHERE user_id = $1 AND status = 'active' LIMIT 1))
+         OR u.id IN (SELECT b.user_id FROM organization_members a
+                       JOIN organization_members b ON b.org_id = a.org_id
+                      WHERE a.user_id = $1 AND a.status = 'active' AND b.status = 'active')
       ORDER BY owner DESC, u.email NULLS LAST, u.id`,
     [ownerId],
   );

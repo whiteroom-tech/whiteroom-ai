@@ -15,3 +15,7 @@ CREATE TABLE IF NOT EXISTS agent_contacts (
   set_at          timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (fleet_id, agent_id)
 );
+
+-- Deleting a user removes them as a contact (the foreign key above): indexed,
+-- so that doesn't scan the table.
+CREATE INDEX IF NOT EXISTS agent_contacts_contact_idx ON agent_contacts (contact_user_id);
