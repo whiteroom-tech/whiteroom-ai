@@ -78,8 +78,10 @@ jobs:
         run: |
           docker run -d --name pg -e POSTGRES_HOST_AUTH_METHOD=trust -p 5432:5432 \
             postgres:17-alpine@sha256:f9cf3e1f0066f0eb0c48707d864f0ac5941e9ff454a072077d97a4d278d07d73
-          for i in $(seq 1 30); do docker exec pg pg_isready -U postgres -q && break; sleep 1; done
-          docker exec pg createdb -U postgres wr_migrate_test
+          # Over TCP: the image's first-run setup serves the local socket only, then
+          # restarts, so a socket check can pass just before the server goes away.
+          for i in $(seq 1 60); do docker exec pg pg_isready -h 127.0.0.1 -U postgres -q && break; sleep 1; done
+          docker exec pg createdb -h 127.0.0.1 -U postgres wr_migrate_test
       - name: Migration runner against Postgres
         if: matrix.dir == 'apps/dashboard'
         working-directory: apps/dashboard
