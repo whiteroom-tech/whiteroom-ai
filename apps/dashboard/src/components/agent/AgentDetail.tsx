@@ -22,6 +22,8 @@ import { HealthHistory } from '@/components/agent/HealthHistory';
 import { JobOutcomes } from '@/components/agent/JobOutcomes';
 import { RulesOnAgent } from '@/components/agent/RulesOnAgent';
 import { AgentNamePanel } from '@/components/identity/AgentNamePanel';
+import { AgentContactPanel } from '@/components/identity/AgentContactPanel';
+import { AgentTitle } from '@/components/agent/AgentTitle';
 import { AgentIdentityPanel } from '@/components/identity/IdentityMix';
 import { fetchControlActors, holdWho, type ControlActor } from '@/lib/control-actors';
 import { RefreshFailed } from '@/components/citadel/States';
@@ -486,6 +488,8 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
 
                 {!preview && namesOn && <AgentNamePanel fleetId={fleetId} agentId={agentId} authKey={authKey} name={name} onSaved={setName} />}
 
+                {!preview && <AgentContactPanel key={`${fleetId}/${agentId}`} fleetId={fleetId} agentId={agentId} />}
+
                 <Panel title="Task type">
                   <p className="wr-agent-cap" style={{ margin: '0 0 6px' }}>
                     {taskNote ? <span role="status" style={{ color: taskNote.ok ? 'var(--ok)' : 'var(--bad)' }}>{taskNote.text}</span> : 'Used to estimate cost per task on Performance'}
@@ -541,9 +545,3 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   );
 }
 
-/** The page title: the agent's display name with its id beside it, or the id alone (gap-closing spec A2). */
-export function AgentTitle({ agentId, name }: { agentId: string; name: string | null }) {
-  return name && name !== agentId
-    ? <span>{name}<span className="wr-agent-title__id">{agentId}</span></span>
-    : <span style={{ fontFamily: FONT_MONO }}>{agentId}</span>;
-}

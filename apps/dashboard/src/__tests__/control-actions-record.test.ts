@@ -70,6 +70,17 @@ describe('engine route records accepted control changes', () => {
     expect(inserts()[0][1]).toEqual(['f1', 'governance_create_rule', null, 'r9', 'u1']);
   });
 
+  it('removes an agent’s contact once the engine has removed the agent, and not when it refused', async () => {
+    const contactDeletes = () => mocks.query.mock.calls.filter(([sql]) => String(sql).startsWith('DELETE FROM agent_contacts'));
+    mocks.auth.mockResolvedValue({ user: { id: 'u1' } });
+    engine(409, '{"error":"No such agent."}');
+    await call({ action: 'deregister_agent', fleet_id: 'f1', agent_id: 'a1' });
+    expect(contactDeletes()).toHaveLength(0);
+    engine(200, '{"success":true}');
+    await call({ action: 'deregister_agent', fleet_id: 'f1', agent_id: 'a1' });
+    expect(contactDeletes().map(([, params]) => params)).toEqual([['f1', 'a1']]);
+  });
+
   it('records nothing when the engine refuses, or for ordinary reads', async () => {
     engine(409);
     mocks.auth.mockResolvedValue({ user: { id: 'u1' } });

@@ -21,6 +21,7 @@ import {
   tokenFromUserFleets,
 } from '@/lib/fleet-session';
 import { CONTROL_DENIED, engineAuthHeaders, PROXY_URL } from '@/lib/whiteroom/client';
+import { afterControlAccepted } from '@/lib/agent-contacts';
 import { CONTROL_SECRET_HEADER, CONTROL_USER_HEADER, controlAccessError, controlActionOf, OWNER_ONLY_READS, secretReadOf } from '@/lib/control-auth';
 import { rateLimitHeaders } from '@/lib/rate-limit-headers';
 import { recordControlAction } from '@/lib/control-actions';
@@ -145,6 +146,8 @@ export async function POST(req: Request) {
     try {
       if (actorId) await recordControlAction(actorId, allowed.fleetId, allowed.action, body, reply);
     } catch { /* not recorded; the change stands */ }
+    // A removed agent's contact goes with it (gap-closing spec A5). Best effort, like the record above.
+    await afterControlAccepted(allowed, body, reply);
     return new Response(reply, {
       status: upstream.status,
       headers: { 'Content-Type': upstream.headers.get('content-type') ?? 'application/json', 'Cache-Control': 'no-store' },

@@ -6,6 +6,8 @@ import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { GovernanceRule } from '@/lib/whiteroom/types';
 
+// The Contact panel's server actions pull in Auth.js, which doesn't load here.
+vi.mock('@/lib/agent-contact-actions', () => ({ agentContactView: async () => ({ ok: false, error: 'test' }), setAgentContact: async () => ({ ok: false, error: 'test' }) }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {} }), useSearchParams: () => new URLSearchParams() }));
 vi.mock('@/hooks/useFleetAuth', () => ({ useFleetAuth: () => ({ status: 'authenticated', fleetId: 'f' }) }));
 const { AgentDetail } = await import('@/components/agent/AgentDetail');
