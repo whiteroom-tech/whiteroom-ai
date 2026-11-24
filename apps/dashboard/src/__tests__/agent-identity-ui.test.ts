@@ -233,8 +233,8 @@ describe('One key per agent card', () => {
 
   it('shows no stray separator for an agent whose credentials this build doesn’t know', () => {
     const html = render(data({ agents: [{ agentId: 'a9', boundCalls: 0, unboundCalls: 2, unboundCredentials: [], lastUnboundAt: null }] }));
-    expect(html).not.toContain(' · </span>');
-    expect(html).not.toMatch(/ · <\/span>|· $/);
+    // The row has no separator at all.
+    expect(html).not.toContain(' · ');
   });
 
   it('counts the agents it can’t list', () => {
