@@ -50,7 +50,7 @@ npm run migrate -- --apply    # applies it
 US prod is the same with `whiteroom-prod:us-central1:whiteroom-db-v2` and `--project whiteroom-prod`.
 
 - **Dry run by default.** Nothing is written without `--apply`.
-- **One file, one transaction.** A file and its `schema_migrations` row commit together, so a failed file leaves nothing behind and the next run tries it again. A file that can't run in a transaction (`CREATE INDEX CONCURRENTLY`, `VACUUM`, such as 013) runs through `psql -f`, as before, so `psql` must be on `PATH`; it is recorded only if psql succeeds, and must be safe to re-run.
+- **One file, one transaction.** A file and its `schema_migrations` row commit together, so a failed file leaves nothing behind and the next run tries it again. A file that can't run in a transaction (`CREATE INDEX CONCURRENTLY`, `VACUUM`) says so with the line `-- migrate: no-transaction`, as 013 does. It runs through `psql -f`, as before, so `psql` must be on `PATH`; it is recorded only if psql succeeds, and must be safe to re-run. Without the line, Postgres refuses the statement, the file is rolled back, and the error says to add it.
 - **One runner at a time.** `--apply` holds an advisory lock for the whole run. A second runner stops at once and says so.
 - **Applied files don't change.** A recorded file whose text differs, or that is gone, stops the run before anything is applied. Put a fix in a new file.
 - A file's `SET lock_timeout` still applies: on a timeout, run again.

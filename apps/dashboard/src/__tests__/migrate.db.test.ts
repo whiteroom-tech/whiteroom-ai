@@ -132,7 +132,7 @@ describe.skipIf(!DB)('migration runner (Postgres)', () => {
 
   it('a file with CREATE INDEX CONCURRENTLY runs outside a transaction, through psql', async () => {
     write('001_a.sql', `CREATE TABLE a (id int);`);
-    write('002_idx.sql', `-- built CONCURRENTLY\nCREATE INDEX CONCURRENTLY IF NOT EXISTS a_id ON a (id);`);
+    write('002_idx.sql', `-- migrate: no-transaction\nCREATE INDEX CONCURRENTLY IF NOT EXISTS a_id ON a (id);`);
     const log: string[] = [];
     expect(await run({ apply: false, log: (l) => log.push(l) })).toMatchObject({ pending: ['001_a.sql', '002_idx.sql'] });
     expect(log.join('\n')).toMatch(/002_idx.sql \(outside a transaction, through psql\)/);
@@ -143,10 +143,18 @@ describe.skipIf(!DB)('migration runner (Postgres)', () => {
 
   it('a psql failure records nothing, so the next run tries the file again', async () => {
     write('001_a.sql', `CREATE TABLE a (id int);`);
-    write('002_idx.sql', `CREATE INDEX CONCURRENTLY a_id ON missing_table (id);`);
+    write('002_idx.sql', `-- migrate: no-transaction\nCREATE INDEX CONCURRENTLY a_id ON missing_table (id);`);
     await expect(run()).rejects.toThrow(/002_idx.sql failed in psql; it is not recorded/);
     expect(await rows()).toEqual([{ name: '001_a.sql', baseline: false }]);
-    write('002_idx.sql', `CREATE INDEX CONCURRENTLY IF NOT EXISTS a_id ON a (id);`);
+    write('002_idx.sql', `-- migrate: no-transaction\nCREATE INDEX CONCURRENTLY IF NOT EXISTS a_id ON a (id);`);
     expect(await run()).toMatchObject({ applied: ['002_idx.sql'] });
+  });
+
+  it('CONCURRENTLY without the no-transaction line is refused by Postgres, rolled back, and the error says what to add', async () => {
+    write('001_a.sql', `CREATE TABLE a (id int);`);
+    write('002_idx.sql', `CREATE TABLE b (id int); CREATE INDEX CONCURRENTLY a_id ON a (id);`);
+    await expect(run()).rejects.toThrow(/002_idx.sql failed and was rolled back[^]*add the line "-- migrate: no-transaction"/);
+    expect(await exists('b')).toBe(false);
+    expect(await rows()).toEqual([{ name: '001_a.sql', baseline: false }]);
   });
 });

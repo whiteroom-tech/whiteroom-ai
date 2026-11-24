@@ -23,8 +23,10 @@
 // - Each file runs in one transaction with its schema_migrations row, so a
 //   failed file leaves nothing behind and the next run tries it again.
 // - A file that can't run in a transaction (CREATE INDEX CONCURRENTLY,
-//   VACUUM) runs through psql -f, as these files were applied before; its row
-//   is written only if psql succeeds. Such files must be safe to re-run.
+//   VACUUM) says so on a line of its own, `-- migrate: no-transaction`. It
+//   runs through psql -f, as these files were applied before, and its row is
+//   written only if psql succeeds, so it must be safe to re-run. Without the
+//   line, Postgres refuses such a statement and the file is rolled back.
 // - A recorded file whose text has changed, or that is no longer in the
 //   directory, stops the run before anything is applied.
 import { execFileSync } from 'node:child_process';
@@ -67,8 +69,8 @@ export interface MigrateResult {
 
 export class MigrateError extends Error {}
 
-/** Strips -- comments, so a word named in a comment doesn't count. */
-const code = (sql: string) => sql.replace(/--[^\n]*/g, '');
+/** The line a file that can't run in a transaction opts out with. Stated, not guessed from the SQL. */
+export const NO_TRANSACTION_RE = /^-- migrate: no-transaction\s*$/m;
 
 export function readMigrations(dir = MIGRATIONS_DIR): MigrationFile[] {
   const names = readdirSync(dir).filter((f) => f.endsWith('.sql'));
@@ -83,7 +85,7 @@ export function readMigrations(dir = MIGRATIONS_DIR): MigrationFile[] {
         name,
         sql,
         sha256: createHash('sha256').update(sql).digest('hex'),
-        noTransaction: /\b(CONCURRENTLY|VACUUM)\b/i.test(code(sql)),
+        noTransaction: NO_TRANSACTION_RE.test(sql),
       };
     });
 }
@@ -198,12 +200,20 @@ export async function migrate(client: pg.Client, opts: MigrateOptions): Promise<
           await query('COMMIT');
         } catch (err) {
           await query('ROLLBACK').catch(() => {});
-          throw new MigrateError(`${f.name} failed and was rolled back; nothing from it was kept: ${(err as Error).message}`);
+          const message = (err as Error).message;
+          const hint = /cannot run inside a transaction block/i.test(message)
+            ? ' If the file is safe to re-run, add the line "-- migrate: no-transaction" to it so it runs through psql.'
+            : '';
+          throw new MigrateError(`${f.name} failed and was rolled back; nothing from it was kept: ${message}.${hint}`);
         }
-        // A file's SET (lock_timeout) outlives its transaction; don't carry it into the next file.
-        await query('RESET ALL');
       }
       result.applied.push(f.name);
+      // A file's SET (lock_timeout) outlives its transaction; don't carry it into the next file.
+      try {
+        await query('RESET ALL');
+      } catch (err) {
+        throw new MigrateError(`${f.name} was applied and recorded, but resetting the session after it failed, so the run stopped there: ${(err as Error).message}`);
+      }
     }
     log(`Applied ${result.applied.length} file(s).`);
     return result;

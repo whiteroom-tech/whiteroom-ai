@@ -15,6 +15,18 @@ describe('migration runner', () => {
     expect(files.every((f) => /^[0-9a-f]{64}$/.test(f.sha256))).toBe(true);
   });
 
+  it("only a file with the line -- migrate: no-transaction runs outside a transaction; the words alone don't count", () => {
+    const dir = mkdtempSync(join(tmpdir(), 'wr-migrate-notx-'));
+    try {
+      writeFileSync(join(dir, '001_a.sql'), `/* VACUUM later */ COMMENT ON TABLE t IS 'built CONCURRENTLY'; -- CONCURRENTLY\n`);
+      writeFileSync(join(dir, '002_b.sql'), `-- migrate: no-transaction\nCREATE INDEX CONCURRENTLY i ON t (id);\n`);
+      writeFileSync(join(dir, '003_c.sql'), `-- not: -- migrate: no-transaction\nSELECT 1;\n`);
+      expect(readMigrations(dir).map((f) => [f.name, f.noTransaction])).toEqual([['001_a.sql', false], ['002_b.sql', true], ['003_c.sql', false]]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('a .sql file not named NNN_name.sql stops the run instead of being skipped', () => {
     const dir = mkdtempSync(join(tmpdir(), 'wr-migrate-names-'));
     try {

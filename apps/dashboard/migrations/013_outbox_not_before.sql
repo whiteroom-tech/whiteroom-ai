@@ -1,3 +1,4 @@
+-- migrate: no-transaction
 -- Entitlement outbox: a delayed re-push (see src/lib/entitlements.ts).
 --
 -- A push the engine didn't acknowledge may still be applied by it later, after
