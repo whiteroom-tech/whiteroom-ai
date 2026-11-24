@@ -38,9 +38,11 @@ whiteroom practice run --adapter "node wr-adapter.mjs" --require spend_cap,keywo
 
 Each named check must be Passed, and a guardrail must be in Enforce: Watch, Not checked and Not set up all exit `1`, with a line naming the check. The checks: `finishes_job`, `long_task`, `fails_gracefully`, `spend_cap`, `loop_breaker`, `keyword`, `pause_stop`, `planted_instruction`. An unknown name exits `2`.
 
-A run code works once and lasts 12 hours, so each CI run needs a new one from the Sandbox page. Save it as a secret and pass it with `--code-stdin`. In GitHub Actions:
+A run code works once and lasts 12 hours (the engine's `RUN_CODE_MINUTES`). So a CI run can't start on its own yet: before each one, get a new code on the Sandbox page, save it as a secret, then start the workflow by hand. Pass the code with `--code-stdin`, not as a workflow input, which shows in the run's page. In GitHub Actions:
 
 ```yaml
+on: workflow_dispatch   # started by hand, after updating WHITEROOM_RUN_CODE
+# ...
 - name: WhiteRoom practice test
   run: |
     printf '%s\n' "$WHITEROOM_RUN_CODE" | npx @whiteroom-ai/cli@2.1.3 practice run \
