@@ -231,6 +231,12 @@ describe('One key per agent card', () => {
     expect(render(data({}, 'off'))).toContain('In the last 7 days');
   });
 
+  it('shows no stray separator for an agent whose credentials this build doesn’t know', () => {
+    const html = render(data({ agents: [{ agentId: 'a9', boundCalls: 0, unboundCalls: 2, unboundCredentials: [], lastUnboundAt: null }] }));
+    expect(html).not.toContain(' · </span>');
+    expect(html).not.toMatch(/ · <\/span>|· $/);
+  });
+
   it('counts the agents it can’t list', () => {
     const many = Array.from({ length: 8 }, (_, i) => ({ agentId: `a${i}`, boundCalls: 0, unboundCalls: 1, unboundCredentials: ['fleet_key' as const], lastUnboundAt: null }));
     expect(render(data({ agents: many }))).toContain('3 more agents not shown.');
