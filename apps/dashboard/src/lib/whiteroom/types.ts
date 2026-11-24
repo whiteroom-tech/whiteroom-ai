@@ -845,6 +845,8 @@ export interface SendSeenListResult {
 /** Rule actions in words (engine rule_actions). */
 export interface RuleActionCounts {
   blocked: number; paused: number; stopped: number; toldYou: number; wouldAct: number;
+  /** Block tools rules with targets that couldn't read a call's target (gap-closing spec C1); engines before it leave it out. */
+  couldntCheck?: number;
   /** Requests an Old tool results rule trimmed. Absent from older engines: read as 0. */
   trimmed?: number;
 }
@@ -861,7 +863,7 @@ export interface RunRuleAction {
 }
 
 /** A rule that acted, or would have, on one call (engine PR 298). */
-export interface CallRuleAction { ruleId: string; ruleType: string; ruleName?: string | null; mode: string; response: string; outcome: 'blocked' | 'paused' | 'stopped' | 'notified' | 'would_block' | 'trimmed'; reason?: string | null }
+export interface CallRuleAction { ruleId: string; ruleType: string; ruleName?: string | null; mode: string; response: string; outcome: 'blocked' | 'paused' | 'stopped' | 'notified' | 'would_block' | 'trimmed' | 'couldnt_check'; reason?: string | null }
 
 // -- Runs (engine list_runs / get_run_events; a run is one agent's shift) --
 

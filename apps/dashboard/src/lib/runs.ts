@@ -458,12 +458,16 @@ export function callToolErrorsText(e: Pick<RunEvent, 'toolErrors'>): string {
 }
 
 /** What a rule did to a call, past tense: "would have been blocked", "blocked", "paused the agent". */
+const CALL_OUTCOME_TEXT_UNCHECKED = 'couldn’t check its target';
 const CALL_OUTCOME_TEXT: Record<CallRuleAction['outcome'], string> = {
   would_block: 'would have been blocked', blocked: 'blocked', paused: 'paused the agent', stopped: 'stopped the agent', notified: NOTIFY.done, trimmed: 'trimmed',
+  couldnt_check: CALL_OUTCOME_TEXT_UNCHECKED,
 };
 /** A Watch rule's would-be outcome, by its response: it only blocks when the response is Block. */
 const WOULD_TEXT: Record<string, string> = {
   block: 'would have been blocked', pause: 'would have paused the agent', stop: 'would have stopped the agent', notify: `would have ${NOTIFY.done}`,
+  // A Block tools rule with targets that couldn't read where the call went (gap-closing spec C1).
+  unchecked: CALL_OUTCOME_TEXT_UNCHECKED,
 };
 
 /** An Old tool results rule's row: it trims, whatever response the row carries, so it never reads as blocked or alerted. */
