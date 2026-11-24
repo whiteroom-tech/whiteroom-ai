@@ -94,3 +94,26 @@ export async function noticeRecipient(fleetId: string, agentId: string, q: Query
   await clearStaleContact(fleetId, agentId, contact, q);
   return { userId: owner, via: 'owner' };
 }
+
+/**
+ * After a control action the engine accepted: the agent it removed (a
+ * successful deregister_agent), whose contact goes with it, so an agent that
+ * later reuses the id starts with none. Null for anything else.
+ */
+export function removedAgentOf(action: string, body: string, reply: string): { fleetId: string; agentId: string } | null {
+  if (action !== 'deregister_agent') return null;
+  try {
+    const sent = JSON.parse(body) as { fleet_id?: unknown; agent_id?: unknown };
+    const got = JSON.parse(reply) as { success?: unknown; error?: unknown };
+    if (got.success !== true || got.error) return null;
+    if (typeof sent.fleet_id !== 'string' || typeof sent.agent_id !== 'string' || !AGENT_ID.test(sent.agent_id)) return null;
+    return { fleetId: sent.fleet_id, agentId: sent.agent_id };
+  } catch {
+    return null;
+  }
+}
+
+/** Removes an agent's contact (it was removed from the fleet). */
+export async function forgetAgentContact(fleetId: string, agentId: string, q: Queryable = db()): Promise<void> {
+  await q.query('DELETE FROM agent_contacts WHERE fleet_id = $1 AND agent_id = $2', [fleetId, agentId]);
+}

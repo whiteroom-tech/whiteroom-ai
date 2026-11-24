@@ -4,7 +4,8 @@
 -- organization, checked when it's set, when the owner opens it, and when a
 -- notice is sent (a contact who has left is cleared, and the notice goes to
 -- the owner). Nothing sends a per-agent notice yet: the first is C5.
--- No row: notices go to the fleet's owner.
+-- No row: notices go to the fleet's owner. Removing an agent from the dashboard
+-- deletes its row (api/fleet/engine), so an agent reusing the id starts fresh.
 --
 -- Idempotent: safe to re-run, same as 001-018.
 CREATE TABLE IF NOT EXISTS agent_contacts (

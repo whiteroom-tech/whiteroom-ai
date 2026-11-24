@@ -122,6 +122,14 @@ suite('agent contacts against Postgres', () => {
     expect(await contacts.noticeRecipient('f1', 'a1')).toEqual({ userId: 'owner', via: 'owner' });
   });
 
+  it('forgets a removed agent’s contact, and only that agent’s', async () => {
+    await contacts.writeContact('f1', 'a1', 'mate', 'owner');
+    await contacts.writeContact('f1', 'a2', 'mate', 'owner');
+    await contacts.forgetAgentContact('f1', 'a1');
+    expect(await contacts.storedContact('f1', 'a1')).toBeNull();
+    expect(await contacts.storedContact('f1', 'a2')).toBe('mate');
+  });
+
   it('has no recipient for a fleet nobody owns', async () => {
     expect(await contacts.noticeRecipient('nobody', 'a1')).toBeNull();
   });
