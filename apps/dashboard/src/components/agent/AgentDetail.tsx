@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Banner, Button, Panel, TextInput, Toast, FONT_MONO } from '@whiteroom/ui';
-import { auditLog, checkWatch, controlFailure, getDiagnosis, isAuthError, listRuns, pauseAgent, removeAgent, resumeAgent, stopAgent, updateAgentTaskType, type HealthHistoryEvent } from '@/lib/whiteroom/client';
+import { agentNamesGet, auditLog, checkWatch, controlFailure, getDiagnosis, isAuthError, listRuns, pauseAgent, removeAgent, resumeAgent, stopAgent, updateAgentTaskType, type HealthHistoryEvent } from '@/lib/whiteroom/client';
 import type { AgentInfo, AuditEntry, FleetDiagnosis, GovernanceRule, RunSummary } from '@/lib/whiteroom/types';
 import type { AgentWeek } from '@/lib/home-agents';
 import { usePoll } from '@/hooks/usePoll';
@@ -21,6 +21,8 @@ import { AgentWeekCard } from '@/components/agent/AgentWeekCard';
 import { HealthHistory } from '@/components/agent/HealthHistory';
 import { JobOutcomes } from '@/components/agent/JobOutcomes';
 import { RulesOnAgent } from '@/components/agent/RulesOnAgent';
+import { AgentNamePanel } from '@/components/identity/AgentNamePanel';
+import { AgentIdentityPanel } from '@/components/identity/IdentityMix';
 import { fetchControlActors, holdWho, type ControlActor } from '@/lib/control-actors';
 import { RefreshFailed } from '@/components/citadel/States';
 import { agentState, clock, latestActivity } from '@/lib/home';
@@ -67,6 +69,22 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   const taskInput = useRef<HTMLDivElement>(null);
   const [runs, setRuns] = useState<RecentRunsState>(preview ? { kind: 'ok', runs: preview.runs ?? [] } : { kind: 'loading' });
   const [diagnosis, setDiagnosis] = useState<FleetDiagnosis | null>(preview?.diagnosis ?? null);
+  // Its display name (A2), shown with the id; null until read, or when it has none.
+  const [name, setName] = useState<string | null>(null);
+  // Whether this engine has names at all: without them there's nothing to rename.
+  const [namesOn, setNamesOn] = useState(false);
+  useEffect(() => {
+    if (preview) return;
+    let live = true;
+    // A new agent starts with no name shown until its own read lands.
+    setName(null);
+    setNamesOn(false);
+    agentNamesGet(fleetId, authKey).then(
+      (all) => { if (live) { setNamesOn(all !== null); setName(all?.[agentId] ?? null); } },
+      (e) => { if (live && isAuthError(e)) onAuthError?.('Session expired. Please sign in again.'); },
+    );
+    return () => { live = false; };
+  }, [fleetId, agentId, authKey, preview, onAuthError]);
   const [updatedAt, setUpdatedAt] = useState<number | null>(preview ? Date.now() : null);
   const [confirmStop, setConfirmStop] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
@@ -339,7 +357,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   const back = from === 'runs'
     ? <Link href={ROUTES.runs} className="wr-crumb">&larr; Runs</Link>
     : <Link href={ROUTES.home} className="wr-crumb">&larr; Home</Link>;
-  const title = <span style={{ fontFamily: FONT_MONO }}>{agentId}</span>;
+  const title = <AgentTitle agentId={agentId} name={name} />;
   // "← Home" sits on its own line above the title, as on the run page.
   const crumb = <div className="wr-agent-crumb">{back}</div>;
 
@@ -466,6 +484,8 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
 
                 <RulesOnAgent fleetId={fleetId} authKey={authKey} agentId={agentId} preview={preview ? (preview.rules ?? []) : undefined} />
 
+                {!preview && namesOn && <AgentNamePanel fleetId={fleetId} agentId={agentId} authKey={authKey} name={name} onSaved={setName} />}
+
                 <Panel title="Task type">
                   <p className="wr-agent-cap" style={{ margin: '0 0 6px' }}>
                     {taskNote ? <span role="status" style={{ color: taskNote.ok ? 'var(--ok)' : 'var(--bad)' }}>{taskNote.text}</span> : 'Used to estimate cost per task on Performance'}
@@ -487,6 +507,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
 
               <div className="wr-agent-col">
                 <RecentRuns agentId={agentId} state={runs} />
+                {!preview && <AgentIdentityPanel fleetId={fleetId} agentId={agentId} authKey={authKey} onAuthError={onAuthError} />}
                 <Panel title="Recent activity" bodyPadding={0}>
                   <ActivityRows rows={activity} empty="Nothing yet for this agent." />
                 </Panel>
@@ -518,4 +539,11 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
       />
     </>
   );
+}
+
+/** The page title: the agent's display name with its id beside it, or the id alone (gap-closing spec A2). */
+export function AgentTitle({ agentId, name }: { agentId: string; name: string | null }) {
+  return name && name !== agentId
+    ? <span>{name}<span className="wr-agent-title__id">{agentId}</span></span>
+    : <span style={{ fontFamily: FONT_MONO }}>{agentId}</span>;
 }

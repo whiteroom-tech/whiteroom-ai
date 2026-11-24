@@ -5,6 +5,7 @@
 //   - anything else (fleet tokens) -> Authorization: Bearer
 //   - no key -> unauthenticated (e.g. token_login)
 
+import { IDENTITY_CREDENTIALS, IDENTITY_NAME_SOURCES, UNBOUND_CREDENTIALS, type AgentKeyMode, type AgentKeyRuleResult, type IdentityMixRow } from '@/lib/agent-identity';
 import type {
   AuditExportPage,
   CallExportPage,
@@ -113,6 +114,16 @@ export function controlFailure(e: unknown): 'sign-out' | 'refused' | 'failed' {
 }
 
 /**
+ * What a failed change says: the engine's own reason for refusing it, the
+ * dashboard's refusal (not the owner), or `fallback`.
+ */
+export function changeFailureText(e: unknown, fallback: string): string {
+  if (e instanceof WhiteRoomApiError && e.reason) return e.reason;
+  if (controlFailure(e) === 'refused' && e instanceof Error) return e.message;
+  return fallback;
+}
+
+/**
  * What a failed snooze, dismiss or mark fixed says. They are the fleet
  * owner's (Agent Health D6): a teammate is told so in the refusal's own
  * words, never asked to try again.
@@ -164,7 +175,7 @@ const READ_ACTIONS: ReadonlySet<string> = new Set([
   'performance_index', 'performance_agent', 'performance_evidence', 'performance_fleet_hourly',
   'performance_agent_scores', 'performance_recommendations_list', 'performance_recommendations_get',
   'performance_live_feed', 'performance_recommendations_export', 'performance_cost_forecast',
-  'agent_budgets_get', 'governance_list', 'get_diagnosis', 'audit_integrity', 'verify_audit', 'audit_summary',
+  'agent_budgets_get', 'agent_names_get', 'identity_mix', 'agent_key_rule_get', 'governance_list', 'get_diagnosis', 'audit_integrity', 'verify_audit', 'audit_summary',
   'rule_would_act', 'list_runs', 'rule_actions', 'run_days', 'get_run_events', 'alerts_get', 'health_history', 'job_outcomes',
   'fleet_data_settings_get', 'compression_preview', 'tools_seen', 'send_seen_list',
 ]);
@@ -771,6 +782,59 @@ export async function agentBudgetSet(fleetId: string, agentId: string, budgetUsd
   requireSuccess(await apiCall<{ success?: boolean; error?: string }>({
     action: 'agent_budget_set', fleet_id: fleetId, agent_id: agentId, budget_usd: budgetUsd, ...(budgetTokens !== undefined && { budget_tokens: budgetTokens }),
   }, key));
+}
+
+// -- Agent identity (gap-closing spec A2, A3, 0.2) --
+
+/**
+ * Display names by agent id. Null from an engine without agent_names_get, or
+ * on an odd reply: pages then show ids, as before, and offer no renaming.
+ */
+export async function agentNamesGet(fleetId: string, key?: string): Promise<Record<string, string> | null> {
+  try {
+    const res = await apiCall<{ names?: unknown }>({ action: 'agent_names_get', fleet_id: fleetId }, key);
+    if (!res.names || typeof res.names !== 'object') return null;
+    return Object.fromEntries(Object.entries(res.names as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === 'string'));
+  } catch (e) {
+    if (isAuthError(e)) throw e;
+    return null;
+  }
+}
+
+/** Sets an agent's display name; null clears it. The owner's call (dashboard only on the engine). */
+export async function agentRename(fleetId: string, agentId: string, name: string | null, key?: string): Promise<string | null> {
+  const res = requireSuccess(await apiCall<{ success?: boolean; error?: string; name?: string | null }>({ action: 'agent_rename', fleet_id: fleetId, agent_id: agentId, name }, key));
+  return res.name ?? null;
+}
+
+/** How an agent's calls were identified: one run (`runId`), or its last 7 days of production calls. */
+export async function identityMix(fleetId: string, target: { agentId: string } | { runId: string }, key?: string): Promise<IdentityMixRow[]> {
+  const res = await apiCall<{ rows?: unknown }>({ action: 'identity_mix', fleet_id: fleetId, ...('runId' in target ? { run_id: target.runId } : { agent_id: target.agentId }) }, key);
+  // A value this build doesn't know (a newer engine) reads as not known; a malformed row is left out.
+  return Array.isArray(res.rows) ? res.rows.flatMap((r) => {
+    const row = r as Partial<Record<keyof IdentityMixRow, unknown>> | null;
+    if (!row || typeof row.calls !== 'number' || !Number.isFinite(row.calls) || row.calls < 0) return [];
+    const credential = (IDENTITY_CREDENTIALS as readonly unknown[]).includes(row.credential) ? row.credential as IdentityMixRow['credential'] : 'none';
+    const nameSource = (IDENTITY_NAME_SOURCES as readonly unknown[]).includes(row.nameSource) && (IDENTITY_CREDENTIALS as readonly unknown[]).includes(row.credential) ? row.nameSource as IdentityMixRow['nameSource'] : 'unresolved';
+    return [{ credential, nameSource, calls: row.calls, lastAt: typeof row.lastAt === 'string' ? row.lastAt : null }];
+  }) : [];
+}
+
+/** "One key per agent": its mode, and the production calls that came in without the agent's own key. */
+export async function agentKeyRuleGet(fleetId: string, key?: string): Promise<AgentKeyRuleResult> {
+  const res = await apiCall<AgentKeyRuleResult>({ action: 'agent_key_rule_get', fleet_id: fleetId }, key);
+  // A reply this build can't read is treated like an engine without the rule: the card stays hidden.
+  const s = res?.summary;
+  const ok = res && typeof res.applies === 'boolean' && (res.mode === 'off' || res.mode === 'watch')
+    && (s === null || (s && typeof s.recorded === 'boolean' && typeof s.unboundCalls === 'number' && Array.isArray(s.agents) && s.byCredential && typeof s.byCredential === 'object'
+      && s.agents.every((a) => a && typeof a.agentId === 'string' && typeof a.unboundCalls === 'number' && Array.isArray(a.unboundCredentials))));
+  if (!ok) throw new WhiteRoomApiError('Unexpected agent_key_rule_get reply', 200);
+  return { ...res, summary: s ? { ...s, agents: s.agents.map((a) => ({ ...a, unboundCredentials: a.unboundCredentials.filter((c) => (UNBOUND_CREDENTIALS as readonly string[]).includes(c)) })) } : null };
+}
+
+/** Switches "One key per agent". The owner's call (dashboard only on the engine). */
+export async function agentKeyRuleSet(fleetId: string, mode: AgentKeyMode, key?: string): Promise<void> {
+  requireSuccess(await apiCall<{ success?: boolean; error?: string }>({ action: 'agent_key_rule_set', fleet_id: fleetId, mode }, key));
 }
 
 // -- Fleet governance rules (Controls page) --

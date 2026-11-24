@@ -9,6 +9,7 @@ import { buildCallExport, CallExportRefused } from '@/lib/call-export';
 import { saveBlob } from '@/lib/download';
 import type { RunEventsResult } from '@/lib/whiteroom/types';
 import { LiveStatus, PageHeader } from '@/components/citadel/PageChrome';
+import { RunIdentityLine } from '@/components/identity/IdentityMix';
 import { LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { ROUTES } from '@/lib/routes';
 import { clock } from '@/lib/home';
@@ -274,6 +275,7 @@ export function RunDetail({ fleetId, authKey, runId, eventId, onAuthError, previ
               {s.wouldAct !== undefined && <> · {wouldActText(s.wouldAct)}</>}
               {s.outcome && <> · Job <strong>{s.outcome.toLowerCase()}</strong>, as your system reported</>}
             </p>
+            {!preview && <RunIdentityLine fleetId={fleetId} runId={runId} authKey={authKey} onAuthError={onAuthError} />}
             {s.models.length > 0 && (
               <p className="wr-run-models">
                 {s.models.map((m, i) => <span key={m}>{i > 0 && ' · '}<span className="wr-run-summary__model">{m}</span></span>)}
