@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { SegmentedControl, FONT_MONO } from '@whiteroom/ui';
 import { agentKeyRuleGet, agentKeyRuleSet, agentNamesGet, changeFailureText, isAuthError } from '@/lib/whiteroom/client';
@@ -27,19 +27,31 @@ export function OneKeyPerAgent({ fleetId, authKey, onAuthError }: { fleetId: str
   // Returns whether it read. A failed read keeps what the card showed, so a
   // blip after a change doesn't hide the switch; the first read failing
   // leaves it hidden (an engine without the rule).
+  // The fleet and key each read was made for: a read for an earlier one is dropped when it lands.
+  const current = useRef({ fleetId, authKey });
+  current.current = { fleetId, authKey };
   const load = useCallback(async (): Promise<boolean> => {
+    const asked = { fleetId, authKey };
+    const stillCurrent = () => current.current.fleetId === asked.fleetId && current.current.authKey === asked.authKey;
     try {
       const [rule, named] = await Promise.all([agentKeyRuleGet(fleetId, authKey), agentNamesGet(fleetId, authKey)]);
+      if (!stillCurrent()) return false;
       setData(rule);
       setNames(named ?? {});
       return true;
     } catch (e) {
-      if (isAuthError(e)) onAuthError?.();
+      if (stillCurrent() && isAuthError(e)) onAuthError?.();
       return false;
     }
   }, [fleetId, authKey, onAuthError]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    // Another fleet: nothing of the last one's shows while its own read is out.
+    setData(null);
+    setNames({});
+    setNote(null);
+    void load();
+  }, [load]);
 
   async function change(mode: AgentKeyMode) {
     if (!data || saving || mode === data.mode) return;
