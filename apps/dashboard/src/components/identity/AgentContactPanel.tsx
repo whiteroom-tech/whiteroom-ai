@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Panel } from '@whiteroom/ui';
 import { agentContactView, setAgentContact, type ContactView } from '@/lib/agent-contact-actions';
 
@@ -54,17 +54,27 @@ export function AgentContactPanel({ fleetId, agentId }: { fleetId: string; agent
   const [saving, setSaving] = useState(false);
   const [note, setNote] = useState<Note | null>(null);
 
+  // The agent each read or save was for: one that lands after a switch is dropped.
+  const current = useRef(`${fleetId}/${agentId}`);
+  current.current = `${fleetId}/${agentId}`;
+
   useEffect(() => {
     let live = true;
+    // Another agent: nothing of the last one's shows while its own read is out.
+    setView(null);
+    setNote(null);
+    setSaving(false);
     agentContactView(fleetId, agentId).then((v) => { if (live) setView(v); }, () => { if (live) setView(null); });
     return () => { live = false; };
   }, [fleetId, agentId]);
 
   async function change(userId: string) {
     if (!view?.ok) return;
+    const asked = `${fleetId}/${agentId}`;
     setSaving(true);
     setNote(null);
     const got = await saveContactChoice(fleetId, agentId, userId, view);
+    if (current.current !== asked) return;
     setView(got.view);
     setNote(got.note);
     setSaving(false);

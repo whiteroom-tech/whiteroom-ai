@@ -487,7 +487,7 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
 
                 {!preview && namesOn && <AgentNamePanel fleetId={fleetId} agentId={agentId} authKey={authKey} name={name} onSaved={setName} />}
 
-                {!preview && <AgentContactPanel fleetId={fleetId} agentId={agentId} />}
+                {!preview && <AgentContactPanel key={`${fleetId}/${agentId}`} fleetId={fleetId} agentId={agentId} />}
 
                 <Panel title="Task type">
                   <p className="wr-agent-cap" style={{ margin: '0 0 6px' }}>
