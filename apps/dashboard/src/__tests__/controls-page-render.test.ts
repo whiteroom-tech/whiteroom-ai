@@ -96,6 +96,8 @@ const api = vi.hoisted(() => ({
   seenRows: {} as Record<string, Array<{ tool: string; domain: string; agentId: string | null; firstSeen: string; canAdd?: boolean }>>,
   seenFull: false,
   seenAsked: [] as string[],
+  /** What replay_start was sent: fleet, rule, days, key. */
+  replayStarts: [] as unknown[][],
 }));
 const { knownRulesOnly } = await import('@/lib/governance');
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
@@ -124,6 +126,8 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
   governanceDeleteRule: api.remove,
   governanceCreateRule: api.create,
   sendSeenList: async (_f: string, ruleId: string) => { api.seenAsked.push(ruleId); if (api.seenFail) throw new Error('down'); return { ruleId, rows: api.seenRows[ruleId] ?? [], full: api.seenFull }; },
+  replayStart: async (...a: unknown[]) => { api.replayStarts.push(a); return 'rp_1'; },
+  replayGet: () => new Promise(() => {}),
   toolsSeen: async () => { api.toolsAsked++; if (api.toolsHang) await new Promise(() => {}); if (api.toolsReplies) return new Promise<string[]>((r) => api.toolsReplies!.push(r)); if (api.toolsFail) throw new Error('down'); return api.tools; },
 }));
 
@@ -169,7 +173,7 @@ beforeEach(() => {
   // An unsaved edit is kept in sessionStorage across visits (controls-draft): each test starts with none.
   sessionStorage.clear();
   nav.params = new URLSearchParams(); nav.replace.mockClear(); nav.push.mockClear();
-  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.hourly = []; api.listGate = null; api.listFail = false; api.empty = false; api.would = {}; api.agentCalls = {}; api.history = []; api.totals = null; api.byRule = {}; api.unknown = []; api.tools = []; api.toolsAsked = 0; api.toolsFail = false; api.toolsHang = false; api.toolsReplies = null; session.key = 'k';
+  api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.hourly = []; api.listGate = null; api.listFail = false; api.empty = false; api.would = {}; api.agentCalls = {}; api.history = []; api.totals = null; api.byRule = {}; api.unknown = []; api.tools = []; api.toolsAsked = 0; api.toolsFail = false; api.toolsHang = false; api.toolsReplies = null; api.replayStarts = []; session.key = 'k';
   api.ruleTypes = undefined; api.skipped = undefined; api.seenRows = {}; api.seenFull = false; api.seenAsked = []; api.seenFail = false;
   api.oldEngine = false; api.wouldBatches = []; api.wouldSingle = 0; resetBatchSupport();
   document.body.innerHTML = '';
@@ -603,6 +607,15 @@ describe('Controls page, editing', () => {
       expect(m.button('Save')!.disabled).toBe(true);
       m.root.unmount();
     }
+  });
+
+  it('Allow only certain models offers an estimate of the rule as drafted, for this fleet', async () => {
+    const m = await mount();
+    await m.open('Only claude');
+    await m.click(m.button('Estimate on the last 7 days'));
+    expect(api.replayStarts).toEqual([['f1', { ruleType: 'model_allowlist', params: { allowedModels: ['claude-haiku-4-5-20251001'] }, appliesTo: ['market-researcher'] }, 7, 'k']]);
+    expect(m.text()).toContain('Estimating…');
+    m.root.unmount();
   });
 
   it('Stop needs a day in Watch first', async () => {

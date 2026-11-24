@@ -102,6 +102,26 @@ describe('runEstimate', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('stops at once when the read is refused or the run is gone, and after a few missed reads in a row', async () => {
+    const started = () => reply({ success: true, supported: true, replay_id: 'rp_1' });
+    for (const [status, error] of [[401, 'You’re no longer signed in to this fleet. Reload the page.'], [403, 'You’re no longer signed in to this fleet. Reload the page.'], [404, 'The estimate is gone. Run it again.']] as const) {
+      fetchMock.mockReset();
+      fetchMock.mockResolvedValueOnce(started()).mockImplementation(async () => reply({ error: 'no' }, status));
+      await expect(runEstimate('f1', rule, 'k', { sleep })).resolves.toEqual({ error });
+    }
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValueOnce(started()).mockImplementation(async () => reply({ error: 'blip' }, 400));
+    await expect(runEstimate('f1', rule, 'k', { sleep })).resolves.toEqual({ error: 'The estimate couldn’t be read. Try again in a minute.' });
+    // A blip between good reads doesn't count against it.
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValueOnce(started());
+    for (let i = 0; i < 4; i++) fetchMock.mockImplementationOnce(async () => reply({ error: 'blip' }, 400));
+    fetchMock.mockImplementationOnce(async () => reply({ replay: run({ status: 'running', result: null }) }));
+    for (let i = 0; i < 4; i++) fetchMock.mockImplementationOnce(async () => reply({ error: 'blip' }, 400));
+    fetchMock.mockImplementation(async () => reply({ replay: run() }));
+    await expect(runEstimate('f1', rule, 'k', { sleep })).resolves.toEqual({ result: result() });
+  });
+
   it('stops quietly once the editor is closed', async () => {
     fetchMock.mockResolvedValueOnce(reply({ success: true, supported: true, replay_id: 'rp_1' }));
     await expect(runEstimate('f1', rule, 'k', { sleep, cancelled: () => true })).resolves.toBeNull();

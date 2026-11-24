@@ -11,6 +11,8 @@ import { REPLAY_DAYS, REPLAY_RULE_TYPES, partialLine, replayLine, type ReplayRes
 const POLL_MS = 2_000;
 /** The engine gives up after 10 minutes; stop asking a little after. */
 const GIVE_UP_MS = 11 * 60_000;
+/** Reads that fail in a row (a network blip) before the estimate gives up. */
+const MAX_MISSED_READS = 5;
 
 type State =
   | { kind: 'idle' }
@@ -45,6 +47,7 @@ export async function runEstimate(
   }
   if (id === null) return { error: 'This kind of rule can’t be estimated yet.' };
   const until = now() + GIVE_UP_MS;
+  let missed = 0;
   while (now() < until) {
     await sleep(POLL_MS);
     if (opts.cancelled?.()) return null;
@@ -52,9 +55,14 @@ export async function runEstimate(
       const run = await replayGet(fleetId, id, authKey);
       if (run.status === 'done' && run.result) return { result: run.result };
       if (run.status === 'failed') return { error: 'The estimate stopped before it finished. Try again.' };
+      missed = 0;
     } catch (e) {
-      // A reply this page can't read won't read on the next poll either; a missed read is retried.
-      if (e instanceof WhiteRoomApiError && e.status === 200) return { error: 'This page can’t read the estimate. Reload it and try again.' };
+      // A refusal or a reply this page can't read won't change on the next poll; a missed read is retried a few times.
+      const status = e instanceof WhiteRoomApiError ? e.status : undefined;
+      if (status === 200) return { error: 'This page can’t read the estimate. Reload it and try again.' };
+      if (status === 401 || status === 403) return { error: 'You’re no longer signed in to this fleet. Reload the page.' };
+      if (status === 404) return { error: 'The estimate is gone. Run it again.' };
+      if (++missed >= MAX_MISSED_READS) return { error: 'The estimate couldn’t be read. Try again in a minute.' };
     }
   }
   return { error: 'The estimate is taking too long. Try again later.' };
