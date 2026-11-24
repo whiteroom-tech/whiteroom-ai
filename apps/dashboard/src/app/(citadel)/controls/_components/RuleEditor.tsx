@@ -27,6 +27,7 @@ import {
 } from '@/lib/controls-view';
 import { AGENT_NOTE, isMarker, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, looksLikeDeleteOrChange, newMarker, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, MODE_CHOICES, responseChoices, sendsAlert, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
 import { Chip, field, GroupPicker, InlineSelect, MarkerChip, MODEL_GROUPS, NumberField, ScopeField, ToolPicker } from './pickers';
+import { ReplayEstimate } from './ReplayEstimate';
 
 /** How a rule judged on the reply meets a streamed call and a Bedrock one. */
 const HELD_REPLY_NOTE = 'In Watch, streamed calls are checked after they arrive. In Enforce, a streamed call that can use a listed tool arrives all at once, and a Bedrock one is refused.';
@@ -78,7 +79,10 @@ const sentenceRow = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', g
 /** Shown on an empty Data deletion list when none of the fleet's tools has a command-like name. */
 export const NO_COMMAND_TOOLS_NOTE = 'None of your agents’ tools look like they run commands or SQL. Add one with + Add tool.';
 
-export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPicker, govV1, alertChannel, history, ruleHistory, actors, undoOf, onUndo, fleetDailySpend = null, agentSpend = [], status, startOpen = false, dirty, error, saving, onSave, onDiscard, onClose, onRemove, seen, onSeenRetry, onStaged }: {
+export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fleetTools, onToolPicker, govV1, alertChannel, history, ruleHistory, actors, undoOf, onUndo, fleetDailySpend = null, agentSpend = [], status, startOpen = false, dirty, error, saving, onSave, onDiscard, onClose, onRemove, seen, onSeenRetry, onStaged }: {
+  /** The fleet, for the Estimate under the rule's settings; without it there is none. */
+  fleetId?: string;
+  authKey?: string;
   rule: GovernanceRule;
   /** Where tools can send data: its Seen list (the owner's only; absent otherwise). */
   seen?: SeenState;
@@ -277,6 +281,10 @@ export function RuleEditor({ rule, draft, onDraft, agents, fleetTools, onToolPic
             <span style={{ fontSize: 'var(--fs-md)' }}>Only allow these models:</span>
             <GroupPicker values={(p as ModelAllowlistParams).allowedModels} onChange={(allowedModels) => setParams({ allowedModels })} groups={MODEL_GROUPS}
               addLabel="+ Add model" ariaLabel="Add a model" otherLabel="Other (type deployment name or model ID)…" placeholder="deployment name or model ID" />
+            {fleetId && (
+              <ReplayEstimate fleetId={fleetId} authKey={authKey} ruleType={rule.ruleType} params={p} appliesTo={draft.appliesTo}
+                disabledReason={(p as ModelAllowlistParams).allowedModels.length === 0 ? 'Add a model first.' : null} />
+            )}
           </>
         )}
         {rule.ruleType === 'keyword' && (

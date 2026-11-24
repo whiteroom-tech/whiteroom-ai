@@ -63,6 +63,7 @@ import { viewerTimeZone } from '@/lib/runs';
 import { activeHold, activeHolds } from '@/lib/holds';
 import { platform429Delay, withEngineReadRetry } from './engine-retry';
 import { knownRulesOnly } from '@/lib/governance';
+import type { ReplayResult, ReplayRun } from '@/lib/replay';
 
 export const PROXY_URL = process.env.NEXT_PUBLIC_PROXY_URL || 'https://proxy.whiteroom.tech';
 
@@ -175,7 +176,7 @@ const READ_ACTIONS: ReadonlySet<string> = new Set([
   'performance_index', 'performance_agent', 'performance_evidence', 'performance_fleet_hourly',
   'performance_agent_scores', 'performance_recommendations_list', 'performance_recommendations_get',
   'performance_live_feed', 'performance_recommendations_export', 'performance_cost_forecast',
-  'agent_budgets_get', 'agent_names_get', 'identity_mix', 'agent_key_rule_get', 'agent_key_readiness', 'governance_list', 'get_diagnosis', 'audit_integrity', 'verify_audit', 'audit_summary',
+  'agent_budgets_get', 'agent_names_get', 'identity_mix', 'agent_key_rule_get', 'agent_key_readiness', 'replay_get', 'governance_list', 'get_diagnosis', 'audit_integrity', 'verify_audit', 'audit_summary',
   'rule_would_act', 'list_runs', 'rule_actions', 'run_days', 'get_run_events', 'alerts_get', 'health_history', 'job_outcomes',
   'fleet_data_settings_get', 'compression_preview', 'tools_seen', 'send_seen_list',
 ]);
@@ -872,6 +873,33 @@ export async function agentKeyReadiness(fleetId: string, key?: string): Promise<
 /** Marks an agent retired, or not: a retired agent isn't expected on its own key before Enforce. The owner's call. */
 export async function agentRetire(fleetId: string, agentId: string, retired: boolean, key?: string): Promise<void> {
   requireSuccess(await apiCall<{ success?: boolean; error?: string }>({ action: 'agent_retire', fleet_id: fleetId, agent_id: agentId, retired }, key));
+}
+
+/**
+ * Starts a Replay of a draft rule over the last `days` days. The owner's call.
+ * Returns the run's id, or null when the engine can't estimate this rule type.
+ * An engine with Replay off for the fleet answers 404 (WhiteRoomApiError).
+ */
+export async function replayStart(fleetId: string, rule: { ruleType: string; params: unknown; appliesTo: unknown }, days: number, key?: string): Promise<string | null> {
+  const res = await apiCall<{ success?: boolean; supported?: boolean; replay_id?: unknown; error?: string }>(
+    { action: 'replay_start', fleet_id: fleetId, rule_type: rule.ruleType, params: rule.params, applies_to: rule.appliesTo, days }, key);
+  if (res?.supported === false) return null;
+  if (typeof res?.replay_id !== 'string') throw new WhiteRoomApiError('Unexpected replay_start reply', 200);
+  return res.replay_id;
+}
+
+/** A Replay run. A reply this build can't read throws. */
+export async function replayGet(fleetId: string, replayId: string, key?: string): Promise<ReplayRun> {
+  const res = await apiCall<{ replay?: ReplayRun | null }>({ action: 'replay_get', fleet_id: fleetId, replay_id: replayId }, key);
+  const r = res?.replay;
+  const okResult = (x: unknown) => x === null || (typeof x === 'object' && x !== null
+    && typeof (x as ReplayResult).evaluated === 'number' && typeof (x as ReplayResult).matched === 'number'
+    && ((x as ReplayResult).partial === null || Array.isArray((x as ReplayResult).partial)));
+  if (!r || typeof r.id !== 'string' || !['running', 'done', 'failed'].includes(r.status) || !okResult(r.result ?? null)) {
+    throw new WhiteRoomApiError('Unexpected replay_get reply', 200);
+  }
+  if (r.status === 'done' && !r.result) throw new WhiteRoomApiError('Unexpected replay_get reply', 200);
+  return { id: r.id, status: r.status, from: r.from, to: r.to, result: r.result ?? null };
 }
 
 // -- Fleet governance rules (Controls page) --

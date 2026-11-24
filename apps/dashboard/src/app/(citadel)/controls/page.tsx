@@ -1129,6 +1129,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
               <aside aria-label="Edit rule" className="wr-panel ctl-editor is-sheet">
                 {notice && <Banner variant="info" icon="check" actions={<Button variant="ghost" size={28} onClick={() => setNotice(null)}>Dismiss</Button>}>{notice}</Banner>}
                 <RuleEditor
+                  fleetId={fleetId}
+                  authKey={authKey}
                   key={edited.id}
                   rule={edited}
                   draft={draft}
