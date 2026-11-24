@@ -161,6 +161,7 @@ export function OneKeyPerAgentView({ data, names, note, readiness = null, busy =
           ]}
         />
       </div>
+      <div className="ctl-card__body">
       {note && <p className="ctl-cap" role={note.ok ? 'status' : 'alert'} style={{ margin: 0, color: note.ok ? 'var(--tx2)' : 'var(--bad)' }}>{note.text}</p>}
       {!s ? (
         <p className="ctl-cap" style={{ margin: 0 }}>The counts aren’t available right now.</p>
@@ -193,6 +194,7 @@ export function OneKeyPerAgentView({ data, names, note, readiness = null, busy =
         </>
       )}
       {readiness && !enforcing && <EnforceReadiness readiness={readiness} names={names} busy={busy} onRetire={onRetire} />}
+      </div>
     </section>
   );
 }
