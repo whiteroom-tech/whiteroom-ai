@@ -22,7 +22,7 @@ export function OneKeyPerAgent({ fleetId, authKey, onAuthError }: { fleetId: str
   const [data, setData] = useState<AgentKeyRuleResult | null>(null);
   const [names, setNames] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
-  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [note, setNote] = useState<Note | null>(null);
 
   // Returns whether it read. A failed read keeps what the card showed, so a
   // blip after a change doesn't hide the switch; the first read failing
@@ -45,27 +45,45 @@ export function OneKeyPerAgent({ fleetId, authKey, onAuthError }: { fleetId: str
     if (!data || saving || mode === data.mode) return;
     setSaving(true);
     setNote(null);
-    try {
-      await agentKeyRuleSet(fleetId, mode, authKey);
-      // Saved: show the new mode even if the counts can't be read just now.
-      if (!(await load())) {
-        setData((d) => (d ? { ...d, mode } : d));
-        setNote({ ok: true, text: 'Saved. The counts couldn’t be refreshed; reload the page to see them.' });
-      }
-    } catch (e) {
-      setNote({ ok: false, text: e instanceof WhiteRoomApiError && e.reason ? e.reason
-        : controlFailure(e) === 'refused' && e instanceof Error ? e.message
-        : 'Couldn’t change it. Nothing changed. Try again.' });
-    } finally {
-      setSaving(false);
-    }
+    const got = await changeAgentKeyMode(fleetId, mode, authKey, load);
+    if (got.keepMode) setData((d) => (d ? { ...d, mode } : d));
+    setNote(got.note);
+    setSaving(false);
   }
 
+  return <OneKeyPerAgentView data={data} names={names} note={note} onChange={(m) => void change(m)} />;
+}
+
+type Note = { ok: boolean; text: string };
+
+/**
+ * Switches the mode, then reads the card again. `keepMode`: saved, but the
+ * read failed, so the card shows the new mode with the counts it had.
+ */
+export async function changeAgentKeyMode(
+  fleetId: string, mode: AgentKeyMode, authKey: string | undefined, reload: () => Promise<boolean>,
+  set: typeof agentKeyRuleSet = agentKeyRuleSet,
+): Promise<{ note: Note | null; keepMode: boolean }> {
+  try {
+    await set(fleetId, mode, authKey);
+  } catch (e) {
+    return { keepMode: false, note: { ok: false, text: e instanceof WhiteRoomApiError && e.reason ? e.reason
+      : controlFailure(e) === 'refused' && e instanceof Error ? e.message
+      : 'Couldn’t change it. Nothing changed. Try again.' } };
+  }
+  if (await reload()) return { keepMode: false, note: null };
+  return { keepMode: true, note: { ok: true, text: 'Saved. The counts couldn’t be refreshed; reload the page to see them.' } };
+}
+
+/** The card for what was read: nothing for a fleet outside the rule, or before the first read. */
+export function OneKeyPerAgentView({ data, names, note, onChange }: { data: AgentKeyRuleResult | null; names: Record<string, string>; note: Note | null; onChange: (m: AgentKeyMode) => void }) {
   if (!data?.applies || !data.summary) return null;
   const s = data.summary;
   const watching = data.mode === 'watch';
   const when = watching && data.since ? `Since ${fmtDay(data.since)}` : 'In the last 7 days';
   const n = s.unboundCalls;
+  const unbound = s.agents.filter((a) => a.unboundCalls > 0);
+  const more = unbound.length - SHOWN;
 
   return (
     <section className="wr-panel ctl-card" aria-labelledby="one-key-heading">
@@ -79,7 +97,7 @@ export function OneKeyPerAgent({ fleetId, authKey, onAuthError }: { fleetId: str
         <SegmentedControl<AgentKeyMode>
           label="One key per agent"
           value={data.mode}
-          onChange={(m) => void change(m)}
+          onChange={onChange}
           options={[{ value: 'off', label: 'Off' }, { value: 'watch', label: 'Watch' }]}
         />
       </div>
@@ -95,7 +113,7 @@ export function OneKeyPerAgent({ fleetId, authKey, onAuthError }: { fleetId: str
             <Link href={ROUTES.settings} className="wr-link">Create keys in Settings &rarr;</Link>
           </p>
           <ul className="wr-identity-list">
-            {s.agents.filter((a) => a.unboundCalls > 0).slice(0, SHOWN).map((a) => {
+            {unbound.slice(0, SHOWN).map((a) => {
               const d = agentDisplay(a.agentId, names);
               return (
                 <li key={a.agentId} className="wr-identity-list__row">
@@ -109,10 +127,7 @@ export function OneKeyPerAgent({ fleetId, authKey, onAuthError }: { fleetId: str
               );
             })}
           </ul>
-          {(() => {
-            const more = s.agents.filter((a) => a.unboundCalls > 0).length - SHOWN;
-            return more > 0 || s.truncated ? <p className="ctl-cap" style={{ margin: 0 }}>{s.truncated ? 'More agents' : `${more} more ${more === 1 ? 'agent' : 'agents'}`} not shown.</p> : null;
-          })()}
+          {(more > 0 || s.truncated) && <p className="ctl-cap" style={{ margin: 0 }}>{s.truncated ? 'More agents' : `${more} more ${more === 1 ? 'agent' : 'agents'}`} not shown.</p>}
         </>
       )}
     </section>
