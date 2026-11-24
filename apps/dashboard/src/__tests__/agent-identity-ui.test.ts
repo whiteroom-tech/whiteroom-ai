@@ -8,6 +8,7 @@ import { agentKeyRuleGet, agentKeyRuleSet, agentNamesGet, agentRename, identityM
 import { AgentIdentityView, runIdentityText } from '@/components/identity/IdentityMix';
 import { saveAgentName } from '@/components/identity/AgentNamePanel';
 import { changeAgentKeyMode, OneKeyPerAgentView } from '@/app/(citadel)/controls/_components/OneKeyPerAgent';
+import { AgentTitle } from '@/components/agent/AgentDetail';
 import { identityLines, type AgentKeyRuleResult } from '@/lib/agent-identity';
 
 const fetchMock = vi.fn();
@@ -65,6 +66,16 @@ describe('client calls', () => {
     expect(sent()).toEqual({ action: 'agent_key_rule_set', fleet_id: 'f1', mode: 'watch' });
     fetchMock.mockResolvedValue(reply({ success: false, error: 'Not saved.' }));
     await expect(agentKeyRuleSet('f1', 'watch', 'k')).rejects.toThrow('Not saved.');
+  });
+});
+
+describe('Agent page title', () => {
+  it('shows the name with the id beside it, or the id alone', () => {
+    const named = renderToStaticMarkup(h(AgentTitle, { agentId: 'claims-7', name: 'Claims bot' }));
+    expect(named).toContain('Claims bot');
+    expect(named).toContain('<span class="wr-agent-title__id">claims-7</span>');
+    expect(renderToStaticMarkup(h(AgentTitle, { agentId: 'claims-7', name: null }))).not.toContain('wr-agent-title__id');
+    expect(renderToStaticMarkup(h(AgentTitle, { agentId: 'claims-7', name: 'claims-7' }))).not.toContain('wr-agent-title__id');
   });
 });
 
