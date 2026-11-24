@@ -7,20 +7,21 @@ import { identityLines, percentText, type IdentityLine, type IdentityMixRow } fr
 
 export type MixState = { kind: 'loading' } | { kind: 'ok'; lines: IdentityLine[] } | { kind: 'failed' };
 
-/** How a run's or an agent's calls were identified, fetched once. Hidden on engines without identity_mix. */
+/** How a run's or an agent's calls were identified, read again when the run or agent changes. Hidden on engines without identity_mix. */
 function useIdentityMix(fleetId: string, target: { agentId: string } | { runId: string }, authKey?: string, preview?: IdentityMixRow[]): MixState {
-  const id = 'runId' in target ? `run:${target.runId}` : `agent:${target.agentId}`;
+  const runId = 'runId' in target ? target.runId : null;
+  const agentId = 'agentId' in target ? target.agentId : null;
   const [state, setState] = useState<MixState>(preview ? { kind: 'ok', lines: identityLines(preview) } : { kind: 'loading' });
   useEffect(() => {
     if (preview) return;
     let live = true;
     setState({ kind: 'loading' });
-    identityMix(fleetId, id.startsWith('run:') ? { runId: id.slice(4) } : { agentId: id.slice(6) }, authKey).then(
+    identityMix(fleetId, runId !== null ? { runId } : { agentId: agentId! }, authKey).then(
       (rows) => { if (live) setState({ kind: 'ok', lines: identityLines(rows) }); },
       () => { if (live) setState({ kind: 'failed' }); },
     );
     return () => { live = false; };
-  }, [fleetId, id, authKey, preview]);
+  }, [fleetId, runId, agentId, authKey, preview]);
   return state;
 }
 
@@ -41,7 +42,7 @@ export function AgentIdentityView({ state }: { state: MixState }) {
       ) : (
         <ul className="wr-identity-list">
           {state.lines.map((l) => (
-            <li key={l.words} className="wr-identity-list__row" data-bound={l.bound || undefined}>
+            <li key={l.words} className="wr-identity-list__row">
               <span>{l.words}</span>
               <span className="wr-agent-cap">{percentText(l)}</span>
             </li>

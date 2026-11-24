@@ -7,6 +7,12 @@ import { cleanAgentName } from '@/lib/agent-identity';
 
 type Note = { ok: boolean; text: string };
 
+/** Whether a draft would save as something other than `name` (an invalid draft counts as a change, so Save can say why). */
+export function namesDiffer(draft: string, name: string | null): boolean {
+  const clean = cleanAgentName(draft);
+  return 'error' in clean || clean.name !== name;
+}
+
 /** Cleans and saves a name (empty clears it), saying what happened; the engine's refusal as it is. */
 export async function saveAgentName(
   fleetId: string, agentId: string, value: string, authKey?: string, rename: typeof agentRename = agentRename,
@@ -49,7 +55,8 @@ export function AgentNamePanel({ fleetId, agentId, authKey, name, onSaved }: {
   }
 
   const value = draft ?? name ?? '';
-  const changed = draft !== null && draft.trim() !== (name ?? '');
+  // Compared as the engine would store it: extra spaces alone aren't a change.
+  const changed = draft !== null && namesDiffer(draft, name);
   return (
     <Panel title="Name">
       <p className="wr-agent-cap" style={{ margin: '0 0 6px' }}>

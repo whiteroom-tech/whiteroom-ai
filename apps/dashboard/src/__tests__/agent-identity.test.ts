@@ -20,7 +20,7 @@ describe('identity words (gap-closing spec 0.2)', () => {
       { credential: 'fleet_key', nameSource: 'inferred', calls: 1, lastAt: null },
       { credential: 'bound_key', nameSource: 'explicit', calls: 299, lastAt: null },
     ]);
-    expect(lines.map((l) => [l.words, percentText(l), l.bound])).toEqual([['Own key', '99%', true], ['Shared key, name worked out by WhiteRoom', '<1%', false]]);
+    expect(lines.map((l) => [l.words, percentText(l)])).toEqual([['Own key', '99%'], ['Shared key, name worked out by WhiteRoom', '<1%']]);
     expect(identityLines([])).toEqual([]);
   });
 
@@ -29,7 +29,7 @@ describe('identity words (gap-closing spec 0.2)', () => {
       { credential: 'fleet_key', nameSource: 'unresolved', calls: 2, lastAt: null },
       { credential: 'none', nameSource: 'unresolved', calls: 2, lastAt: null },
     ]);
-    expect(lines).toEqual([{ words: 'Not known', calls: 4, percent: 100, bound: false }]);
+    expect(lines).toEqual([{ words: 'Not known', calls: 4, percent: 100 }]);
   });
 
   it('name each unbound credential', () => {
