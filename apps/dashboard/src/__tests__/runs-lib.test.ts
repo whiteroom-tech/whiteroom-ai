@@ -233,6 +233,18 @@ describe('run detail rows', () => {
     expect(capped.events).toHaveLength(2);
     expect(capped.truncated).toBe(true);
   });
+  it('says couldn’t check when a rule couldn’t read the call’s target, never would have been blocked', () => {
+    const row = timelineRow({ id: 'c1', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete', ruleActions: [{ ruleId: 'r', ruleType: 'tool_list', mode: 'watch', response: 'unchecked', outcome: 'couldnt_check', reason: 'tool_not_allowed' }] });
+    expect(row.rule?.text).toMatch(/^couldn’t check its target: /);
+    expect(row.rule?.text).not.toMatch(/would have been blocked/);
+    // A Watch block on the same call leads.
+    const both = timelineRow({ id: 'c2', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete', ruleActions: [
+      { ruleId: 'r', ruleType: 'tool_list', mode: 'watch', response: 'unchecked', outcome: 'couldnt_check', reason: 'tool_not_allowed' },
+      { ruleId: 'm', ruleType: 'model_allowlist', mode: 'watch', response: 'block', outcome: 'would_block', reason: 'model_not_allowed' },
+    ] });
+    expect(both.rule?.text).toMatch(/^would have been blocked: model not on the allowlist/);
+  });
+
   it('never says blocked for a rule outcome it doesn’t know, and marks only real finish events', () => {
     const odd = timelineRow({ id: 'c', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete', ruleActions: [{ ruleId: 'r', ruleType: 'keyword', mode: 'enforce', response: 'redact', outcome: 'redacted' as never, reason: 'keyword_found' }] });
     expect(odd.rule?.text).toBe('a rule acted: a keyword was found');
