@@ -5,6 +5,24 @@ import { Button, Panel, TextInput } from '@whiteroom/ui';
 import { agentRename, controlFailure, WhiteRoomApiError } from '@/lib/whiteroom/client';
 import { cleanAgentName } from '@/lib/agent-identity';
 
+type Note = { ok: boolean; text: string };
+
+/** Cleans and saves a name (empty clears it), saying what happened; the engine's refusal as it is. */
+export async function saveAgentName(
+  fleetId: string, agentId: string, value: string, authKey?: string, rename: typeof agentRename = agentRename,
+): Promise<{ ok: true; name: string | null; note: Note } | { ok: false; note: Note }> {
+  const clean = cleanAgentName(value);
+  if ('error' in clean) return { ok: false, note: { ok: false, text: clean.error } };
+  try {
+    const name = await rename(fleetId, agentId, clean.name, authKey);
+    return { ok: true, name, note: { ok: true, text: name ? 'Saved.' : 'Name cleared.' } };
+  } catch (e) {
+    return { ok: false, note: { ok: false, text: e instanceof WhiteRoomApiError && e.reason ? e.reason
+      : controlFailure(e) === 'refused' && e instanceof Error ? e.message
+      : 'Couldn’t save. Try again.' } };
+  }
+}
+
 /**
  * Agent page › Name: a display name over the agent's id. The id never
  * changes, so its history, rules, holds and keys stay as they are. Only the
@@ -19,26 +37,15 @@ export function AgentNamePanel({ fleetId, agentId, authKey, name, onSaved }: {
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [note, setNote] = useState<Note | null>(null);
 
   async function save(value: string) {
-    const clean = cleanAgentName(value);
-    if ('error' in clean) { setNote({ ok: false, text: clean.error }); return; }
     setSaving(true);
     setNote(null);
-    try {
-      const saved = await agentRename(fleetId, agentId, clean.name, authKey);
-      onSaved(saved);
-      setDraft(null);
-      setNote({ ok: true, text: saved ? 'Saved.' : 'Name cleared.' });
-    } catch (e) {
-      const why = e instanceof WhiteRoomApiError && e.reason ? e.reason
-        : controlFailure(e) === 'refused' && e instanceof Error ? e.message
-        : 'Couldn’t save. Try again.';
-      setNote({ ok: false, text: why });
-    } finally {
-      setSaving(false);
-    }
+    const got = await saveAgentName(fleetId, agentId, value, authKey);
+    if (got.ok) { onSaved(got.name); setDraft(null); }
+    setNote(got.note);
+    setSaving(false);
   }
 
   const value = draft ?? name ?? '';
@@ -46,7 +53,7 @@ export function AgentNamePanel({ fleetId, agentId, authKey, name, onSaved }: {
   return (
     <Panel title="Name">
       <p className="wr-agent-cap" style={{ margin: '0 0 6px' }}>
-        {note ? <span role="status" style={{ color: note.ok ? 'var(--ok)' : 'var(--bad)' }}>{note.text}</span> : 'Shown with its id on this page and in alerts'}
+        {note ? <span role={note.ok ? 'status' : 'alert'} style={{ color: note.ok ? 'var(--ok)' : 'var(--bad)' }}>{note.text}</span> : 'Shown with its id on this page and in alerts'}
       </p>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
