@@ -5,7 +5,7 @@
 // never retried.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createFleet, getDiagnosis, pauseAgent, tokenLogin } from '@/lib/whiteroom/client';
+import { agentKeyRuleGet, agentNamesGet, createFleet, getDiagnosis, identityMix, pauseAgent, tokenLogin } from '@/lib/whiteroom/client';
 import { fetchFleetUsage } from '@/lib/fleet-usage';
 import { verifyFleetOwnership } from '@/lib/fleet-ownership';
 import { practiceEngine } from '@/lib/sandbox/practice/server';
@@ -32,6 +32,22 @@ afterEach(() => {
 });
 
 describe('a read during a brief engine gap', () => {
+  it('the agent identity reads (names, how agents connect, One key per agent) are asked once more on a 503', async () => {
+    fetchMock.mockResolvedValueOnce(platform(503)).mockResolvedValueOnce(json({ names: { a1: 'Billing bot' } }));
+    const names = agentNamesGet('f1', 'k');
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(names).resolves.toEqual({ a1: 'Billing bot' });
+    fetchMock.mockResolvedValueOnce(platform(503)).mockResolvedValueOnce(json({ rows: [] }));
+    const mix = identityMix('f1', { agentId: 'a1' }, 'k');
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(mix).resolves.toEqual([]);
+    fetchMock.mockResolvedValueOnce(platform(503)).mockResolvedValueOnce(json({ applies: false, mode: 'off', since: null, summary: null }));
+    const rule = agentKeyRuleGet('f1', 'k');
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(rule).resolves.toMatchObject({ applies: false });
+    expect(fetchMock).toHaveBeenCalledTimes(6);
+  });
+
   it('a platform 429 then 200 succeeds with one retry', async () => {
     fetchMock.mockResolvedValueOnce(platform(429)).mockResolvedValueOnce(json({ success: true, fleetId: 'f1' }));
     const login = tokenLogin('test-token');

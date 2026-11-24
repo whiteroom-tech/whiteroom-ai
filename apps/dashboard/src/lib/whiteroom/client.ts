@@ -175,7 +175,7 @@ const READ_ACTIONS: ReadonlySet<string> = new Set([
   'performance_index', 'performance_agent', 'performance_evidence', 'performance_fleet_hourly',
   'performance_agent_scores', 'performance_recommendations_list', 'performance_recommendations_get',
   'performance_live_feed', 'performance_recommendations_export', 'performance_cost_forecast',
-  'agent_budgets_get', 'governance_list', 'get_diagnosis', 'audit_integrity', 'verify_audit', 'audit_summary',
+  'agent_budgets_get', 'agent_names_get', 'identity_mix', 'agent_key_rule_get', 'governance_list', 'get_diagnosis', 'audit_integrity', 'verify_audit', 'audit_summary',
   'rule_would_act', 'list_runs', 'rule_actions', 'run_days', 'get_run_events', 'alerts_get', 'health_history', 'job_outcomes',
   'fleet_data_settings_get', 'compression_preview', 'tools_seen', 'send_seen_list',
 ]);
