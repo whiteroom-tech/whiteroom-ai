@@ -50,14 +50,18 @@ export function OneKeyPerAgent({ fleetId, authKey, onAuthError }: { fleetId: str
     setData(null);
     setNames({});
     setNote(null);
+    setSaving(false);
     void load();
   }, [load]);
 
   async function change(mode: AgentKeyMode) {
     if (!data || saving || mode === data.mode) return;
+    const asked = { fleetId, authKey };
     setSaving(true);
     setNote(null);
     const got = await changeAgentKeyMode(fleetId, mode, authKey, load);
+    // The page moved to another fleet while it saved: nothing of this one's lands on that card.
+    if (current.current.fleetId !== asked.fleetId || current.current.authKey !== asked.authKey) return;
     if (got.keepMode) setData((d) => (d ? { ...d, mode } : d));
     setNote(got.note);
     setSaving(false);

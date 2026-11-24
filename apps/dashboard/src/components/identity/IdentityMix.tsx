@@ -7,6 +7,25 @@ import { identityLines, percentText, type IdentityLine, type IdentityMixRow } fr
 
 export type MixState = { kind: 'loading' } | { kind: 'ok'; lines: IdentityLine[] } | { kind: 'failed' };
 
+/**
+ * One read: the lines, or failed (signing out on an expired session). Nothing
+ * lands once `live` says the run or agent has changed since it was asked.
+ */
+export async function readIdentityMix(
+  fleetId: string, target: { agentId: string } | { runId: string }, authKey: string | undefined,
+  live: () => boolean, set: (s: MixState) => void, onAuthError?: (msg: string) => void, read: typeof identityMix = identityMix,
+): Promise<void> {
+  try {
+    const rows = await read(fleetId, target, authKey);
+    if (live()) set({ kind: 'ok', lines: identityLines(rows) });
+  } catch (e) {
+    if (!live()) return;
+    set({ kind: 'failed' });
+    // An expired session signs out, as every other read on the page does.
+    if (isAuthError(e)) onAuthError?.('Session expired. Please sign in again.');
+  }
+}
+
 /** How a run's or an agent's calls were identified, read again when the run or agent changes. Hidden on engines without identity_mix. */
 function useIdentityMix(fleetId: string, target: { agentId: string } | { runId: string }, authKey?: string, preview?: IdentityMixRow[], onAuthError?: (msg: string) => void): MixState {
   const runId = 'runId' in target ? target.runId : null;
@@ -16,15 +35,7 @@ function useIdentityMix(fleetId: string, target: { agentId: string } | { runId: 
     if (preview) return;
     let live = true;
     setState({ kind: 'loading' });
-    identityMix(fleetId, runId !== null ? { runId } : { agentId: agentId! }, authKey).then(
-      (rows) => { if (live) setState({ kind: 'ok', lines: identityLines(rows) }); },
-      (e) => {
-        if (!live) return;
-        setState({ kind: 'failed' });
-        // An expired session signs out, as every other read on the page does.
-        if (isAuthError(e)) onAuthError?.('Session expired. Please sign in again.');
-      },
-    );
+    void readIdentityMix(fleetId, runId !== null ? { runId } : { agentId: agentId! }, authKey, () => live, setState, onAuthError);
     return () => { live = false; };
   }, [fleetId, runId, agentId, authKey, preview, onAuthError]);
   return state;
