@@ -10,6 +10,8 @@ import { createRoot } from 'react-dom/client';
 import './support/dialog';
 
 const nav = vi.hoisted(() => ({ push: vi.fn() }));
+// The Contact panel's server actions pull in Auth.js, which doesn't load here.
+vi.mock('@/lib/agent-contact-actions', () => ({ agentContactView: async () => ({ ok: false, error: 'test' }), setAgentContact: async () => ({ ok: false, error: 'test' }) }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: nav.push, replace: vi.fn() }), usePathname: () => '/agents/scout' }));
 const api = vi.hoisted(() => ({ remove: vi.fn() }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({

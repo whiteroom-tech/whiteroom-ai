@@ -23,6 +23,7 @@ import { JobOutcomes } from '@/components/agent/JobOutcomes';
 import { RulesOnAgent } from '@/components/agent/RulesOnAgent';
 import { AgentNamePanel } from '@/components/identity/AgentNamePanel';
 import { AgentContactPanel } from '@/components/identity/AgentContactPanel';
+import { AgentTitle } from '@/components/agent/AgentTitle';
 import { AgentIdentityPanel } from '@/components/identity/IdentityMix';
 import { fetchControlActors, holdWho, type ControlActor } from '@/lib/control-actors';
 import { RefreshFailed } from '@/components/citadel/States';
@@ -544,9 +545,3 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   );
 }
 
-/** The page title: the agent's display name with its id beside it, or the id alone (gap-closing spec A2). */
-export function AgentTitle({ agentId, name }: { agentId: string; name: string | null }) {
-  return name && name !== agentId
-    ? <span>{name}<span className="wr-agent-title__id">{agentId}</span></span>
-    : <span style={{ fontFamily: FONT_MONO }}>{agentId}</span>;
-}

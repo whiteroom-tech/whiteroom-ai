@@ -8,7 +8,7 @@ import { agentKeyRuleGet, agentKeyRuleSet, agentNamesGet, agentRename, changeFai
 import { AgentIdentityView, readIdentityMix, RunIdentityLine, runIdentityText } from '@/components/identity/IdentityMix';
 import { AgentNamePanel, namesDiffer, saveAgentName } from '@/components/identity/AgentNamePanel';
 import { changeAgentKeyMode, OneKeyPerAgentView } from '@/app/(citadel)/controls/_components/OneKeyPerAgent';
-import { AgentTitle } from '@/components/agent/AgentDetail';
+import { AgentTitle } from '@/components/agent/AgentTitle';
 import { identityLines, type AgentKeyRuleResult } from '@/lib/agent-identity';
 
 const fetchMock = vi.fn();
