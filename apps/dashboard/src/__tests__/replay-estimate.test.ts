@@ -36,6 +36,7 @@ describe('client calls', () => {
     await expect(replayGet('f1', 'rp_1', 'k')).resolves.toMatchObject({ status: 'done', result: { matched: 3 } });
     expect(sent()).toEqual({ action: 'replay_get', fleet_id: 'f1', replay_id: 'rp_1' });
     for (const bad of [{ replay: null }, { replay: run({ status: 'odd' }) }, { replay: run({ result: null }) }, { replay: run({ result: { matched: 'x' } }) },
+      { replay: run({ from: undefined }) }, { replay: run({ to: 5 }) },
       { replay: run({ result: result({ records: 'x' as never }) }) }, { replay: run({ result: { ...result(), supported: undefined } }) },
       { replay: run({ result: result({ partial: [null as never] }) }) }, { replay: run({ result: result({ partial: [{ calls: 1 } as never] }) }) }]) {
       fetchMock.mockResolvedValue(reply(bad));

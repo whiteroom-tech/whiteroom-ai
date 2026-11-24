@@ -899,7 +899,7 @@ export async function replayGet(fleetId: string, replayId: string, key?: string)
       && typeof v.records === 'number' && typeof v.evaluated === 'number' && typeof v.matched === 'number'
       && (v.partial === null || (Array.isArray(v.partial) && v.partial.every((p) => p !== null && typeof p === 'object' && typeof p.kind === 'string')));
   };
-  if (!r || typeof r.id !== 'string' || !['running', 'done', 'failed'].includes(r.status) || !okResult(r.result ?? null)) {
+  if (!r || typeof r.id !== 'string' || typeof r.from !== 'string' || typeof r.to !== 'string' || !['running', 'done', 'failed'].includes(r.status) || !okResult(r.result ?? null)) {
     throw new WhiteRoomApiError('Unexpected replay_get reply', 200);
   }
   if (r.status === 'done' && !r.result) throw new WhiteRoomApiError('Unexpected replay_get reply', 200);
