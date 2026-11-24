@@ -71,3 +71,21 @@ jobs:
       - name: Test
         working-directory: ${{ matrix.dir }}
         run: npm test --if-present
+      # The migration runner's locking, rollback and psql steps, against a real
+      # Postgres (the runner is run by hand against prod, so it is tested here).
+      - name: Start Postgres
+        if: matrix.dir == 'apps/dashboard'
+        run: |
+          docker run -d --name pg -e POSTGRES_HOST_AUTH_METHOD=trust -p 5432:5432 \
+            postgres:17-alpine@sha256:f9cf3e1f0066f0eb0c48707d864f0ac5941e9ff454a072077d97a4d278d07d73
+          for i in $(seq 1 30); do docker exec pg pg_isready -U postgres -q && break; sleep 1; done
+          docker exec pg createdb -U postgres wr_migrate_test
+      - name: Migration runner against Postgres
+        if: matrix.dir == 'apps/dashboard'
+        working-directory: apps/dashboard
+        env:
+          WR_TEST_DATABASE: wr_migrate_test
+          DB_HOST: 127.0.0.1
+          DB_PORT: "5432"
+          PGUSER: postgres
+        run: npx vitest run src/__tests__/migrate.db.test.ts

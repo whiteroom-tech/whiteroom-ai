@@ -251,15 +251,42 @@ export function psqlEnv(env: Env = process.env): Record<string, string | undefin
     throw new MigrateError('DATABASE_URL is not a URL this runner can hand to psql. Give the host in it (postgres://user:pass@host:port/db), or use DB_HOST, DB_PORT, DB_USER, DB_PASSWORD and DB_NAME.');
   }
   const dec = (s: string) => (s ? decodeURIComponent(s) : undefined);
-  return {
-    PGHOST: u.searchParams.get('host') ?? (dec(u.hostname) || undefined),
+  const out: Record<string, string | undefined> = {
+    PGHOST: dec(u.hostname),
     PGPORT: u.port || undefined,
     PGUSER: dec(u.username),
     PGPASSWORD: dec(u.password),
     PGDATABASE: dec(u.pathname.replace(/^\//, '')),
-    PGSSLMODE: u.searchParams.get('sslmode') ?? undefined,
   };
+  // Every URL option goes to psql too, so the psql step connects the way the
+  // rest of the run does. One it has no variable for stops the run instead.
+  const unknown: string[] = [];
+  for (const [key, value] of u.searchParams) {
+    const name = URL_PARAM_ENV[key];
+    if (name) out[name] = value;
+    else unknown.push(key);
+  }
+  if (unknown.length) {
+    throw new MigrateError(`DATABASE_URL has options psql can't be given the same way: ${unknown.join(', ')}. Remove them, or use DB_HOST, DB_PORT, DB_USER, DB_PASSWORD and DB_NAME.`);
+  }
+  return out;
 }
+
+/** URL options and the libpq variables that carry them to psql. */
+const URL_PARAM_ENV: Record<string, string> = {
+  host: 'PGHOST',
+  port: 'PGPORT',
+  user: 'PGUSER',
+  password: 'PGPASSWORD',
+  dbname: 'PGDATABASE',
+  sslmode: 'PGSSLMODE',
+  sslrootcert: 'PGSSLROOTCERT',
+  sslcert: 'PGSSLCERT',
+  sslkey: 'PGSSLKEY',
+  options: 'PGOPTIONS',
+  connect_timeout: 'PGCONNECT_TIMEOUT',
+  application_name: 'PGAPPNAME',
+};
 
 /** psql -f on the same database. */
 function runWithPsql(file: MigrationFile): void {
@@ -278,6 +305,7 @@ export function parseArgs(argv: string[]): { apply: boolean; baseline?: string }
   let baseline: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--apply') apply = true;
+    else if (argv[i] === '--baseline' && baseline !== undefined) throw new MigrateError('--baseline is given twice. Name one file.');
     else if (argv[i] === '--baseline' && argv[i + 1] && !argv[i + 1].startsWith('--')) baseline = argv[++i];
     else throw new MigrateError(`Unknown argument: ${argv[i]}. Options: --apply, --baseline <file>.`);
   }
@@ -286,6 +314,7 @@ export function parseArgs(argv: string[]): { apply: boolean; baseline?: string }
 
 async function main(argv: string[]): Promise<void> {
   const opts = parseArgs(argv);
+  psqlEnv(); // a connection psql can't be given stops the run here, before anything is applied
   const client = new pg.Client(clientConfig());
   await client.connect();
   try {

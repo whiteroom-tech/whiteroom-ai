@@ -46,6 +46,7 @@ describe('migration runner', () => {
     expect(() => parseArgs(['--baseline'])).toThrow(/Unknown argument: --baseline/);
     expect(() => parseArgs(['--baseline', '--apply'])).toThrow(/Unknown argument/);
     expect(() => parseArgs(['--force'])).toThrow(/Unknown argument: --force/);
+    expect(() => parseArgs(['--baseline', '017_a.sql', '--baseline', '018_b.sql'])).toThrow(/--baseline is given twice/);
   });
 
   it('gives psql a URL as separate variables, so its password never goes on the command line', () => {
@@ -54,6 +55,10 @@ describe('migration runner', () => {
     });
     expect(psqlEnv({ DATABASE_URL: 'postgres://app@localhost/db?host=/cloudsql/x' })).toMatchObject({ PGHOST: '/cloudsql/x', PGDATABASE: 'db', PGPASSWORD: undefined });
     expect(() => psqlEnv({ DATABASE_URL: 'postgres://app@/db' })).toThrow(/DATABASE_URL is not a URL/);
+    expect(psqlEnv({ DATABASE_URL: 'postgres://app@db.internal/d?sslmode=verify-full&sslrootcert=/ca.pem&connect_timeout=5&application_name=wr-migrate' })).toMatchObject({
+      PGSSLMODE: 'verify-full', PGSSLROOTCERT: '/ca.pem', PGCONNECT_TIMEOUT: '5', PGAPPNAME: 'wr-migrate',
+    });
+    expect(() => psqlEnv({ DATABASE_URL: 'postgres://app@db.internal/d?ssl=true&uselibpqcompat=true' })).toThrow(/options psql can't be given the same way: ssl, uselibpqcompat/);
     expect(psqlEnv({ DB_HOST: 'h', DB_PORT: '6000', DB_USER: 'u', DB_PASSWORD: 'pw', DB_NAME: 'd' })).toEqual({
       PGHOST: 'h', PGPORT: '6000', PGUSER: 'u', PGPASSWORD: 'pw', PGDATABASE: 'd',
     });
