@@ -91,12 +91,13 @@ export async function changeAgentKeyMode(
 
 /** The card for what was read: nothing for a fleet outside the rule, or before the first read. */
 export function OneKeyPerAgentView({ data, names, note, onChange }: { data: AgentKeyRuleResult | null; names: Record<string, string>; note: Note | null; onChange: (m: AgentKeyMode) => void }) {
-  if (!data?.applies || !data.summary) return null;
+  // Hidden only outside the rule: without counts the switch still shows.
+  if (!data?.applies) return null;
   const s = data.summary;
   const watching = data.mode === 'watch';
   const when = watching && data.since ? `Since ${fmtDay(data.since)}` : 'In the last 7 days';
-  const n = s.unboundCalls;
-  const unbound = s.agents.filter((a) => a.unboundCalls > 0);
+  const n = s?.unboundCalls ?? 0;
+  const unbound = s?.agents.filter((a) => a.unboundCalls > 0) ?? [];
   const more = unbound.length - SHOWN;
 
   return (
@@ -116,7 +117,9 @@ export function OneKeyPerAgentView({ data, names, note, onChange }: { data: Agen
         />
       </div>
       {note && <p className="ctl-cap" role={note.ok ? 'status' : 'alert'} style={{ margin: 0, color: note.ok ? 'var(--tx2)' : 'var(--bad)' }}>{note.text}</p>}
-      {!s.recorded ? (
+      {!s ? (
+        <p className="ctl-cap" style={{ margin: 0 }}>The counts aren’t available right now.</p>
+      ) : !s.recorded ? (
         <p className="ctl-cap" style={{ margin: 0 }}>Calls aren’t recorded with their key yet. Counts start after the next update.</p>
       ) : n === 0 ? (
         <p className="ctl-cap" style={{ margin: 0 }}>{when}, every call came in on the agent’s own key.</p>
