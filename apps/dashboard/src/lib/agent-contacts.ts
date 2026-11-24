@@ -10,8 +10,13 @@ import { fleetOwners } from '@/lib/control-auth';
 
 type Queryable = Pick<ReturnType<typeof db>, 'query'>;
 
-/** The engine's agent id characters (run-id.ts), up to 128. */
-export const AGENT_ID = /^[a-zA-Z0-9_\-.:@]{1,128}$/;
+/**
+ * Keeps junk out of the contacts table: an id is 1–128 characters with no
+ * spaces or control characters. What an agent id may be is the engine's to
+ * say (a copy of its rule here would drift): an id the engine never accepts
+ * just never gets a notice, and values only ever reach queries as parameters.
+ */
+export const AGENT_ID = /^[^\s\p{Cc}]{1,128}$/u;
 
 export interface ContactPerson {
   userId: string;
@@ -68,16 +73,36 @@ export async function writeContact(fleetId: string, agentId: string, contactUser
     await q.query('DELETE FROM agent_contacts WHERE fleet_id = $1 AND agent_id = $2', [fleetId, agentId]);
     return true;
   }
-  // A new row only while the fleet is under its cap; changing an existing one always works.
-  const { rows } = await q.query(
-    `SELECT count(*)::int AS n, bool_or(agent_id = $2) AS has FROM agent_contacts WHERE fleet_id = $1`, [fleetId, agentId]);
-  if (!rows[0]?.has && Number(rows[0]?.n ?? 0) >= MAX_CONTACTS_PER_FLEET) return false;
+  // A new row only while the fleet is under its cap; changing an existing one
+  // always works. Counted and written under a per-fleet lock in one
+  // transaction, so saves at the same moment can't each see room and overshoot.
+  const client = await db().connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`agent-contacts:${fleetId}`]);
+    const { rows } = await client.query(
+      `SELECT count(*)::int AS n, coalesce(bool_or(agent_id = $2), false) AS has FROM agent_contacts WHERE fleet_id = $1`, [fleetId, agentId]);
+    if (!rows[0]?.has && Number(rows[0]?.n ?? 0) >= MAX_CONTACTS_PER_FLEET) {
+      await client.query('ROLLBACK');
+      return false;
+    }
+    await upsertContact(client, fleetId, agentId, contactUserId, by);
+    await client.query('COMMIT');
+    return true;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function upsertContact(q: Queryable, fleetId: string, agentId: string, contactUserId: string, by: string): Promise<void> {
   await q.query(
     `INSERT INTO agent_contacts (fleet_id, agent_id, contact_user_id, set_by) VALUES ($1, $2, $3, $4)
      ON CONFLICT (fleet_id, agent_id) DO UPDATE SET contact_user_id = EXCLUDED.contact_user_id, set_by = EXCLUDED.set_by, set_at = now()`,
     [fleetId, agentId, contactUserId, by],
   );
-  return true;
 }
 
 /**

@@ -139,6 +139,14 @@ suite('agent contacts against Postgres', () => {
     expect(await contacts.writeContact('f1', 'one-more', 'mate', 'owner')).toBe(true);
   });
 
+  it('holds the cap when saves race', async () => {
+    const values = Array.from({ length: contacts.MAX_CONTACTS_PER_FLEET - 2 }, (_, i) => `('f1', 'agent-${i}', 'mate', 'owner')`).join(',');
+    await q(`INSERT INTO agent_contacts (fleet_id, agent_id, contact_user_id, set_by) VALUES ${values}`);
+    const results = await Promise.all(Array.from({ length: 6 }, (_, i) => contacts.writeContact('f1', `racer-${i}`, 'mate', 'owner')));
+    expect(results.filter(Boolean)).toHaveLength(2);
+    expect((await q(`SELECT count(*)::int AS n FROM agent_contacts WHERE fleet_id = 'f1'`))[0].n).toBe(contacts.MAX_CONTACTS_PER_FLEET);
+  });
+
   it('has no recipient for a fleet nobody owns', async () => {
     expect(await contacts.noticeRecipient('nobody', 'a1')).toBeNull();
   });

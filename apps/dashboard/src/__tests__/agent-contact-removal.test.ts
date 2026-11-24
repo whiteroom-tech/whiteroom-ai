@@ -21,6 +21,9 @@ describe('removedAgentOf', () => {
     expect(removedAgentOf('pause_agent', body({}), JSON.stringify({ success: true }))).toBeNull();
     expect(removedAgentOf('deregister_agent', 'not json', JSON.stringify({ success: true }))).toBeNull();
     expect(removedAgentOf('deregister_agent', body({ agent_id: 'not an id!' }), JSON.stringify({ success: true }))).toBeNull();
+    expect(removedAgentOf('deregister_agent', body({ agent_id: 'x'.repeat(129) }), JSON.stringify({ success: true }))).toBeNull();
+    // What an id may be is the engine's to say: any id it accepted is cleaned up.
+    expect(removedAgentOf('deregister_agent', body({ agent_id: 'team/agent#7' }), JSON.stringify({ success: true }))).toEqual({ fleetId: 'f1', agentId: 'team/agent#7' });
   });
 });
 
