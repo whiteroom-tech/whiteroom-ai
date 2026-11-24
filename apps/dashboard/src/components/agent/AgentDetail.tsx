@@ -22,6 +22,7 @@ import { HealthHistory } from '@/components/agent/HealthHistory';
 import { JobOutcomes } from '@/components/agent/JobOutcomes';
 import { RulesOnAgent } from '@/components/agent/RulesOnAgent';
 import { AgentNamePanel } from '@/components/identity/AgentNamePanel';
+import { AgentContactPanel } from '@/components/identity/AgentContactPanel';
 import { AgentIdentityPanel } from '@/components/identity/IdentityMix';
 import { fetchControlActors, holdWho, type ControlActor } from '@/lib/control-actors';
 import { RefreshFailed } from '@/components/citadel/States';
@@ -481,6 +482,8 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
                 <RulesOnAgent fleetId={fleetId} authKey={authKey} agentId={agentId} preview={preview ? (preview.rules ?? []) : undefined} />
 
                 {!preview && namesOn && <AgentNamePanel fleetId={fleetId} agentId={agentId} authKey={authKey} name={name} onSaved={setName} />}
+
+                {!preview && <AgentContactPanel fleetId={fleetId} agentId={agentId} />}
 
                 <Panel title="Task type">
                   <p className="wr-agent-cap" style={{ margin: '0 0 6px' }}>
