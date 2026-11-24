@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { agentKeyRuleGet, agentKeyRuleSet, agentNamesGet, agentRename, identityMix, WhiteRoomApiError } from '@/lib/whiteroom/client';
+import { agentKeyRuleGet, agentKeyRuleSet, agentNamesGet, agentRename, changeFailureText, ControlDeniedError, identityMix, WhiteRoomApiError } from '@/lib/whiteroom/client';
 import { AgentIdentityView, runIdentityText } from '@/components/identity/IdentityMix';
 import { AgentNamePanel, namesDiffer, saveAgentName } from '@/components/identity/AgentNamePanel';
 import { changeAgentKeyMode, OneKeyPerAgentView } from '@/app/(citadel)/controls/_components/OneKeyPerAgent';
@@ -76,6 +76,14 @@ describe('Agent page title', () => {
     expect(named).toContain('<span class="wr-agent-title__id">claims-7</span>');
     expect(renderToStaticMarkup(h(AgentTitle, { agentId: 'claims-7', name: null }))).not.toContain('wr-agent-title__id');
     expect(renderToStaticMarkup(h(AgentTitle, { agentId: 'claims-7', name: 'claims-7' }))).not.toContain('wr-agent-title__id');
+  });
+});
+
+describe('change failure text', () => {
+  it('uses the engine’s reason, then the owner refusal, then the fallback', () => {
+    expect(changeFailureText(new WhiteRoomApiError('HTTP 409', 409, 'Taken.'), 'x')).toBe('Taken.');
+    expect(changeFailureText(new ControlDeniedError('Only the owner.'), 'x')).toBe('Only the owner.');
+    expect(changeFailureText(new Error('net'), 'Try again.')).toBe('Try again.');
   });
 });
 

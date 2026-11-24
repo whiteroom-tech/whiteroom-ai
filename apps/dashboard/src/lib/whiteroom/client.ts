@@ -114,6 +114,16 @@ export function controlFailure(e: unknown): 'sign-out' | 'refused' | 'failed' {
 }
 
 /**
+ * What a failed change says: the engine's own reason for refusing it, the
+ * dashboard's refusal (not the owner), or `fallback`.
+ */
+export function changeFailureText(e: unknown, fallback: string): string {
+  if (e instanceof WhiteRoomApiError && e.reason) return e.reason;
+  if (controlFailure(e) === 'refused' && e instanceof Error) return e.message;
+  return fallback;
+}
+
+/**
  * What a failed snooze, dismiss or mark fixed says. They are the fleet
  * owner's (Agent Health D6): a teammate is told so in the refusal's own
  * words, never asked to try again.

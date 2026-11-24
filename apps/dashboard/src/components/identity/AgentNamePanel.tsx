@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Button, Panel, TextInput } from '@whiteroom/ui';
-import { agentRename, controlFailure, WhiteRoomApiError } from '@/lib/whiteroom/client';
+import { agentRename, changeFailureText } from '@/lib/whiteroom/client';
 import { cleanAgentName } from '@/lib/agent-identity';
 
 type Note = { ok: boolean; text: string };
@@ -23,9 +23,7 @@ export async function saveAgentName(
     const name = await rename(fleetId, agentId, clean.name, authKey);
     return { ok: true, name, note: { ok: true, text: name ? 'Saved.' : 'Name cleared.' } };
   } catch (e) {
-    return { ok: false, note: { ok: false, text: e instanceof WhiteRoomApiError && e.reason ? e.reason
-      : controlFailure(e) === 'refused' && e instanceof Error ? e.message
-      : 'Couldn’t save. Try again.' } };
+    return { ok: false, note: { ok: false, text: changeFailureText(e, 'Couldn’t save. Try again.') } };
   }
 }
 
