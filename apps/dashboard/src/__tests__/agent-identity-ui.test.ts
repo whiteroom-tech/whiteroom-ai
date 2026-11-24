@@ -73,6 +73,9 @@ describe('client calls', () => {
     await expect(agentKeyRuleGet('f1', 'k')).rejects.toThrow();
     fetchMock.mockResolvedValue(reply({ applies: true, mode: 'watch', since: null, summary: { unboundCalls: 1, byCredential: {}, agents: [{ agentId: 'a1' }] } }));
     await expect(agentKeyRuleGet('f1', 'k')).rejects.toThrow();
+    // No recorded flag: malformed, not "calls aren't recorded yet".
+    fetchMock.mockResolvedValue(reply({ applies: true, mode: 'watch', since: null, summary: { unboundCalls: 0, byCredential: {}, agents: [] } }));
+    await expect(agentKeyRuleGet('f1', 'k')).rejects.toThrow();
   });
 
   it('agentKeyRuleGet and agentKeyRuleSet ask for the rule and refuse an unsaved change', async () => {

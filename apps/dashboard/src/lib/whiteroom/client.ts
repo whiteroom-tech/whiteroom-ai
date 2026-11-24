@@ -826,7 +826,7 @@ export async function agentKeyRuleGet(fleetId: string, key?: string): Promise<Ag
   // A reply this build can't read is treated like an engine without the rule: the card stays hidden.
   const s = res?.summary;
   const ok = res && typeof res.applies === 'boolean' && (res.mode === 'off' || res.mode === 'watch')
-    && (s === null || (s && typeof s.unboundCalls === 'number' && Array.isArray(s.agents) && s.byCredential && typeof s.byCredential === 'object'
+    && (s === null || (s && typeof s.recorded === 'boolean' && typeof s.unboundCalls === 'number' && Array.isArray(s.agents) && s.byCredential && typeof s.byCredential === 'object'
       && s.agents.every((a) => a && typeof a.agentId === 'string' && typeof a.unboundCalls === 'number' && Array.isArray(a.unboundCredentials))));
   if (!ok) throw new WhiteRoomApiError('Unexpected agent_key_rule_get reply', 200);
   return { ...res, summary: s ? { ...s, agents: s.agents.map((a) => ({ ...a, unboundCredentials: a.unboundCredentials.filter((c) => (UNBOUND_CREDENTIALS as readonly string[]).includes(c)) })) } : null };
