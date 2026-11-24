@@ -30,8 +30,11 @@ export async function agentContactView(fleetId: string, agentId: string): Promis
   if ('error' in o) return { ok: false, error: o.error };
   try {
     const [candidates, stored] = await Promise.all([contactCandidates(o.userId), storedContact(fleetId, agentId)]);
-    // A contact no longer allowed shows as none: the next notice clears it and goes to the owner.
-    return { ok: true, candidates, contact: candidates.find((c) => c.userId === stored) ?? null };
+    const contact = candidates.find((c) => c.userId === stored) ?? null;
+    // A contact who's no longer allowed (left the organization) is cleared
+    // here as well as when a notice is sent, so the table never keeps them.
+    if (stored && !contact) await writeContact(fleetId, agentId, null, o.userId);
+    return { ok: true, candidates, contact };
   } catch {
     return { ok: false, error: 'Couldn’t load the contact. Try again.' };
   }

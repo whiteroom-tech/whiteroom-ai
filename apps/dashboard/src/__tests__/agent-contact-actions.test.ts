@@ -7,6 +7,7 @@ const m = vi.hoisted(() => ({
   token: 'tok' as string | null,
   denied: null as { status: number; error: string } | null,
   allowed: true,
+  stored: 'mate' as string | null,
   write: vi.fn(),
 }));
 vi.mock('server-only', () => ({}));
@@ -18,13 +19,13 @@ vi.mock('@/lib/agent-contacts', async (orig) => ({
   isContactAllowed: async () => m.allowed,
   writeContact: m.write,
   contactCandidates: async () => [{ userId: 'owner', email: null, name: null }, { userId: 'mate', email: null, name: null }],
-  storedContact: async () => 'mate',
+  storedContact: async () => m.stored,
 }));
 
 import { agentContactView, setAgentContact } from '@/lib/agent-contact-actions';
 
 beforeEach(() => {
-  Object.assign(m, { session: { user: { id: 'owner' } }, token: 'tok', denied: null, allowed: true });
+  Object.assign(m, { session: { user: { id: 'owner' } }, token: 'tok', denied: null, allowed: true, stored: 'mate' });
   m.write.mockReset();
 });
 
@@ -58,5 +59,12 @@ describe('agent contact actions', () => {
 
   it('show the stored contact to the owner', async () => {
     expect(await agentContactView('f1', 'a1')).toMatchObject({ ok: true, contact: { userId: 'mate' } });
+    expect(m.write).not.toHaveBeenCalled();
+  });
+
+  it('clear a stored contact who is no longer allowed when the owner looks', async () => {
+    m.stored = 'left-the-org';
+    expect(await agentContactView('f1', 'a1')).toMatchObject({ ok: true, contact: null });
+    expect(m.write).toHaveBeenCalledWith('f1', 'a1', null, 'owner');
   });
 });
