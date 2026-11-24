@@ -36,7 +36,21 @@ By default a check that's Not set up, Not checked or only in Watch doesn't fail 
 whiteroom practice run --adapter "node wr-adapter.mjs" --require spend_cap,keyword
 ```
 
-Each named check must be Passed, and a guardrail must be in Enforce: Watch, Not checked and Not set up all exit `1`, with a line naming the check. The checks: `finishes_job`, `long_task`, `fails_gracefully`, `spend_cap`, `loop_breaker`, `keyword`, `pause_stop`. An unknown name exits `2`.
+Each named check must be Passed, and a guardrail must be in Enforce: Watch, Not checked and Not set up all exit `1`, with a line naming the check. The checks: `finishes_job`, `long_task`, `fails_gracefully`, `spend_cap`, `loop_breaker`, `keyword`, `pause_stop`, `planted_instruction`. An unknown name exits `2`.
+
+A run code works once and lasts 12 hours, so each CI run needs a new one from the Sandbox page. Save it as a secret and pass it with `--code-stdin`. In GitHub Actions:
+
+```yaml
+- name: WhiteRoom practice test
+  run: |
+    printf '%s\n' "$WHITEROOM_RUN_CODE" | npx @whiteroom-ai/cli@2.1.3 practice run \
+      --adapter "node wr-adapter.mjs" --require spend_cap,keyword --code-stdin
+  env:
+    WHITEROOM_RUN_CODE: ${{ secrets.WHITEROOM_RUN_CODE }}
+    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
+The step fails on any exit code other than `0`. Use a Linux or macOS runner.
 
 Practice tasks use made-up records and WhiteRoom's test tools, not your agent's real job. Use the result to help decide, not as a certificate.
 
