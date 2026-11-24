@@ -22,6 +22,25 @@ export async function saveContactChoice(
   return { view: next?.ok ? next : view, note: { ok: true, text: 'Saved.' } };
 }
 
+/** One read of the panel: dropped if it lands after the panel moved to another agent; a failure hides it. */
+export async function loadContactView(fleetId: string, agentId: string, live: () => boolean, set: (v: ContactView | null) => void, read: typeof agentContactView = agentContactView): Promise<void> {
+  const v = await read(fleetId, agentId).catch(() => null);
+  if (live()) set(v);
+}
+
+/** A save: its result lands only if the panel is still on the agent it was made for. */
+export async function runContactChange(
+  fleetId: string, agentId: string, userId: string, view: Extract<ContactView, { ok: true }>, isCurrent: () => boolean,
+  apply: { setView: (v: ContactView) => void; setNote: (n: Note) => void; setSaving: (b: boolean) => void },
+  deps?: Parameters<typeof saveContactChoice>[4],
+): Promise<void> {
+  const got = await saveContactChoice(fleetId, agentId, userId, view, deps);
+  if (!isCurrent()) return;
+  apply.setView(got.view);
+  apply.setNote(got.note);
+  apply.setSaving(false);
+}
+
 /** The panel for a loaded view: nothing unless the viewer owns the fleet. */
 export function ContactPanelView({ view, saving, note, onChange }: { view: ContactView | null; saving: boolean; note: Note | null; onChange: (userId: string) => void }) {
   if (!view?.ok) return null;
@@ -64,7 +83,7 @@ export function AgentContactPanel({ fleetId, agentId }: { fleetId: string; agent
     setView(null);
     setNote(null);
     setSaving(false);
-    agentContactView(fleetId, agentId).then((v) => { if (live) setView(v); }, () => { if (live) setView(null); });
+    void loadContactView(fleetId, agentId, () => live, setView);
     return () => { live = false; };
   }, [fleetId, agentId]);
 
@@ -73,11 +92,7 @@ export function AgentContactPanel({ fleetId, agentId }: { fleetId: string; agent
     const asked = `${fleetId}/${agentId}`;
     setSaving(true);
     setNote(null);
-    const got = await saveContactChoice(fleetId, agentId, userId, view);
-    if (current.current !== asked) return;
-    setView(got.view);
-    setNote(got.note);
-    setSaving(false);
+    await runContactChange(fleetId, agentId, userId, view, () => current.current === asked, { setView, setNote, setSaving });
   }
 
   return <ContactPanelView view={view} saving={saving} note={note} onChange={(id) => void change(id)} />;

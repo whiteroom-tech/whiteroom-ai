@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 vi.mock('@/lib/agent-contact-actions', () => ({ agentContactView: vi.fn(), setAgentContact: vi.fn() }));
 
-import { ContactPanelView, saveContactChoice } from '@/components/identity/AgentContactPanel';
+import { ContactPanelView, loadContactView, runContactChange, saveContactChoice } from '@/components/identity/AgentContactPanel';
 
 const people = [
   { userId: 'owner', email: 'owner@example.com', name: 'Owner' },
@@ -56,5 +56,29 @@ describe('saving a contact', () => {
   it('keeps the old view when the read back fails', async () => {
     const got = await saveContactChoice('f1', 'a1', 'mate', view, { set: async () => ({ ok: true }), read: async () => { throw new Error('net'); } });
     expect(got).toEqual({ view, note: { ok: true, text: 'Saved.' } });
+  });
+});
+
+describe('switching agents', () => {
+  it('drops a read that lands after the panel moved on, and hides on a failed read', async () => {
+    const set = vi.fn();
+    await loadContactView('f1', 'a1', () => false, set, async () => view);
+    expect(set).not.toHaveBeenCalled();
+    await loadContactView('f1', 'a1', () => true, set, async () => view);
+    expect(set).toHaveBeenLastCalledWith(view);
+    await loadContactView('f1', 'a1', () => true, set, async () => { throw new Error('net'); });
+    expect(set).toHaveBeenLastCalledWith(null);
+  });
+
+  it('drops a save that ends after the switch, and applies one that ends before it', async () => {
+    const apply = { setView: vi.fn(), setNote: vi.fn(), setSaving: vi.fn() };
+    const deps = { set: async () => ({ ok: true as const }), read: async () => ({ ...view, contact: people[1] }) };
+    await runContactChange('f1', 'a1', 'mate', view, () => false, apply, deps);
+    expect(apply.setView).not.toHaveBeenCalled();
+    expect(apply.setSaving).not.toHaveBeenCalled();
+    await runContactChange('f1', 'a1', 'mate', view, () => true, apply, deps);
+    expect(apply.setView).toHaveBeenCalledWith(expect.objectContaining({ contact: people[1] }));
+    expect(apply.setNote).toHaveBeenCalledWith({ ok: true, text: 'Saved.' });
+    expect(apply.setSaving).toHaveBeenCalledWith(false);
   });
 });
