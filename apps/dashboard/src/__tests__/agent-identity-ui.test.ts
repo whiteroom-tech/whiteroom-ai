@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { agentKeyRuleGet, agentKeyRuleSet, agentNamesGet, agentRename, changeFailureText, ControlDeniedError, identityMix, WhiteRoomApiError } from '@/lib/whiteroom/client';
-import { AgentIdentityView, runIdentityText } from '@/components/identity/IdentityMix';
+import { AgentIdentityView, readIdentityMix, RunIdentityLine, runIdentityText } from '@/components/identity/IdentityMix';
 import { AgentNamePanel, namesDiffer, saveAgentName } from '@/components/identity/AgentNamePanel';
 import { changeAgentKeyMode, OneKeyPerAgentView } from '@/app/(citadel)/controls/_components/OneKeyPerAgent';
 import { AgentTitle } from '@/components/agent/AgentDetail';
@@ -142,6 +142,41 @@ describe('Name panel', () => {
     expect(named).toMatch(/<button[^>]*disabled[^>]*>Save<\/button>/);
     expect(named).toContain('>Clear<');
     expect(renderToStaticMarkup(h(AgentNamePanel, { fleetId: 'f1', agentId: 'a1', name: null, onSaved: () => {} }))).not.toContain('>Clear<');
+  });
+});
+
+describe('identity reads', () => {
+  const rows = [{ credential: 'bound_key' as const, nameSource: 'explicit' as const, calls: 2, lastAt: null }];
+
+  it('set the lines, for the run or agent asked about', async () => {
+    const set = vi.fn();
+    const read = vi.fn(async () => rows);
+    await readIdentityMix('f1', { runId: 'a1~3' }, 'k', () => true, set, undefined, read);
+    expect(read).toHaveBeenCalledWith('f1', { runId: 'a1~3' }, 'k');
+    expect(set).toHaveBeenCalledWith({ kind: 'ok', lines: [{ words: 'Own key', calls: 2, percent: 100 }] });
+  });
+
+  it('drop a reply that lands after the run or agent changed', async () => {
+    const set = vi.fn();
+    const onAuthError = vi.fn();
+    await readIdentityMix('f1', { agentId: 'a1' }, 'k', () => false, set, onAuthError, async () => rows);
+    await readIdentityMix('f1', { agentId: 'a1' }, 'k', () => false, set, onAuthError, async () => { throw new WhiteRoomApiError('HTTP 401', 401); });
+    expect(set).not.toHaveBeenCalled();
+    expect(onAuthError).not.toHaveBeenCalled();
+  });
+
+  it('fail on an error, and sign out only on an expired session', async () => {
+    const set = vi.fn();
+    const onAuthError = vi.fn();
+    await readIdentityMix('f1', { agentId: 'a1' }, 'k', () => true, set, onAuthError, async () => { throw new WhiteRoomApiError('HTTP 500', 500); });
+    expect(set).toHaveBeenLastCalledWith({ kind: 'failed' });
+    expect(onAuthError).not.toHaveBeenCalled();
+    await readIdentityMix('f1', { agentId: 'a1' }, 'k', () => true, set, onAuthError, async () => { throw new WhiteRoomApiError('HTTP 401', 401); });
+    expect(onAuthError).toHaveBeenCalledTimes(1);
+  });
+
+  it('the run line shows nothing until its read lands', () => {
+    expect(renderToStaticMarkup(h(RunIdentityLine, { fleetId: 'f1', runId: 'a1~3' }))).toBe('');
   });
 });
 
