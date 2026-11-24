@@ -77,9 +77,15 @@ export function AgentDetail({ fleetId, authKey, agentId, from, onAuthError, prev
   useEffect(() => {
     if (preview) return;
     let live = true;
-    agentNamesGet(fleetId, authKey).then((all) => { if (live) { setNamesOn(all !== null); setName(all?.[agentId] ?? null); } }, () => {});
+    // A new agent starts with no name shown until its own read lands.
+    setName(null);
+    setNamesOn(false);
+    agentNamesGet(fleetId, authKey).then(
+      (all) => { if (live) { setNamesOn(all !== null); setName(all?.[agentId] ?? null); } },
+      (e) => { if (live && isAuthError(e)) onAuthError?.('Session expired. Please sign in again.'); },
+    );
     return () => { live = false; };
-  }, [fleetId, agentId, authKey, preview]);
+  }, [fleetId, agentId, authKey, preview, onAuthError]);
   const [updatedAt, setUpdatedAt] = useState<number | null>(preview ? Date.now() : null);
   const [confirmStop, setConfirmStop] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);

@@ -24,20 +24,14 @@ export function identityWords(credential: IdentityCredential, nameSource: Identi
   if (credential === 'not_recorded') return 'Not recorded';
   if (nameSource === 'unresolved') return 'Not known';
   if (credential === 'bound_key') return 'Own key';
-  const key = KEY_WORDS[credential];
-  if (!key) return 'Not known';
-  return `${key}, name ${nameSource === 'explicit' ? 'sent by the agent' : 'worked out by WhiteRoom'}`;
+  return `${KEY_WORDS[credential]}, name ${nameSource === 'explicit' ? 'sent by the agent' : 'worked out by WhiteRoom'}`;
 }
-
-/** Whether a row's calls came in on the agent's own key. */
-export const isBound = (r: Pick<IdentityMixRow, 'credential'>) => r.credential === 'bound_key';
 
 export interface IdentityLine {
   words: string;
   calls: number;
   /** Share of the total, whole percent; 0 shows as "<1%" when it has calls. */
   percent: number;
-  bound: boolean;
 }
 
 /**
@@ -47,15 +41,13 @@ export interface IdentityLine {
 export function identityLines(rows: readonly IdentityMixRow[]): IdentityLine[] {
   const total = rows.reduce((s, r) => s + r.calls, 0);
   if (total === 0) return [];
-  const merged = new Map<string, { calls: number; bound: boolean }>();
+  const merged = new Map<string, number>();
   for (const r of rows) {
     const words = identityWords(r.credential, r.nameSource);
-    const m = merged.get(words) ?? { calls: 0, bound: isBound(r) && r.nameSource !== 'unresolved' };
-    m.calls += r.calls;
-    merged.set(words, m);
+    merged.set(words, (merged.get(words) ?? 0) + r.calls);
   }
   return [...merged]
-    .map(([words, m]) => ({ words, calls: m.calls, bound: m.bound, percent: Math.floor((m.calls / total) * 100) }))
+    .map(([words, calls]) => ({ words, calls, percent: Math.floor((calls / total) * 100) }))
     .sort((a, b) => b.calls - a.calls || a.words.localeCompare(b.words));
 }
 

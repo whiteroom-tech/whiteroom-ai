@@ -6,7 +6,7 @@ import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { agentKeyRuleGet, agentKeyRuleSet, agentNamesGet, agentRename, identityMix, WhiteRoomApiError } from '@/lib/whiteroom/client';
 import { AgentIdentityView, runIdentityText } from '@/components/identity/IdentityMix';
-import { saveAgentName } from '@/components/identity/AgentNamePanel';
+import { AgentNamePanel, namesDiffer, saveAgentName } from '@/components/identity/AgentNamePanel';
 import { changeAgentKeyMode, OneKeyPerAgentView } from '@/app/(citadel)/controls/_components/OneKeyPerAgent';
 import { AgentTitle } from '@/components/agent/AgentDetail';
 import { identityLines, type AgentKeyRuleResult } from '@/lib/agent-identity';
@@ -97,6 +97,25 @@ describe('How it connects', () => {
       { credential: 'none', nameSource: 'explicit', calls: 1, lastAt: null },
     ]))).toBe('Own key 50% · Provider key, name sent by the agent 50%');
     expect(runIdentityText([])).toBeNull();
+  });
+});
+
+describe('Name panel', () => {
+  it('counts a draft as changed only when it would save as something else', () => {
+    expect(namesDiffer('Billing  bot ', 'Billing bot')).toBe(false);
+    expect(namesDiffer('Billing bot 2', 'Billing bot')).toBe(true);
+    expect(namesDiffer('   ', 'Billing bot')).toBe(true);
+    expect(namesDiffer('   ', null)).toBe(false);
+    // An invalid draft is a change, so Save can say what's wrong.
+    expect(namesDiffer('x'.repeat(61), null)).toBe(true);
+  });
+
+  it('starts with the stored name, Save off, and Clear only when there is a name', () => {
+    const named = renderToStaticMarkup(h(AgentNamePanel, { fleetId: 'f1', agentId: 'a1', name: 'Billing bot', onSaved: () => {} }));
+    expect(named).toContain('value="Billing bot"');
+    expect(named).toMatch(/<button[^>]*disabled[^>]*>Save<\/button>/);
+    expect(named).toContain('>Clear<');
+    expect(renderToStaticMarkup(h(AgentNamePanel, { fleetId: 'f1', agentId: 'a1', name: null, onSaved: () => {} }))).not.toContain('>Clear<');
   });
 });
 
