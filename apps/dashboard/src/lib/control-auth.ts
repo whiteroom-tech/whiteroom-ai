@@ -42,7 +42,7 @@ export const DASHBOARD_ONLY_ACTIONS: ReadonlySet<string> = new Set([
   // Where a Where tools can send data rule's tools sent, for its Seen list (DLP spec 5.5): the owner's too.
   'send_seen_list',
   // Renaming an agent, switching "One key per agent" and marking an agent retired: the owner's (gap-closing spec 0.1).
-  'agent_rename', 'agent_key_rule_set', 'agent_retire',
+  'agent_rename', 'agent_key_rule_set', 'agent_retire', 'replay_start',
 ]);
 
 /**

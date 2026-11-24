@@ -1012,6 +1012,12 @@ section[aria-labelledby="run-what-happened"] .wr-panel__title, section[aria-labe
 .wr-identity-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .wr-key-ready { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
 .wr-key-ready__list { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: var(--fs-sm); color: var(--tx2); }
+/* Replay estimate under a rule's settings (gap-closing spec C3). */
+.wr-replay { display: grid; gap: 6px; min-width: 0; }
+.wr-replay__row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.wr-replay__line { margin: 0; font-size: var(--fs-sm); line-height: 1.5; color: var(--tx); overflow-wrap: anywhere; }
+.wr-replay__line--err { color: var(--bad); }
+.wr-replay__note { font-size: var(--fs-sm); color: var(--tx2); }
 .wr-identity-list__row { display: flex; justify-content: space-between; gap: 12px; font-size: var(--fs-md); }
 .wr-agent-title__id { font-family: var(--font-mono); color: var(--tx2); font-size: var(--fs-sm); font-weight: 400; margin-left: 8px; }
 .wr-agent-health[data-tone="warn"] .wr-agent-health__label { color: var(--warn); }
