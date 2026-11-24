@@ -78,16 +78,9 @@ export function OneKeyPerAgent({ fleetId, authKey, onAuthError }: { fleetId: str
     const asked = { fleetId, authKey };
     setSaving(true);
     setNote(null);
-    let failed: string | null = null;
-    try {
-      await agentRetire(fleetId, agentId, retired, authKey);
-    } catch (e) {
-      failed = changeFailureText(e, 'Couldn’t change it. Nothing changed. Try again.');
-    }
-    const read = failed ? false : await load();
+    const got = await retireAgent(fleetId, agentId, retired, authKey, load);
     if (current.current.fleetId !== asked.fleetId || current.current.authKey !== asked.authKey) return;
-    if (failed) setNote({ ok: false, text: failed });
-    else if (!read) setNote({ ok: true, text: 'Saved. Reload the page to see it.' });
+    setNote(got);
     setSaving(false);
   }
 
@@ -113,6 +106,19 @@ export async function changeAgentKeyMode(
   }
   if (await reload()) return { keepMode: false, note: null };
   return { keepMode: true, note: { ok: true, text: 'Saved. The counts couldn’t be refreshed; reload the page to see them.' } };
+}
+
+/** Marks an agent retired (or not), then reads the card again. The note to show, or null. */
+export async function retireAgent(
+  fleetId: string, agentId: string, retired: boolean, authKey: string | undefined, reload: () => Promise<boolean>,
+  call: typeof agentRetire = agentRetire,
+): Promise<Note | null> {
+  try {
+    await call(fleetId, agentId, retired, authKey);
+  } catch (e) {
+    return { ok: false, text: changeFailureText(e, 'Couldn’t change it. Nothing changed. Try again.') };
+  }
+  return (await reload()) ? null : { ok: true, text: 'Saved. Reload the page to see it.' };
 }
 
 /** The card for what was read: nothing for a fleet outside the rule, or before the first read. */

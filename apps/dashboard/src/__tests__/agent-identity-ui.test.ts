@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { agentKeyReadiness, agentKeyRuleGet, agentKeyRuleSet, agentNamesGet, agentRename, agentRetire, changeFailureText, ControlDeniedError, identityMix, WhiteRoomApiError } from '@/lib/whiteroom/client';
 import { AgentIdentityView, readIdentityMix, RunIdentityLine, runIdentityText } from '@/components/identity/IdentityMix';
 import { AgentNamePanel, namesDiffer, saveAgentName } from '@/components/identity/AgentNamePanel';
-import { blockerText, changeAgentKeyMode, OneKeyPerAgentView } from '@/app/(citadel)/controls/_components/OneKeyPerAgent';
+import { blockerText, changeAgentKeyMode, OneKeyPerAgentView, retireAgent } from '@/app/(citadel)/controls/_components/OneKeyPerAgent';
 import { AgentTitle } from '@/components/agent/AgentTitle';
 import { identityLines, type AgentKeyReadiness, type AgentKeyRuleResult } from '@/lib/agent-identity';
 
@@ -328,6 +328,20 @@ describe('One key per agent card', () => {
     expect(kept).toMatchObject({ keepMode: true, note: { ok: true } });
     const refused = await changeAgentKeyMode('f1', 'watch', 'k', async () => true, async () => { throw new WhiteRoomApiError('HTTP 400', 400, 'One key per agent applies to production fleets only.'); });
     expect(refused).toEqual({ keepMode: false, note: { ok: false, text: 'One key per agent applies to production fleets only.' } });
+  });
+
+  it('marks an agent retired, reads the card again, and says what failed', async () => {
+    const call = vi.fn(async () => {});
+    const reload = vi.fn(async () => true);
+    await expect(retireAgent('f1', 'a2', true, 'k', reload, call)).resolves.toBeNull();
+    expect(call).toHaveBeenCalledWith('f1', 'a2', true, 'k');
+    expect(reload).toHaveBeenCalledTimes(1);
+    await expect(retireAgent('f1', 'a2', false, 'k', async () => false, call)).resolves.toEqual({ ok: true, text: 'Saved. Reload the page to see it.' });
+    const reloadAfterFail = vi.fn(async () => true);
+    const refused = await retireAgent('f1', 'a2', true, 'k', reloadAfterFail, async () => { throw new WhiteRoomApiError('HTTP 409', 409, 'This fleet is closed.'); });
+    expect(refused).toEqual({ ok: false, text: 'This fleet is closed.' });
+    expect(reloadAfterFail).not.toHaveBeenCalled();
+    await expect(retireAgent('f1', 'a2', true, 'k', reload, async () => { throw new Error('network'); })).resolves.toEqual({ ok: false, text: 'Couldn’t change it. Nothing changed. Try again.' });
   });
 
   it('switches Enforce on with the readiness token, and reads the card again when it is refused', async () => {
