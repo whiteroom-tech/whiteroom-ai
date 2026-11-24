@@ -67,10 +67,14 @@ export async function storedContact(fleetId: string, agentId: string, q: Queryab
  */
 export const MAX_CONTACTS_PER_FLEET = 1000;
 
-/** Sets or (null) clears a contact. The caller has checked the owner and the person. False: the fleet is at its cap. */
-export async function writeContact(fleetId: string, agentId: string, contactUserId: string | null, by: string, q: Queryable = db()): Promise<boolean> {
+/**
+ * Sets or (null) clears a contact. The caller has checked the owner and the
+ * person. False: the fleet is at its cap. Runs on the pool: a save takes its
+ * own connection for the lock and transaction that keep the cap.
+ */
+export async function writeContact(fleetId: string, agentId: string, contactUserId: string | null, by: string): Promise<boolean> {
   if (contactUserId === null) {
-    await q.query('DELETE FROM agent_contacts WHERE fleet_id = $1 AND agent_id = $2', [fleetId, agentId]);
+    await db().query('DELETE FROM agent_contacts WHERE fleet_id = $1 AND agent_id = $2', [fleetId, agentId]);
     return true;
   }
   // A new row only while the fleet is under its cap; changing an existing one
