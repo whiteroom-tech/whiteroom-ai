@@ -242,6 +242,12 @@ describe('One key per agent card', () => {
     expect(render({ ...data(), applies: false })).toBe('');
   });
 
+  it('still offers the switch when the counts are missing', () => {
+    const html = render({ applies: true, mode: 'off', since: null, summary: null });
+    expect(html).toContain('One key per agent');
+    expect(html).toContain('The counts aren’t available right now.');
+  });
+
   it('a change that saved but couldn’t be re-read keeps the card, with the new mode and a note', async () => {
     const set = vi.fn(async () => {});
     await expect(changeAgentKeyMode('f1', 'watch', 'k', async () => true, set)).resolves.toEqual({ keepMode: false, note: null });
