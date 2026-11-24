@@ -5,7 +5,7 @@
 //   - anything else (fleet tokens) -> Authorization: Bearer
 //   - no key -> unauthenticated (e.g. token_login)
 
-import { IDENTITY_CREDENTIALS, IDENTITY_NAME_SOURCES, UNBOUND_CREDENTIALS, type AgentKeyMode, type AgentKeyRuleResult, type IdentityMixRow } from '@/lib/agent-identity';
+import { AGENT_KEY_MODES, IDENTITY_CREDENTIALS, IDENTITY_NAME_SOURCES, UNBOUND_CREDENTIALS, type AgentKeyMode, type AgentKeyReadiness, type AgentKeyRuleResult, type IdentityMixRow, type ReadinessBlocker } from '@/lib/agent-identity';
 import type {
   AuditExportPage,
   CallExportPage,
@@ -175,7 +175,7 @@ const READ_ACTIONS: ReadonlySet<string> = new Set([
   'performance_index', 'performance_agent', 'performance_evidence', 'performance_fleet_hourly',
   'performance_agent_scores', 'performance_recommendations_list', 'performance_recommendations_get',
   'performance_live_feed', 'performance_recommendations_export', 'performance_cost_forecast',
-  'agent_budgets_get', 'agent_names_get', 'identity_mix', 'agent_key_rule_get', 'governance_list', 'get_diagnosis', 'audit_integrity', 'verify_audit', 'audit_summary',
+  'agent_budgets_get', 'agent_names_get', 'identity_mix', 'agent_key_rule_get', 'agent_key_readiness', 'governance_list', 'get_diagnosis', 'audit_integrity', 'verify_audit', 'audit_summary',
   'rule_would_act', 'list_runs', 'rule_actions', 'run_days', 'get_run_events', 'alerts_get', 'health_history', 'job_outcomes',
   'fleet_data_settings_get', 'compression_preview', 'tools_seen', 'send_seen_list',
 ]);
@@ -825,16 +825,53 @@ export async function agentKeyRuleGet(fleetId: string, key?: string): Promise<Ag
   const res = await apiCall<AgentKeyRuleResult>({ action: 'agent_key_rule_get', fleet_id: fleetId }, key);
   // A reply this build can't read is treated like an engine without the rule: the card stays hidden.
   const s = res?.summary;
-  const ok = res && typeof res.applies === 'boolean' && (res.mode === 'off' || res.mode === 'watch')
+  const ok = res && typeof res.applies === 'boolean' && (AGENT_KEY_MODES as readonly unknown[]).includes(res.mode)
     && (s === null || (s && typeof s.recorded === 'boolean' && typeof s.unboundCalls === 'number' && Array.isArray(s.agents) && s.byCredential && typeof s.byCredential === 'object'
       && s.agents.every((a) => a && typeof a.agentId === 'string' && typeof a.unboundCalls === 'number' && Array.isArray(a.unboundCredentials))));
   if (!ok) throw new WhiteRoomApiError('Unexpected agent_key_rule_get reply', 200);
   return { ...res, summary: s ? { ...s, agents: s.agents.map((a) => ({ ...a, unboundCredentials: a.unboundCredentials.filter((c) => (UNBOUND_CREDENTIALS as readonly string[]).includes(c)) })) } : null };
 }
 
-/** Switches "One key per agent". The owner's call (dashboard only on the engine). */
-export async function agentKeyRuleSet(fleetId: string, mode: AgentKeyMode, key?: string): Promise<void> {
-  requireSuccess(await apiCall<{ success?: boolean; error?: string }>({ action: 'agent_key_rule_set', fleet_id: fleetId, mode }, key));
+/**
+ * Switches "One key per agent". The owner's call (dashboard only on the
+ * engine). Enforce takes the readiness token the card was shown: the engine
+ * rechecks readiness and refuses the switch if anything changed since.
+ */
+export async function agentKeyRuleSet(fleetId: string, mode: AgentKeyMode, key?: string, readinessToken?: string): Promise<void> {
+  requireSuccess(await apiCall<{ success?: boolean; error?: string }>({ action: 'agent_key_rule_set', fleet_id: fleetId, mode, ...(readinessToken !== undefined && { readiness_token: readinessToken }) }, key));
+}
+
+const BLOCKER_KINDS = new Set(['not_applicable', 'not_recorded', 'not_watching', 'watch_too_short', 'unbound_calls', 'capture_gaps', 'agents_not_seen']);
+
+function isBlocker(b: unknown): b is ReadinessBlocker {
+  const x = b as Record<string, unknown> | null;
+  if (!x || typeof x.kind !== 'string' || !BLOCKER_KINDS.has(x.kind)) return false;
+  if (x.kind === 'watch_too_short') return typeof x.readyAt === 'string';
+  if (x.kind === 'unbound_calls') return typeof x.calls === 'number';
+  if (x.kind === 'capture_gaps') return typeof x.gaps === 'number' && (x.lastAt === null || typeof x.lastAt === 'string');
+  if (x.kind === 'agents_not_seen') return Array.isArray(x.agentIds) && x.agentIds.every((a) => typeof a === 'string');
+  return true;
+}
+
+/**
+ * Whether "One key per agent" can move to Enforce, and what blocks it. A
+ * reply this build can't read throws, and the card offers no Enforce. A
+ * blocker it doesn't know (a newer engine) still keeps Enforce closed.
+ */
+export async function agentKeyReadiness(fleetId: string, key?: string): Promise<AgentKeyReadiness> {
+  const res = await apiCall<AgentKeyReadiness>({ action: 'agent_key_readiness', fleet_id: fleetId }, key);
+  const ok = res && typeof res.ready === 'boolean' && typeof res.token === 'string' && Array.isArray(res.blockers) && Array.isArray(res.agents) && Array.isArray(res.retired)
+    && res.agents.every((a) => a && typeof a.agentId === 'string' && typeof a.boundCalls === 'number')
+    && res.retired.every((r) => r && typeof r.agentId === 'string');
+  if (!ok) throw new WhiteRoomApiError('Unexpected agent_key_readiness reply', 200);
+  const blockers = res.blockers.filter(isBlocker);
+  // Ready only as the engine says, and only with every blocker read.
+  return { ...res, ready: res.ready && res.blockers.length === 0, blockers };
+}
+
+/** Marks an agent retired, or not: a retired agent isn't expected on its own key before Enforce. The owner's call. */
+export async function agentRetire(fleetId: string, agentId: string, retired: boolean, key?: string): Promise<void> {
+  requireSuccess(await apiCall<{ success?: boolean; error?: string }>({ action: 'agent_retire', fleet_id: fleetId, agent_id: agentId, retired }, key));
 }
 
 // -- Fleet governance rules (Controls page) --

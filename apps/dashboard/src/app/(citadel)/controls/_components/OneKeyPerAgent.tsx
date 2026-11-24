@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { SegmentedControl, FONT_MONO } from '@whiteroom/ui';
-import { agentKeyRuleGet, agentKeyRuleSet, agentNamesGet, changeFailureText, isAuthError } from '@/lib/whiteroom/client';
-import { agentDisplay, credentialWords, type AgentKeyMode, type AgentKeyRuleResult } from '@/lib/agent-identity';
+import { agentKeyReadiness, agentKeyRuleGet, agentKeyRuleSet, agentNamesGet, agentRetire, changeFailureText, isAuthError } from '@/lib/whiteroom/client';
+import { agentDisplay, credentialWords, type AgentKeyMode, type AgentKeyReadiness, type AgentKeyRuleResult, type ReadinessBlocker } from '@/lib/agent-identity';
 import { fmtDay } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
 
@@ -12,15 +12,18 @@ import { ROUTES } from '@/lib/routes';
 const SHOWN = 5;
 
 /**
- * Controls › "One key per agent" (gap-closing spec A3). Off or Watch: in
- * Watch, calls that came in without the agent's own WhiteRoom key are
- * counted, and nothing is blocked. Off shows the last 7 days, so the owner
- * sees what Watch would count first. Hidden for fleets outside the rule
- * (Sandbox, practice) and on engines without it.
+ * Controls › "One key per agent" (gap-closing spec A3/A4). In Watch, calls
+ * that came in without the agent's own WhiteRoom key are counted, and
+ * nothing is blocked. Off shows the last 7 days, so the owner sees what
+ * Watch would count first. Enforce refuses those calls; it opens only once
+ * readiness passes, and the engine rechecks it at the switch. Hidden for
+ * fleets outside the rule (Sandbox, practice) and on engines without it.
  */
 export function OneKeyPerAgent({ fleetId, authKey, onAuthError }: { fleetId: string; authKey?: string; onAuthError?: () => void }) {
   const [data, setData] = useState<AgentKeyRuleResult | null>(null);
   const [names, setNames] = useState<Record<string, string>>({});
+  // Null: not read (an engine before Enforce), so no Enforce is offered.
+  const [readiness, setReadiness] = useState<AgentKeyReadiness | null>(null);
   const [saving, setSaving] = useState(false);
   const [note, setNote] = useState<Note | null>(null);
 
@@ -34,10 +37,12 @@ export function OneKeyPerAgent({ fleetId, authKey, onAuthError }: { fleetId: str
     const asked = { fleetId, authKey };
     const stillCurrent = () => current.current.fleetId === asked.fleetId && current.current.authKey === asked.authKey;
     try {
-      const [rule, named] = await Promise.all([agentKeyRuleGet(fleetId, authKey), agentNamesGet(fleetId, authKey)]);
+      // Readiness failing on its own (an older engine) leaves the rest of the card as it was.
+      const [rule, named, ready] = await Promise.all([agentKeyRuleGet(fleetId, authKey), agentNamesGet(fleetId, authKey), agentKeyReadiness(fleetId, authKey).catch(() => null)]);
       if (!stillCurrent()) return false;
       setData(rule);
       setNames(named ?? {});
+      setReadiness(ready);
       return true;
     } catch (e) {
       if (stillCurrent() && isAuthError(e)) onAuthError?.();
@@ -49,6 +54,7 @@ export function OneKeyPerAgent({ fleetId, authKey, onAuthError }: { fleetId: str
     // Another fleet: nothing of the last one's shows while its own read is out.
     setData(null);
     setNames({});
+    setReadiness(null);
     setNote(null);
     setSaving(false);
     void load();
@@ -59,7 +65,7 @@ export function OneKeyPerAgent({ fleetId, authKey, onAuthError }: { fleetId: str
     const asked = { fleetId, authKey };
     setSaving(true);
     setNote(null);
-    const got = await changeAgentKeyMode(fleetId, mode, authKey, load);
+    const got = await changeAgentKeyMode(fleetId, mode, authKey, load, agentKeyRuleSet, readiness?.token);
     // The page moved to another fleet while it saved: nothing of this one's lands on that card.
     if (current.current.fleetId !== asked.fleetId || current.current.authKey !== asked.authKey) return;
     if (got.keepMode) setData((d) => (d ? { ...d, mode } : d));
@@ -67,7 +73,25 @@ export function OneKeyPerAgent({ fleetId, authKey, onAuthError }: { fleetId: str
     setSaving(false);
   }
 
-  return <OneKeyPerAgentView data={data} names={names} note={note} onChange={(m) => void change(m)} />;
+  async function retire(agentId: string, retired: boolean) {
+    if (saving) return;
+    const asked = { fleetId, authKey };
+    setSaving(true);
+    setNote(null);
+    let failed: string | null = null;
+    try {
+      await agentRetire(fleetId, agentId, retired, authKey);
+    } catch (e) {
+      failed = changeFailureText(e, 'Couldn’t change it. Nothing changed. Try again.');
+    }
+    const read = failed ? false : await load();
+    if (current.current.fleetId !== asked.fleetId || current.current.authKey !== asked.authKey) return;
+    if (failed) setNote({ ok: false, text: failed });
+    else if (!read) setNote({ ok: true, text: 'Saved. Reload the page to see it.' });
+    setSaving(false);
+  }
+
+  return <OneKeyPerAgentView data={data} names={names} note={note} readiness={readiness} busy={saving} onChange={(m) => void change(m)} onRetire={(id, r) => void retire(id, r)} />;
 }
 
 type Note = { ok: boolean; text: string };
@@ -78,11 +102,13 @@ type Note = { ok: boolean; text: string };
  */
 export async function changeAgentKeyMode(
   fleetId: string, mode: AgentKeyMode, authKey: string | undefined, reload: () => Promise<boolean>,
-  set: typeof agentKeyRuleSet = agentKeyRuleSet,
+  set: typeof agentKeyRuleSet = agentKeyRuleSet, readinessToken?: string,
 ): Promise<{ note: Note | null; keepMode: boolean }> {
   try {
-    await set(fleetId, mode, authKey);
+    await set(fleetId, mode, authKey, mode === 'enforce' ? readinessToken : undefined);
   } catch (e) {
+    // Refused (not ready, or changed since the page loaded): the card reads again, so it shows why.
+    if (mode === 'enforce') void reload();
     return { keepMode: false, note: { ok: false, text: changeFailureText(e, 'Couldn’t change it. Nothing changed. Try again.') } };
   }
   if (await reload()) return { keepMode: false, note: null };
@@ -90,11 +116,18 @@ export async function changeAgentKeyMode(
 }
 
 /** The card for what was read: nothing for a fleet outside the rule, or before the first read. */
-export function OneKeyPerAgentView({ data, names, note, onChange }: { data: AgentKeyRuleResult | null; names: Record<string, string>; note: Note | null; onChange: (m: AgentKeyMode) => void }) {
+export function OneKeyPerAgentView({ data, names, note, readiness = null, busy = false, onChange, onRetire = () => {} }: {
+  data: AgentKeyRuleResult | null; names: Record<string, string>; note: Note | null;
+  readiness?: AgentKeyReadiness | null; busy?: boolean;
+  onChange: (m: AgentKeyMode) => void; onRetire?: (agentId: string, retired: boolean) => void;
+}) {
   // Hidden only outside the rule: without counts the switch still shows.
   if (!data?.applies) return null;
   const s = data.summary;
-  const watching = data.mode === 'watch';
+  const watching = data.mode !== 'off';
+  const enforcing = data.mode === 'enforce';
+  // Enforce is offered once it's ready, and stays selectable while it's on.
+  const canEnforce = enforcing || !!readiness?.ready;
   const when = watching && data.since ? `Since ${fmtDay(data.since)}` : 'In the last 7 days';
   const n = s?.unboundCalls ?? 0;
   const unbound = s?.agents.filter((a) => a.unboundCalls > 0) ?? [];
@@ -106,14 +139,20 @@ export function OneKeyPerAgentView({ data, names, note, onChange }: { data: Agen
         <div style={{ minWidth: 0 }}>
           <h2 id="one-key-heading" className="wr-panel__title ctl-card__title">One key per agent</h2>
           <p className="ctl-cap" style={{ margin: '2px 0 0' }}>
-            Each agent uses its own WhiteRoom key. In Watch, calls without one are counted. Nothing is blocked.
+            {enforcing
+              ? 'Each agent uses its own WhiteRoom key. Calls without one are refused.'
+              : 'Each agent uses its own WhiteRoom key. In Watch, calls without one are counted. Nothing is blocked.'}
           </p>
         </div>
         <SegmentedControl<AgentKeyMode>
           label="One key per agent"
           value={data.mode}
           onChange={onChange}
-          options={[{ value: 'off', label: 'Off' }, { value: 'watch', label: 'Watch' }]}
+          options={[
+            { value: 'off', label: 'Off' },
+            { value: 'watch', label: 'Watch' },
+            ...(readiness || enforcing ? [{ value: 'enforce' as const, label: 'Enforce', disabled: !canEnforce || busy, title: canEnforce ? undefined : 'Not ready yet. See below.' }] : []),
+          ]}
         />
       </div>
       {note && <p className="ctl-cap" role={note.ok ? 'status' : 'alert'} style={{ margin: 0, color: note.ok ? 'var(--tx2)' : 'var(--bad)' }}>{note.text}</p>}
@@ -147,6 +186,74 @@ export function OneKeyPerAgentView({ data, names, note, onChange }: { data: Agen
           {(more > 0 || s.truncated) && <p className="ctl-cap" style={{ margin: 0 }}>{s.truncated ? 'More agents' : `${more} more ${more === 1 ? 'agent' : 'agents'}`} not shown.</p>}
         </>
       )}
+      {readiness && !enforcing && <EnforceReadiness readiness={readiness} names={names} busy={busy} onRetire={onRetire} />}
     </section>
+  );
+}
+
+const DAY_MS = 86_400_000;
+
+/** One line per blocker, in plain words. A blocker this build doesn't know isn't shown, but still keeps Enforce closed. */
+export function blockerText(b: ReadinessBlocker, days: number): string | null {
+  switch (b.kind) {
+    case 'not_recorded': return 'Calls aren’t recorded with their key yet.';
+    case 'not_watching': return `Turn on Watch first. Enforce opens after ${days} days in Watch.`;
+    case 'watch_too_short': return `Watch needs ${days} days. Ready ${fmtDay(b.readyAt)} at the earliest.`;
+    case 'unbound_calls': return `${b.calls.toLocaleString('en-US')} ${b.calls === 1 ? 'call' : 'calls'} in the last ${days} days came in without the agent’s own key.`;
+    case 'capture_gaps': {
+      const after = b.lastAt ? ` Ready ${fmtDay(Date.parse(b.lastAt) + days * DAY_MS)} at the earliest.` : '';
+      return `Some calls weren’t recorded in the last ${days} days.${after}`;
+    }
+    // Listed agent by agent below.
+    case 'agents_not_seen': return null;
+    default: return null;
+  }
+}
+
+/** Under the counts, while not in Enforce: what's left before Enforce opens, and the retired agents. */
+function EnforceReadiness({ readiness: r, names, busy, onRetire }: { readiness: AgentKeyReadiness; names: Record<string, string>; busy: boolean; onRetire: (agentId: string, retired: boolean) => void }) {
+  const lines = r.blockers.map((b) => blockerText(b, r.observationDays)).filter((t): t is string => !!t);
+  const notSeen = r.blockers.find((b): b is Extract<ReadinessBlocker, { kind: 'agents_not_seen' }> => b.kind === 'agents_not_seen')?.agentIds ?? [];
+  const label = (id: string) => {
+    const d = agentDisplay(id, names);
+    return <>{d.name ?? <span style={{ fontFamily: FONT_MONO }}>{d.id}</span>}{d.name && <span className="wr-agent-title__id">{d.id}</span>}</>;
+  };
+  return (
+    <div className="wr-key-ready" role="group" aria-labelledby="one-key-enforce-heading">
+      <h3 id="one-key-enforce-heading" className="wr-agent-cap" style={{ margin: 0 }}>Enforce</h3>
+      {r.ready ? (
+        <p className="ctl-cap" style={{ margin: 0 }}>Ready. Calls without the agent’s own key will be refused.</p>
+      ) : (
+        <>
+          <p className="ctl-cap" style={{ margin: 0 }}>Not ready yet. Enforce opens after {r.observationDays} days in Watch with every agent on its own key.</p>
+          {lines.length > 0 && <ul className="wr-key-ready__list">{lines.map((t) => <li key={t}>{t}</li>)}</ul>}
+        </>
+      )}
+      {notSeen.length > 0 && (
+        <>
+          <p className="ctl-cap" style={{ margin: 0 }}>Not seen on its own key yet. Retire an agent that no longer runs.</p>
+          <ul className="wr-identity-list">
+            {notSeen.slice(0, SHOWN).map((id) => (
+              <li key={id} className="wr-identity-list__row">
+                <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}><Link href={`/agents/${encodeURIComponent(id)}`} className="wr-link">{label(id)}</Link></span>
+                <button type="button" className="wr-btn wr-btn--secondary wr-btn--h28" disabled={busy} onClick={() => onRetire(id, true)}>Mark retired</button>
+              </li>
+            ))}
+          </ul>
+          {notSeen.length > SHOWN && <p className="ctl-cap" style={{ margin: 0 }}>{notSeen.length - SHOWN} more not shown.</p>}
+        </>
+      )}
+      {r.retired.length > 0 && (
+        <ul className="wr-identity-list">
+          {r.retired.slice(0, SHOWN).map((a) => (
+            <li key={a.agentId} className="wr-identity-list__row">
+              <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{label(a.agentId)} <span className="ctl-cap">· Retired</span></span>
+              <button type="button" className="wr-btn wr-btn--secondary wr-btn--h28" disabled={busy} onClick={() => onRetire(a.agentId, false)}>Undo</button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {r.retired.length > SHOWN && <p className="ctl-cap" style={{ margin: 0 }}>{r.retired.length - SHOWN} more retired not shown.</p>}
+    </div>
   );
 }

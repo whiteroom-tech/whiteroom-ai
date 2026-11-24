@@ -4,12 +4,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { agentKeyRuleGet, agentKeyRuleSet, agentNamesGet, agentRename, changeFailureText, ControlDeniedError, identityMix, WhiteRoomApiError } from '@/lib/whiteroom/client';
+import { agentKeyReadiness, agentKeyRuleGet, agentKeyRuleSet, agentNamesGet, agentRename, agentRetire, changeFailureText, ControlDeniedError, identityMix, WhiteRoomApiError } from '@/lib/whiteroom/client';
 import { AgentIdentityView, readIdentityMix, RunIdentityLine, runIdentityText } from '@/components/identity/IdentityMix';
 import { AgentNamePanel, namesDiffer, saveAgentName } from '@/components/identity/AgentNamePanel';
 import { changeAgentKeyMode, OneKeyPerAgentView } from '@/app/(citadel)/controls/_components/OneKeyPerAgent';
 import { AgentTitle } from '@/components/agent/AgentTitle';
-import { identityLines, type AgentKeyRuleResult } from '@/lib/agent-identity';
+import { identityLines, type AgentKeyReadiness, type AgentKeyRuleResult } from '@/lib/agent-identity';
 
 const fetchMock = vi.fn();
 const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -69,8 +69,10 @@ describe('client calls', () => {
   });
 
   it('agentKeyRuleGet refuses a reply it can’t read, so the card stays hidden', async () => {
-    fetchMock.mockResolvedValue(reply({ applies: true, mode: 'enforce', since: null, summary: null }));
+    fetchMock.mockResolvedValue(reply({ applies: true, mode: 'strict', since: null, summary: null }));
     await expect(agentKeyRuleGet('f1', 'k')).rejects.toThrow();
+    fetchMock.mockResolvedValue(reply({ applies: true, mode: 'enforce', since: null, summary: null }));
+    await expect(agentKeyRuleGet('f1', 'k')).resolves.toMatchObject({ mode: 'enforce' });
     fetchMock.mockResolvedValue(reply({ applies: true, mode: 'watch', since: null, summary: { unboundCalls: 1, byCredential: {}, agents: [{ agentId: 'a1' }] } }));
     await expect(agentKeyRuleGet('f1', 'k')).rejects.toThrow();
     // No recorded flag: malformed, not "calls aren't recorded yet".
@@ -87,6 +89,28 @@ describe('client calls', () => {
     expect(sent()).toEqual({ action: 'agent_key_rule_set', fleet_id: 'f1', mode: 'watch' });
     fetchMock.mockResolvedValue(reply({ success: false, error: 'Not saved.' }));
     await expect(agentKeyRuleSet('f1', 'watch', 'k')).rejects.toThrow('Not saved.');
+    fetchMock.mockResolvedValue(reply({ success: true, mode: 'enforce' }));
+    await agentKeyRuleSet('f1', 'enforce', 'k', 'tok1');
+    expect(sent()).toEqual({ action: 'agent_key_rule_set', fleet_id: 'f1', mode: 'enforce', readiness_token: 'tok1' });
+  });
+
+  it('agentRetire sends the agent and whether it is retired', async () => {
+    fetchMock.mockResolvedValue(reply({ success: true, retired: true }));
+    await agentRetire('f1', 'a1', true, 'k');
+    expect(sent()).toEqual({ action: 'agent_retire', fleet_id: 'f1', agent_id: 'a1', retired: true });
+  });
+
+  it('agentKeyReadiness reads blockers it knows, keeps Enforce closed for one it doesn’t, and refuses a malformed reply', async () => {
+    const base = { ready: true, mode: 'watch', from: null, to: 'x', observationDays: 7, agents: [], retired: [], truncated: false, token: 't' };
+    fetchMock.mockResolvedValue(reply({ ...base, blockers: [] }));
+    await expect(agentKeyReadiness('f1', 'k')).resolves.toMatchObject({ ready: true, token: 't' });
+    expect(sent()).toEqual({ action: 'agent_key_readiness', fleet_id: 'f1' });
+    fetchMock.mockResolvedValue(reply({ ...base, ready: true, blockers: [{ kind: 'quantum' }] }));
+    await expect(agentKeyReadiness('f1', 'k')).resolves.toMatchObject({ ready: false, blockers: [] });
+    fetchMock.mockResolvedValue(reply({ ...base, ready: false, blockers: [{ kind: 'unbound_calls', calls: 'lots' }, { kind: 'not_watching' }] }));
+    await expect(agentKeyReadiness('f1', 'k')).resolves.toMatchObject({ ready: false, blockers: [{ kind: 'not_watching' }] });
+    fetchMock.mockResolvedValue(reply({ ...base, token: undefined, blockers: [] }));
+    await expect(agentKeyReadiness('f1', 'k')).rejects.toThrow();
   });
 });
 
@@ -214,7 +238,45 @@ describe('One key per agent card', () => {
       truncated: false, ...over,
     },
   });
-  const render = (d: AgentKeyRuleResult | null, names: Record<string, string> = {}) => renderToStaticMarkup(h(OneKeyPerAgentView, { data: d, names, note: null, onChange: () => {} }));
+  const render = (d: AgentKeyRuleResult | null, names: Record<string, string> = {}, readiness: AgentKeyReadiness | null = null) => renderToStaticMarkup(h(OneKeyPerAgentView, { data: d, names, note: null, readiness, onChange: () => {} }));
+  const ready = (over: Partial<AgentKeyReadiness> = {}): AgentKeyReadiness => ({
+    ready: false, mode: 'watch', from: null, to: '2026-11-24T10:00:00.000Z', observationDays: 7, agents: [], retired: [], truncated: false, token: 't', blockers: [], ...over,
+  });
+  const enforceButton = (html: string) => html.match(/<button[^>]*>Enforce<\/button>/)?.[0] ?? null;
+
+  it('offers no Enforce on an engine without readiness', () => {
+    expect(enforceButton(render(data()))).toBeNull();
+  });
+
+  it('names what keeps Enforce closed, with Mark retired on agents not seen on their own key', () => {
+    const html = render(data(), { a2: 'Night job' }, ready({
+      blockers: [
+        { kind: 'watch_too_short', readyAt: '2026-11-27T10:00:00.000Z' },
+        { kind: 'unbound_calls', calls: 4 },
+        { kind: 'capture_gaps', gaps: 1, lastAt: '2026-11-22T10:00:00.000Z' },
+        { kind: 'agents_not_seen', agentIds: ['a2'] },
+      ],
+      retired: [{ agentId: 'old-bot', retiredAt: 'x', retiredBy: 'dashboard' }],
+    }));
+    expect(enforceButton(html)).toMatch(/disabled/);
+    expect(html).toContain('Not ready yet.');
+    expect(html).toContain('Watch needs 7 days. Ready Nov 27 at the earliest.');
+    expect(html).toContain('4 calls in the last 7 days came in without the agent’s own key.');
+    expect(html).toContain('Some calls weren’t recorded in the last 7 days. Ready Nov 29 at the earliest.');
+    expect(html).toContain('Night job');
+    expect(html).toContain('Mark retired');
+    expect(html).toMatch(/old-bot.*Retired.*Undo/);
+  });
+
+  it('opens Enforce once ready, and in Enforce says calls without a key are refused', () => {
+    const html = render(data({ unboundCalls: 0, agents: [] }), {}, ready({ ready: true }));
+    expect(enforceButton(html)).not.toMatch(/disabled/);
+    expect(html).toContain('Ready. Calls without the agent’s own key will be refused.');
+    const on = render({ ...data({ unboundCalls: 0, agents: [] }), mode: 'enforce' }, {}, null);
+    expect(enforceButton(on)).not.toBeNull();
+    expect(on).toContain('Calls without one are refused.');
+    expect(on).not.toContain('Not ready yet.');
+  });
 
   it('lists agents with calls that came in without their own key, by name with the id beside it', () => {
     const html = render(data(), { a1: 'Billing bot' });
@@ -261,5 +323,17 @@ describe('One key per agent card', () => {
     expect(kept).toMatchObject({ keepMode: true, note: { ok: true } });
     const refused = await changeAgentKeyMode('f1', 'watch', 'k', async () => true, async () => { throw new WhiteRoomApiError('HTTP 400', 400, 'One key per agent applies to production fleets only.'); });
     expect(refused).toEqual({ keepMode: false, note: { ok: false, text: 'One key per agent applies to production fleets only.' } });
+  });
+
+  it('switches Enforce on with the readiness token, and reads the card again when it is refused', async () => {
+    const set = vi.fn(async () => {});
+    await changeAgentKeyMode('f1', 'enforce', 'k', async () => true, set, 'tok');
+    expect(set).toHaveBeenCalledWith('f1', 'enforce', 'k', 'tok');
+    await changeAgentKeyMode('f1', 'watch', 'k', async () => true, set, 'tok');
+    expect(set).toHaveBeenLastCalledWith('f1', 'watch', 'k', undefined);
+    const reload = vi.fn(async () => true);
+    const changed = await changeAgentKeyMode('f1', 'enforce', 'k', reload, async () => { throw new WhiteRoomApiError('HTTP 409', 409, 'Something changed since this page loaded. Check readiness again before turning on Enforce.'); }, 'tok');
+    expect(changed.note).toEqual({ ok: false, text: 'Something changed since this page loaded. Check readiness again before turning on Enforce.' });
+    expect(reload).toHaveBeenCalled();
   });
 });

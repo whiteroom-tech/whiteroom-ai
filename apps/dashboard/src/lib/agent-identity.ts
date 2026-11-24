@@ -79,7 +79,8 @@ export function agentDisplay(agentId: string, names: Readonly<Record<string, str
 
 // -- One key per agent --
 
-export type AgentKeyMode = 'off' | 'watch';
+export type AgentKeyMode = 'off' | 'watch' | 'enforce';
+export const AGENT_KEY_MODES: readonly AgentKeyMode[] = ['off', 'watch', 'enforce'];
 
 export interface AgentKeyAgentRow {
   agentId: string;
@@ -104,6 +105,38 @@ export interface AgentKeyRuleResult {
   mode: AgentKeyMode;
   since: string | null;
   summary: AgentKeySummary | null;
+}
+
+/** What keeps Enforce closed (engine agent_key_readiness, spec A4). */
+export type ReadinessBlocker =
+  | { kind: 'not_applicable' }
+  | { kind: 'not_recorded' }
+  | { kind: 'not_watching' }
+  | { kind: 'watch_too_short'; readyAt: string }
+  | { kind: 'unbound_calls'; calls: number }
+  | { kind: 'capture_gaps'; gaps: number; lastAt: string | null }
+  | { kind: 'agents_not_seen'; agentIds: string[] };
+
+export interface ReadinessAgent {
+  agentId: string;
+  boundCalls: number;
+  unboundCalls: number;
+  lastBoundAt: string | null;
+  expectedBecause: 'registered' | 'recent_calls';
+}
+
+export interface AgentKeyReadiness {
+  ready: boolean;
+  mode: AgentKeyMode;
+  from: string | null;
+  to: string;
+  observationDays: number;
+  blockers: ReadinessBlocker[];
+  agents: ReadinessAgent[];
+  retired: Array<{ agentId: string; retiredAt: string; retiredBy: string | null }>;
+  truncated: boolean;
+  /** Sent back when switching Enforce on: the engine refuses it if anything changed since. */
+  token: string;
 }
 
 /** "Shared key", "Provider key", "AWS session", "Not recorded": what an unbound call came in on. */
