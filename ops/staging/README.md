@@ -33,14 +33,47 @@ Renaming either workflow file breaks its auth on purpose. Update the `workloadId
 
 ## Database migrations
 
-The dashboard has no migration runner. Apply a new `apps/dashboard/migrations/*.sql` to **staging first**, then prod:
+`npm run migrate` in `apps/dashboard` (`scripts/migrate.ts`) applies the pending `migrations/*.sql` files in name order and records each in a `schema_migrations` table. Run it against **staging first**, then US prod, then EU (`ops/eu/README.md`). No deploy runs it.
+
+Connect through the Cloud SQL proxy, as before:
 
 ```sh
 cloud-sql-proxy --token "$(gcloud auth print-access-token)" --port 5441 \
   whiteroom-staging:us-central1:whiteroom-db-staging &
-PGPASSWORD="$(gcloud secrets versions access latest --secret whiteroom-dashboard-db-password --project whiteroom-staging)" \
-  psql -h 127.0.0.1 -p 5441 -U whiteroom_dashboard_app -d whiteroom_dashboard -f apps/dashboard/migrations/NNN_name.sql
+cd apps/dashboard
+export DB_HOST=127.0.0.1 DB_PORT=5441 DB_USER=whiteroom_dashboard_app DB_NAME=whiteroom_dashboard
+export DB_PASSWORD="$(gcloud secrets versions access latest --secret whiteroom-dashboard-db-password --project whiteroom-staging)"
+npm run migrate               # dry run: lists what is pending
+npm run migrate -- --apply    # applies it
 ```
+
+US prod is the same with `whiteroom-prod:us-central1:whiteroom-db-v2` and `--project whiteroom-prod`.
+
+- **Dry run by default.** Nothing is written without `--apply`.
+- **One file, one transaction.** A file and its `schema_migrations` row commit together, so a failed file leaves nothing behind and the next run tries it again. A file that can't run in a transaction (`CREATE INDEX CONCURRENTLY`, `VACUUM`, such as 013) runs through `psql -f`, as before, so `psql` must be on `PATH`; it is recorded only if psql succeeds, and must be safe to re-run.
+- **One runner at a time.** `--apply` holds an advisory lock for the whole run. A second runner stops at once and says so.
+- **Applied files don't change.** A recorded file whose text differs, or that is gone, stops the run before anything is applied. Put a fix in a new file.
+- A file's `SET lock_timeout` still applies: on a timeout, run again.
+
+### Baseline (once per database)
+
+Staging, US prod and EU had migrations applied by hand before the runner existed, so each is baselined once: every file up to the last one it already has is recorded without being run. Until then `--apply` refuses, because the database has tables but no `schema_migrations`.
+
+Check first which is the last file the database has. If `proxy_keys` exists, it has 018:
+
+```sh
+PGPASSWORD="$DB_PASSWORD" psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -Atc "SELECT to_regclass('proxy_keys') IS NOT NULL"
+```
+
+Then baseline at that file (here 018), dry run first:
+
+```sh
+npm run migrate -- --baseline 018_proxy_keys.sql           # lists the files it would record
+npm run migrate -- --baseline 018_proxy_keys.sql --apply   # records them
+npm run migrate                                             # should say: Up to date
+```
+
+If `proxy_keys` is missing, baseline at `017_trial_ending_email.sql` and then `npm run migrate -- --apply` applies 018. A database that already has rows in `schema_migrations` refuses a second baseline.
 
 Staging's schema was loaded from a `pg_dump --schema-only` of prod on 2026-09-30, so it already includes migrations 001–006. The engine migrates its own database at boot.
 

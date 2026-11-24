@@ -90,14 +90,14 @@ dashboard treats a missing code as "no invite").
 The EU dashboard database was built from a schema-only dump of staging
 (migrations through 013, no rows). Every new migration in
 `apps/dashboard/migrations/` must now be applied to **staging, prod and EU**,
-in that order. Connect to the EU database the way `ops/staging/README.md`
-shows for staging, with instance `whiteroom-eu:europe-west1:whiteroom-db-eu`
-and the password in the `whiteroom-dashboard-db-password` secret in `whiteroom-eu`.
+in that order, with `npm run migrate` as `ops/staging/README.md` shows for
+staging (including the one-time baseline), with instance
+`whiteroom-eu:europe-west1:whiteroom-db-eu` and the password in the
+`whiteroom-dashboard-db-password` secret in `whiteroom-eu`.
 
 ## Still to do
 
 - **Fold the EU deploy into the workflows.** `deploy-staging.yml` would build the EU image too, and `promote-prod.yml` would ship the verified image to both regions, with Workload Identity Federation for `whiteroom-eu`. That would retire this exception.
-- **A migration runner**, so migrations stop being a manual step in three databases.
 - **Billing jobs.** Cloud Scheduler isn't enabled in `whiteroom-eu`, so `billing-sync` (hourly) and `entitlement-sweep` (every 2 minutes) don't run in the EU yet: free periods don't end on time, no trial reminders go out and savings aren't reported to Stripe. Create both jobs as in `whiteroom-prod`, with the EU's `whiteroom-entitlement-sync-secret` in the `x-wr-sync-secret` header.
 
 ## Stripe

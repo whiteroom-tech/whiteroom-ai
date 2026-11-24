@@ -32,9 +32,12 @@ commit does not clear it.
 
 ## Dashboard database
 
-- Migrations in `apps/dashboard/migrations/` are applied by hand with `psql`;
-  there is no runner. Number new files after the highest one on `origin/main`,
-  and recheck before merging, since parallel branches collide on numbers.
+- Migrations in `apps/dashboard/migrations/` are applied by hand with
+  `npm run migrate` (`scripts/migrate.ts`, see `ops/staging/README.md`), which
+  records each file in `schema_migrations`. Number new files after the highest
+  one on `origin/main`, and recheck before merging, since parallel branches
+  collide on numbers. Never edit a merged migration: the runner refuses a
+  changed file. Put the change in a new one.
 - The base `users` / `user_fleets` tables have no DDL in this repo, so a fresh
   database can't be built from migrations alone. Ask for the base schema
   rather than guessing column types.
