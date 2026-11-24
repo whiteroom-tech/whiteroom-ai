@@ -23,7 +23,7 @@ describe('Contact panel', () => {
   it('offers the owner first, then members by name and email, with the owner chosen by default', () => {
     const html = renderToStaticMarkup(h(ContactPanelView, { view, saving: false, note: null, onChange: () => {} }));
     expect(html).toMatch(/<option value="owner" selected="">You, the owner<\/option><option value="mate">Mate \(mate@example.com\)<\/option>/);
-    expect(html).toContain('It gives no extra access.');
+    expect(html).toContain('The person to contact about this agent. It gives no extra access.');
   });
 
   it('shows the chosen contact and a failed save’s reason', () => {

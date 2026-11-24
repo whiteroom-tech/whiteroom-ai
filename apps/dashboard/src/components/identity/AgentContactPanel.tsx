@@ -31,7 +31,7 @@ export function ContactPanelView({ view, saving, note, onChange }: { view: Conta
   return (
     <Panel title="Contact">
       <p className="wr-agent-cap" style={{ margin: '0 0 6px' }}>
-        {note ? <span role="status" style={{ color: note.ok ? 'var(--ok)' : 'var(--bad)' }}>{note.text}</span> : 'Who hears about this agent. It gives no extra access.'}
+        {note ? <span role="status" style={{ color: note.ok ? 'var(--ok)' : 'var(--bad)' }}>{note.text}</span> : 'The person to contact about this agent. It gives no extra access.'}
       </p>
       <span className="wr-select" style={{ display: 'block' }}>
         <select aria-label="Contact" disabled={saving} value={view.contact?.userId ?? owner.userId} onChange={(e) => onChange(e.target.value)}>
@@ -44,9 +44,10 @@ export function ContactPanelView({ view, saving, note, onChange }: { view: Conta
 }
 
 /**
- * Agent page › Contact (gap-closing spec A5): who is told about this agent.
- * The owner, or a member of the owner's organization; no extra permissions.
- * Only the fleet's owner sees it.
+ * Agent page › Contact (gap-closing spec A5): the person to contact about
+ * this agent. The owner, or a member of the owner's organization; no extra
+ * permissions. Only the fleet's owner sees it. Nothing sends a notice to it
+ * yet: the first notice is C5's pause and ask, which calls noticeRecipient.
  */
 export function AgentContactPanel({ fleetId, agentId }: { fleetId: string; agentId: string }) {
   const [view, setView] = useState<ContactView | null>(null);

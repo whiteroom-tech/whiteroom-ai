@@ -74,6 +74,10 @@ export async function clearStaleContact(fleetId: string, agentId: string, staleU
 }
 
 /**
+ * For the first per-agent notice, C5's pause and ask (Phase 6): nothing sends
+ * one yet, so nothing calls this yet. Kept here, tested, so the rule it
+ * applies is settled before C5 is built.
+ *
  * Who a notice about this agent goes to, checked now: its contact while they
  * are still the owner or in the owner's organization, else the owner. A
  * contact no longer allowed is cleared. Null: the fleet has no owner.
