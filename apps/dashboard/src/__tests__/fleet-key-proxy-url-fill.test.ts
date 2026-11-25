@@ -97,7 +97,7 @@ describe('Fleet key: one setup card', () => {
     const point = el.querySelector('section#point')!;
     expect(point.querySelector('section#provider-keys')).not.toBeNull();
     const cards = [...el.querySelectorAll('.wr-scard__title')].map((h) => h.textContent);
-    expect(cards).toEqual(['Point your agent at WhiteRoom', 'Your WhiteRoom fleet key']);
+    expect(cards).toEqual(['Point your agent at WhiteRoom', 'Gateway signing keys', 'Your WhiteRoom fleet key']);
     await act(async () => { root.unmount(); });
   });
 

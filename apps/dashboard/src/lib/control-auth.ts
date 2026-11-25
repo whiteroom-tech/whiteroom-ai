@@ -33,6 +33,9 @@ export const DASHBOARD_ONLY_ACTIONS: ReadonlySet<string> = new Set([
   'rebind_fleet_key', 'rotate_proxy_keys', 'store_bedrock_role', 'delete_bedrock_role',
   // An agent's budget is its owner's to set, not the agent's.
   'agent_budget_set',
+  // A gateway signing key decides which agent names count as signed (signed
+  // agent names): only the owner adds or revokes one.
+  'gateway_key_add', 'gateway_key_revoke',
   // A sandbox test's tool policy: the agent under test mustn't switch it off.
   'create_policy', 'set_policy_mode',
   // Purge zeroes every agent's spend, loop and rate counters (security fixes S6).

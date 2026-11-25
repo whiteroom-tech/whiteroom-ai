@@ -535,6 +535,36 @@ export function deleteProviderKey(auth: FleetAuth, keyPrefix: string): Promise<D
   });
 }
 
+// -- Gateway signing keys (signed agent names) --
+//
+// Ed25519 public keys a fleet's gateway signs each agent's name with. Only
+// public keys are sent or stored. Adding and revoking are the owner's.
+
+export interface GatewayKey {
+  kid: string;
+  addedAt: string;
+  addedBy: string | null;
+  lastUsedAt: string | null;
+}
+
+/** The fleet's active gateway keys, oldest first; a reply this build can't read is an error. */
+export async function gatewayKeysGet(auth: FleetAuth): Promise<{ keys: GatewayKey[]; max: number }> {
+  const res = await keyCall<{ keys?: unknown; max?: unknown; error?: string }>(auth, { action: 'gateway_keys_get' });
+  if (!res || !Array.isArray(res.keys) || typeof res.max !== 'number') throw new WhiteRoomApiError(res?.error ?? 'Unexpected gateway_keys_get reply', 200);
+  const keys = res.keys.filter((k): k is GatewayKey => !!k && typeof k.kid === 'string' && /^[0-9a-f]{16}$/.test(k.kid) && typeof k.addedAt === 'string');
+  return { keys: keys.map((k) => ({ kid: k.kid, addedAt: k.addedAt, addedBy: typeof k.addedBy === 'string' ? k.addedBy : null, lastUsedAt: typeof k.lastUsedAt === 'string' ? k.lastUsedAt : null })), max: res.max };
+}
+
+/** Registers a gateway's public key. Throws with the engine's reason when it's refused. */
+export async function gatewayKeyAdd(auth: FleetAuth, publicKey: string): Promise<void> {
+  requireSuccess(await keyCall<{ success?: boolean; error?: string }>(auth, { action: 'gateway_key_add', public_key: publicKey }));
+}
+
+/** Revokes a gateway key. Throws with the engine's reason when it's refused. */
+export async function gatewayKeyRevoke(auth: FleetAuth, kid: string): Promise<void> {
+  requireSuccess(await keyCall<{ success?: boolean; error?: string }>(auth, { action: 'gateway_key_revoke', kid }));
+}
+
 // -- Bedrock cross-account role --
 //
 // A fleet holds at most one of these (register_bedrock_role is an upsert on
@@ -822,6 +852,12 @@ export async function identityMix(fleetId: string, target: { agentId: string } |
   }) : [];
 }
 
+/** A record of counts, anything else left out. */
+function countsOnly(v: unknown): Record<string, number> {
+  if (!v || typeof v !== 'object') return {};
+  return Object.fromEntries(Object.entries(v as Record<string, unknown>).filter((e): e is [string, number] => typeof e[1] === 'number' && Number.isFinite(e[1]) && e[1] >= 0));
+}
+
 /** Unbound credentials in order, a value this build doesn't know as `other`, each once. */
 function knownUnbound(list: readonly unknown[]): UnboundCredential[] {
   return [...new Set(list.map((c) => ((UNBOUND_CREDENTIALS as readonly unknown[]).includes(c) ? c as UnboundCredential : 'other')))];
@@ -836,7 +872,7 @@ export async function agentKeyRuleGet(fleetId: string, key?: string): Promise<Ag
     && (s === null || (s && typeof s.recorded === 'boolean' && typeof s.unboundCalls === 'number' && Array.isArray(s.agents) && s.byCredential && typeof s.byCredential === 'object'
       && s.agents.every((a) => a && typeof a.agentId === 'string' && typeof a.unboundCalls === 'number' && Array.isArray(a.unboundCredentials))));
   if (!ok) throw new WhiteRoomApiError('Unexpected agent_key_rule_get reply', 200);
-  return { ...res, summary: s ? { ...s, agents: s.agents.map((a) => ({ ...a, unboundCredentials: knownUnbound(a.unboundCredentials) })) } : null };
+  return { ...res, summary: s ? { ...s, signatureIssues: countsOnly(s.signatureIssues), agents: s.agents.map((a) => ({ ...a, unboundCredentials: knownUnbound(a.unboundCredentials) })) } : null };
 }
 
 /**
@@ -848,7 +884,7 @@ export async function agentKeyRuleSet(fleetId: string, mode: AgentKeyMode, key?:
   requireSuccess(await apiCall<{ success?: boolean; error?: string }>({ action: 'agent_key_rule_set', fleet_id: fleetId, mode, ...(readinessToken !== undefined && { readiness_token: readinessToken }) }, key));
 }
 
-const BLOCKER_KINDS = new Set(['not_applicable', 'not_recorded', 'not_watching', 'watch_too_short', 'unbound_calls', 'capture_gaps', 'agents_not_seen']);
+const BLOCKER_KINDS = new Set(['not_applicable', 'not_recorded', 'not_watching', 'watch_too_short', 'unbound_calls', 'capture_gaps', 'agents_not_seen', 'no_gateway_key']);
 
 function isBlocker(b: unknown): b is ReadinessBlocker {
   const x = b as Record<string, unknown> | null;
