@@ -5,7 +5,7 @@
 // signing keys. Sent straight to the engine they're refused (403). Everything
 // else on the page still goes straight to the engine with the fleet's key.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { deleteProviderKey, gatewayKeyAdd, gatewayKeyRevoke, listProviderKeys, storeProviderKey } from '@/lib/whiteroom/client';
+import { deleteBedrockRole, deleteProviderKey, gatewayKeyAdd, gatewayKeyRevoke, listProviderKeys, storeProviderKey } from '@/lib/whiteroom/client';
 
 const auth = { fleetId: 'f', apiKey: 'sk-wr-placeholder', fleetToken: 'wr_placeholder' };
 const fetchMock = vi.fn();
@@ -28,6 +28,10 @@ describe('owner key actions', () => {
     expect(sent()).toMatchObject({ viaBff: true, carriesKey: false, body: { action: 'store_key', bound_agent: 'billing', fleet_id: 'f' } });
     await storeProviderKey(auth, 'placeholder', undefined, ' Bedrock-SigV4 ');
     expect(sent()).toMatchObject({ viaBff: true, carriesKey: false });
+    await storeProviderKey(auth, 'placeholder', 'https://example.invalid', 'foundry-entra');
+    expect(sent()).toMatchObject({ viaBff: true, carriesKey: false });
+    await deleteBedrockRole(auth);
+    expect(sent()).toMatchObject({ viaBff: true, carriesKey: false, body: { action: 'delete_bedrock_role', fleet_id: 'f' } });
     await deleteProviderKey(auth, 'sk-wr-placeholder...');
     expect(sent()).toMatchObject({ viaBff: true, carriesKey: false, body: { action: 'delete_key', key_prefix: 'sk-wr-placeholder', fleet_id: 'f' } });
     await gatewayKeyAdd(auth, 'placeholder');
@@ -39,6 +43,8 @@ describe('owner key actions', () => {
   it('leave everything else going straight to the engine with the fleet key', async () => {
     await storeProviderKey(auth, 'sk-ant-placeholder');
     expect(sent()).toMatchObject({ viaBff: false, carriesKey: true, body: { action: 'store_key' } });
+    await storeProviderKey(auth, 'placeholder', 'https://example.invalid', 'azure-openai');
+    expect(sent()).toMatchObject({ viaBff: false, carriesKey: true });
     await listProviderKeys(auth);
     expect(sent()).toMatchObject({ viaBff: false, carriesKey: true, body: { action: 'list_keys' } });
   });

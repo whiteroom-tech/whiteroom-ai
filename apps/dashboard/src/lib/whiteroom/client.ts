@@ -62,6 +62,7 @@ import type {
 import { viewerTimeZone } from '@/lib/runs';
 import { activeHold, activeHolds } from '@/lib/holds';
 import { platform429Delay, withEngineReadRetry } from './engine-retry';
+import { ownerActionOf } from '@/lib/owner-actions';
 import { knownRulesOnly } from '@/lib/governance';
 import type { ReplayResult, ReplayRun } from '@/lib/replay';
 
@@ -495,20 +496,16 @@ export interface FleetAuth {
 // issued for, so these calls keep working even once the fleet is no longer
 // bound to the dashboard's sk-wr- key. Fall back to the api key for users
 // provisioned before fleet tokens were handed back. fleet_id is always sent:
-// the BFF's owner check for the owner-only ones (Bedrock role, cloud-identity
-// keys) needs it.
+// the BFF's owner check needs it.
 //
-// The owner's actions (a key for one agent, a key on the engine's cloud
-// identity, removing a key, gateway signing
-// keys) go through the BFF instead, in the browser: the engine takes them only
-// with the dashboard's service credential, which the BFF adds after its owner
-// check (control-auth.ts). Sent straight to the engine, they're refused.
-/** Keys on the engine's cloud identity: the owner's to make. Keep in step with control-auth.ts (server-only). */
-const CLOUD_KEY_PROVIDERS: ReadonlySet<string> = new Set(['foundry-entra', 'bedrock-sigv4']);
-
-function keyCall<T>(auth: FleetAuth, body: Record<string, unknown>, opts: { owner?: boolean } = {}): Promise<T> {
+// The owner's actions (owner-actions.ts: a key for one agent or on the
+// engine's cloud identity, removing a key, the Bedrock role, gateway signing
+// keys) go through the BFF in the browser. The engine takes them only with
+// the dashboard's service credential, which the BFF adds after its owner
+// check; sent straight to the engine, they're refused.
+function keyCall<T>(auth: FleetAuth, body: Record<string, unknown>): Promise<T> {
   const sent = { ...body, fleet_id: auth.fleetId };
-  if (opts.owner && typeof window !== 'undefined') return apiCall<T>(sent);
+  if (typeof window !== 'undefined' && ownerActionOf(sent)) return apiCall<T>(sent);
   return apiCall<T>(sent, auth.fleetToken ?? auth.apiKey);
 }
 
@@ -532,7 +529,7 @@ export function storeProviderKey(
     // key's prefix the way it does for sk-ant- / sk- keys — it has to be named.
     ...(provider && { provider }),
     ...(boundAgent && { bound_agent: boundAgent }),
-  }, { owner: !!boundAgent || CLOUD_KEY_PROVIDERS.has((provider ?? '').trim().toLowerCase()) });
+  });
 }
 
 /**
@@ -543,7 +540,7 @@ export function deleteProviderKey(auth: FleetAuth, keyPrefix: string): Promise<D
   return keyCall<DeleteKeyResult>(auth, {
     action: 'delete_key',
     key_prefix: keyPrefix.replace(/\.+$/, ''),
-  }, { owner: true });
+  });
 }
 
 // -- Gateway signing keys (signed agent names) --
@@ -567,12 +564,12 @@ export async function gatewayKeysGet(auth: FleetAuth): Promise<{ keys: GatewayKe
 
 /** Registers a gateway's public key. Throws with the engine's reason when it's refused. */
 export async function gatewayKeyAdd(auth: FleetAuth, publicKey: string): Promise<void> {
-  requireSuccess(await keyCall<{ success?: boolean; error?: string }>(auth, { action: 'gateway_key_add', public_key: publicKey }, { owner: true }));
+  requireSuccess(await keyCall<{ success?: boolean; error?: string }>(auth, { action: 'gateway_key_add', public_key: publicKey }));
 }
 
 /** Revokes a gateway key. Throws with the engine's reason when it's refused. */
 export async function gatewayKeyRevoke(auth: FleetAuth, kid: string): Promise<void> {
-  requireSuccess(await keyCall<{ success?: boolean; error?: string }>(auth, { action: 'gateway_key_revoke', kid }, { owner: true }));
+  requireSuccess(await keyCall<{ success?: boolean; error?: string }>(auth, { action: 'gateway_key_revoke', kid }));
 }
 
 // -- Bedrock cross-account role --
