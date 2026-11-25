@@ -70,8 +70,8 @@ describe('client calls', () => {
 
   it('gateway key calls: the list read strictly, add and revoke send what the engine expects, refusals keep their reason', async () => {
     const auth = { fleetId: 'f1', apiKey: 'k', fleetToken: null };
-    fetchMock.mockResolvedValue(reply({ keys: [{ kid: '0000000000000a01', addedAt: '2026-11-20T10:00:00Z', addedBy: 7, lastUsedAt: null }, { kid: 'BAD', addedAt: 'x' }], max: 2 }));
-    await expect(gatewayKeysGet(auth)).resolves.toEqual({ keys: [{ kid: '0000000000000a01', addedAt: '2026-11-20T10:00:00Z', addedBy: null, lastUsedAt: null }], max: 2 });
+    fetchMock.mockResolvedValue(reply({ keys: [{ kid: '0000000000000a01', addedAt: '2026-11-20T10:00:00Z', lastUsedAt: null }, { kid: 'BAD', addedAt: 'x' }], max: 2 }));
+    await expect(gatewayKeysGet(auth)).resolves.toEqual({ keys: [{ kid: '0000000000000a01', addedAt: '2026-11-20T10:00:00Z', lastUsedAt: null }], max: 2 });
     expect(sent()).toMatchObject({ action: 'gateway_keys_get', fleet_id: 'f1' });
     fetchMock.mockResolvedValue(reply({ keys: 'nope' }));
     await expect(gatewayKeysGet(auth)).rejects.toThrow();

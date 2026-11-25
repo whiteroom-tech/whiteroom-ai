@@ -18,7 +18,7 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
 const { ControlDeniedError } = await import('@/lib/whiteroom/client');
 const { GatewayKeysCard } = await import('@/app/fleet-key/gateway-keys');
 
-const KEY = { kid: '0000000000000a01', addedAt: '2026-11-20T10:00:00Z', addedBy: 'owner', lastUsedAt: null };
+const KEY = { kid: '0000000000000a01', addedAt: '2026-11-20T10:00:00Z', lastUsedAt: null };
 const PUBLIC = '-----BEGIN PUBLIC KEY-----\nplaceholder\n-----END PUBLIC KEY-----';
 
 async function mount() {

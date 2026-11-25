@@ -543,7 +543,6 @@ export function deleteProviderKey(auth: FleetAuth, keyPrefix: string): Promise<D
 export interface GatewayKey {
   kid: string;
   addedAt: string;
-  addedBy: string | null;
   lastUsedAt: string | null;
 }
 
@@ -552,7 +551,7 @@ export async function gatewayKeysGet(auth: FleetAuth): Promise<{ keys: GatewayKe
   const res = await keyCall<{ keys?: unknown; max?: unknown; error?: string }>(auth, { action: 'gateway_keys_get' });
   if (!res || !Array.isArray(res.keys) || typeof res.max !== 'number') throw new WhiteRoomApiError(res?.error ?? 'Unexpected gateway_keys_get reply', 200);
   const keys = res.keys.filter((k): k is GatewayKey => !!k && typeof k.kid === 'string' && /^[0-9a-f]{16}$/.test(k.kid) && typeof k.addedAt === 'string');
-  return { keys: keys.map((k) => ({ kid: k.kid, addedAt: k.addedAt, addedBy: typeof k.addedBy === 'string' ? k.addedBy : null, lastUsedAt: typeof k.lastUsedAt === 'string' ? k.lastUsedAt : null })), max: res.max };
+  return { keys: keys.map((k) => ({ kid: k.kid, addedAt: k.addedAt, lastUsedAt: typeof k.lastUsedAt === 'string' ? k.lastUsedAt : null })), max: res.max };
 }
 
 /** Registers a gateway's public key. Throws with the engine's reason when it's refused. */

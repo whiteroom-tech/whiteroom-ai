@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { GatewayKeysCard, gatewayKeyLine, pastedKeyProblem } from '@/app/fleet-key/gateway-keys';
 
 const NOW = Date.parse('2026-11-25T12:00:00Z');
-const key = (kid: string, lastUsedAt: string | null) => ({ kid, addedAt: '2026-11-25T09:00:00Z', addedBy: 'owner', lastUsedAt });
+const key = (kid: string, lastUsedAt: string | null) => ({ kid, addedAt: '2026-11-25T09:00:00Z', lastUsedAt });
 const card = (keys: Parameters<typeof GatewayKeysCard>[0]['preview']) => renderToStaticMarkup(h(GatewayKeysCard, { apiKey: 'k', fleetId: 'f1', fleetToken: null, preview: keys }));
 
 describe('gateway signing keys card', () => {

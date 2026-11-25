@@ -41,8 +41,8 @@ import type { GatewayKey } from '@/lib/whiteroom/client';
 
 /** /dev/fleet-key's sample gateway keys: one in use, one just added. */
 const PREVIEW_GATEWAY_KEYS: GatewayKey[] = [
-  { kid: '0000000000000a01', addedAt: '2026-11-20T10:00:00Z', addedBy: 'owner', lastUsedAt: '2026-11-25T09:58:00Z' },
-  { kid: '0000000000000b02', addedAt: '2026-11-25T09:00:00Z', addedBy: 'owner', lastUsedAt: null },
+  { kid: '0000000000000a01', addedAt: '2026-11-20T10:00:00Z', lastUsedAt: '2026-11-25T09:58:00Z' },
+  { kid: '0000000000000b02', addedAt: '2026-11-25T09:00:00Z', lastUsedAt: null },
 ];
 
 /** AWS Bedrock has two unrelated ways in: a bearer key (Claude only, via Mantle) or a cross-account IAM role (any model, via WhiteRoom's native adapter). */
