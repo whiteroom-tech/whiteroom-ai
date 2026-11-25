@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { replayGet, replayStart, WhiteRoomApiError } from '@/lib/whiteroom/client';
-import { partialLine, replayLine, type ReplayResult } from '@/lib/replay';
+import { partialLine, replayLine, replayScopeNote, type ReplayResult } from '@/lib/replay';
+import { toolEstimateBlocker } from '@/app/(citadel)/controls/_components/RuleEditor';
 import { ReplayEstimate, runEstimate, startErrorText } from '@/app/(citadel)/controls/_components/ReplayEstimate';
 
 const fetchMock = vi.fn();
@@ -51,6 +52,22 @@ describe('words', () => {
     expect(replayLine(result({ matched: 0, evaluated: 1 }))).toBe('In the last 7 days, all 1 call used a model on this list.');
     expect(replayLine(result({ matched: 0, evaluated: 0 }))).toBe('No calls in the last 7 days to check.');
     expect(replayLine(result({ matched: 1200, evaluated: 4500 }))).toBe('In the last 7 days, 1,200 of 4,500 calls used a model not on this list.');
+  });
+
+  it('says a Block tools estimate in its own terms, and what it leaves out', () => {
+    expect(replayLine(result(), 'tool_list')).toBe('In the last 7 days, 3 of 9 calls asked an agent to run a tool on this list.');
+    expect(replayLine(result({ matched: 0 }), 'tool_list')).toBe('In the last 7 days, none of 9 calls asked an agent to run a tool on this list.');
+    expect(replayLine(result({ evaluated: 0, matched: 0 }), 'tool_list')).toBe('No calls in the last 7 days to check.');
+    expect(replayScopeNote('tool_list')).toBe('Counts tools your agents run themselves, not ones the provider runs, like web search.');
+    expect(replayScopeNote('model_allowlist')).toBeNull();
+    expect(partialLine([{ kind: 'tools_not_recorded', calls: 12 }])).toBe('Partial: 12 calls came before their tools were recorded.');
+  });
+
+  it('offers no Block tools estimate for an empty list or one with targets', () => {
+    expect(toolEstimateBlocker({ blockedTools: [] })).toBe('Add a tool first.');
+    expect(toolEstimateBlocker({ blockedTools: ['http_request'], targets: ['example.com'] })).toBe('A list with targets can’t be estimated.');
+    expect(toolEstimateBlocker({ blockedTools: ['delete_db'], targets: [] })).toBeNull();
+    expect(toolEstimateBlocker({ blockedTools: ['delete_db'] })).toBeNull();
   });
 
   it('says why an estimate is partial, and still says Partial for a reason it doesn’t know', () => {
@@ -136,6 +153,7 @@ describe('ReplayEstimate', () => {
     expect(html).toContain('Estimate on the last 7 days');
     expect(html).not.toContain('disabled');
     expect(renderToStaticMarkup(h(ReplayEstimate, { fleetId: 'f1', authKey: 'k', ruleType: 'call_rate', params: {}, appliesTo: 'all', disabledReason: null }))).toBe('');
+    expect(renderToStaticMarkup(h(ReplayEstimate, { fleetId: 'f1', authKey: 'k', ruleType: 'tool_list', params: { blockedTools: ['delete_db'] }, appliesTo: 'all', disabledReason: null }))).toContain('Estimate on the last 7 days');
   });
 
   it('is off, with the reason, until the list has a model', () => {

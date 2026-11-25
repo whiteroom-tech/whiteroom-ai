@@ -79,6 +79,12 @@ const sentenceRow = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', g
 /** Shown on an empty Data deletion list when none of the fleet's tools has a command-like name. */
 export const NO_COMMAND_TOOLS_NOTE = 'None of your agents’ tools look like they run commands or SQL. Add one with + Add tool.';
 
+/** Why a Block tools list can't be estimated as it stands, or null. A list with targets (set outside this page) judges arguments, which aren't stored. */
+export function toolEstimateBlocker(p: ToolListParams & { targets?: unknown }): string | null {
+  if (Array.isArray(p.targets) && p.targets.length > 0) return 'A list with targets can’t be estimated.';
+  return p.blockedTools.length === 0 ? 'Add a tool first.' : null;
+}
+
 export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fleetTools, onToolPicker, govV1, alertChannel, history, ruleHistory, actors, undoOf, onUndo, fleetDailySpend = null, agentSpend = [], status, startOpen = false, dirty, error, saving, onSave, onDiscard, onClose, onRemove, seen, onSeenRetry, onStaged }: {
   /** The fleet, for the Estimate under the rule's settings; without it there is none. */
   fleetId?: string;
@@ -329,6 +335,10 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
           <>
             <span style={{ fontSize: 'var(--fs-md)' }}>When an agent is about to run any of these tools:</span>
             <ToolPicker values={(p as ToolListParams).blockedTools} onChange={(blockedTools) => setParams({ blockedTools })} fleetTools={fleetTools} onShow={onToolPicker} first={looksLikeDeleteOrChange} />
+            {fleetId && (
+              <ReplayEstimate fleetId={fleetId} authKey={authKey} ruleType={rule.ruleType} params={p} appliesTo={draft.appliesTo}
+                disabledReason={toolEstimateBlocker(p as ToolListParams & { targets?: unknown })} />
+            )}
           </>
         )}
         {deletion && (

@@ -618,6 +618,22 @@ describe('Controls page, editing', () => {
     m.root.unmount();
   });
 
+  it('Block tools offers an estimate of its list, and none until a tool is picked', async () => {
+    api.saved.r6 = { ...RULES[5], mode: 'watch', params: { blockedTools: ['delete_file'] } };
+    const m = await mount();
+    await m.open('delete_file');
+    await m.click(m.button('Estimate on the last 7 days'));
+    expect(api.replayStarts).toEqual([['f1', { ruleType: 'tool_list', params: { blockedTools: ['delete_file'] }, appliesTo: 'all' }, 7, 'k']]);
+    m.root.unmount();
+    api.saved.r6 = { ...RULES[5], mode: 'watch' };
+    const empty = await mount();
+    await empty.click(empty.button('Show'));
+    await empty.open('No tools picked yet');
+    expect(empty.button('Estimate on the last 7 days')?.disabled).toBe(true);
+    expect(empty.text()).toContain('Add a tool first.');
+    empty.root.unmount();
+  });
+
   it('Stop needs a day in Watch first', async () => {
     api.govV1 = true;
     api.history = [{ id: 'h1', ruleId: 'r2', ruleType: 'model_allowlist', description: 'Added new Model allowlist rule', by: 'test', time: new Date(Date.now() - 60_000).toISOString() }];

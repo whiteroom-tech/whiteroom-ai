@@ -6,7 +6,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { replayGet, replayStart, WhiteRoomApiError } from '@/lib/whiteroom/client';
-import { REPLAY_DAYS, REPLAY_RULE_TYPES, partialLine, replayLine, type ReplayResult } from '@/lib/replay';
+import { REPLAY_DAYS, REPLAY_RULE_TYPES, partialLine, replayLine, replayScopeNote, type ReplayResult } from '@/lib/replay';
 
 const POLL_MS = 2_000;
 /** The engine gives up after 10 minutes; stop asking a little after. */
@@ -107,10 +107,11 @@ export function ReplayEstimate({ fleetId, authKey, ruleType, params, appliesTo, 
       </div>
       {shown.kind === 'done' && (
         <p className="wr-replay__line">
-          {replayLine(shown.result)} <span className="wr-replay__note">Estimate.</span>
+          {replayLine(shown.result, ruleType)} <span className="wr-replay__note">Estimate.</span>
           {partial && <span className="wr-replay__note"> {partial}</span>}
         </p>
       )}
+      {shown.kind === 'done' && replayScopeNote(ruleType) && <p className="wr-replay__line wr-replay__note">{replayScopeNote(ruleType)}</p>}
       {shown.kind === 'error' && <p className="wr-replay__line wr-replay__line--err">{shown.message}</p>}
     </div>
   );
