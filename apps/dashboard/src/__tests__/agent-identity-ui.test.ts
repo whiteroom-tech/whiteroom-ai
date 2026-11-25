@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { agentKeyReadiness, agentKeyRuleGet, agentKeyRuleSet, agentNamesGet, agentRename, agentRetire, changeFailureText, ControlDeniedError, identityMix, WhiteRoomApiError } from '@/lib/whiteroom/client';
+import { agentKeyReadiness, agentKeyRuleGet, agentKeyRuleSet, agentNamesGet, agentRename, agentRetire, changeFailureText, ControlDeniedError, gatewayKeyAdd, gatewayKeyRevoke, gatewayKeysGet, identityMix, WhiteRoomApiError } from '@/lib/whiteroom/client';
 import { AgentIdentityView, readIdentityMix, RunIdentityLine, runIdentityText } from '@/components/identity/IdentityMix';
 import { AgentNamePanel, namesDiffer, saveAgentName } from '@/components/identity/AgentNamePanel';
 import { blockerText, changeAgentKeyMode, OneKeyPerAgentView, retireAgent } from '@/app/(citadel)/controls/_components/OneKeyPerAgent';
@@ -66,6 +66,31 @@ describe('client calls', () => {
     ] }));
     const rows = await identityMix('f1', { agentId: 'a1' }, 'k');
     expect(rows.map((r) => identityLines([r])[0].words)).toEqual(['Other', 'Not known']);
+  });
+
+  it('gateway key calls: the list read strictly, add and revoke send what the engine expects, refusals keep their reason', async () => {
+    const auth = { fleetId: 'f1', apiKey: 'k', fleetToken: null };
+    fetchMock.mockResolvedValue(reply({ keys: [{ kid: '0000000000000a01', addedAt: '2026-11-20T10:00:00Z', lastUsedAt: null }, { kid: 'BAD', addedAt: 'x' }], max: 2 }));
+    await expect(gatewayKeysGet(auth)).resolves.toEqual({ keys: [{ kid: '0000000000000a01', addedAt: '2026-11-20T10:00:00Z', lastUsedAt: null }], max: 2 });
+    expect(sent()).toMatchObject({ action: 'gateway_keys_get', fleet_id: 'f1' });
+    fetchMock.mockResolvedValue(reply({ keys: 'nope' }));
+    await expect(gatewayKeysGet(auth)).rejects.toThrow();
+    fetchMock.mockImplementation(async () => reply({ success: true }));
+    await gatewayKeyAdd(auth, 'PEM');
+    expect(sent()).toMatchObject({ action: 'gateway_key_add', fleet_id: 'f1', public_key: 'PEM' });
+    await gatewayKeyRevoke(auth, '0000000000000a01');
+    expect(sent()).toMatchObject({ action: 'gateway_key_revoke', fleet_id: 'f1', kid: '0000000000000a01' });
+    fetchMock.mockResolvedValue(reply({ error: 'Turn Enforce off first, or add another key.', reason: 'last_key_in_enforce' }, 409));
+    await expect(gatewayKeyRevoke(auth, '0000000000000a01').catch((e) => changeFailureText(e, 'fallback'))).resolves.toBe('Turn Enforce off first, or add another key.');
+  });
+
+  it('agentKeyReadiness keeps the no_gateway_key blocker, and agentKeyRuleGet keeps only counts in signatureIssues', async () => {
+    fetchMock.mockImplementation(async () => reply({ ready: false, mode: 'watch', from: null, to: 'x', observationDays: 7, agents: [], retired: [], truncated: false, token: 't', blockers: [{ kind: 'no_gateway_key' }] }));
+    expect((await agentKeyReadiness('f1', 'k')).blockers).toEqual([{ kind: 'no_gateway_key' }]);
+    fetchMock.mockImplementation(async () => reply({ applies: true, mode: 'watch', since: null, summary: { recorded: true, unboundCalls: 2, byCredential: { signature_invalid: 2 }, agents: [], truncated: false, signatureIssues: { clock: 2, mismatch: 'x', malformed: -1, key_unknown: null } } }));
+    expect((await agentKeyRuleGet('f1', 'k')).summary!.signatureIssues).toEqual({ clock: 2 });
+    fetchMock.mockImplementation(async () => reply({ applies: true, mode: 'watch', since: null, summary: { recorded: true, unboundCalls: 0, byCredential: {}, agents: [], truncated: false, signatureIssues: 'odd' } }));
+    expect((await agentKeyRuleGet('f1', 'k')).summary!.signatureIssues).toEqual({});
   });
 
   it('agentKeyRuleGet shows an unbound credential it doesn’t know as Other, once', async () => {
@@ -304,6 +329,34 @@ describe('One key per agent card', () => {
     expect(html).toContain('Shared key');
     expect(html).toContain('Provider key');
     expect(html).not.toContain('>a3<');
+  });
+
+  it('says when signed calls would be refused because the gateway has no key left', () => {
+    expect(blockerText({ kind: 'no_gateway_key' }, 7)).toBe('Your gateway signed agent names, but it has no signing key now. Add one on Fleet key.');
+  });
+
+  it('points agents behind one gateway to signing their names, when most unbound calls came on a shared key', () => {
+    // 3 of 4 on a shared key.
+    expect(render(data())).toContain('href="/fleet-key#gateway-keys"');
+    expect(render(data())).toContain('Agents behind one gateway? Sign their names instead');
+    // Mostly provider keys: no gateway to sign for them.
+    expect(render(data({ byCredential: { fleet_key: 1, none: 3, session: 0, not_recorded: 0 } }))).not.toContain('#gateway-keys');
+  });
+
+  it('says how many calls had a gateway signature that didn’t match, and the top reason, warn in Watch and bad in Enforce', () => {
+    const signed = data({ unboundCalls: 9, byCredential: { fleet_key: 3, signature_invalid: 5, none: 1, session: 0, not_recorded: 0 }, signatureIssues: { clock: 3, mismatch: 1, malformed: 1 } });
+    const watch = render(signed);
+    expect(watch).toContain('5 calls had a gateway signature that didn’t count. Most were: clock more than a minute off. Check the gateway’s clock.');
+    expect(watch).toContain('var(--warn-tx)');
+    expect(render({ ...signed, mode: 'enforce' })).toContain('var(--bad)');
+    // A bad header and a wrong signature read the same, and add up.
+    expect(render(data({ unboundCalls: 9, byCredential: { fleet_key: 3, signature_invalid: 5, none: 1, session: 0, not_recorded: 0 }, signatureIssues: { key_unknown: 2, mismatch: 2, malformed: 1 } })))
+      .toContain('Most were: signature wrong. Check the gateway’s signing code.');
+    // An older engine sends no reasons: the count alone.
+    expect(render(data({ unboundCalls: 4, byCredential: { fleet_key: 3, signature_invalid: 1, none: 0, session: 0, not_recorded: 0 } }))).toContain('1 call had a gateway signature that didn’t count.</p>');
+    expect(render(data({ unboundCalls: 4, byCredential: { fleet_key: 3, signature_invalid: 1, none: 0, session: 0, not_recorded: 0 }, signatureIssues: { key_revoked: 1 } })))
+      .toContain('1 call had a gateway signature that didn’t count. Reason: key revoked. Sign with a key you haven’t revoked.');
+    expect(render(data())).not.toContain('gateway signature');
   });
 
   it('says so when every call used its own key, when calls aren’t recorded yet, and while Off', () => {

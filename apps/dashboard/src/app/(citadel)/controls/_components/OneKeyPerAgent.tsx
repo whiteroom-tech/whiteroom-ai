@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { SegmentedControl, FONT_MONO } from '@whiteroom/ui';
 import { agentKeyReadiness, agentKeyRuleGet, agentKeyRuleSet, agentNamesGet, agentRetire, changeFailureText, isAuthError } from '@/lib/whiteroom/client';
-import { agentDisplay, credentialWords, type AgentKeyMode, type AgentKeyReadiness, type AgentKeyRuleResult, type ReadinessBlocker } from '@/lib/agent-identity';
+import { agentDisplay, credentialWords, looksLikeGateway, signatureIssueLine, type AgentKeyMode, type AgentKeyReadiness, type AgentKeyRuleResult, type ReadinessBlocker } from '@/lib/agent-identity';
 import { fmtDay } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
 
@@ -136,6 +136,7 @@ export function OneKeyPerAgentView({ data, names, note, readiness = null, busy =
   const canEnforce = enforcing || !!readiness?.ready;
   const when = watching && data.since ? `Since ${fmtDay(data.since)}` : 'In the last 7 days';
   const n = s?.unboundCalls ?? 0;
+  const signatureLine = s ? signatureIssueLine(s) : null;
   const unbound = s?.agents.filter((a) => a.unboundCalls > 0) ?? [];
   const more = unbound.length - SHOWN;
 
@@ -177,7 +178,9 @@ export function OneKeyPerAgentView({ data, names, note, readiness = null, busy =
                 Said here, where people act: the provider key can be the same for every agent. */}
             <Link href={`${ROUTES.fleetKey}#provider-keys`} className="wr-link">Create agent keys on Fleet key &rarr;</Link>{' '}
             <span className="ctl-cap">You can use the same provider key for each.</span>
+            {looksLikeGateway(s) && <>{' '}<Link href={`${ROUTES.fleetKey}#gateway-keys`} className="wr-link">Agents behind one gateway? Sign their names instead &rarr;</Link></>}
           </p>
+          {signatureLine && <p className="ctl-cap" style={{ margin: 0, color: enforcing ? 'var(--bad)' : 'var(--warn-tx)' }}>{signatureLine}</p>}
           <ul className="wr-identity-list">
             {unbound.slice(0, SHOWN).map((a) => {
               const d = agentDisplay(a.agentId, names);
@@ -220,6 +223,7 @@ export function blockerText(b: ReadinessBlocker, days: number): string | null {
     case 'capture_gaps': {
       return `Some calls weren’t recorded in the last ${days} days.${b.lastAt ? readyBy(Date.parse(b.lastAt) + days * DAY_MS) : ''}`;
     }
+    case 'no_gateway_key': return 'Your gateway signed agent names, but it has no signing key now. Add one on Fleet key.';
     // Listed agent by agent below.
     case 'agents_not_seen': return null;
     default: return null;

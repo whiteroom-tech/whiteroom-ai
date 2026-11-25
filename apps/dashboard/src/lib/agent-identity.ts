@@ -111,6 +111,8 @@ export interface AgentKeySummary {
   byCredential: Partial<Record<UnboundCredential, number>>;
   agents: AgentKeyAgentRow[];
   truncated: boolean;
+  /** Calls whose gateway signature didn't count, by why (signed agent names); absent from an older engine. */
+  signatureIssues?: Partial<Record<string, number>>;
 }
 
 export interface AgentKeyRuleResult {
@@ -128,7 +130,8 @@ export type ReadinessBlocker =
   | { kind: 'watch_too_short'; readyAt: string }
   | { kind: 'unbound_calls'; calls: number }
   | { kind: 'capture_gaps'; gaps: number; lastAt: string | null }
-  | { kind: 'agents_not_seen'; agentIds: string[] };
+  | { kind: 'agents_not_seen'; agentIds: string[] }
+  | { kind: 'no_gateway_key' };
 
 export interface ReadinessAgent {
   agentId: string;
@@ -155,4 +158,39 @@ export interface AgentKeyReadiness {
 /** "Shared key", "Provider key", "AWS session", "Not recorded" and so on: what an unbound call came in on. */
 export function credentialWords(c: UnboundCredential): string {
   return WHOLE_WORDS[c] ?? KEY_WORDS[c as keyof typeof KEY_WORDS];
+}
+
+// -- Signed agent names --
+
+/** Each reason in words, with what to do. A bad header and a wrong signature read the same. */
+const SIGNATURE_ISSUE_WORDS: Record<string, { words: string; fix: string }> = {
+  clock: { words: 'clock more than a minute off', fix: 'Check the gateway’s clock.' },
+  key_unknown: { words: 'key not registered', fix: 'Add its public key on Fleet key.' },
+  key_revoked: { words: 'key revoked', fix: 'Sign with a key you haven’t revoked.' },
+  mismatch: { words: 'signature wrong', fix: 'Check the gateway’s signing code.' },
+  malformed: { words: 'signature wrong', fix: 'Check the gateway’s signing code.' },
+};
+
+/**
+ * "N calls had a gateway signature that didn't count. Most were: clock more
+ * than a minute off. Check the gateway's clock." Null when none did.
+ */
+export function signatureIssueLine(s: AgentKeySummary): string | null {
+  const n = s.byCredential.signature_invalid ?? 0;
+  if (n <= 0) return null;
+  const byWords = new Map<string, { calls: number; fix: string }>();
+  for (const [issue, calls] of Object.entries(s.signatureIssues ?? {})) {
+    const w = SIGNATURE_ISSUE_WORDS[issue];
+    if (!w || typeof calls !== 'number' || calls <= 0) continue;
+    const had = byWords.get(w.words);
+    byWords.set(w.words, { calls: (had?.calls ?? 0) + calls, fix: w.fix });
+  }
+  const top = [...byWords].sort((a, b) => b[1].calls - a[1].calls || a[0].localeCompare(b[0]))[0];
+  const head = `${n.toLocaleString('en-US')} ${n === 1 ? 'call' : 'calls'} had a gateway signature that didn’t count.`;
+  return top ? `${head} ${n === 1 ? 'Reason' : 'Most were'}: ${top[0]}. ${top[1].fix}` : head;
+}
+
+/** Whether most unbound calls came on a shared key: the gateway pattern, where signing names beats a key per agent. */
+export function looksLikeGateway(s: AgentKeySummary): boolean {
+  return (s.byCredential.fleet_key ?? 0) * 2 > s.unboundCalls;
 }

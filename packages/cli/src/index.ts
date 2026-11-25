@@ -20,6 +20,7 @@ Usage:
   whiteroom practice adapter --lang js|python
   whiteroom sandbox run --provider <provider> -- <your agent command>
   whiteroom sandbox listen --adapter "<command>" [--code-stdin]
+  whiteroom gateway-key new [--out <dir>]
 
 Options:
   --url <base_url>   Server URL (default: WHITEROOM_URL or http://localhost:3000)
@@ -38,6 +39,12 @@ async function main() {
   if (argv[0] === "sandbox") {
     const { sandbox } = await import("./sandbox/index.js");
     process.exitCode = await sandbox(argv.slice(1));
+    return;
+  }
+  // A gateway's signing key pair (signed agent names): local only, no SDK.
+  if (argv[0] === "gateway-key") {
+    const { gatewayKey } = await import("./gateway-key/index.js");
+    process.exitCode = gatewayKey(argv.slice(1));
     return;
   }
   const { args, flags } = parseArgs(argv);

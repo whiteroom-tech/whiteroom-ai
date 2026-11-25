@@ -49,7 +49,7 @@ function fakeDb(held: Held[], holders: Holder[] = [{ userId: 'u1', provisioned: 
 describe('controlActionOf', () => {
   it('picks out exactly the dashboard-only actions', () => {
     expect([...DASHBOARD_ONLY_ACTIONS].sort()).toEqual(
-      ['agent_budget_set', 'agent_key_rule_set', 'agent_new_run', 'agent_rename', 'agent_retire', 'alerts_get', 'alerts_set_health', 'alerts_set_slack', 'alerts_set_teams', 'alerts_test', 'compression_mode_set', 'compression_preview', 'create_policy', 'delete_bedrock_role', 'deregister_agent', 'fleet_data_settings_get', 'fleet_data_settings_set', 'goal_get', 'goal_set_owner', 'governance_create_rule', 'governance_delete_rule', 'governance_update_rule', 'health_history', 'pause_agent', 'performance_feedback', 'purge_fleet', 'rebind_fleet_key', 'replay_start', 'resume_agent', 'rotate_proxy_keys', 'send_seen_list', 'set_policy_mode', 'stop_agent', 'store_bedrock_role', 'tools_seen'],
+      ['agent_budget_set', 'agent_key_rule_set', 'agent_new_run', 'agent_rename', 'agent_retire', 'alerts_get', 'alerts_set_health', 'alerts_set_slack', 'alerts_set_teams', 'alerts_test', 'compression_mode_set', 'compression_preview', 'create_policy', 'delete_bedrock_role', 'deregister_agent', 'fleet_data_settings_get', 'fleet_data_settings_set', 'gateway_key_add', 'gateway_key_revoke', 'goal_get', 'goal_set_owner', 'governance_create_rule', 'governance_delete_rule', 'governance_update_rule', 'health_history', 'pause_agent', 'performance_feedback', 'purge_fleet', 'rebind_fleet_key', 'replay_start', 'resume_agent', 'rotate_proxy_keys', 'send_seen_list', 'set_policy_mode', 'stop_agent', 'store_bedrock_role', 'tools_seen'],
     );
     // A key on the engine's cloud identity is the owner's to mint; any other key isn't a control action.
     expect(controlActionOf(body({ action: 'store_key', fleet_id: 'f1', provider: 'bedrock-sigv4' }))).toEqual({ action: 'store_key', fleetId: 'f1' });
@@ -73,6 +73,10 @@ describe('controlActionOf', () => {
     // An agent's budget is its owner's to set.
     expect(controlActionOf(body({ action: 'agent_budget_set', fleet_id: 'f1', agent_id: 'a', budget_usd: 5 }))).toEqual({ action: 'agent_budget_set', fleetId: 'f1' });
     expect(controlActionOf(body({ action: 'agent_budgets_get', fleet_id: 'f1' }))).toBeNull();
+    // Gateway signing keys: the owner adds and revokes them; anyone with the fleet's credential may list them.
+    expect(controlActionOf(body({ action: 'gateway_key_add', fleet_id: 'f1', public_key: 'placeholder' }))).toEqual({ action: 'gateway_key_add', fleetId: 'f1' });
+    expect(controlActionOf(body({ action: 'gateway_key_revoke', fleet_id: 'f1', kid: '0000000000000000' }))).toEqual({ action: 'gateway_key_revoke', fleetId: 'f1' });
+    expect(controlActionOf(body({ action: 'gateway_keys_get', fleet_id: 'f1' }))).toBeNull();
     expect(controlActionOf(body({ action: 'fleet_report', fleet_id: 'f1' }))).toBeNull();
     expect(controlActionOf('not json')).toBeNull();
     expect(controlActionOf(body({ action: 'governance_create_rule' }))).toEqual({ action: 'governance_create_rule', fleetId: null });

@@ -45,7 +45,7 @@ on: workflow_dispatch   # started by hand, after updating WHITEROOM_RUN_CODE
 # ...
 - name: WhiteRoom practice test
   run: |
-    printf '%s\n' "$WHITEROOM_RUN_CODE" | npx @whiteroom-ai/cli@2.1.3 practice run \
+    printf '%s\n' "$WHITEROOM_RUN_CODE" | npx @whiteroom-ai/cli@2.2.0 practice run \
       --adapter "node wr-adapter.mjs" --require spend_cap,keyword --code-stdin
   env:
     WHITEROOM_RUN_CODE: ${{ secrets.WHITEROOM_RUN_CODE }}
@@ -111,3 +111,13 @@ whiteroom sandbox listen --adapter "node wr-adapter.mjs"
 - The Sandbox page sends only the task's text. The command that runs is the one you typed here, and nothing from WhiteRoom is added to it.
 - One helper per Sandbox: starting another one stops this one. The Sandbox page can run up to 30 tasks an hour.
 - Exit codes: `0` stopped with Ctrl+C, `2` a setup or usage problem, `3` the session ended. If WhiteRoom restarts, the helper stops and asks you to get a new code from Run agent.
+
+## A gateway's signing key
+
+For agents behind one gateway that holds a single WhiteRoom key: the gateway signs each agent's name, so the agents don't each need a key.
+
+```sh
+npx @whiteroom-ai/cli@2.2.0 gateway-key new   # or: whiteroom gateway-key new [--out <dir>]
+```
+
+It writes `private.pem` (readable by you only) and `public.pem`, and prints the key id. Keep `private.pem` on the gateway only, in a process the agents can't reach. Paste `public.pem` on Fleet key, under Gateway signing keys. It never overwrites an existing key.

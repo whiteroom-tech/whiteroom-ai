@@ -34,8 +34,16 @@ import { AgentNaming } from '@/components/citadel/AgentNaming';
 import { fmtDay } from '@/lib/format';
 import type { CredentialChange } from '@/lib/owner-credentials';
 import { RotateDialog, RotationResult } from './rotate';
+import { GatewayKeysCard } from './gateway-keys';
 import { ConnectCaveat } from '@/components/ConnectCaveat';
 import type { PlanState } from '@/lib/plan-banner-shared';
+import type { GatewayKey } from '@/lib/whiteroom/client';
+
+/** /dev/fleet-key's sample gateway keys: one in use, one just added. */
+const PREVIEW_GATEWAY_KEYS: GatewayKey[] = [
+  { kid: '0000000000000a01', addedAt: '2026-11-20T10:00:00Z', lastUsedAt: '2026-11-25T09:58:00Z' },
+  { kid: '0000000000000b02', addedAt: '2026-11-25T09:00:00Z', lastUsedAt: null },
+];
 
 /** AWS Bedrock has two unrelated ways in: a bearer key (Claude only, via Mantle) or a cross-account IAM role (any model, via WhiteRoom's native adapter). */
 type BedrockMode = 'api-key' | 'role';
@@ -649,6 +657,8 @@ export function Onboarding({ name, email, apiKey, fleetId, fleetToken, isNew, no
           </SettingsCard>
 
           {!rotated && roleMode && <BedrockRoleCard apiKey={apiKey} fleetId={fleetId} fleetToken={fleetToken} />}
+
+          {!rotated && !roleMode && <GatewayKeysCard apiKey={apiKey} fleetId={fleetId} fleetToken={fleetToken} preview={previewKeys ? PREVIEW_GATEWAY_KEYS : undefined} />}
 
           <SettingsCard id="fleet-key" title="Your WhiteRoom fleet key" sub="Only for CLI commands and API requests. Your agents use a proxy URL, not this key." right={!rotated ? <Button variant="danger" className="wr-btn--outline-bad" onClick={() => setRotating(true)}>Rotate&hellip;</Button> : undefined}>
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 10 }}>
