@@ -5,7 +5,7 @@
  * Recommendations card) and the evidence header. What each check found is
  * under Agent health › Health check.
  */
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import type { RecommendationDetail } from '@/lib/whiteroom/types';
 import {
@@ -36,8 +36,10 @@ function Sentence({ parts }: { parts: SentencePart[] }) {
   );
 }
 
-export function DiagnosisRow({ rec, onSelectAgent, onSelectEvidence, onFeedback, busy, error }: {
+export function DiagnosisRow({ rec, mark, onSelectAgent, onSelectEvidence, onFeedback, busy, error }: {
   rec: RecommendationDetail;
+  /** A note above the title (why this row is first). */
+  mark?: ReactNode;
   onSelectAgent: (id: string) => void;
   onSelectEvidence: () => void;
   onFeedback: (action: 'dismiss' | 'snooze' | 'implemented') => Promise<boolean>;
@@ -62,7 +64,9 @@ export function DiagnosisRow({ rec, onSelectAgent, onSelectEvidence, onFeedback,
   const beforeFix = beforeFixText(detector, rec.fixCheck);
 
   return (
-    <article style={{ padding: '16px 0', borderBottom: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <article id={`rec-${rec.id}`} tabIndex={-1} className="wr-rec">
+      <div className="wr-rec__text">
+      {mark}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <strong style={{ color: 'var(--tx)' }}>{TITLES[detector]}</strong>
         <button type="button" onClick={() => onSelectAgent(rec.agentId)} className="wr-agent-link">{rec.agentId}</button>
@@ -74,8 +78,9 @@ export function DiagnosisRow({ rec, onSelectAgent, onSelectEvidence, onFeedback,
       {fixLine && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: rec.fixCheck?.state === 'still_happening' ? 'var(--warn-tx)' : 'var(--tx2)' }}>{fixLine}</p>}
       {beforeFix && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', maxWidth: '80ch' }}>{beforeFix}</p>}
       {ruleLine && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx)' }}>{ruleLine}</p>}
+      </div>
 
-      <div className="dx-acts" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+      <div className="dx-acts wr-rec__acts">
         {open && action?.kind === 'rule' && !rule && (
           <Link href={`${ROUTES.controls}?rec=${encodeURIComponent(rec.id)}`} className="dx-main-btn" style={{
             display: 'inline-flex', alignItems: 'center', fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '6px 14px', borderRadius: 6,
@@ -101,12 +106,12 @@ export function DiagnosisRow({ rec, onSelectAgent, onSelectEvidence, onFeedback,
       </div>
 
       {open && action?.kind === 'howto' && (
-        <div id={howId} hidden={!howOpen} style={{ borderLeft: '2px solid var(--line2)', padding: '4px 0 4px 12px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)', lineHeight: 1.55, maxWidth: '78ch' }}>
+        <div id={howId} hidden={!howOpen} className="wr-rec__full" style={{ borderLeft: '2px solid var(--line2)', padding: '4px 0 4px 12px', fontSize: 'var(--fs-sm)', color: 'var(--tx2)', lineHeight: 1.55, maxWidth: '78ch' }}>
           {howtoParagraphs(action.howtoId, m).map((p, i) => <p key={i} style={{ margin: '0 0 6px' }}>{p}</p>)}
           <button type="button" className="dx-link dx-strong" disabled={busy} onClick={() => void onFeedback('implemented')}>Mark as fixed</button>
         </div>
       )}
-      {error && <div role="alert" style={{ fontSize: 'var(--fs-sm)', color: 'var(--bad)' }}>{error}</div>}
+      {error && <div role="alert" className="wr-rec__full" style={{ fontSize: 'var(--fs-sm)', color: 'var(--bad)' }}>{error}</div>}
     </article>
   );
 }

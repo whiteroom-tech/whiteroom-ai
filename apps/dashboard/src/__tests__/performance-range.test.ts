@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { WhiteRoomApiError } from '@/lib/whiteroom/client';
-import { legacyHoursBack, perfOldest, perfRangeParams, perfViewFromParams, windowUnsupported } from '@/lib/performance-range';
+import { legacyHoursBack, perfOldest, perfRangeParams, perfViewFromParams, rulesRunsHref, windowUnsupported } from '@/lib/performance-range';
 import { dayStart, viewInstants } from '@/lib/runs';
 import { priorLabel } from '@/lib/performance-overview';
 
@@ -76,5 +76,19 @@ describe('Performance range, as on Runs', () => {
     // A DST day is still a day.
     expect(priorLabel('Nov 1 – Nov 2', { start: '2026-11-01T04:00:00Z', end: '2026-11-03T05:00:00Z' })).toBe('prior 2 days');
     expect(priorLabel('Tue, Oct 20', { start: '2026-10-20T04:00:00Z', end: '2026-10-21T04:00:00Z' })).toBe('prior 1 day');
+  });
+});
+
+describe('Rules → Runs link', () => {
+  it('carries the picked range as Runs reads it; 7 days is Runs\' own default', () => {
+    expect(rulesRunsHref({ range: '7d', day: null }, null)).toBe('/runs?show=rules');
+    expect(rulesRunsHref({ range: 'today', day: null }, null)).toBe('/runs?show=rules&range=today');
+    expect(rulesRunsHref({ range: '30d', day: null }, null)).toBe('/runs?show=rules&range=30d');
+    expect(rulesRunsHref({ range: 'custom', day: null, from: '2026-10-01', to: '2026-10-10' }, null)).toBe('/runs?show=rules&range=custom&from=2026-10-01&to=2026-10-10');
+    // A custom range without both days has none to name.
+    expect(rulesRunsHref({ range: 'custom', day: null, from: null, to: null }, null)).toBe('/runs?show=rules&range=custom');
+  });
+  it('follows the figures on screen, not the picker, while another range loads', () => {
+    expect(rulesRunsHref({ range: '30d', day: null }, { fromDay: '2026-10-21', toDay: '2026-10-27' })).toBe('/runs?show=rules&range=custom&from=2026-10-21&to=2026-10-27');
   });
 });

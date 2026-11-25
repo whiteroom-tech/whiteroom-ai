@@ -8,12 +8,19 @@
  * nothing renders.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { diagnoseFleet, getDiagnosis } from '@/lib/whiteroom/client';
+import { diagnoseFleet, getDiagnosis, WhiteRoomApiError } from '@/lib/whiteroom/client';
 import type { FleetDiagnosis } from '@/lib/whiteroom/types';
-import { createRequestGate, shouldRefetchOnFocus, type RunState } from './model';
+import { createRequestGate, shouldRefetchOnFocus, type DiagnosisState, type RunState } from './model';
+
+/** A failed read's state, from its error. */
+export function diagnosisFailure(e: unknown): 'unavailable' | 'failed' {
+  const status = e instanceof WhiteRoomApiError ? e.status : undefined;
+  return status === 404 || status === 400 ? 'unavailable' : 'failed';
+}
 
 export function useDiagnosis(fleetId: string, authKey?: string) {
   const [data, setData] = useState<FleetDiagnosis | null>(null);
+  const [state, setState] = useState<DiagnosisState>('pending');
   const [run, setRun] = useState<RunState>('idle');
   const [justRan, setJustRan] = useState(false);
   // Set on every attempt, failed ones too, so an engine with Diagnosis off
@@ -21,7 +28,7 @@ export function useDiagnosis(fleetId: string, authKey?: string) {
   const lastAttempt = useRef<number | null>(null);
   const gate = useRef(createRequestGate()).current;
 
-  useEffect(() => { gate.reset(); setData(null); setJustRan(false); setRun('idle'); }, [fleetId, gate]);
+  useEffect(() => { gate.reset(); setData(null); setState('pending'); setJustRan(false); setRun('idle'); }, [fleetId, gate]);
 
   const refresh = useCallback(async () => {
     const req = gate.startRead();
@@ -29,9 +36,10 @@ export function useDiagnosis(fleetId: string, authKey?: string) {
     lastAttempt.current = Date.now();
     try {
       const d = await getDiagnosis(fleetId, authKey);
-      if (gate.isCurrent(req)) { setData(d); setJustRan(false); }
-    } catch {
-      // Off on this engine, or unreachable: keep what's shown.
+      if (gate.isCurrent(req)) { setData(d); setState('ready'); setJustRan(false); }
+    } catch (e) {
+      // Off on this engine, or unreachable: keep what's shown, and say which when nothing is.
+      if (gate.isCurrent(req)) setState((s) => (s === 'ready' ? s : diagnosisFailure(e)));
     }
   }, [fleetId, authKey, gate]);
 
@@ -53,6 +61,7 @@ export function useDiagnosis(fleetId: string, authKey?: string) {
       const d = await diagnoseFleet(fleetId, { force: true }, authKey);
       if (!gate.isCurrent(req)) return false;
       setData(d);
+      setState('ready');
       setJustRan(true);
       setRun('idle');
       succeeded = true;
@@ -65,5 +74,5 @@ export function useDiagnosis(fleetId: string, authKey?: string) {
     }
   }, [fleetId, authKey, gate, refresh]);
 
-  return { data, run, justRan, refresh, checkNow };
+  return { data, state, run, justRan, refresh, checkNow };
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import type { DaySavings } from '@/lib/analytics-metrics';
 import { fmtCost, fmtEnergy, fmtTokens } from '@/lib/format';
 import { formatDayKey } from '@/lib/zone-time';
@@ -17,19 +17,22 @@ function weekdayLong(day: string): string {
 }
 
 /**
- * "See how it adds up", folded under the Cost cards: the input tokens with
- * WhiteRoom and the estimate without, for the page's range when `range` is
- * given (as Less input sent's card above it), else for the 7 days; then the
- * same per day, with what each day saved, always the last 7 calendar days.
- * `usdByDay` adds each day's dollars to its label. The closed row says the
- * two totals, so the proof is readable without opening it.
+ * Cost › Input sent to your models: the input tokens with WhiteRoom and the
+ * estimate without, always on show, for the page's range when `range` is given,
+ * else for the 7 days. Under them, folded, the same per day with what each day
+ * saved: always the last 7 calendar days, whatever the range, so its label says so.
+ * `usdByDay` adds each day's dollars to its label.
  */
-export function TokensCompare({ days, usdByDay, range, defaultOpen = false }: {
+export function TokensCompare({ days, usdByDay, range, unavailable = false, note, defaultOpen = false }: {
   /** Each day's input and saved tokens (the last 7 days); null when input per day is unknown: no By day. */
   days: DaySavings[] | null;
   usdByDay?: Record<string, number> | null;
   /** The page range's totals and its label ("last 24 h"); the bars and words follow it. */
   range?: { used: number; saved: number; label: string } | null;
+  /** The range's figures couldn't be read: no bars (never the 7 days' under another range's name). */
+  unavailable?: boolean;
+  /** A line under the bars (what the Spend figure is missing). */
+  note?: ReactNode;
   defaultOpen?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -47,31 +50,36 @@ export function TokensCompare({ days, usdByDay, range, defaultOpen = false }: {
   const dayWords = dayRows.map((d) => d.used + d.saved > 0
     ? `${weekdayLong(d.day)}: ${fmtTokens(d.used + d.saved)} without, ${fmtTokens(d.used)} with`
     : `${weekdayLong(d.day)}: no calls`).join('. ');
-  const note = empty ? (max > 0 ? 'by day' : undefined) : `${fmtTokens(without)} without · ${fmtTokens(used)} with${max > 0 ? ' · by day' : ''}`;
 
   return (
     <div className="wr-pcard wr-tokens" style={{ marginBottom: 16, overflow: 'hidden' }}>
-      <Disclosure first label="See how it adds up" note={note} open={open} onToggle={() => setOpen((v) => !v)} controls={bodyId}>
-        <p className="wr-cap" style={{ margin: 0, padding: '4px 20px 12px' }}>
-          The input your agents sent to the models {inRange(label)}, with WhiteRoom and an estimate without it. Includes cached input; output isn’t counted.
-        </p>
-        {empty ? (
-          <p className="wr-cap" style={{ margin: 0, padding: '0 20px 20px' }}>No model calls {inRange(label)}.</p>
-        ) : (
-          <>
-            <div className="wr-tokens__totals" role="img" aria-label={`${label.charAt(0).toUpperCase()}${label.slice(1)}: without WhiteRoom about ${fmtTokens(without)} tokens, with WhiteRoom ${fmtTokens(used)} tokens.${fewer ? ` ${fewer}.` : ''}`}>
-              <span className="wr-lbl">Without WhiteRoom, est.</span>
-              <div className="wr-tokens__track"><div className="wr-tokens__bar wr-tokens__bar--without" style={{ width: 'calc((100% - 72px) * 1)' }} /><strong>{fmtTokens(without)}</strong></div>
-              <span className="wr-lbl" style={{ color: 'var(--tx)' }}>With WhiteRoom</span>
-              <div className="wr-tokens__track"><div className="wr-tokens__bar wr-tokens__bar--with" style={{ width: `calc((100% - 72px) * ${(used / without).toFixed(3)})` }} /><strong>{fmtTokens(used)}</strong></div>
-            </div>
-            {energy && <p className="wr-cap" style={{ margin: 0, padding: '0 20px 16px' }}>About {energy.replace(/^≈/, '')} less energy, estimated from the tokens saved.</p>}
-          </>
-        )}
-        {/* By day is the 7 days: it shows whenever they have calls, even when the picked range has none. */}
-        {max > 0 && (
+      <div className="wr-tokens__head">
+        <h3 className="wr-pcard__title">Input sent to your models</h3>
+        {!unavailable && fewer && <span className="wr-cap wr-tokens__saved">{fewer}</span>}
+      </div>
+      {unavailable ? (
+        <p className="wr-cap" style={{ margin: 0, padding: '0 20px 16px' }}>Couldn’t load, retrying on the next refresh.</p>
+      ) : empty ? (
+        <p className="wr-cap" style={{ margin: 0, padding: '0 20px 16px' }}>No model calls {inRange(label)}.</p>
+      ) : (
+        <>
+          <div className="wr-tokens__totals" role="img" aria-label={`${label.charAt(0).toUpperCase()}${label.slice(1)}: without WhiteRoom about ${fmtTokens(without)} tokens, with WhiteRoom ${fmtTokens(used)} tokens.${fewer ? ` ${fewer}.` : ''}`}>
+            <span className="wr-lbl">Without WhiteRoom, est.</span>
+            <div className="wr-tokens__track"><div className="wr-tokens__bar wr-tokens__bar--without" style={{ width: 'calc((100% - 72px) * 1)' }} /><strong>{fmtTokens(without)}</strong></div>
+            <span className="wr-lbl" style={{ color: 'var(--tx)' }}>With WhiteRoom</span>
+            <div className="wr-tokens__track"><div className="wr-tokens__bar wr-tokens__bar--with" style={{ width: `calc((100% - 72px) * ${(used / without).toFixed(3)})` }} /><strong>{fmtTokens(used)}</strong></div>
+          </div>
+          <p className="wr-cap" style={{ margin: 0, padding: '4px 20px 12px' }}>
+            {!fewer && 'Nothing saved in this range. '}The input your agents sent to the models {inRange(label)}, with WhiteRoom and an estimate without it. Includes cached input; output isn’t counted.
+            {energy && <> About {energy.replace(/^≈/, '')} less energy, estimated from the tokens saved.</>}
+          </p>
+        </>
+      )}
+      {note && <p className="wr-cap" style={{ margin: 0, padding: '0 20px 16px', color: 'var(--warn-tx)' }}>{note}</p>}
+      {/* By day is the 7 days: it shows whenever they have calls, even when the picked range has none or couldn't be read. */}
+      {max > 0 && (
+        <Disclosure label="By day · last 7 days" open={open} onToggle={() => setOpen((v) => !v)} controls={bodyId}>
           <div className="wr-tokens__byday">
-            <div className="wr-lbl" style={{ marginBottom: 8 }}>By day, last 7 days</div>
             <div className="wr-tokens__days" role="img" aria-label={`Tokens per day. ${dayWords}.`}>
               {dayRows.map((d) => {
                 const wo = d.used + d.saved;
@@ -104,8 +112,8 @@ export function TokensCompare({ days, usdByDay, range, defaultOpen = false }: {
               <span><span className="wr-tokens__key wr-tokens__bar--with" />With WhiteRoom</span>
             </div>
           </div>
-        )}
-      </Disclosure>
+        </Disclosure>
+      )}
     </div>
   );
 }

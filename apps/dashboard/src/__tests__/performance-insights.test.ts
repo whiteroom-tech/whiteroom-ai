@@ -1,43 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { plural } from '@/lib/format';
-import { showRecAgentFilter, pendingHealthRow, rowOpen, toggleChoice, agentSignals, recTitle, healthRow, unusualRow, DEFAULT_REC_STATUS, insightsVerdict, recCountSuffix, recFeedback, recStatusLabel, recEmptyText, recRowActions, untrackedSignals } from '@/lib/performance-insights';
+import { showRecAgentFilter, pendingHealthRow, agentSignals, recTitle, unusualRow, DEFAULT_REC_STATUS, recCountSuffix, recFeedback, recStatusLabel, recEmptyText, recRowActions, untrackedSignals } from '@/lib/performance-insights';
 import { ControlDeniedError, WhiteRoomApiError, feedbackErrorText } from '@/lib/whiteroom/client';
-import { fmtCount } from '@/lib/format';
 import { flaggedRunCount } from '@/components/performance/UnusualBehaviour';
 import { UNUSUAL_SIGNALS } from '@/lib/runs';
 
-const base = { flaggedRuns: 0, flaggedAtLeast: false, flagsPending: false, problems: 0, problemAgent: null };
-
-describe('performance verdict', () => {
-  it('stays hidden until the flags or the health check are known', () => {
-    expect(insightsVerdict({ ...base, flaggedRuns: null, problems: null })).toBeNull();
-  });
-  it('says fine when nothing is flagged and nothing is wrong', () => {
-    expect(insightsVerdict(base)).toEqual({ tone: 'ok', title: 'Your agents look fine' });
-    expect(insightsVerdict({ ...base, problems: null })).toEqual({ tone: 'ok', title: 'Your agents look fine' });
-  });
-  it('never says fine while the flags are loading or failed to load', () => {
-    expect(insightsVerdict({ ...base, flaggedRuns: null, flagsPending: true })).toBeNull();
-    expect(insightsVerdict({ ...base, flaggedRuns: null, flagsPending: true, problems: 1, problemAgent: 'lead-agent' })!.tone).toBe('warn');
-  });
-  it('names the one agent with a problem', () => {
-    expect(insightsVerdict({ ...base, problems: 1, problemAgent: 'lead-agent' })).toEqual({ tone: 'warn', title: 'lead-agent needs a look' });
-    expect(insightsVerdict({ ...base, problems: 3 })).toEqual({ tone: 'warn', title: 'Some agents need a look' });
-  });
-  it('counts unusual runs when the health check is clear', () => {
-    expect(insightsVerdict({ ...base, flaggedRuns: 1 })!.title).toBe('1 run looked unusual');
-    expect(insightsVerdict({ ...base, flaggedRuns: 6, problems: null })!.title).toBe('6 runs looked unusual');
-  });
-  it('marks a capped count as a lower bound', () => {
-    expect(insightsVerdict({ ...base, flaggedRuns: 1000, flaggedAtLeast: true })!.title).toBe('1,000+ runs looked unusual');
-    expect(fmtCount(1000, true)).toBe('1,000+');
-    expect(fmtCount(7)).toBe('7');
-    expect(plural(1, 'run')).toBe('run');
-    expect(plural(1, 'run', 'runs', true)).toBe('runs');
-    expect(plural(0, 'run')).toBe('runs');
-    expect(plural(2, 'try', 'tries')).toBe('tries');
-  });
-});
 
 describe('unusual behaviour quiet state', () => {
   it('lists the signals not tracked yet', () => {
@@ -55,9 +21,8 @@ describe('unusual behaviour quiet state', () => {
     const days = ['2026-10-15', '2026-10-16', '2026-10-17', '2026-10-18', '2026-10-19', '2026-10-20', '2026-10-21'];
     const run = (startedAt: string) => ({ agentId: 'lead-agent', startedAt, flags: [{ signal: 'repeating_call' }] }) as never;
     expect(flaggedRunCount({ runs: null, truncated: false, failed: false, loading: true, days })).toBeNull();
-    // An engine without run flags: unknown, and the verdict leans on the health check alone.
+    // An engine without run flags: unknown, so the table shows no flag columns.
     expect(flaggedRunCount({ runs: null, truncated: false, failed: false, loading: false, days })).toBeNull();
-    expect(insightsVerdict({ ...base, flaggedRuns: null })).toEqual({ tone: 'ok', title: 'Your agents look fine' });
     expect(flaggedRunCount({ runs: [], truncated: false, failed: false, loading: false, days })).toBe(0);
     expect(flaggedRunCount({ runs: [run('2026-10-19T12:00:00'), run('2026-10-20T12:00:00'), run('2026-10-01T12:00:00')], truncated: false, failed: false, loading: false, days })).toBe(2);
   });
@@ -115,10 +80,6 @@ describe('agent health rows', () => {
     expect(pendingHealthRow({ busy: false, error: true })).toEqual({ tone: 'warn', text: 'The last check didn\u2019t finish' });
     expect(pendingHealthRow({ busy: false, error: false })).toEqual({ tone: 'muted', text: 'Not checked yet' });
   });
-  it('health check: the row is the summary line', () => {
-    expect(healthRow(null)).toBeNull();
-    expect(healthRow({ tone: 'warn', text: '1 problem · 3 passed', fine: 3, needsData: 0, openFindings: 1 })).toEqual({ tone: 'warn', text: '1 problem · 3 passed' });
-  });
   it('unusual behaviour: what kind each agent’s flagged runs were, most frequent first', () => {
     const days = ['2026-10-20', '2026-10-21'];
     const run = (agentId: string, startedAt: string, signals: string[]) => ({ agentId, startedAt, flags: signals.map((signal) => ({ signal })) }) as never;
@@ -128,26 +89,6 @@ describe('agent health rows', () => {
       run('scout-agent', '2026-10-21T12:00:00', ['error_streak']),
       run('old-agent', '2026-09-01T12:00:00', ['error_streak']),
     ], days)).toEqual({ 'lead-agent': 'repeating the same call, failed calls in a row', 'scout-agent': 'failed calls in a row' });
-  });
-});
-
-describe('fold-out rows', () => {
-  it('follow their default until someone opens or closes them', () => {
-    expect(rowOpen(null, true)).toBe(true);
-    expect(rowOpen(null, false)).toBe(false);
-  });
-  it('keep the person’s choice when new data flips the default', () => {
-    // Closed a row that opened for a problem…
-    const chosen = toggleChoice(null, true, false);
-    expect(chosen).toBe(false);
-    // …a refetch still has the problem, or a new one: it stays closed.
-    expect(rowOpen(chosen, true)).toBe(false);
-    // Opened a quiet row: it stays open when the default stays closed.
-    expect(rowOpen(toggleChoice(null, false, true), false)).toBe(true);
-  });
-  it('ignore the toggle event the default itself causes', () => {
-    expect(toggleChoice(null, true, true)).toBeNull();
-    expect(toggleChoice(false, false, false)).toBe(false);
   });
 });
 

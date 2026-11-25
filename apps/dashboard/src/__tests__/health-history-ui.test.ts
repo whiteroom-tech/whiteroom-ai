@@ -22,7 +22,7 @@ const { HealthHistory } = await import('@/components/agent/HealthHistory');
 const { downloadHealthReport, TRUNCATED_NOTE } = await import('@/components/performance/HealthReport');
 const { ControlDeniedError } = await import('@/lib/whiteroom/client');
 const { localDay } = await import('@/lib/runs');
-const { AgentHealth } = await import('@/components/performance/AgentHealth');
+const { AgentHealthHeader } = await import('@/components/performance/AgentHealth');
 
 const ev = (i: number, p: Partial<HealthHistoryEvent> = {}): HealthHistoryEvent => ({ agentId: 'a', detector: 'review_tool_loops', event: 'opened', actor: null, at: new Date(Date.UTC(2026, 10, 10, 12) - i * 60_000).toISOString(), ...p });
 const flush = () => act(async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); });
@@ -84,8 +84,6 @@ describe('Agent detail › Health history', () => {
 });
 
 describe('Agent health › Download report', () => {
-  const diagnosis = { reports: [], waiting: [], skipped: [], truncated: false, checkedAt: null, source: null, readyAgents: 0, busiest: null, minCalls: 50 } as never;
-  const flagged = { runs: [], truncated: false, failed: false, loading: false, days: [] } as never;
 
   it('downloads a workbook named for the viewer’s day, with a note when older entries were left out', async () => {
     api.history.mockResolvedValue({ events: [ev(0, { actor: 'user:u1' })], cursor: 'more' });
@@ -132,7 +130,7 @@ describe('Agent health › Download report', () => {
   it('the link shows Preparing… while it works, then an error if it failed', async () => {
     let finish: (v: string | null) => void = () => {};
     const onReport = vi.fn(() => new Promise<string | null>((r) => { finish = r; }));
-    const m = await mount(h(AgentHealth, { flagged, diagnosis, line: null, onCheck: () => {}, onReview: () => {}, onReport }));
+    const m = await mount(h(AgentHealthHeader, { line: null, onCheck: () => {}, onReport }));
     const link = () => [...m.el.querySelectorAll('button')].find((b) => /report|Preparing/.test(b.textContent ?? '')) as HTMLButtonElement;
     await act(async () => { link().click(); });
     expect(link().textContent).toBe('Preparing…');
@@ -148,7 +146,7 @@ describe('Agent health › Download report', () => {
     api.history.mockRejectedValue(new Error('engine down'));
     await expect(downloadHealthReport('f', null)).rejects.toThrow('engine down');
     const onReport = vi.fn(() => downloadHealthReport('f', null));
-    const m = await mount(h(AgentHealth, { flagged, diagnosis, line: null, onCheck: () => {}, onReview: () => {}, onReport }));
+    const m = await mount(h(AgentHealthHeader, { line: null, onCheck: () => {}, onReport }));
     const link = () => [...m.el.querySelectorAll('button')].find((b) => /report|Preparing/.test(b.textContent ?? '')) as HTMLButtonElement;
     await act(async () => { link().click(); });
     await flush();
@@ -159,7 +157,7 @@ describe('Agent health › Download report', () => {
   });
 
   it('no link when the page gives no way to make one', async () => {
-    const m = await mount(h(AgentHealth, { flagged, diagnosis, line: null, onCheck: () => {}, onReview: () => {} }));
+    const m = await mount(h(AgentHealthHeader, { line: null, onCheck: () => {} }));
     expect(m.text()).not.toContain('Download report');
     m.root.unmount();
   });

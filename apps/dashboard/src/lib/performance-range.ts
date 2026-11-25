@@ -1,6 +1,7 @@
 // Performance's range: the same menu and days as Runs (Today · 7 days ·
 // 30 days · Custom, in the viewer's calendar days), read through the
 // engine's explicit windows (performance_index / _fleet_hourly from–to).
+import { ROUTES } from '@/lib/routes';
 import { WhiteRoomApiError, type ReadWindow } from '@/lib/whiteroom/client';
 import { clampSpan, localDay, oldestKept, RUNS_RANGES, validDay, type RunsRange, type RunsView } from '@/lib/runs';
 import { HOUR_MS } from '@/lib/format';
@@ -39,6 +40,18 @@ export function perfViewFromParams(params: URLSearchParams, oldest: string, now:
 export function perfRangeParams(view: RunsView): Record<string, string | null> {
   const custom = view.range === 'custom' && view.from && view.to;
   return { range: view.range === '7d' ? null : view.range, from: custom ? view.from! : null, to: custom ? view.to! : null, hours: null };
+}
+
+/**
+ * Runs, showing rule activity for the same days as the figures on screen. `shown`
+ * is the window those figures were read for when it isn't the picked one (another
+ * range is still loading): the link follows the numbers, not the picker.
+ */
+export function rulesRunsHref(view: RunsView, shown: { fromDay: string; toDay: string } | null): string {
+  const p = shown ? { range: 'custom', from: shown.fromDay, to: shown.toDay } : perfRangeParams(view);
+  const sp = new URLSearchParams({ show: 'rules' });
+  for (const k of ['range', 'from', 'to'] as const) { const v = p[k]; if (v) sp.set(k, v); }
+  return `${ROUTES.runs}?${sp.toString()}`;
 }
 
 /**

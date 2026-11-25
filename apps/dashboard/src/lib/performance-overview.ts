@@ -8,10 +8,9 @@ import type { GovernanceCounts, GovernanceTally } from '@/lib/governance';
 import { RULE_LABELS, UNKNOWN_RULE } from '@/lib/governance';
 import { DIAGNOSIS_DETECTORS, notMeasuredShort } from '@/lib/diagnosis/copy';
 import { checkTitle } from '@/lib/diagnosis/model';
-import { alertOnly, notSetUp, ruleSentence } from '@/lib/controls-view';
+import { ruleSentence } from '@/lib/controls-view';
 import { fmtCost, fmtCount, fmtTokens, plural } from '@/lib/format';
 import { dayKey, formatDayKey } from '@/lib/zone-time';
-import { MODE_LABEL, NOTIFY } from '@/lib/vocab';
 
 /** A lookback in words: "last 14 days", "last day", "last 6 hours"; null when unknown. */
 export function lookbackText(hours: number | null | undefined): string | null {
@@ -96,22 +95,22 @@ export function fewerTokens(saved: number, used: number): string | null {
 
 /** Saved by WhiteRoom's caption: what the dollars stand for. */
 export function savedCaption(tokensSaved: number, cacheMicros: number): string {
-  // The tokens are Less input sent's card, beside this one: here, what the dollars are.
+  // Used when the percent of input saved isn't known: what the dollars are.
   if (tokensSaved > 0) return `estimated, at your model prices${cacheMicros > 0 ? ' · includes cache reads' : ''}`;
   return cacheMicros > 0 ? 'from cache reads · estimated' : 'nothing saved in this range';
 }
 
 /**
- * Less input sent's card, for the range shown (as every Cost figure is): how much less input
- * went to the models, and the tokens. The same tokens as "See how it adds up", which also has
- * the energy estimate.
+ * How much less input went to the models in the range shown (as every Cost figure is), for
+ * the Saved tile's line, and the tokens. The same tokens as Cost's "Input sent to your
+ * models" bars, which also have the energy estimate.
  * `used` null: not known yet.
  */
 export function rangeContextCard(saved: number, used: number | null): { value: string; sub: string } {
   if (used === null) return { value: '—', sub: 'not available yet' };
   if (!(saved > 0)) return { value: '—', sub: 'nothing saved in this range' };
   const pct = Math.round((saved / (used + saved)) * 100);
-  // The energy estimate is in "See how it adds up", with the tokens it comes from.
+  // The energy estimate is with the bars under Cost, beside the tokens it comes from.
   return { value: `${pct}%`, sub: `${fmtTokens(saved)} fewer input tokens` };
 }
 
@@ -136,15 +135,6 @@ export function modelShares(models: PerformanceModelSummary[]): Array<{ model: P
 }
 
 // -- Control ------------------------------------------------------------------
-
-/** "8 rules: 1 Enforce · 7 Watch · 0 Off" (and "· 1 Alert only" when a rule only alerts: it never blocks). */
-export function ruleModeCounts(all: GovernanceRule[]): string {
-  // Only rules that are set up, as Controls counts them: one with nothing picked yet does nothing.
-  const rules = all.filter((r) => !notSetUp(r));
-  const n = (m: GovernanceRule['mode']) => rules.filter((r) => r.mode === m).length;
-  const alert = rules.filter(alertOnly).length;
-  return `${fmtCount(rules.length)} ${plural(rules.length, 'rule')}: ${n('enforce') - alert} ${MODE_LABEL.enforce}${alert ? ` · ${alert} ${NOTIFY.tag}` : ''} · ${n('watch')} ${MODE_LABEL.watch} · ${n('off')} ${MODE_LABEL.off}`;
-}
 
 export interface CaughtRow {
   /** "Model allowlist", "Spend caps (3 rules)", "Keywords (rule since removed)". */
@@ -202,17 +192,24 @@ export function topCaught(counts: GovernanceCounts | null, byRuleId: Record<stri
 
 export interface CheckGroup {
   title: string;
-  /** "7 passed", "3 passed · 4 set aside", "needs about 14 more days · 7 agents". */
-  status: string;
   /** ok (green) only when every agent checked passed; neutral when some are waiting or set aside. */
   tone: 'problem' | 'ok' | 'neutral';
   /** Agents with an open finding for this check. */
   problemAgents: string[];
+  /** Agents it passed for. */
+  passed: number;
+  /** Findings that aren't open any more (snoozed, dismissed, marked fixed). */
+  setAside: number;
+  /** What the rest still need, and for how many agents ("starts in about 7 days", 2). */
+  waiting: Array<{ note: string; agents: number }>;
 }
 
+const GROUP_ORDER: Record<CheckGroup['tone'], number> = { problem: 0, ok: 1, neutral: 2 };
+
 /**
- * Health checks grouped by check, one row each (six today), across agents:
- * problems, then passed, set aside, and what the rest still need.
+ * Health checks grouped by check, one row each, across agents: checks with a
+ * problem first, then the ones every agent passed, then the rest, each group
+ * in the checks' own order.
  */
 export function checkGroups(d: FleetDiagnosis): CheckGroup[] {
   const order = [...DIAGNOSIS_DETECTORS as string[]];
@@ -228,16 +225,15 @@ export function checkGroups(d: FleetDiagnosis): CheckGroup[] {
     for (const c of r.clear) group(c.detector).passed++;
     for (const n of r.notMeasured) { const g = group(n.detector); const note = notMeasuredShort(n.code, n.reason); g.waiting.set(note, (g.waiting.get(note) ?? 0) + 1); }
   }
-  return order.filter((det) => groups.has(det)).map((det) => {
+  return order.filter((det) => groups.has(det)).map((det): CheckGroup => {
     const g = groups.get(det)!;
-    const parts = [
-      g.problems.length ? `${g.problems.length} ${plural(g.problems.length, 'problem')}` : '',
-      g.passed ? `${g.passed} passed` : '',
-      g.setAside ? `${g.setAside} set aside` : '',
-      ...[...g.waiting].map(([note, n]) => `${note} · ${n} ${plural(n, 'agent')}`),
-    ].filter(Boolean);
-    return { title: checkTitle(det), status: parts.join(' · '), tone: g.problems.length ? 'problem' : g.passed && !g.waiting.size && !g.setAside ? 'ok' : 'neutral', problemAgents: g.problems };
-  });
+    return {
+      title: checkTitle(det),
+      tone: g.problems.length ? 'problem' : g.passed && !g.waiting.size && !g.setAside ? 'ok' : 'neutral',
+      problemAgents: g.problems, passed: g.passed, setAside: g.setAside,
+      waiting: [...g.waiting].map(([note, agents]) => ({ note, agents })),
+    };
+  }).map((g, i) => ({ g, i })).sort((a, b) => GROUP_ORDER[a.g.tone] - GROUP_ORDER[b.g.tone] || a.i - b.i).map(({ g }) => g);
 }
 
 /** Agent health's headline: "No issues in 17 checks" / "2 problems in 19 checks", and what's still waiting. */

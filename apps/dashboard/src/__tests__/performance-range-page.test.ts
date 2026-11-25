@@ -15,10 +15,11 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/performance',
 }));
 vi.mock('@/hooks/useFleetAuth', () => ({ useFleetAuth: () => ({ status: 'authenticated', fleetId: 'f1', authKey: 'k', resetSession: vi.fn() }) }));
-const api = vi.hoisted(() => ({ index: vi.fn(), hourly: vi.fn(), audit: vi.fn() }));
+const api = vi.hoisted(() => ({ index: vi.fn(), hourly: vi.fn(), audit: vi.fn(), recs: vi.fn(), evidence: vi.fn() }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
   performanceIndex: api.index, performanceFleetHourly: api.hourly, auditSummary: api.audit, performanceCostForecast: async () => ({}), governanceList: async () => ({ rules: [] }),
+  performanceRecommendationsList: api.recs, performanceEvidence: api.evidence,
 }));
 
 const { WhiteRoomApiError } = await import('@/lib/whiteroom/client');
@@ -26,7 +27,8 @@ const { PerformancePage } = await import('@/app/(citadel)/performance/_component
 const { addDays, dayStart, localDay } = await import('@/lib/runs');
 
 beforeEach(() => {
-  for (const f of [nav.replace, nav.push, api.index, api.hourly, api.audit]) f.mockReset();
+  for (const f of [nav.replace, nav.push, api.index, api.hourly, api.audit, api.recs, api.evidence]) f.mockReset();
+  api.recs.mockResolvedValue({ recommendations: [], cursor: null, total: 0 });
   api.index.mockReturnValue(new Promise(() => {}));
   api.hourly.mockReturnValue(new Promise(() => {}));
   api.audit.mockReturnValue(new Promise(() => {}));
@@ -91,6 +93,35 @@ describe('Performance range', () => {
     expect(radio(el, 'Custom').disabled).toBe(true);
     expect(radio(el, '7 days').getAttribute('aria-checked')).toBe('true');
     expect(api.index).toHaveBeenLastCalledWith('f1', undefined, 'k', { from: dayStart(addDays(localDay(), -6)), to: null });
+    root.unmount();
+  });
+});
+
+describe('Performance › Recommendations, across "See why"', () => {
+  const rec = (id: string) => ({ id, detector: 'review_cache_behavior', agentId: 'lead-agent', status: 'open', summary: `Summary ${id}.`, createdAt: '2026-10-01T00:00:00Z', feedbackCount: 0, currentFindingId: `pf_${id}` });
+  const rows = (el: HTMLElement) => el.querySelectorAll('#recommendations article').length;
+  const button = (el: HTMLElement, text: string) => [...el.querySelectorAll('button')].find((b) => b.textContent === text)!;
+
+  it('keeps the list opened after a visit to the evidence and back', async () => {
+    api.index.mockResolvedValue({
+      fleetId: 'f1', period: { start: '2026-10-26T00:00:00Z', end: '2026-10-27T00:00:00Z' },
+      summary: { totalCalls: 1, totalCost: 0, avgLatencyMs: null, errorRate: 0, models: [] }, recommendations: [], priceInfo: { version: '1', ageDays: 1, stale: false, expired: false },
+    });
+    api.hourly.mockResolvedValue({ hourly: [] });
+    api.audit.mockResolvedValue(null);
+    api.recs.mockResolvedValue({ recommendations: ['a', 'b', 'c', 'd'].map(rec), cursor: null, total: 4 });
+    // The evidence read never answers: the page is on that view, and the overview is off screen.
+    api.evidence.mockReturnValue(new Promise(() => {}));
+    const { el, root } = await open('');
+    await vi.waitFor(() => expect(rows(el)).toBe(3));
+    await act(async () => { button(el, 'Show more').click(); });
+    expect(rows(el)).toBe(4);
+    await act(async () => { button(el, 'See why').click(); });
+    expect(el.querySelector('#recommendations')).toBeNull();
+    // Back by the page's own breadcrumb: the list is read again, and is still opened.
+    await act(async () => { button(el, 'Performance').click(); });
+    await vi.waitFor(() => expect(rows(el)).toBe(4));
+    expect([...el.querySelectorAll('button')].some((b) => b.textContent === 'Show more')).toBe(false);
     root.unmount();
   });
 });
