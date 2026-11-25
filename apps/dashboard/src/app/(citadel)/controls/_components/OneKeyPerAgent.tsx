@@ -146,8 +146,8 @@ export function OneKeyPerAgentView({ data, names, note, readiness = null, busy =
           <h2 id="one-key-heading" className="wr-panel__title ctl-card__title">One key per agent</h2>
           <p className="ctl-cap" style={{ margin: '2px 0 0' }}>
             {enforcing
-              ? 'Each agent uses its own WhiteRoom key. Calls without one are refused.'
-              : 'Each agent uses its own WhiteRoom key. In Watch, calls without one are counted. Nothing is blocked.'}
+              ? 'Each agent needs its own WhiteRoom key. Calls without one are refused.'
+              : 'Each agent needs its own WhiteRoom key. In Watch, calls without one are counted, not blocked.'}
           </p>
         </div>
         <SegmentedControl<AgentKeyMode>
@@ -173,7 +173,10 @@ export function OneKeyPerAgentView({ data, names, note, readiness = null, busy =
         <>
           <p style={{ margin: 0 }}>
             {when}, <strong>{n.toLocaleString('en-US')}</strong> {n === 1 ? 'call' : 'calls'} came in without the agent’s own key.{' '}
-            <Link href={ROUTES.settings} className="wr-link">Create keys in Settings &rarr;</Link>
+            {/* Agent keys are made on Fleet key (a provider key connected "Only for agent"), not in Settings.
+                Said here, where people act: the provider key can be the same for every agent. */}
+            <Link href={`${ROUTES.fleetKey}#provider-keys`} className="wr-link">Create agent keys on Fleet key &rarr;</Link>{' '}
+            <span className="ctl-cap">You can use the same provider key for each.</span>
           </p>
           <ul className="wr-identity-list">
             {unbound.slice(0, SHOWN).map((a) => {
