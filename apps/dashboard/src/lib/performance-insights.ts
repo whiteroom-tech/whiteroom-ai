@@ -87,9 +87,8 @@ export interface HealthRow {
   text: string;
 }
 
-/** Unusual behaviour's row; null on engines without run flags (the row hides). */
-export function unusualRow(f: { count: number | null; atLeast: boolean; failed: boolean; loading: boolean }): HealthRow | null {
-  if (f.loading) return { tone: 'muted', text: 'Loading\u2026' };
+/** The flagged-runs line, once that read has settled; null on engines without run flags (the line hides). */
+export function unusualRow(f: { count: number | null; atLeast: boolean; failed: boolean }): HealthRow | null {
   if (f.failed) return { tone: 'muted', text: 'Couldn\u2019t load flagged runs. Reload to try again.' };
   if (f.count === null) return null;
   if (f.count === 0) return { tone: 'ok', text: 'Nothing unusual in the last 7 days' };

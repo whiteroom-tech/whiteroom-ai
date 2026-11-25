@@ -77,10 +77,7 @@ export function HealthByAgent({ flagged, diagnosis, state, line, onOpenRec, onSe
   onSelectAgent: (agentId: string) => void;
 }) {
   const [all, setAll] = useState(false);
-  // `flagged` is a new object each render; its runs, days and cut-off are what the rows are made from.
-  const dayKey = flagged.days.join();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const table = useMemo(() => healthByAgent(diagnosis, state, flagged), [diagnosis, state, flagged.runs, flagged.truncated, dayKey]);
+  const table = useMemo(() => healthByAgent(diagnosis, state, flagged), [diagnosis, state, flagged]);
   const count = flaggedRunCount(flagged);
   const summary = state === 'ready' ? diagnosisSummary(diagnosis) : null;
   const headline = summary ? healthHeadline(summary) : null;
@@ -88,7 +85,7 @@ export function HealthByAgent({ flagged, diagnosis, state, line, onOpenRec, onSe
   // Before the first stored check, the check's own pending line; off, it says nothing.
   const pending = !summary && !failed ? pendingHealthRow(line) : null;
   const title = failed ? HEALTH_READ_FAILED : headline?.title ?? pending?.text ?? null;
-  const flags = unusualRow({ count, atLeast: flagged.truncated, failed: flagged.failed, loading: false });
+  const flags = unusualRow({ count, atLeast: flagged.truncated, failed: flagged.failed });
   const problems = (summary?.openFindings ?? 0) > 0;
   const warn = problems || (count ?? 0) > 0;
   if (!title && !flags) return null;
@@ -117,7 +114,7 @@ export function HealthByAgent({ flagged, diagnosis, state, line, onOpenRec, onSe
             <span>Agent</span>
             {table.showProblems && <span>Open problems</span>}
             {!table.showProblems && <span>Flagged for</span>}
-            {table.showFlags && <span style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontWeight: 400 }}><span style={{ fontWeight: 500 }}>Flagged runs</span><span>{weekday(flagged.days[0])} → today</span></span>}
+            {table.showFlags && <span style={{ display: 'grid', whiteSpace: 'nowrap' }}><span>Flagged runs</span><span style={{ fontWeight: 400 }}>{weekday(flagged.days[0])} → today</span></span>}
             {table.showFlags && <span style={{ textAlign: 'right' }}>Runs</span>}
           </div>
           {rows.map((r) => (

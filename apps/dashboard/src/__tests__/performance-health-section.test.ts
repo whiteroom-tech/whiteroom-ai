@@ -209,4 +209,57 @@ describe('Performance, mounted', () => {
     expect(link.getAttribute('href')).toBe('/runs?show=rules&range=30d');
     m.root.unmount();
   });
+
+  it('shows ten agents of a large fleet, then all of them', async () => {
+    api.list.mockResolvedValue(page([]));
+    const reports = Array.from({ length: 25 }, (_, n) => ({ ...fleet([finding(`r${n}`)]).reports[0], agentId: `agent-${String(n).padStart(2, '0')}` }));
+    diag.data = { ...fleet([]), reports, readyAgents: 25 }; diag.state = 'ready';
+    const m = await mount();
+    const agents = () => m.el.querySelectorAll('.wr-hba__agent').length;
+    expect(agents()).toBe(10);
+    await act(async () => { button(m.el, 'Show all 25')!.click(); });
+    expect(agents()).toBe(25);
+    expect(button(m.el, 'Show all 25')).toBeUndefined();
+    m.root.unmount();
+  });
+
+  it('Health checks start folded even with a problem, and unfold to one row per check, problems first', async () => {
+    api.list.mockResolvedValue(page([]));
+    const d = fleet([finding('a', 'review_tool_errors')]);
+    d.reports[0].notMeasured = [{ detector: 'review_spend_outliers', code: 'short_history', reason: 'Needs 14 days of history; has 7' }] as never;
+    diag.data = d; diag.state = 'ready';
+    const m = await mount();
+    const fold = [...m.el.querySelectorAll<HTMLButtonElement>('.wr-hck button[aria-expanded]')][0];
+    expect(fold.getAttribute('aria-expanded')).toBe('false');
+    expect(fold.textContent).toContain('1 problem · 1 passed · 1 needs more data');
+    expect(m.el.querySelector('.wr-hck__head')).toBeNull();
+    await act(async () => { fold.click(); });
+    expect([...m.el.querySelectorAll('.wr-hck__head span')].map((c) => c.textContent)).toEqual(['Check', 'Problem in', 'Passed', 'Waiting for']);
+    const checks = [...m.el.querySelectorAll('.wr-hck__row:not(.wr-hck__head)')].map((r) => [...r.children].map((c) => c.textContent));
+    expect(checks).toEqual([
+      ['A tool keeps failing', 'lead-agent', '', ''],
+      ['Repeating the same call', '', '1 passed', ''],
+      ['Unusually expensive days', '', '', 'starts in about 7 days · 1 agent'],
+    ]);
+    m.root.unmount();
+  });
+
+  it('the opened row follows the list: once the list holds it, the list’s copy is the one on screen', async () => {
+    // Read by id, because the first page doesn't hold it.
+    api.list.mockResolvedValueOnce({ recommendations: [rec('a')], cursor: 'next', total: 2 });
+    api.get.mockResolvedValue({ contractVersion: '1', recommendation: rec('far', { summary: 'As first read.' }), finding: null });
+    diag.data = fleet([finding('far')]); diag.state = 'ready';
+    const m = await mount({ recsExpanded: true });
+    await act(async () => { tag(m.el, 'A tool keeps failing').click(); });
+    await flush();
+    expect(m.el.querySelector('#rec-far')!.textContent).toContain('As first read.');
+    // The next page brings the same recommendation, changed since: one row, still first, with the list's text.
+    api.list.mockResolvedValueOnce({ recommendations: [rec('far', { summary: 'Changed since.' })], cursor: null, total: 2 });
+    await act(async () => { button(m.el, 'Load more')!.click(); });
+    await flush();
+    expect(rows(m.el)).toEqual(['rec-far', 'rec-a']);
+    expect(m.el.querySelector('#rec-far')!.textContent).toContain('Changed since.');
+    expect(m.el.querySelector('#rec-far')!.textContent).toContain('Opened from the health table');
+    m.root.unmount();
+  });
 });

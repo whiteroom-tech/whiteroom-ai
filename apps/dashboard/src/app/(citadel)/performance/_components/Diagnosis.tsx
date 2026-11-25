@@ -66,18 +66,18 @@ export function DiagnosisRow({ rec, mark, onSelectAgent, onSelectEvidence, onFee
   return (
     <article id={`rec-${rec.id}`} tabIndex={-1} className="wr-rec">
       <div className="wr-rec__text">
-      {mark}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <strong style={{ color: 'var(--tx)' }}>{TITLES[detector]}</strong>
-        <button type="button" onClick={() => onSelectAgent(rec.agentId)} className="wr-agent-link">{rec.agentId}</button>
-        {!open && <Badge status={rec.status} label={STATUS_LABEL[rec.status]} />}
-      </div>
-      <Sentence parts={findingSentence(detector, m)} />
-      {cost && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--warn-tx)' }}>{cost}</p>}
-      {limitation && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{limitation}</p>}
-      {fixLine && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: rec.fixCheck?.state === 'still_happening' ? 'var(--warn-tx)' : 'var(--tx2)' }}>{fixLine}</p>}
-      {beforeFix && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', maxWidth: '80ch' }}>{beforeFix}</p>}
-      {ruleLine && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx)' }}>{ruleLine}</p>}
+        {mark}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <strong style={{ color: 'var(--tx)' }}>{TITLES[detector]}</strong>
+          <button type="button" onClick={() => onSelectAgent(rec.agentId)} className="wr-agent-link">{rec.agentId}</button>
+          {!open && <Badge status={rec.status} label={STATUS_LABEL[rec.status]} />}
+        </div>
+        <Sentence parts={findingSentence(detector, m)} />
+        {cost && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--warn-tx)' }}>{cost}</p>}
+        {limitation && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{limitation}</p>}
+        {fixLine && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: rec.fixCheck?.state === 'still_happening' ? 'var(--warn-tx)' : 'var(--tx2)' }}>{fixLine}</p>}
+        {beforeFix && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)', maxWidth: '80ch' }}>{beforeFix}</p>}
+        {ruleLine && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx)' }}>{ruleLine}</p>}
       </div>
 
       <div className="dx-acts wr-rec__acts">

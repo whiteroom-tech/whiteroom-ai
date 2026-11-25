@@ -67,7 +67,7 @@ export type RunState = 'idle' | 'checking' | 'error';
 
 /**
  * Where the first read stands. `unavailable`: the engine answered that the check
- * isn't there (off: 404; a sandbox fleet or an engine without it: 400). `failed`:
+ * isn't there (off: 404; a sandbox fleet or an engine without it: 400 with that reason). `failed`:
  * no answer or a server error, so nothing is known. Once a read has landed, a
  * later failure keeps what's shown and stays `ready`.
  */
@@ -114,11 +114,6 @@ export function statusLine(d: FleetDiagnosis | null, run: RunState, now: number,
 
 export function openFindingCount(d: FleetDiagnosis): number {
   return d.reports.reduce((n, r) => n + r.findings.filter((f) => f.status === 'open').length, 0);
-}
-
-/** Agents with an open finding, in report order. */
-export function agentsWithOpenFindings(d: FleetDiagnosis | null): string[] {
-  return d ? d.reports.filter((r) => r.findings.some((f) => f.status === 'open')).map((r) => r.agentId) : [];
 }
 
 /**

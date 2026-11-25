@@ -92,20 +92,20 @@ export function RecommendationsCard({
       ) : (
         <article key={rec.id} id={`rec-${rec.id}`} tabIndex={-1} className="wr-rec">
           <div className="wr-rec__text">
-          {mark(rec)}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <strong style={{ color: 'var(--tx)' }}>{recTitle(rec.detector)}</strong>
-            <button type="button" onClick={() => onSelectAgent(rec.agentId)} className="wr-agent-link">{rec.agentId}</button>
-            {rec.status !== 'open' && <Badge status={rec.status} />}
-            {/* A fix check has its own line below; without one, the verification state keeps its badge. */}
-            {!rec.fixCheck && rec.verificationStatus && rec.verificationStatus !== 'none' && <Badge status={rec.verificationStatus} size="small" />}
-          </div>
-          {rec.summary && <p style={{ margin: 0, fontSize: 'var(--fs-md)', lineHeight: 1.5, color: 'var(--tx)' }}>{rec.summary}</p>}
-          {rec.fixCheck && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: rec.fixCheck.state === 'still_happening' ? 'var(--warn-tx)' : 'var(--tx2)' }}>{fixCheckLine(rec.fixCheck)}</p>}
-          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-            Since {fmtDay(rec.createdAt)}
-            {rec.feedbackCount > 0 && <> &middot; {rec.feedbackCount} {plural(rec.feedbackCount, 'action')}</>}
-          </div>
+            {mark(rec)}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <strong style={{ color: 'var(--tx)' }}>{recTitle(rec.detector)}</strong>
+              <button type="button" onClick={() => onSelectAgent(rec.agentId)} className="wr-agent-link">{rec.agentId}</button>
+              {rec.status !== 'open' && <Badge status={rec.status} />}
+              {/* A fix check has its own line below; without one, the verification state keeps its badge. */}
+              {!rec.fixCheck && rec.verificationStatus && rec.verificationStatus !== 'none' && <Badge status={rec.verificationStatus} size="small" />}
+            </div>
+            {rec.summary && <p style={{ margin: 0, fontSize: 'var(--fs-md)', lineHeight: 1.5, color: 'var(--tx)' }}>{rec.summary}</p>}
+            {rec.fixCheck && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: rec.fixCheck.state === 'still_happening' ? 'var(--warn-tx)' : 'var(--tx2)' }}>{fixCheckLine(rec.fixCheck)}</p>}
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
+              Since {fmtDay(rec.createdAt)}
+              {rec.feedbackCount > 0 && <> &middot; {rec.feedbackCount} {plural(rec.feedbackCount, 'action')}</>}
+            </div>
           </div>
           <RecActions
             open={rec.status === 'open'}

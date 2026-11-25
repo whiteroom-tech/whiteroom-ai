@@ -134,7 +134,11 @@ describe('problems by agent', () => {
 describe('a failed health read', () => {
   it('is "unavailable" when the engine answers that the check is not there, "failed" when nothing is known', () => {
     expect(diagnosisFailure(new WhiteRoomApiError('HTTP 404', 404))).toBe('unavailable'); // switched off
-    expect(diagnosisFailure(new WhiteRoomApiError('HTTP 400', 400))).toBe('unavailable'); // a sandbox fleet, or an engine without it
+    expect(diagnosisFailure(new WhiteRoomApiError('HTTP 400', 400, 'Diagnosis runs on production fleets.'))).toBe('unavailable'); // a sandbox fleet
+    expect(diagnosisFailure(new WhiteRoomApiError('HTTP 400', 400, 'Unknown action.'))).toBe('unavailable'); // an engine older than the check
+    // Any other refusal is a real error: said on the page, never hidden as "off".
+    expect(diagnosisFailure(new WhiteRoomApiError('HTTP 400', 400, 'fleet_id is required.'))).toBe('failed');
+    expect(diagnosisFailure(new WhiteRoomApiError('HTTP 400', 400))).toBe('failed');
     expect(diagnosisFailure(new WhiteRoomApiError('HTTP 503', 503))).toBe('failed');
     expect(diagnosisFailure(new WhiteRoomApiError('HTTP 401', 401))).toBe('failed');
     expect(diagnosisFailure(new WhiteRoomApiError('network'))).toBe('failed');

@@ -4,7 +4,7 @@ import {
   findingSentence, sentenceText, costLine, notMeasuredShort, howtoParagraphs, limitationText, TITLES, DIAGNOSIS_DETECTORS,
   fixCheckLine, beforeFixText, linkedRuleLine,
 } from '@/lib/diagnosis/copy';
-import { statusLine, agentsWithOpenFindings, checkRows, checkTitle, humanizeDetector, setAsideLabel, shouldRefetchOnFocus, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader, diagnosisSummary } from '@/lib/diagnosis/model';
+import { statusLine, checkRows, checkTitle, humanizeDetector, setAsideLabel, shouldRefetchOnFocus, FOCUS_REFETCH_MS, createRequestGate, evidenceHeader, diagnosisSummary } from '@/lib/diagnosis/model';
 import type { DiagnosisDetectorId, DiagnosisMeasures, FleetDiagnosis, DiagnosisFinding } from '@/lib/whiteroom/types';
 
 const MEASURES: Record<DiagnosisDetectorId, DiagnosisMeasures> = {
@@ -257,13 +257,6 @@ describe('status line', () => {
     expect(statusLine(fleet(), 'error', NOW, false)).toMatchObject({ text: 'Couldn’t finish the check. Your agents aren’t affected.', action: { label: 'Try again' }, error: true });
     expect(statusLine(fleet({ checkedAt: new Date(NOW).toISOString(), reports: [report('a', [finding('review_tool_errors')])] }), 'idle', NOW, true))
       .toMatchObject({ text: 'Checked just now · 3 agents · 1 finding' });
-  });
-});
-
-describe('agents with open findings', () => {
-  it('ignore snoozed findings', () => {
-    expect(agentsWithOpenFindings(null)).toEqual([]);
-    expect(agentsWithOpenFindings(fleet({ reports: [report('a', [finding('review_tool_errors', 'snoozed')]), report('b', [finding('review_tool_errors')])] }))).toEqual(['b']);
   });
 });
 

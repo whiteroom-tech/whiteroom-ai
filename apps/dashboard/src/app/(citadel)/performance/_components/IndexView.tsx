@@ -188,7 +188,8 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
   };
   const runCheck = async () => {
     setDiagnosisNotice(null);
-    if (await diagnosis.checkNow()) void fetchRecs();
+    // A new check can change any finding: a row read before it would be out of date.
+    if (await diagnosis.checkNow()) { setPinned(null); void fetchRecs(); }
   };
   const flagged = useFlaggedRuns(fleetId, authKey);
   /**
@@ -260,6 +261,8 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
   // Agent health waits for both of its reads, so the table doesn't fill in and reorder in two steps.
   const healthSettled = diagnosis.state !== 'pending' && !flagged.loading;
   const healthKnown = diagnosis.state === 'ready' || diagnosis.state === 'failed' || flagged.runs !== null || flagged.failed;
+  // The list's own copy when it holds the pinned row: a reload may have changed it since it was opened.
+  const pinnedRow = pinned ? recs.find((r) => r.id === pinned.id) ?? pinned : null;
   const expanded = recsExpanded || recStatus !== 'open' || !!recAgentQuery.trim();
   const savedSub = context.value !== '—'
     ? `${context.value} less input sent · estimated${savings.cacheMicros > 0 ? ' · includes cache reads' : ''}`
@@ -333,7 +336,7 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
           agentFilter={recAgent} onAgentFilter={setRecAgent} showAgentFilter={showRecAgentFilter(recs, agentIds, recAgent, recTotal)}
           filtered={!!recAgentQuery.trim()} hasCalls={s.totalCalls > 0}
           loading={recLoading} error={recError} notice={pinNotice ?? diagnosisNotice} hasMore={!!recCursor} onMore={() => { if (recCursor) void fetchRecs(recCursor); }}
-          expanded={expanded} onExpand={() => onRecsExpanded?.(true)} pinned={pinned}
+          expanded={expanded} onExpand={() => onRecsExpanded?.(true)} pinned={pinnedRow}
           onSelectAgent={onSelectAgent} onSelectEvidence={onSelectEvidence}
           onFeedback={(rec, f) => { if (rec.currentFindingId) void submitFeedback(rec.id, rec.currentFindingId, f.action, f.reason); }}
           onDiagnosisFeedback={submitDiagnosisFeedback}

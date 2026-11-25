@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useReducer } from 'react';
+import { useEffect, useMemo, useReducer } from 'react';
 import { listRuns } from '@/lib/whiteroom/client';
 import type { RunSummary } from '@/lib/whiteroom/types';
 import { addDays, collectRuns, dayLabel, ignoresFlagged, localDay, unusualSummary } from '@/lib/runs';
@@ -44,7 +44,7 @@ export function flagFetch(
 export function useFlaggedRuns(fleetId: string, authKey?: string, preview?: RunSummary[]): FlaggedRuns {
   const [state, dispatch] = useReducer(flagFetch, preview ? { runs: preview, truncated: false, failed: false, loading: false } : FLAGS_LOADING);
   const today = localDay();
-  const days = Array.from({ length: DAYS }, (_, i) => addDays(today, i - DAYS + 1));
+  const days = useMemo(() => Array.from({ length: DAYS }, (_, i) => addDays(today, i - DAYS + 1)), [today]);
 
   useEffect(() => {
     if (preview) return;
@@ -57,11 +57,10 @@ export function useFlaggedRuns(fleetId: string, authKey?: string, preview?: RunS
         () => { if (live) dispatch({ type: 'failed' }); },
       );
     return () => { live = false; };
-    // days is derived from today
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fleetId, authKey, today, preview]);
+  }, [fleetId, authKey, today, days, preview]);
 
-  return { ...state, days };
+  // One object until the runs or the days change, so what's worked out from it isn't redone every render.
+  return useMemo(() => ({ ...state, days }), [state, days]);
 }
 
 /** Flagged runs in the window; null when not known. */

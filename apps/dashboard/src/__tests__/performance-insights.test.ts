@@ -65,9 +65,8 @@ describe('recommendations list', () => {
 });
 
 describe('agent health rows', () => {
-  const f = { count: 0, atLeast: false, failed: false, loading: false };
-  it('unusual behaviour: loading, failed, hidden without flags, quiet, flagged', () => {
-    expect(unusualRow({ ...f, count: null, loading: true })).toEqual({ tone: 'muted', text: 'Loading\u2026' });
+  const f = { count: 0, atLeast: false, failed: false };
+  it('flagged runs, once read: failed, hidden without flags, quiet, flagged', () => {
     expect(unusualRow({ ...f, count: null, failed: true })!.tone).toBe('muted');
     expect(unusualRow({ ...f, count: null })).toBeNull();
     expect(unusualRow(f)).toEqual({ tone: 'ok', text: 'Nothing unusual in the last 7 days' });

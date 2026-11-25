@@ -12,10 +12,18 @@ import { diagnoseFleet, getDiagnosis, WhiteRoomApiError } from '@/lib/whiteroom/
 import type { FleetDiagnosis } from '@/lib/whiteroom/types';
 import { createRequestGate, shouldRefetchOnFocus, type DiagnosisState, type RunState } from './model';
 
-/** A failed read's state, from its error. */
+/** The engine's 400s that mean the check isn't there for this fleet: a sandbox fleet, or an engine older than the check. */
+const NOT_HERE = ['Diagnosis runs on production fleets.', 'Unknown action.'];
+
+/**
+ * A failed read's state, from its error. Only the engine's own "not here"
+ * answers are `unavailable` (404: switched off; 400 with one of its two
+ * reasons). Any other refusal is `failed`, so a real error is said, not hidden.
+ */
 export function diagnosisFailure(e: unknown): 'unavailable' | 'failed' {
-  const status = e instanceof WhiteRoomApiError ? e.status : undefined;
-  return status === 404 || status === 400 ? 'unavailable' : 'failed';
+  if (!(e instanceof WhiteRoomApiError)) return 'failed';
+  if (e.status === 404) return 'unavailable';
+  return e.status === 400 && !!e.reason && NOT_HERE.includes(e.reason) ? 'unavailable' : 'failed';
 }
 
 export function useDiagnosis(fleetId: string, authKey?: string) {
