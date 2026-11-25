@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState, type ReactNode } from 'react';
+import { useId, useState } from 'react';
 import type { DaySavings } from '@/lib/analytics-metrics';
 import { fmtCost, fmtEnergy, fmtTokens } from '@/lib/format';
 import { formatDayKey } from '@/lib/zone-time';
@@ -23,7 +23,7 @@ function weekdayLong(day: string): string {
  * saved: always the last 7 calendar days, whatever the range, so its label says so.
  * `usdByDay` adds each day's dollars to its label.
  */
-export function TokensCompare({ days, usdByDay, range, unavailable = false, note, defaultOpen = false }: {
+export function TokensCompare({ days, usdByDay, range, unavailable = false, defaultOpen = false }: {
   /** Each day's input and saved tokens (the last 7 days); null when input per day is unknown: no By day. */
   days: DaySavings[] | null;
   usdByDay?: Record<string, number> | null;
@@ -31,8 +31,6 @@ export function TokensCompare({ days, usdByDay, range, unavailable = false, note
   range?: { used: number; saved: number; label: string } | null;
   /** The range's figures couldn't be read: no bars (never the 7 days' under another range's name). */
   unavailable?: boolean;
-  /** A line under the bars (what the Spend figure is missing). */
-  note?: ReactNode;
   defaultOpen?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -60,7 +58,7 @@ export function TokensCompare({ days, usdByDay, range, unavailable = false, note
       {unavailable ? (
         <p className="wr-cap" style={{ margin: 0, padding: '0 20px 16px' }}>Couldn’t load, retrying on the next refresh.</p>
       ) : empty ? (
-        <p className="wr-cap" style={{ margin: 0, padding: '0 20px 16px' }}>No model calls {inRange(label)}.</p>
+        <p className="wr-cap" style={{ margin: 0, padding: '0 20px 16px' }}>No input reached your models {inRange(label)}.</p>
       ) : (
         <>
           <div className="wr-tokens__totals" role="img" aria-label={`${label.charAt(0).toUpperCase()}${label.slice(1)}: without WhiteRoom about ${fmtTokens(without)} tokens, with WhiteRoom ${fmtTokens(used)} tokens.${fewer ? ` ${fewer}.` : ''}`}>
@@ -75,7 +73,6 @@ export function TokensCompare({ days, usdByDay, range, unavailable = false, note
           </p>
         </>
       )}
-      {note && <p className="wr-cap" style={{ margin: 0, padding: '0 20px 16px', color: 'var(--warn-tx)' }}>{note}</p>}
       {/* By day is the 7 days: it shows whenever they have calls, even when the picked range has none or couldn't be read. */}
       {max > 0 && (
         <Disclosure label="By day · last 7 days" open={open} onToggle={() => setOpen((v) => !v)} controls={bodyId}>

@@ -79,7 +79,9 @@ describe("Home (mockup parity)", () => {
   it("closes with View runs and Check audit trail, and says nothing about how WhiteRoom works", () => {
     const t = text(home());
     expect(t).toContain("Calls through WhiteRoom are recorded · View runs → · Check audit trail");
-    expect(t).toContain("$12.31 saved all time, est. →");
+    // The all-time figure is plain text: Performance opens on 7 days and would show a different number.
+    expect(t).toContain("$12.31 saved all time, est.");
+    expect(t).not.toContain("saved all time, est. →");
     expect(t).toContain("no calls yet today");
     expect(t).toContain("1 waiting for work");
     expect(t).not.toMatch(/break|handover|notes|resting|saving progress/i);

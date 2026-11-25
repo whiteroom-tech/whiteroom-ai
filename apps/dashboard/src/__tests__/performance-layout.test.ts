@@ -152,7 +152,7 @@ describe('Input sent to your models', () => {
     const weekHourly = { hourly: [{ hour: new Date(2026, 9, 26, 12).toISOString(), calls: 1, costMicros: 0, errorCount: 0, inputTokens: 1_000_000, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 }] };
     // The chart is always the 7 days, and says so.
     const quiet = text({ savingsDays: week, weekHourly, hourlyData: rangeHours(0), govSavings: { tokensSaved: 0, costSaved: 0, partial: false } });
-    expect(quiet).toMatch(/No model calls in the last 24 h\. .*By day · last 7 days/);
+    expect(quiet).toMatch(/No input reached your models in the last 24 h\. .*By day · last 7 days/);
     // No range read: no bars (never the 7 days' totals under the range's name), the chart stays.
     const unread = text({ savingsDays: week, weekHourly, hourlyData: null });
     expect(unread).toMatch(/Input sent to your models Couldn’t load, retrying on the next refresh\. .*By day · last 7 days/);
@@ -160,13 +160,16 @@ describe('Input sent to your models', () => {
     // Without the week's input by hour, By day isn't drawn (it can't say input per day).
     expect(text({ savingsDays: week, hourlyData: rangeHours(1_000_000), govSavings: { tokensSaved: 3_000_000, costSaved: 1, partial: false } })).not.toMatch(/By day/);
   });
-  it('says it is unknown, never 0, when the savings failed to load, and carries what the Spend figure is missing', () => {
+  it('says it is unknown, never 0, when the savings failed to load; what Spend is missing stays on the Spend tile', () => {
     const failed = text({ auditFailed: true, hourlyData: rangeHours(1_000_000) });
     expect(failed).toMatch(/Saved by WhiteRoom — couldn’t load, retrying on the next refresh/);
     expect(failed).toMatch(/Input sent to your models Couldn’t load, retrying on the next refresh\./);
     expect(failed).not.toMatch(/Without WhiteRoom, est\./);
     const stale = text({ data: { ...DATA, priceInfo: { version: '1', ageDays: 16, stale: true, expired: false } } });
-    expect(stale).toMatch(/Spend: prices 16 days old/);
+    const strip = (html: string) => html.slice(html.indexOf('wr-perf-strip--5'), html.indexOf('id="perf-cost"'));
+    const staleHtml = renderToStaticMarkup(h(IndexView, { ...props(), data: { ...DATA, priceInfo: { version: '1', ageDays: 16, stale: true, expired: false } } } as never));
+    expect(strip(staleHtml)).toContain('prices 16 days old');
+    expect(stale).not.toMatch(/Spend: prices/);
   });
 });
 
@@ -181,7 +184,7 @@ describe('Input tokens empty state', () => {
   it('says it in the panel when the range had no calls', async () => {
     const { TokensCompare } = await import('@/components/performance/SavingsPanels');
     const html = renderToStaticMarkup(h(TokensCompare, { days: null, range: { used: 0, saved: 0, label: 'today' }, defaultOpen: true }));
-    expect(html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')).toContain('No model calls today.');
+    expect(html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')).toContain('No input reached your models today.');
   });
 });
 

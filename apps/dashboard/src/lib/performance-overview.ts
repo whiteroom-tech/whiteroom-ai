@@ -36,7 +36,7 @@ export function priorLabel(rangeLabel: string, period?: { start: string; end: st
 }
 
 /**
- * The range as a phrase inside a sentence ("No model calls …", "12 calls … came from"):
+ * The range as a phrase inside a sentence ("No input reached your models …", "12 calls … came from"):
  * "today", "in the last 7 days", "on Sat, Oct 24" (one day), "between Oct 1 – Oct 10" (a span:
  * its label has an en dash).
  */

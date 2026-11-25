@@ -256,8 +256,7 @@ export function PerformancePreview() {
         {!empty && <hr className="wr-perf-rule" />}
         <section aria-labelledby="pv-cost">
           <SectionHeader id="pv-cost" title="Cost" sub="What your agents spent, and what WhiteRoom saved." meta={label} />
-          <TokensCompare key={`tokens-${sample}`} days={empty ? week([[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]) : sampleWeek()} usdByDay={usdByDay(sampleWeek())} defaultOpen={sample === 'problem'}
-            note={sample === 'problem' ? 'Spend: some calls couldn’t be priced · prices 9 days old' : undefined} />
+          <TokensCompare key={`tokens-${sample}`} days={empty ? week([[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]) : sampleWeek()} usdByDay={usdByDay(sampleWeek())} defaultOpen={sample === 'problem'} />
           {!empty && <SpendByModel models={MODELS} pricesNote={pricesFrom('2026-10-19')} trend={`spend per call ↓21% vs ${prior}`} stale={sample === 'problem' ? 'They are 9 days old.' : null} />}
           {!empty && <CostPredictionSection key={`pred-${sample}`} fleetId="acme-claims-prod" agentIds={null} fleetHourly={{ usdPerHour: CARDS.perHourMicros / 1_000_000, lookbackHours: 336 }} api={previewPredictionApi(sample === 'problem')} />}
           {sample === 'problem' && <p className="wr-cap" style={{ margin: '0 0 8px', color: 'var(--warn-tx)' }}>12 calls {label} came from agents without a name: in these totals, but no agent’s.</p>}

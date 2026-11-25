@@ -80,7 +80,7 @@ describe('Input sent to your models', () => {
     expect(closed).toContain('Without WhiteRoom, est.');
     expect(closed).toContain('>4.25M<');
     expect(closed).not.toContain('wr-tokens__days');
-    expect(renderToStaticMarkup(h(TokensCompare, { days: [days[0]], defaultOpen: true }))).toContain('No model calls in the last 7 days.');
+    expect(renderToStaticMarkup(h(TokensCompare, { days: [days[0]], defaultOpen: true }))).toContain('No input reached your models in the last 7 days.');
   });
   it('says nothing was saved when the range had calls and saved none', () => {
     const html = renderToStaticMarkup(h(TokensCompare, { days: null, range: { used: 10, saved: 0, label: 'today' } }));
@@ -96,7 +96,7 @@ describe('Input sent to your models', () => {
     expect(html).toContain('By day · last 7 days');
     expect(html).toContain('wr-tokens__days');
   });
-  it('offers the day chart only when the 7 days have calls, and carries the spend note', () => {
+  it('offers the day chart only when the 7 days have calls', () => {
     const fold = (html: string) => html.includes('By day · last 7 days');
     expect(fold(renderToStaticMarkup(h(TokensCompare, { days })))).toBe(true);
     // Calls in the range, no input per day.
@@ -105,6 +105,5 @@ describe('Input sent to your models', () => {
     expect(fold(renderToStaticMarkup(h(TokensCompare, { days, range: { used: 0, saved: 0, label: 'today' } })))).toBe(true);
     // None at all.
     expect(fold(renderToStaticMarkup(h(TokensCompare, { days: null, range: { used: 0, saved: 0, label: 'today' } })))).toBe(false);
-    expect(renderToStaticMarkup(h(TokensCompare, { days, note: 'Spend: prices 16 days old' }))).toContain('Spend: prices 16 days old');
   });
 });
