@@ -13,6 +13,12 @@ describe('identity words (gap-closing spec 0.2)', () => {
     for (const c of ['bound_key', 'fleet_key', 'none', 'session'] as const) expect(identityWords(c, 'unresolved')).toBe('Not known');
     expect(identityWords('not_recorded', 'explicit')).toBe('Not recorded');
     expect(identityWords('not_recorded', 'unresolved')).toBe('Not recorded');
+    // Signed agent names: the words don't change with how the name was found.
+    for (const n of ['explicit', 'inferred', 'unresolved'] as const) {
+      expect(identityWords('signed_name', n)).toBe('Signed by your gateway');
+      expect(identityWords('signature_invalid', n)).toBe('Gateway signature didn\'t match');
+      expect(identityWords('other', n)).toBe('Other');
+    }
   });
 
   it('turn rows into lines, most calls first, with their share', () => {
@@ -33,7 +39,8 @@ describe('identity words (gap-closing spec 0.2)', () => {
   });
 
   it('name each unbound credential', () => {
-    expect(['fleet_key', 'none', 'session', 'not_recorded'].map((c) => credentialWords(c as never))).toEqual(['Shared key', 'Provider key', 'AWS session', 'Not recorded']);
+    expect(['fleet_key', 'none', 'session', 'not_recorded', 'signature_invalid', 'other'].map((c) => credentialWords(c as never)))
+      .toEqual(['Shared key', 'Provider key', 'AWS session', 'Not recorded', 'Gateway signature didn\'t match', 'Other']);
   });
 });
 

@@ -3,11 +3,15 @@
 // display-name rules the engine applies (agent_rename), so the form can say
 // what's wrong before sending.
 
-export const IDENTITY_CREDENTIALS = ['bound_key', 'fleet_key', 'none', 'session', 'not_recorded'] as const;
+// signed_name and signature_invalid come with signed agent names; `other` is
+// how this build shows a value from a newer engine, so it never reads "undefined".
+export const IDENTITY_CREDENTIALS = ['bound_key', 'signed_name', 'fleet_key', 'signature_invalid', 'none', 'session', 'not_recorded', 'other'] as const;
 export const IDENTITY_NAME_SOURCES = ['explicit', 'inferred', 'unresolved'] as const;
-export const UNBOUND_CREDENTIALS = ['fleet_key', 'none', 'session', 'not_recorded'] as const;
+/** What "One key per agent" counts as unbound. signed_name counts as bound, like bound_key. */
+export const UNBOUND_CREDENTIALS = ['fleet_key', 'signature_invalid', 'none', 'session', 'not_recorded', 'other'] as const;
 export type IdentityCredential = (typeof IDENTITY_CREDENTIALS)[number];
 export type IdentityNameSource = (typeof IDENTITY_NAME_SOURCES)[number];
+export type UnboundCredential = (typeof UNBOUND_CREDENTIALS)[number];
 
 export interface IdentityMixRow {
   credential: IdentityCredential;
@@ -16,18 +20,27 @@ export interface IdentityMixRow {
   lastAt: string | null;
 }
 
-const KEY_WORDS: Record<Exclude<IdentityCredential, 'bound_key' | 'not_recorded'>, string> = {
+const KEY_WORDS: Record<'fleet_key' | 'none' | 'session', string> = {
   fleet_key: 'Shared key',
   none: 'Provider key',
   session: 'AWS session',
 };
 
+/** Words that don't change with how the name was found. */
+const WHOLE_WORDS: Partial<Record<IdentityCredential, string>> = {
+  not_recorded: 'Not recorded',
+  signed_name: 'Signed by your gateway',
+  signature_invalid: "Gateway signature didn't match",
+  other: 'Other',
+};
+
 /** The 0.2 words for one credential and name source. */
 export function identityWords(credential: IdentityCredential, nameSource: IdentityNameSource): string {
-  if (credential === 'not_recorded') return 'Not recorded';
+  const whole = WHOLE_WORDS[credential];
+  if (whole) return whole;
   if (nameSource === 'unresolved') return 'Not known';
   if (credential === 'bound_key') return 'Own key';
-  return `${KEY_WORDS[credential]}, name ${nameSource === 'explicit' ? 'sent by the agent' : 'worked out by WhiteRoom'}`;
+  return `${KEY_WORDS[credential as keyof typeof KEY_WORDS]}, name ${nameSource === 'explicit' ? 'sent by the agent' : 'worked out by WhiteRoom'}`;
 }
 
 export interface IdentityLine {
@@ -86,7 +99,7 @@ export interface AgentKeyAgentRow {
   agentId: string;
   boundCalls: number;
   unboundCalls: number;
-  unboundCredentials: Array<Exclude<IdentityCredential, 'bound_key'>>;
+  unboundCredentials: UnboundCredential[];
   lastUnboundAt: string | null;
 }
 
@@ -95,7 +108,7 @@ export interface AgentKeySummary {
   to: string;
   recorded: boolean;
   unboundCalls: number;
-  byCredential: Record<Exclude<IdentityCredential, 'bound_key'>, number>;
+  byCredential: Partial<Record<UnboundCredential, number>>;
   agents: AgentKeyAgentRow[];
   truncated: boolean;
 }
@@ -139,7 +152,7 @@ export interface AgentKeyReadiness {
   token: string;
 }
 
-/** "Shared key", "Provider key", "AWS session", "Not recorded": what an unbound call came in on. */
-export function credentialWords(c: Exclude<IdentityCredential, 'bound_key'>): string {
-  return c === 'not_recorded' ? 'Not recorded' : KEY_WORDS[c];
+/** "Shared key", "Provider key", "AWS session", "Not recorded" and so on: what an unbound call came in on. */
+export function credentialWords(c: UnboundCredential): string {
+  return WHOLE_WORDS[c] ?? KEY_WORDS[c as keyof typeof KEY_WORDS];
 }
