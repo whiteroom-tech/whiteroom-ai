@@ -50,14 +50,16 @@ describe('words', () => {
   it('says the estimate in one line', () => {
     expect(replayLine(result())).toBe('In the last 7 days, 3 of 9 calls used a model not on this list.');
     expect(replayLine(result({ matched: 0, evaluated: 1 }))).toBe('In the last 7 days, all 1 call used a model on this list.');
-    expect(replayLine(result({ matched: 0, evaluated: 0 }))).toBe('No calls in the last 7 days to check.');
+    expect(replayLine(result({ matched: 0, evaluated: 0, records: 0 }))).toBe('No calls in the last 7 days to check.');
+    expect(replayLine(result({ matched: 0, evaluated: 0, records: 5 }))).toBe('None of the calls in the last 7 days could be checked.');
     expect(replayLine(result({ matched: 1200, evaluated: 4500 }))).toBe('In the last 7 days, 1,200 of 4,500 calls used a model not on this list.');
   });
 
   it('says a Block tools estimate in its own terms, and what it leaves out', () => {
     expect(replayLine(result(), 'tool_list')).toBe('In the last 7 days, 3 of 9 calls asked an agent to run a tool on this list.');
     expect(replayLine(result({ matched: 0 }), 'tool_list')).toBe('In the last 7 days, none of 9 calls asked an agent to run a tool on this list.');
-    expect(replayLine(result({ evaluated: 0, matched: 0 }), 'tool_list')).toBe('No calls in the last 7 days to check.');
+    expect(replayLine(result({ evaluated: 0, matched: 0, records: 0 }), 'tool_list')).toBe('No calls in the last 7 days to check.');
+    expect(replayLine(result({ evaluated: 0, matched: 0, records: 5 }), 'tool_list')).toBe('None of the calls in the last 7 days could be checked.');
     expect(replayScopeNote('tool_list')).toBe('Counts tools your agents run themselves, not ones the provider runs, like web search.');
     expect(replayScopeNote('model_allowlist')).toBeNull();
     expect(partialLine([{ kind: 'tools_not_recorded', calls: 12 }])).toBe('Partial: 12 calls came before their tools were recorded.');

@@ -33,7 +33,8 @@ const calls = (n: number) => `${n.toLocaleString('en-US')} ${n === 1 ? 'call' : 
 
 /** The estimate in one line, in the rule's own terms. */
 export function replayLine(r: ReplayResult, ruleType: string = 'model_allowlist', days: number = REPLAY_DAYS): string {
-  if (r.evaluated === 0) return `No calls in the last ${days} days to check.`;
+  // Calls there, none of them checkable (all from before their tools were recorded, say): the Partial line says why.
+  if (r.evaluated === 0) return r.records > 0 ? `None of the calls in the last ${days} days could be checked.` : `No calls in the last ${days} days to check.`;
   if (ruleType === 'tool_list') {
     if (r.matched === 0) return `In the last ${days} days, none of ${calls(r.evaluated)} asked an agent to run a tool on this list.`;
     return `In the last ${days} days, ${r.matched.toLocaleString('en-US')} of ${calls(r.evaluated)} asked an agent to run a tool on this list.`;
