@@ -91,10 +91,14 @@ export function controlActionOf(body: string): { action: string; fleetId: string
     return null;
   }
   if (!parsed || typeof parsed !== 'object') return null;
-  const { action, fleet_id, provider } = parsed as { action?: unknown; fleet_id?: unknown; provider?: unknown };
+  const { action, fleet_id, provider, bound_agent } = parsed as { action?: unknown; fleet_id?: unknown; provider?: unknown; bound_agent?: unknown };
   // Matched loosely (case, spaces), so a variant spelling can't skip the owner check.
   const cloudKey = action === 'store_key' && typeof provider === 'string' && CLOUD_IDENTITY_PROVIDERS.has(provider.trim().toLowerCase());
-  if (typeof action !== 'string' || !(DASHBOARD_ONLY_ACTIONS.has(action) || cloudKey)) return null;
+  // A key for one agent is that agent's identity ("One key per agent"): the owner's to make.
+  // Any bound_agent at all, so an odd value can't skip the check (the engine refuses those anyway).
+  const agentKey = action === 'store_key' && bound_agent !== undefined;
+  // Removing a key can cut an agent off: the owner's, like rotating keys.
+  if (typeof action !== 'string' || !(DASHBOARD_ONLY_ACTIONS.has(action) || cloudKey || agentKey || action === 'delete_key')) return null;
   return { action, fleetId: typeof fleet_id === 'string' && fleet_id ? fleet_id : null };
 }
 
