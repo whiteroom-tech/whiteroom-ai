@@ -62,6 +62,7 @@ import type {
 import { viewerTimeZone } from '@/lib/runs';
 import { activeHold, activeHolds } from '@/lib/holds';
 import { platform429Delay, withEngineReadRetry } from './engine-retry';
+import { ownerActionOf } from '@/lib/owner-actions';
 import { knownRulesOnly } from '@/lib/governance';
 import type { ReplayResult, ReplayRun } from '@/lib/replay';
 
@@ -495,10 +496,17 @@ export interface FleetAuth {
 // issued for, so these calls keep working even once the fleet is no longer
 // bound to the dashboard's sk-wr- key. Fall back to the api key for users
 // provisioned before fleet tokens were handed back. fleet_id is always sent:
-// the BFF's owner check for the owner-only ones (Bedrock role, cloud-identity
-// keys) needs it.
+// the BFF's owner check needs it.
+//
+// The owner's actions (owner-actions.ts: a key for one agent or on the
+// engine's cloud identity, removing a key, the Bedrock role, gateway signing
+// keys) go through the BFF in the browser. The engine takes them only with
+// the dashboard's service credential, which the BFF adds after its owner
+// check; sent straight to the engine, they're refused.
 function keyCall<T>(auth: FleetAuth, body: Record<string, unknown>): Promise<T> {
-  return apiCall<T>({ ...body, fleet_id: auth.fleetId }, auth.fleetToken ?? auth.apiKey);
+  const sent = { ...body, fleet_id: auth.fleetId };
+  if (typeof window !== 'undefined' && ownerActionOf(sent)) return apiCall<T>(sent);
+  return apiCall<T>(sent, auth.fleetToken ?? auth.apiKey);
 }
 
 export function listProviderKeys(auth: FleetAuth): Promise<ListKeysResult> {
