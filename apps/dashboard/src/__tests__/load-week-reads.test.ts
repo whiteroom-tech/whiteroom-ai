@@ -3,10 +3,11 @@
 // found in what comes back whatever its capitals.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const api = vi.hoisted(() => ({ audit: vi.fn(), scores: vi.fn(), rules: vi.fn(), hourly: vi.fn() }));
+// Every read loadWeekReads makes is mocked: one left real goes to the network, and a slow one times the test out.
+const api = vi.hoisted(() => ({ audit: vi.fn(), scores: vi.fn(), rules: vi.fn(), hourly: vi.fn(), agent: vi.fn() }));
 vi.mock('@/lib/whiteroom/client', async (orig) => ({
   ...(await orig<typeof import('@/lib/whiteroom/client')>()),
-  auditSummary: api.audit, performanceAgentScores: api.scores, ruleActions: api.rules, performanceFleetHourly: api.hourly,
+  auditSummary: api.audit, performanceAgentScores: api.scores, ruleActions: api.rules, performanceFleetHourly: api.hourly, performanceAgent: api.agent,
 }));
 const { agentWeekFrom, loadWeekReads } = await import('@/lib/home-agents');
 
@@ -27,6 +28,7 @@ describe('loadWeekReads', () => {
   it('passes the agent id to rule_actions as given, and finds that agent whatever its capitals', async () => {
     api.audit.mockResolvedValue({ fleetId: 'f1', savingsBuckets: [], governance: { blocks: 0, wouldBlocks: 0, byAgent: {}, byRule: {} } });
     api.scores.mockResolvedValue({ fleetId: 'f1', agents: [] });
+    api.agent.mockResolvedValue(null);
     // The engine answers for the exact id it was given.
     api.rules.mockResolvedValue({ fleetId: 'f1', totals: counts(3), byAgent: { 'Lead-Agent': counts(3) } });
     const r = await loadWeekReads('f1', 'k', { agentId: 'Lead-Agent' });
