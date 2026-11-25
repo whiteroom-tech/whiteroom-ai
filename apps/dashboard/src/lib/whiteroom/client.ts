@@ -5,7 +5,7 @@
 //   - anything else (fleet tokens) -> Authorization: Bearer
 //   - no key -> unauthenticated (e.g. token_login)
 
-import { AGENT_KEY_MODES, IDENTITY_CREDENTIALS, IDENTITY_NAME_SOURCES, UNBOUND_CREDENTIALS, type AgentKeyMode, type AgentKeyReadiness, type AgentKeyRuleResult, type IdentityMixRow, type ReadinessBlocker } from '@/lib/agent-identity';
+import { AGENT_KEY_MODES, IDENTITY_CREDENTIALS, IDENTITY_NAME_SOURCES, UNBOUND_CREDENTIALS, type AgentKeyMode, type AgentKeyReadiness, type AgentKeyRuleResult, type IdentityMixRow, type ReadinessBlocker, type UnboundCredential } from '@/lib/agent-identity';
 import type {
   AuditExportPage,
   CallExportPage,
@@ -815,10 +815,16 @@ export async function identityMix(fleetId: string, target: { agentId: string } |
   return Array.isArray(res.rows) ? res.rows.flatMap((r) => {
     const row = r as Partial<Record<keyof IdentityMixRow, unknown>> | null;
     if (!row || typeof row.calls !== 'number' || !Number.isFinite(row.calls) || row.calls < 0) return [];
-    const credential = (IDENTITY_CREDENTIALS as readonly unknown[]).includes(row.credential) ? row.credential as IdentityMixRow['credential'] : 'none';
-    const nameSource = (IDENTITY_NAME_SOURCES as readonly unknown[]).includes(row.nameSource) && (IDENTITY_CREDENTIALS as readonly unknown[]).includes(row.credential) ? row.nameSource as IdentityMixRow['nameSource'] : 'unresolved';
+    // A value from a newer engine shows as "Other", never as another value's words.
+    const credential = (IDENTITY_CREDENTIALS as readonly unknown[]).includes(row.credential) ? row.credential as IdentityMixRow['credential'] : 'other';
+    const nameSource = (IDENTITY_NAME_SOURCES as readonly unknown[]).includes(row.nameSource) ? row.nameSource as IdentityMixRow['nameSource'] : 'unresolved';
     return [{ credential, nameSource, calls: row.calls, lastAt: typeof row.lastAt === 'string' ? row.lastAt : null }];
   }) : [];
+}
+
+/** Unbound credentials in order, a value this build doesn't know as `other`, each once. */
+function knownUnbound(list: readonly unknown[]): UnboundCredential[] {
+  return [...new Set(list.map((c) => ((UNBOUND_CREDENTIALS as readonly unknown[]).includes(c) ? c as UnboundCredential : 'other')))];
 }
 
 /** "One key per agent": its mode, and the production calls that came in without the agent's own key. */
@@ -830,7 +836,7 @@ export async function agentKeyRuleGet(fleetId: string, key?: string): Promise<Ag
     && (s === null || (s && typeof s.recorded === 'boolean' && typeof s.unboundCalls === 'number' && Array.isArray(s.agents) && s.byCredential && typeof s.byCredential === 'object'
       && s.agents.every((a) => a && typeof a.agentId === 'string' && typeof a.unboundCalls === 'number' && Array.isArray(a.unboundCredentials))));
   if (!ok) throw new WhiteRoomApiError('Unexpected agent_key_rule_get reply', 200);
-  return { ...res, summary: s ? { ...s, agents: s.agents.map((a) => ({ ...a, unboundCredentials: a.unboundCredentials.filter((c) => (UNBOUND_CREDENTIALS as readonly string[]).includes(c)) })) } : null };
+  return { ...res, summary: s ? { ...s, agents: s.agents.map((a) => ({ ...a, unboundCredentials: knownUnbound(a.unboundCredentials) })) } : null };
 }
 
 /**

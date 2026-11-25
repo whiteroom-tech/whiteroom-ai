@@ -57,7 +57,7 @@ describe('client calls', () => {
     expect(sent()).toEqual({ action: 'identity_mix', fleet_id: 'f1', agent_id: 'a1' });
   });
 
-  it('identityMix reads an unknown credential as not known and leaves out a malformed row', async () => {
+  it('identityMix reads an unknown credential as Other and leaves out a malformed row', async () => {
     fetchMock.mockResolvedValue(reply({ rows: [
       { credential: 'quantum_key', nameSource: 'explicit', calls: 2, lastAt: null },
       { credential: 'bound_key', nameSource: 'explicit', calls: 'many' },
@@ -65,7 +65,15 @@ describe('client calls', () => {
       { credential: 'fleet_key', nameSource: 'guessed', calls: 1, lastAt: null },
     ] }));
     const rows = await identityMix('f1', { agentId: 'a1' }, 'k');
-    expect(rows.map((r) => identityLines([r])[0].words)).toEqual(['Not known', 'Not known']);
+    expect(rows.map((r) => identityLines([r])[0].words)).toEqual(['Other', 'Not known']);
+  });
+
+  it('agentKeyRuleGet shows an unbound credential it doesn’t know as Other, once', async () => {
+    fetchMock.mockResolvedValue(reply({ applies: true, mode: 'watch', since: null, summary: { recorded: true, unboundCalls: 3, byCredential: {}, agents: [
+      { agentId: 'a1', boundCalls: 0, unboundCalls: 3, unboundCredentials: ['signature_invalid', 'quantum_key', 'fleet_key', 'warp_key'], lastUnboundAt: null },
+    ], truncated: false } }));
+    const res = await agentKeyRuleGet('f1', 'k');
+    expect(res.summary!.agents[0].unboundCredentials).toEqual(['signature_invalid', 'other', 'fleet_key']);
   });
 
   it('agentKeyRuleGet refuses a reply it can’t read, so the card stays hidden', async () => {
