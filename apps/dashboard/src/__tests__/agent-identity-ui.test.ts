@@ -279,13 +279,19 @@ describe('One key per agent card', () => {
     expect(html).toContain('Ready. Calls without the agent’s own key will be refused.');
     const on = render({ ...data({ unboundCalls: 0, agents: [] }), mode: 'enforce' }, {}, null);
     expect(enforceButton(on)).not.toBeNull();
-    expect(on).toContain('Calls without one are refused.');
+    expect(on).toContain('Each agent needs its own WhiteRoom key. Calls without one are refused.');
     expect(on).not.toContain('Not ready yet.');
   });
 
   it('lists agents with calls that came in without their own key, by name with the id beside it', () => {
     const html = render(data(), { a1: 'Billing bot' });
     expect(html).toMatch(/<strong>4<\/strong>.*calls came in without the agent’s own key/);
+    expect(html).toContain('Each agent needs its own WhiteRoom key. In Watch, calls without one are counted, not blocked.');
+    // Agent keys are made on Fleet key, and sharing a provider key is fine: said beside the link.
+    expect(html).toContain('href="/fleet-key#provider-keys"');
+    expect(html).toContain('Create agent keys on Fleet key');
+    expect(html).toContain('You can use the same provider key for each.');
+    expect(html).not.toContain('Create keys in Settings');
     expect(html).toContain('Billing bot');
     expect(html).toContain('Shared key');
     expect(html).toContain('Provider key');
