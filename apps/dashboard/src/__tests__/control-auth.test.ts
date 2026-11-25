@@ -56,6 +56,11 @@ describe('controlActionOf', () => {
     expect(controlActionOf(body({ action: 'store_key', fleet_id: 'f1', provider: 'foundry-entra' }))).toEqual({ action: 'store_key', fleetId: 'f1' });
     expect(controlActionOf(body({ action: 'store_key', fleet_id: 'f1', provider: 'azure-openai' }))).toBeNull();
     expect(controlActionOf(body({ action: 'store_key', fleet_id: 'f1' }))).toBeNull();
+    // A key for one agent, and removing any key, are the owner's: one agent can't take or cut off another's identity.
+    expect(controlActionOf(body({ action: 'store_key', fleet_id: 'f1', provider: 'anthropic', bound_agent: 'billing' }))).toEqual({ action: 'store_key', fleetId: 'f1' });
+    expect(controlActionOf(body({ action: 'store_key', fleet_id: 'f1', bound_agent: '' }))).toEqual({ action: 'store_key', fleetId: 'f1' });
+    expect(controlActionOf(body({ action: 'store_key', fleet_id: 'f1', bound_agent: 7 }))).toEqual({ action: 'store_key', fleetId: 'f1' });
+    expect(controlActionOf(body({ action: 'delete_key', fleet_id: 'f1', key_prefix: 'placeholder' }))).toEqual({ action: 'delete_key', fleetId: 'f1' });
     expect(controlActionOf(body({ action: 'store_key', fleet_id: 'f1', provider: ' Bedrock-SigV4 ' }))).toEqual({ action: 'store_key', fleetId: 'f1' });
     expect(controlActionOf(body({ action: 'store_key', fleet_id: 'f1', provider: ['bedrock-sigv4'] }))).toBeNull();
     expect(controlActionOf(body({ action: 'pause_agent', fleet_id: 'f1' }))).toEqual({ action: 'pause_agent', fleetId: 'f1' });
