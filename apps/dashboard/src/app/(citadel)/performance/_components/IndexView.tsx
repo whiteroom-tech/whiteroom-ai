@@ -281,7 +281,11 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
               hint={HELP.spend}
               // "+", as on Runs: some calls are unpriced or only bounded, so this is a lower bound.
               value={`${fmtCost(s.totalCost)}${partialMark(spendPartial)}`}
-              sub={spendTrend ?? (!prev ? rangeLabel : s.totalCost > 0 ? `nothing spent in the ${prior}` : `none in the ${prior} either`)}
+              sub={<>
+                {spendTrend ?? (!prev ? rangeLabel : s.totalCost > 0 ? `nothing spent in the ${prior}` : `none in the ${prior} either`)}
+                {/* What the figure is missing, with the figure it is about. */}
+                {spendNotes.length > 0 && <span style={{ display: 'block', marginTop: 8, color: 'var(--warn-tx)' }}>{spendNotes.join(' · ')}</span>}
+              </>}
             />
             <StatCard
               variant="card"
@@ -303,8 +307,7 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
       <section aria-labelledby="perf-cost">
         <SectionHeader id="perf-cost" title="Cost" sub="What your agents spent, and what WhiteRoom saved." meta={rangeLabel} />
         {/* The proof behind Saved, always on show; then Spend by model and Cost prediction, each folded, its closed row a summary. */}
-        <TokensCompare days={inputDays} usdByDay={usdByDay} range={rangeTokens} unavailable={auditFailed || !rangeTokens}
-          note={spendNotes.length > 0 ? `Spend: ${spendNotes.join(' · ')}` : undefined} />
+        <TokensCompare days={inputDays} usdByDay={usdByDay} range={rangeTokens} unavailable={auditFailed || !rangeTokens} />
         {s.models.length > 0 && (
           <SpendByModel
             models={s.models}

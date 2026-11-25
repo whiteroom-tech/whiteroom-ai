@@ -160,13 +160,16 @@ describe('Input sent to your models', () => {
     // Without the week's input by hour, By day isn't drawn (it can't say input per day).
     expect(text({ savingsDays: week, hourlyData: rangeHours(1_000_000), govSavings: { tokensSaved: 3_000_000, costSaved: 1, partial: false } })).not.toMatch(/By day/);
   });
-  it('says it is unknown, never 0, when the savings failed to load, and carries what the Spend figure is missing', () => {
+  it('says it is unknown, never 0, when the savings failed to load; what Spend is missing stays on the Spend tile', () => {
     const failed = text({ auditFailed: true, hourlyData: rangeHours(1_000_000) });
     expect(failed).toMatch(/Saved by WhiteRoom — couldn’t load, retrying on the next refresh/);
     expect(failed).toMatch(/Input sent to your models Couldn’t load, retrying on the next refresh\./);
     expect(failed).not.toMatch(/Without WhiteRoom, est\./);
     const stale = text({ data: { ...DATA, priceInfo: { version: '1', ageDays: 16, stale: true, expired: false } } });
-    expect(stale).toMatch(/Spend: prices 16 days old/);
+    const strip = (html: string) => html.slice(html.indexOf('wr-perf-strip--5'), html.indexOf('id="perf-cost"'));
+    const staleHtml = renderToStaticMarkup(h(IndexView, { ...props(), data: { ...DATA, priceInfo: { version: '1', ageDays: 16, stale: true, expired: false } } } as never));
+    expect(strip(staleHtml)).toContain('prices 16 days old');
+    expect(stale).not.toMatch(/Spend: prices/);
   });
 });
 
