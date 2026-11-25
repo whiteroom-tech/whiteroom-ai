@@ -360,8 +360,7 @@ export function HomeView({ report, agents, changes, changesFailing = false, flag
               label="Spend"
               hint={saved ? `${HELP.spendToday} ${savedByWhiteRoomHint(saved)}` : HELP.spendToday}
               value={today ? `${usd(today.costUsd)}${partialMark(!!today.partial)}` : '—'}
-              sub={saved && !todayFailing ? `${usd(saved.usd)}${partialMark(saved.partial)} saved all time, est. →` : todaySub}
-              subHref={saved && !todayFailing ? ROUTES.performance : undefined}
+              sub={saved && !todayFailing ? `${usd(saved.usd)}${partialMark(saved.partial)} saved all time, est.` : todaySub}
             />
             <StatCard
               variant="card" label={RULE_ACTIVITY} hint={HELP.ruleActions}

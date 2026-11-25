@@ -80,7 +80,7 @@ describe('Input sent to your models', () => {
     expect(closed).toContain('Without WhiteRoom, est.');
     expect(closed).toContain('>4.25M<');
     expect(closed).not.toContain('wr-tokens__days');
-    expect(renderToStaticMarkup(h(TokensCompare, { days: [days[0]], defaultOpen: true }))).toContain('No model calls in the last 7 days.');
+    expect(renderToStaticMarkup(h(TokensCompare, { days: [days[0]], defaultOpen: true }))).toContain('No input reached your models in the last 7 days.');
   });
   it('says nothing was saved when the range had calls and saved none', () => {
     const html = renderToStaticMarkup(h(TokensCompare, { days: null, range: { used: 10, saved: 0, label: 'today' } }));

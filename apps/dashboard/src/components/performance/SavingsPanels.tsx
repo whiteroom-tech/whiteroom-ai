@@ -60,7 +60,7 @@ export function TokensCompare({ days, usdByDay, range, unavailable = false, note
       {unavailable ? (
         <p className="wr-cap" style={{ margin: 0, padding: '0 20px 16px' }}>Couldn’t load, retrying on the next refresh.</p>
       ) : empty ? (
-        <p className="wr-cap" style={{ margin: 0, padding: '0 20px 16px' }}>No model calls {inRange(label)}.</p>
+        <p className="wr-cap" style={{ margin: 0, padding: '0 20px 16px' }}>No input reached your models {inRange(label)}.</p>
       ) : (
         <>
           <div className="wr-tokens__totals" role="img" aria-label={`${label.charAt(0).toUpperCase()}${label.slice(1)}: without WhiteRoom about ${fmtTokens(without)} tokens, with WhiteRoom ${fmtTokens(used)} tokens.${fewer ? ` ${fewer}.` : ''}`}>
