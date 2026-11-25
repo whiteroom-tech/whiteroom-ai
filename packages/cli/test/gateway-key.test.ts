@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
@@ -42,6 +42,17 @@ describe("gateway-key new", () => {
     assert.equal(r.code, 1);
     assert.match(r.err, /private\.pem already exists\. Move it, or pass --out <dir>\./);
     assert.equal(readFileSync(join(dir, "private.pem"), "utf8"), before);
+  });
+
+  it("leaves no private.pem behind when public.pem can't be written", { skip: process.platform === "win32" }, () => {
+    const d = mkdtempSync(join(tmpdir(), "wr-gwkey-"));
+    // A dangling link named public.pem: it doesn't "exist", but an exclusive write to it fails.
+    symlinkSync(join(d, "nowhere"), join(d, "public.pem"));
+    const r = run(["new", "--out", d]);
+    assert.equal(r.code, 1);
+    assert.match(r.err, /public\.pem already exists/);
+    assert.equal(existsSync(join(d, "private.pem")), false);
+    rmSync(d, { recursive: true, force: true });
   });
 
   it("says how to use it, and refuses what it doesn't know", () => {

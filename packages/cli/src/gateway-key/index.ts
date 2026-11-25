@@ -4,7 +4,7 @@
 // never printed. Plain Node, no SDK.
 
 import { createHash, generateKeyPairSync } from "node:crypto";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 export const GATEWAY_KEY_USAGE = `Usage:
@@ -51,6 +51,8 @@ export function gatewayKey(argv: string[], out: (line: string) => void = console
   try {
     writeFileSync(publicPath, publicPem, { mode: 0o644, flag: "wx" });
   } catch (e) {
+    // No half-made pair: the private key goes too, so the next run starts clean.
+    try { unlinkSync(privatePath); } catch { /* already gone */ }
     const code = (e as NodeJS.ErrnoException).code;
     err(code === "EEXIST" ? `${publicPath} already exists. Move it, or pass --out <dir>.` : `Couldn't write ${publicPath}: ${(e as Error).message}`);
     return 1;
