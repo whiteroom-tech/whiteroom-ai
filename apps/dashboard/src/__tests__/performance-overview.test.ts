@@ -5,7 +5,7 @@ import type { FleetDiagnosis, GovernanceRule } from '@/lib/whiteroom/types';
 import type { GovernanceCounts } from '@/lib/governance';
 import {
   checkGroups, countTrend, fewerTokens, lookbackText, healthCounts, healthHeadline, latencyTrend, modelShares, pctChange, perCallTrend, pricesFrom, priorLabel,
-  inputByLocalDay, inputTokensOf, predictionNote, rangeHoldsWeek, WEEK_HOURS, weekHourlyFrom, rangeContextCard, ruleModeCounts, savedCaption, tokenTotals, topCaught, trendText,
+  inputByLocalDay, inputTokensOf, predictionNote, rangeHoldsWeek, WEEK_HOURS, weekHourlyFrom, rangeContextCard, savedCaption, tokenTotals, topCaught, trendText,
 } from '@/lib/performance-overview';
 
 const t = (blocks: number, wouldBlocks: number) => ({ blocks, wouldBlocks });
@@ -93,12 +93,6 @@ describe('savings and spend', () => {
 });
 
 describe('Rules', () => {
-  it('counts the rules by mode', () => {
-    expect(ruleModeCounts(RULES)).toBe('5 rules: 1 Enforce · 3 Watch · 1 Off');
-    expect(ruleModeCounts([...RULES, { ...RULES[0], id: 'gr_alert', mode: 'enforce', response: 'notify' }])).toBe('6 rules: 1 Enforce · 1 Alert only · 3 Watch · 1 Off');
-    // Not set up (nothing picked, or no agents): left out, as Controls counts.
-    expect(ruleModeCounts([...RULES, rule('gr_kw', 'keyword', 'watch', { keywords: [] }), { ...RULES[1], id: 'gr_none', appliesTo: [] }])).toBe('5 rules: 1 Enforce · 3 Watch · 1 Off');
-  });
   it('names the top rules by id, with each one’s value when a type has several, and a removed one plainly', () => {
     const acts = (blocked: number, wouldAct: number) => ({ blocked, wouldAct, paused: 0, stopped: 0, toldYou: 0 });
     const rows = topCaught(COUNTS, { gr_m: acts(0, 60), gr_a: acts(0, 59), gr_gone: acts(0, 1), gr_b: acts(0, 0) }, RULES);
@@ -127,10 +121,11 @@ describe('Agent health', () => {
   });
   const d = { reports: [report('a', true), report('b', false)] } as FleetDiagnosis;
   it('groups the checks by check, across agents', () => {
+    // Problems first, then what every agent passed, then the rest: each group in the checks' own order.
     expect(checkGroups(d)).toEqual([
-      { title: 'Repeating the same call', status: '1 problem · 1 set aside', tone: 'problem', problemAgents: ['a'] },
-      { title: 'Unusually expensive days', status: 'starts in about 7 days · 2 agents', tone: 'neutral', problemAgents: [] },
-      { title: 'A tool keeps failing', status: '2 passed', tone: 'ok', problemAgents: [] },
+      { title: 'Repeating the same call', tone: 'problem', problemAgents: ['a'], passed: 0, setAside: 1, waiting: [] },
+      { title: 'A tool keeps failing', tone: 'ok', problemAgents: [], passed: 2, setAside: 0, waiting: [] },
+      { title: 'Unusually expensive days', tone: 'neutral', problemAgents: [], passed: 0, setAside: 0, waiting: [{ note: 'starts in about 7 days', agents: 2 }] },
     ]);
   });
   it('is green only when every agent checked passed', () => {
@@ -139,7 +134,7 @@ describe('Agent health', () => {
       r('a', { clear: [{ detector: 'review_tool_errors', note: null }], findings: [{ detector: 'review_tool_loops', status: 'dismissed' } as never], notMeasured: [{ detector: 'review_spend_outliers', code: 'x', reason: 'Not yet' }] }),
       r('b', { clear: [{ detector: 'review_tool_errors', note: null }, { detector: 'review_spend_outliers', note: null }] }),
     ] } as FleetDiagnosis).map((g) => [g.title, g.tone]);
-    expect(tones).toEqual([['Repeating the same call', 'neutral'], ['Unusually expensive days', 'neutral'], ['A tool keeps failing', 'ok']]);
+    expect(tones).toEqual([['A tool keeps failing', 'ok'], ['Repeating the same call', 'neutral'], ['Unusually expensive days', 'neutral']]);
   });
   it('heads the card with what ran and what still needs data', () => {
     expect(healthHeadline({ fine: 17, needsData: 22, openFindings: 0 })).toEqual({ title: 'No issues in 17 checks', sub: '22 more checks run as your agents do more work', tone: 'ok' });

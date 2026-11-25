@@ -34,7 +34,7 @@ afterEach(() => { act(() => root.unmount()); host.remove(); });
 
 const card = (recs: RecommendationDetail[]) => act(() => root.render(h(RecommendationsCard, {
   recs, total: recs.length, status: 'all', onStatus: () => {}, showStatuses: false, onShowStatuses: () => {}, agentFilter: '', onAgentFilter: () => {},
-  showAgentFilter: false, filtered: false, hasCalls: true, loading: false, error: null, notice: null, hasMore: false, onMore: () => {},
+  showAgentFilter: false, filtered: false, hasCalls: true, loading: false, error: null, notice: null, hasMore: false, onMore: () => {}, expanded: false, onExpand: () => {},
   onSelectAgent: () => {}, onSelectEvidence: () => {}, onFeedback: () => {}, onDiagnosisFeedback: async () => true, feedbackLoading: null, feedbackError: null,
 })));
 const links = () => [...host.querySelectorAll('a')].map((a) => `${a.textContent} → ${a.getAttribute('href')}`);

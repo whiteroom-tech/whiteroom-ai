@@ -13,13 +13,19 @@ import { recCountSuffix, recEmptyText, recFeedback, recRowActions, recStatusLabe
 import { Badge, Btn } from './primitives';
 import { DiagnosisRow, isDiagnosisRow } from './Diagnosis';
 
+/** Rows shown before "Show more". */
+export const REC_COLLAPSED = 3;
+
+/** A pinned row's mark: it was opened from a problem in the health table. */
+export const PINNED_NOTE = 'Opened from the health table';
+
 export const REC_STATUSES = ['all', 'open', 'snoozed', 'dismissed', 'reported_implemented', 'resolved', 'evaluating', 'validated'] as const;
 
 type Feedback = ReturnType<typeof recFeedback>;
 
 export function RecommendationsCard({
   recs, total, status, onStatus, showStatuses, onShowStatuses, agentFilter, onAgentFilter, showAgentFilter, filtered, hasCalls,
-  loading, error, notice, hasMore, onMore, onSelectAgent, onSelectEvidence, onFeedback, onDiagnosisFeedback, feedbackLoading, feedbackError,
+  loading, error, notice, hasMore, onMore, expanded, onExpand, pinned = null, onSelectAgent, onSelectEvidence, onFeedback, onDiagnosisFeedback, feedbackLoading, feedbackError,
 }: {
   recs: RecommendationDetail[];
   total: number;
@@ -39,6 +45,11 @@ export function RecommendationsCard({
   notice: string | null;
   hasMore: boolean;
   onMore: () => void;
+  /** All loaded rows show; otherwise the first REC_COLLAPSED and "Show more". */
+  expanded: boolean;
+  onExpand: () => void;
+  /** The recommendation a health-table problem opened: shown first, whatever the list holds. */
+  pinned?: RecommendationDetail | null;
   onSelectAgent: (id: string) => void;
   onSelectEvidence: (findingId: string, agentId: string, recId?: string) => void;
   onFeedback: (rec: RecommendationDetail, f: Feedback) => void;
@@ -46,6 +57,10 @@ export function RecommendationsCard({
   feedbackLoading: string | null;
   feedbackError: { recId: string; message: string } | null;
 }) {
+  const others = pinned ? recs.filter((r) => r.id !== pinned.id) : recs;
+  const shown = expanded ? others : others.slice(0, REC_COLLAPSED);
+  const list = pinned ? [pinned, ...shown] : shown;
+  const mark = (rec: RecommendationDetail) => (rec.id === pinned?.id ? <span className="wr-rec__pin">{PINNED_NOTE}</span> : null);
   return (
     <div className="wr-pcard wr-recs" id="recommendations">
       <div className="wr-recs__head">
@@ -63,10 +78,11 @@ export function RecommendationsCard({
           options={REC_STATUSES.map((st) => ({ value: st, label: recStatusLabel(st) }))} />
       </div>}
 
-      {recs.length > 0 ? recs.map(rec => isDiagnosisRow(rec) ? (
+      {list.length > 0 ? list.map(rec => isDiagnosisRow(rec) ? (
         <DiagnosisRow
           key={rec.id}
           rec={rec}
+          mark={mark(rec)}
           onSelectAgent={onSelectAgent}
           onSelectEvidence={() => onSelectEvidence(rec.currentFindingId ?? rec.id, rec.agentId, rec.id)}
           onFeedback={(action) => onDiagnosisFeedback(rec, action)}
@@ -74,19 +90,22 @@ export function RecommendationsCard({
           error={feedbackError?.recId === rec.id ? feedbackError.message : null}
         />
       ) : (
-        <article key={rec.id} style={{ padding: '14px 0', borderBottom: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <strong style={{ color: 'var(--tx)' }}>{recTitle(rec.detector)}</strong>
-            <button type="button" onClick={() => onSelectAgent(rec.agentId)} className="wr-agent-link">{rec.agentId}</button>
-            {rec.status !== 'open' && <Badge status={rec.status} />}
-            {/* A fix check has its own line below; without one, the verification state keeps its badge. */}
-            {!rec.fixCheck && rec.verificationStatus && rec.verificationStatus !== 'none' && <Badge status={rec.verificationStatus} size="small" />}
-          </div>
-          {rec.summary && <p style={{ margin: 0, fontSize: 'var(--fs-md)', lineHeight: 1.5, color: 'var(--tx)' }}>{rec.summary}</p>}
-          {rec.fixCheck && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: rec.fixCheck.state === 'still_happening' ? 'var(--warn-tx)' : 'var(--tx2)' }}>{fixCheckLine(rec.fixCheck)}</p>}
-          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
-            Since {fmtDay(rec.createdAt)}
-            {rec.feedbackCount > 0 && <> &middot; {rec.feedbackCount} {plural(rec.feedbackCount, 'action')}</>}
+        <article key={rec.id} id={`rec-${rec.id}`} tabIndex={-1} className="wr-rec">
+          <div className="wr-rec__text">
+            {mark(rec)}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <strong style={{ color: 'var(--tx)' }}>{recTitle(rec.detector)}</strong>
+              <button type="button" onClick={() => onSelectAgent(rec.agentId)} className="wr-agent-link">{rec.agentId}</button>
+              {rec.status !== 'open' && <Badge status={rec.status} />}
+              {/* A fix check has its own line below; without one, the verification state keeps its badge. */}
+              {!rec.fixCheck && rec.verificationStatus && rec.verificationStatus !== 'none' && <Badge status={rec.verificationStatus} size="small" />}
+            </div>
+            {rec.summary && <p style={{ margin: 0, fontSize: 'var(--fs-md)', lineHeight: 1.5, color: 'var(--tx)' }}>{rec.summary}</p>}
+            {rec.fixCheck && <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: rec.fixCheck.state === 'still_happening' ? 'var(--warn-tx)' : 'var(--tx2)' }}>{fixCheckLine(rec.fixCheck)}</p>}
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
+              Since {fmtDay(rec.createdAt)}
+              {rec.feedbackCount > 0 && <> &middot; {rec.feedbackCount} {plural(rec.feedbackCount, 'action')}</>}
+            </div>
           </div>
           <RecActions
             open={rec.status === 'open'}
@@ -95,7 +114,7 @@ export function RecommendationsCard({
             onEvidence={() => onSelectEvidence(rec.currentFindingId ?? rec.id, rec.agentId, rec.id)}
             onFeedback={(f) => onFeedback(rec, f)}
           />
-          {feedbackError?.recId === rec.id && <div role="alert" style={{ fontSize: 'var(--fs-sm)', color: 'var(--bad)' }}>{feedbackError.message}</div>}
+          {feedbackError?.recId === rec.id && <div role="alert" className="wr-rec__full" style={{ fontSize: 'var(--fs-sm)', color: 'var(--bad)' }}>{feedbackError.message}</div>}
         </article>
       )) : (
         <div style={{ color: 'var(--tx3)', fontSize: 'var(--fs-sm)', textAlign: 'center', padding: 16 }}>
@@ -110,8 +129,12 @@ export function RecommendationsCard({
         </div>
       )}
 
-      {hasMore && (
-        <div style={{ textAlign: 'center', marginTop: 12 }}>
+      {!expanded && others.length > REC_COLLAPSED && (
+        <p style={{ margin: 0, padding: '10px 0' }}><button type="button" className="wr-link" onClick={onExpand}>Show more</button></p>
+      )}
+
+      {expanded && hasMore && (
+        <div style={{ textAlign: 'center', margin: '12px 0' }}>
           <button onClick={onMore} disabled={loading} style={{
             fontSize: 'var(--fs-sm)', fontWeight: 600, padding: '6px 16px', borderRadius: 6, cursor: loading ? 'wait' : 'pointer',
             background: 'var(--brand-dim)', color: 'var(--brand)', border: '1px solid var(--brand)', opacity: loading ? 0.5 : 1,
@@ -140,7 +163,7 @@ function RecActions({ open, hasFinding, busy, onEvidence, onFeedback }: { open: 
     dismiss: <Btn key="dismiss" label="Dismiss" onClick={() => onFeedback(recFeedback('dismiss'))} loading={busy} />,
   };
   return (
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+    <div className="wr-rec__acts">
       {recRowActions(open, more, hasFinding).map((a) => buttons[a])}
       {open && !hasFinding && <span style={{ alignSelf: 'center', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>{NO_FINDING_NOTE}</span>}
     </div>

@@ -15,7 +15,7 @@ import { canAct, stopCheck } from '@/lib/controls-guard';
 import { readDraft, writeDraft } from '@/lib/controls-draft';
 import { countsFromRuleActions, governanceCounts, RULE_CATEGORY, RULE_LABELS, ruleActionsByAgent, tallyFromRuleActions, tallyShort, tallyTotal, tallyWords } from '@/lib/governance';
 import { ruleOutcomes } from '@/lib/home-changes';
-import { ruleModeCounts, topCaught } from '@/lib/performance-overview';
+import { topCaught } from '@/lib/performance-overview';
 import { flagsNote, ruleActivityRow, timelineRow } from '@/lib/runs';
 import { ruleOf } from '@/lib/sandbox/rules';
 import { modeTagText } from '@/lib/vocab';
@@ -221,7 +221,6 @@ describe('an Old tool results rule in Enforce never reads as an alert or a block
     expect(sendsAlert(draftFrom(on))).toBe(false);
     expect(modeCount([on])).toBe('1 Enforce · 0 Watch');
     expect(leadCounts([on])).toMatchObject({ enforce: 1, alert: 0 });
-    expect(ruleModeCounts([on])).toBe('1 rule: 1 Enforce · 0 Watch · 0 Off');
     // A Repeated blocks rule that only alerts is Alert only, as any rule.
     const alerting = streak({ mode: 'enforce', response: 'notify' });
     expect(modeTagText(alerting)).toBe('Alert only');
@@ -307,7 +306,7 @@ describe('Performance › Rules', () => {
     const root = createRoot(el);
     const c = { ...governanceCounts([]), ...tallyFromRuleActions(counts({ trimmed: 40 })) };
     await act(async () => { root.render(h(RulesSummary, { counts: c, byRuleId: { t1: counts({ trimmed: 40 }) }, rules: [trim({ mode: 'enforce' })], unavailable: false })); });
-    expect(el.querySelector('.wr-rules-line')!.textContent).toBe('0 blocked · 0 would have acted · 40 trimmed · 1 rule: 1 Enforce · 0 Watch · 0 Off');
+    expect(el.querySelector('.wr-rules-line')!.textContent).toBe('0 blocked · 0 would have acted · 40 trimmed');
     root.unmount();
   });
 });

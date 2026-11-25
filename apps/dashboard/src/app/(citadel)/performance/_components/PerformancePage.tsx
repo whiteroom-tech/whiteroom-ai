@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { performanceIndex, performanceEvidence, performanceFeedback, performanceRecommendationGet, performanceFleetHourly, auditSummary, ruleActions as fetchRuleActions, performanceCostForecast, governanceList, isAuthError, feedbackErrorText } from '@/lib/whiteroom/client';
 import { addDays, clampSpan, dayStart, localDay, runsDays, runsWindow, spanLabel, viewInstants, windowKey, type RunsRange, type RunsView } from '@/lib/runs';
-import { legacyHoursBack, NEEDS_WINDOWS, PERF_MAX_DAYS, perfOldest, perfRangeParams, perfViewFromParams, windowUnsupported } from '@/lib/performance-range';
+import { legacyHoursBack, NEEDS_WINDOWS, PERF_MAX_DAYS, perfOldest, perfRangeParams, perfViewFromParams, windowUnsupported, rulesRunsHref } from '@/lib/performance-range';
 import { syncQueryParams } from '@/lib/url';
 import { agentTotalsFromBuckets, cacheSavedTotal, dailySavingsFromBuckets, savedByDay, savingsDollars, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
 import { LoadFailed, LoadingLine, RefreshFailed } from '@/components/citadel/States';
@@ -59,6 +59,9 @@ export function PerformancePage({ retentionDays }: {
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
   const [selectedRecId, setSelectedRecId] = useState<string | null>(null);
+  // Recommendations opened past its first rows: held here so it's still open after "See why" and back; another fleet starts closed.
+  const [recsExpanded, setRecsExpanded] = useState(false);
+  useEffect(() => { setRecsExpanded(false); }, [fleetId]);
   // The range, as on Runs: Today, 7 or 30 of the viewer's days, or a custom
   // from-day/to-day (at most 31 days, within what the plan keeps).
   const oldest = perfOldest(retentionDays);
@@ -418,6 +421,7 @@ export function PerformancePage({ retentionDays }: {
 
         {overviewShown && <IndexView data={indexData} hourlyData={hourlyData} auditFailed={auditFailed} govSavings={govSavings} govCounts={govCounts} savingsDays={savingsDays} agentIds={agentIds} rangeLabel={rangeLabel} fleetId={fleetId!} authKey={authKey}
           workingHour={extra.workingHour} rules={extra.rules} unknownRules={extra.unknownRules} byRuleId={extra.byRuleId} weekHourly={extra.weekHourly} usdByDay={extra.usdByDay} cacheSaved={extra.cacheSaved ?? null}
+          recsExpanded={recsExpanded} onRecsExpanded={setRecsExpanded} runsHref={rulesRunsHref(rangeView, dataMatches || !dataSpan ? null : dataSpan)}
           onSelectAgent={openAgent} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} feedbackError={feedbackError} />}
         {view === 'evidence' && evidenceData && <EvidenceView data={evidenceData} fleetId={fleetId} recommendationId={selectedRecId} authKey={authKey} />}
       </div>

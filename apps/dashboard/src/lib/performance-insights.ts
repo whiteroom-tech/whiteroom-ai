@@ -1,50 +1,12 @@
 /**
- * Performance › Agent health and Recommendations, side by side: the verdict,
- * the one-line rows and their detail, and the Recommendations list's labels.
+ * Performance › Agent health and Recommendations: the health card's one-line
+ * rows, what kinds of flags an agent's runs showed, and the Recommendations list's labels.
  * Pure, so the wording can be tested without rendering.
  */
 import { flaggedInWindow, UNUSUAL_SIGNALS } from '@/lib/runs';
 import { fmtCount, plural } from '@/lib/format';
 import type { RunSummary } from '@/lib/whiteroom/types';
-import { humanizeDetector, type DiagnosisSummary } from '@/lib/diagnosis/model';
-
-export interface VerdictInput {
-  /**
-   * Flagged runs in the last 7 days; null when unknown (loading, failed, or an
-   * engine without run flags, where the health check alone decides).
-   */
-  flaggedRuns: number | null;
-  /** The flag fetch hit its page cap: the count is a lower bound. */
-  flaggedAtLeast: boolean;
-  /** The flags are still loading or couldn't be loaded: unknown, so never "fine". */
-  flagsPending: boolean;
-  /** The health check is on but has no result yet (checking, failed, never run): never "fine". */
-  healthPending?: boolean;
-  /** Open health-check findings; null when the check is off or hasn't run. */
-  problems: number | null;
-  /** The agent with open findings, when exactly one has them. */
-  problemAgent: string | null;
-}
-
-export interface Verdict {
-  tone: 'ok' | 'warn';
-  title: string;
-}
-
-/**
- * Null when neither the flags nor the health check are known, or when the
- * flags are loading or failed and nothing is wrong elsewhere: never claim
- * "fine" on missing data.
- */
-export function insightsVerdict(i: VerdictInput): Verdict | null {
-  if (i.flaggedRuns === null && i.problems === null) return null;
-  const problems = i.problems ?? 0;
-  const flagged = i.flaggedRuns ?? 0;
-  if (problems > 0) return { tone: 'warn', title: i.problemAgent ? `${i.problemAgent} needs a look` : 'Some agents need a look' };
-  if (flagged > 0) return { tone: 'warn', title: `${fmtCount(flagged, i.flaggedAtLeast)} ${plural(flagged, 'run looked', 'runs looked', i.flaggedAtLeast)} unusual` };
-  if (i.flagsPending || i.healthPending) return null;
-  return { tone: 'ok', title: 'Your agents look fine' };
-}
+import { humanizeDetector } from '@/lib/diagnosis/model';
 
 /** The signals Unusual behaviour can't see yet, for its "Not tracked yet" line. */
 export function untrackedSignals(): string[] {
@@ -119,37 +81,18 @@ export function recFeedback(action: Exclude<RecRowAction, 'evidence' | 'toggle'>
 
 // -- Agent health rows ----------------------------------------------------------
 
-/** One folded row of the Agent health card. `muted`: loading or unavailable. */
+/** One line of the Agent health card. `muted`: loading or unavailable. */
 export interface HealthRow {
   tone: 'ok' | 'warn' | 'muted';
   text: string;
 }
 
-/** A fold-out row is open by the person's choice once they've made one, else by its default (open when it has news). */
-export function rowOpen(chosen: boolean | null, byDefault: boolean): boolean {
-  return chosen ?? byDefault;
-}
-
-/**
- * The choice after a toggle event. Only a change from what was shown counts as
- * the person's choice: the event also fires when the default flips the row.
- */
-export function toggleChoice(chosen: boolean | null, shown: boolean, nowOpen: boolean): boolean | null {
-  return nowOpen === shown ? chosen : nowOpen;
-}
-
-/** Unusual behaviour's row; null on engines without run flags (the row hides). */
-export function unusualRow(f: { count: number | null; atLeast: boolean; failed: boolean; loading: boolean }): HealthRow | null {
-  if (f.loading) return { tone: 'muted', text: 'Loading\u2026' };
+/** The flagged-runs line, once that read has settled; null on engines without run flags (the line hides). */
+export function unusualRow(f: { count: number | null; atLeast: boolean; failed: boolean }): HealthRow | null {
   if (f.failed) return { tone: 'muted', text: 'Couldn\u2019t load flagged runs. Reload to try again.' };
   if (f.count === null) return null;
   if (f.count === 0) return { tone: 'ok', text: 'Nothing unusual in the last 7 days' };
   return { tone: 'warn', text: `${fmtCount(f.count, f.atLeast)} ${plural(f.count, 'run', 'runs', f.atLeast)} flagged in the last 7 days` };
-}
-
-/** The health check's row: its summary line (counts only; see diagnosisSummary). */
-export function healthRow(summary: DiagnosisSummary | null): HealthRow | null {
-  return summary ? { tone: summary.tone, text: summary.text } : null;
 }
 
 /** The health check's row before there's a stored result: checking, failed, or not yet. Null when the check is off. */

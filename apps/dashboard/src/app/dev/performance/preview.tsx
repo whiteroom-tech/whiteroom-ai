@@ -10,13 +10,14 @@ import { TokensCompare } from '@/components/performance/SavingsPanels';
 import { fmtCost } from '@/lib/format';
 import type { GovernanceCounts } from '@/lib/governance';
 import type { DaySavings } from '@/lib/analytics-metrics';
-import { countTrend, latencyTrend, pctChange, priorLabel, pricesFrom, rangeContextCard, savedCaption, trendText } from '@/lib/performance-overview';
+import { countTrend, latencyTrend, pctChange, priorLabel, pricesFrom, rangeContextCard, trendText } from '@/lib/performance-overview';
 import { RangeDates, RangeMenu } from '@/components/citadel/RangePicker';
 import { addDays, clampSpan, localDay, runsDays, runsWindow, spanLabel, viewInstants, type RunsView } from '@/lib/runs';
 import { PERF_MAX_DAYS, perfOldest } from '@/lib/performance-range';
 import { fmtLatency, SpendByModel } from '@/app/(citadel)/performance/_components/perf-utils';
 import { useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
-import { AgentHealth } from '@/components/performance/AgentHealth';
+import { AgentHealthHeader, HealthByAgent, HealthChecks } from '@/components/performance/AgentHealth';
+import type { DiagnosisState } from '@/lib/diagnosis/model';
 import { statusLine } from '@/lib/diagnosis/model';
 import type { AgentBudgetForecast, DiagnosisFinding, FleetDiagnosis, GovernanceRule, PerformanceModelSummary, RecommendationDetail, RunSummary } from '@/lib/whiteroom/types';
 import { RecommendationsCard } from '@/app/(citadel)/performance/_components/Recommendations';
@@ -46,22 +47,29 @@ const report = (agentId: string, findings: DiagnosisFinding[]): FleetDiagnosis['
     { detector: 'review_model_change', code: 'few_baseline_calls', reason: 'Needs 20 completed calls in days 8–28; has 4' },
   ],
 });
-const HANDOVER_FINDING = {
-  recommendationId: 'pr_sample', findingId: 'pf_sample', findingVersion: 1, detector: 'review_handover_churn', detectorVersion: 1, status: 'open',
+const sampleFinding = (detector: string, recommendationId: string) => ({
+  recommendationId, findingId: `pf_${recommendationId}`, findingVersion: 1, detector, detectorVersion: 1, status: 'open',
   measures: {}, estWastedTokens: null, estWastedCostMicros: null, evidenceCallIds: [], coverage: 'complete', limitations: null, suggestedAction: null,
-} as unknown as DiagnosisFinding;
+}) as unknown as DiagnosisFinding;
+// Each opens its own recommendation below; the tools-changed one is past the first three rows.
+const PROBLEM_FINDINGS = [sampleFinding('review_handover_churn', 'pr_handover'), sampleFinding('review_tool_loops', 'pr_loops'), sampleFinding('review_tool_errors', 'pr_errors'), sampleFinding('review_tool_change', 'pr_toolchange')];
 const diagnosis = (findings: DiagnosisFinding[]): FleetDiagnosis => ({
   checkedAt: new Date(Date.now() - 22 * 60_000).toISOString(), source: 'background', reports: ['code-reviewer', 'contract-summarizer', 'invoice-reconciler', 'lead-agent', 'market-researcher', 'ops-scheduler', 'support-triage'].map((a) => report(a, a === 'lead-agent' ? findings : [])),
   waiting: [], skipped: [], truncated: false, readyAgents: 7, busiest: { agentId: 'lead-agent', calls7d: 180 }, minCalls: 50,
 });
 const QUIET = diagnosis([]);
-const PROBLEM = diagnosis([HANDOVER_FINDING]);
+const PROBLEM = diagnosis(PROBLEM_FINDINGS);
+// The check is on but has stored nothing yet: one agent ready, one still short of calls.
+const NO_RESULT: FleetDiagnosis = { ...diagnosis([]), checkedAt: null, reports: [], waiting: [{ agentId: 'lead-agent', calls7d: 31 }], readyAgents: 1 };
+// A large fleet: 25 agents with a problem each (ten rows show, then "Show all 25").
+const MANY: FleetDiagnosis = { ...diagnosis([]), reports: Array.from({ length: 25 }, (_, i) => report(`claims-agent-${String(i + 1).padStart(2, '0')}`, [sampleFinding(i % 2 ? 'review_tool_errors' : 'review_tool_loops', `pr_many_${i}`)])), readyAgents: 25 };
 
-/** Agent health as on Performance, from sample flags and health-check results. */
-function Insights({ runs, health }: { runs: RunSummary[]; health: FleetDiagnosis }) {
-  const flagged = useFlaggedRuns('acme-claims-prod', undefined, runs);
-  return <AgentHealth flagged={flagged} diagnosis={health} line={statusLine(health, 'idle', Date.now(), false)} onCheck={() => {}} onReview={() => {}} onReport={async () => 'Preview: no report is made.'} />;
-}
+/** Agent health's own states, beside the sample week's. */
+type HealthSample = 'week' | 'loading' | 'no-result' | 'off' | 'failed' | 'truncated' | 'many';
+const HEALTH_SAMPLES: Array<{ value: HealthSample; label: string }> = [
+  { value: 'week', label: 'As the week' }, { value: 'loading', label: 'Loading' }, { value: 'no-result', label: 'No result yet' }, { value: 'off', label: 'Check off' },
+  { value: 'failed', label: 'Check failed' }, { value: 'truncated', label: '1,000+ flags' }, { value: 'many', label: '25 agents' },
+];
 
 // Recommendations: an older engine one, plus the health-check finding in a problem week.
 const rec = (p: Partial<RecommendationDetail>): RecommendationDetail => ({
@@ -123,20 +131,38 @@ const RECS_PROBLEM = [
   }),
 ];
 
-/** The Recommendations card as on Performance, with sample rows; buttons do nothing here. */
-function Recs({ recs }: { recs: RecommendationDetail[] }) {
+/**
+ * Agent health as on Performance, from sample flags, health-check results and
+ * recommendations. A problem opens its recommendation; the other buttons do nothing here.
+ */
+function HealthSection({ runs, health, recs, as }: { runs: RunSummary[]; health: FleetDiagnosis; recs: RecommendationDetail[]; as: HealthSample }) {
+  const base = useFlaggedRuns('acme-claims-prod', undefined, runs);
+  const flagged = { ...base, truncated: as === 'truncated' };
+  const state: DiagnosisState = as === 'off' ? 'unavailable' : as === 'failed' ? 'failed' : 'ready';
+  const data = state !== 'ready' ? null : as === 'no-result' ? NO_RESULT : as === 'many' ? MANY : health;
+  const line = data ? statusLine(data, 'idle', Date.now(), false) : null;
   const [status, setStatus] = useState('open');
   const [showStatuses, setShowStatuses] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [pinned, setPinned] = useState<RecommendationDetail | null>(null);
   const shown = status === 'all' ? recs : recs.filter((r) => r.status === status);
   return (
-    <RecommendationsCard
-      recs={shown} total={shown.length} status={status} onStatus={setStatus}
-      showStatuses={showStatuses} onShowStatuses={() => { setShowStatuses(true); setStatus('all'); }}
-      agentFilter="" onAgentFilter={() => {}} showAgentFilter={false} filtered={false} hasCalls
-      loading={false} error={null} notice={null} hasMore={false} onMore={() => {}}
-      onSelectAgent={() => {}} onSelectEvidence={() => {}} onFeedback={() => {}} onDiagnosisFeedback={async () => true}
-      feedbackLoading={null} feedbackError={null}
-    />
+    <section aria-labelledby="agent-health-heading" className="wr-perf-health">
+      <AgentHealthHeader line={line} onCheck={() => {}} onReport={async () => 'Preview: no report is made.'} />
+      {as === 'loading'
+        ? <div className="wr-pcard wr-hba"><p className="wr-cap" style={{ margin: 0, padding: '16px 20px' }}>Loading agent health…</p></div>
+        : <HealthByAgent flagged={flagged} diagnosis={data} state={state} line={line} onOpenRec={(id) => setPinned(recs.find((r) => r.id === id) ?? null)} onSelectAgent={() => {}} />}
+      <RecommendationsCard
+        recs={shown} total={shown.length} status={status} onStatus={(v) => { setStatus(v); setPinned(null); }}
+        showStatuses={showStatuses} onShowStatuses={() => { setShowStatuses(true); setStatus('all'); }}
+        agentFilter="" onAgentFilter={() => {}} showAgentFilter={false} filtered={false} hasCalls
+        loading={false} error={null} notice={null} hasMore={false} onMore={() => {}}
+        expanded={expanded || status !== 'open'} onExpand={() => setExpanded(true)} pinned={pinned}
+        onSelectAgent={() => {}} onSelectEvidence={() => {}} onFeedback={() => {}} onDiagnosisFeedback={async () => true}
+        feedbackLoading={null} feedbackError={null}
+      />
+      {as !== 'loading' && state === 'ready' && <HealthChecks diagnosis={data} />}
+    </section>
   );
 }
 
@@ -186,6 +212,7 @@ const CARDS = { spendMicros: 3_170_000, calls: 479, savedMicros: 2_340_000, save
 export function PerformancePreview() {
   // One sample at a time, so each card shows once, as on the real page.
   const [sample, setSample] = useState<Sample>('quiet');
+  const [health, setHealth] = useState<HealthSample>('week');
   const empty = sample === 'empty';
   const failed = sample === 'problem' ? 6 : 0;
   // The range menu, as on the page: it changes the labels; the sample figures stay.
@@ -202,6 +229,7 @@ export function PerformancePreview() {
     <AppShell>
       <PageHeader title="Performance" fleetId="acme-claims-prod" badge={<LiveStatus at={Date.now()} />}>
         <SegmentedControl<Sample> label="Sample week" value={sample} onChange={setSample} options={[{ value: 'quiet', label: 'Quiet week' }, { value: 'problem', label: 'Has a problem', dot: 'warn' }, { value: 'empty', label: 'No data' }]} />
+        <SegmentedControl<HealthSample> label="Agent health sample" value={health} onChange={setHealth} options={HEALTH_SAMPLES} />
         <RangeMenu value={range.range} onChange={(r) => { const d = runsDays('30d'); setRange(r === 'custom' ? { range: r, day: null, from: d.fromDay, to: d.toDay } : { range: r, day: null }); }} />
       </PageHeader>
       {range.range === 'custom' && (
@@ -210,24 +238,26 @@ export function PerformancePreview() {
         </div>
       )}
       <div className="wr-page-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24 }}>
-        {/* The same order as the page: Needs you, Cost, Rules, Reliability, Recommendations, closing line. */}
-        <p className="wr-perf-lead">
-          <span className="wr-lbl">Needs you</span>{' '}
-          {empty
-            ? <span className="wr-cap">Nothing needs you right now.</span>
-            : <button type="button" className="wr-btn wr-btn--secondary wr-btn--h28">{sample === 'problem' ? 2 : 1} {sample === 'problem' ? 'recommendations' : 'recommendation'} ↓</button>}
-          {sample === 'problem' && <> <button type="button" className="wr-btn wr-btn--secondary wr-btn--h28">{FLAGGED.length} {FLAGGED.length === 1 ? 'run' : 'runs'} flagged ↓</button></>}
-        </p>
+        {/* The same order as the page: the five tiles, Cost, Agent health with Recommendations, Rules, closing line. */}
+        {!empty && (
+          <section aria-label="Overview">
+            <p className="wr-cap" style={{ margin: '0 0 8px', textAlign: 'right' }}>{label}</p>
+            <div className="wr-perf-stripbox">
+              <div className="wr-perf-strip wr-perf-strip--5">
+                <StatCard variant="card" label="Spend" hint={HELP.spend} value={fmtCost(CARDS.spendMicros)} sub={trendText(pctChange(CARDS.spendMicros, CARDS.prevSpendMicros), prior)} />
+                <StatCard variant="card" label="Saved by WhiteRoom" hint={`${HELP.savings} ${HELP.lessInputSent}`} value={<span style={{ color: 'var(--ok)' }}>{fmtCost(CARDS.savedMicros)}</span>} sub={`${rangeContextCard(CARDS.savedTokens, CARDS.usedTokens).value} less input sent · estimated`} />
+                <StatCard variant="card" label="Model calls" hint={HELP.modelCalls} value={String(CARDS.calls)} sub={countTrend(CARDS.calls, CARDS.prevCalls, prior)} />
+                <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value={String(failed)} sub={`of ${CARDS.calls} calls · ${failed ? ((failed / CARDS.calls) * 100).toFixed(1) : 0}%`} />
+                <StatCard variant="card" label="Typical response" hint={HELP.typicalResponse} value={fmtLatency(CARDS.latencyMs)} sub={(() => { const t = latencyTrend(CARDS.latencyMs, CARDS.prevLatencyMs, prior)!; return <span style={{ color: 'var(--ok)' }}>{t.text}</span>; })()} />
+              </div>
+            </div>
+          </section>
+        )}
+        {!empty && <hr className="wr-perf-rule" />}
         <section aria-labelledby="pv-cost">
           <SectionHeader id="pv-cost" title="Cost" sub="What your agents spent, and what WhiteRoom saved." meta={label} />
-          {!empty && (
-            <div className="wr-perf-strip wr-perf-strip--3" style={{ marginBottom: 16 }}>
-              <StatCard variant="card" label="Spend" hint={HELP.spend} value={fmtCost(CARDS.spendMicros)} sub={trendText(pctChange(CARDS.spendMicros, CARDS.prevSpendMicros), prior)} />
-              <StatCard variant="card" label="Saved by WhiteRoom" hint={HELP.savings} value={<span style={{ color: 'var(--ok)' }}>{fmtCost(CARDS.savedMicros)}</span>} sub={savedCaption(CARDS.savedTokens, 0)} />
-              <StatCard variant="card" label="Less input sent" hint={HELP.lessInputSent} value={<span style={{ color: 'var(--ok)' }}>{rangeContextCard(CARDS.savedTokens, CARDS.usedTokens).value}</span>} sub={rangeContextCard(CARDS.savedTokens, CARDS.usedTokens).sub} />
-            </div>
-          )}
-          <TokensCompare key={`tokens-${sample}`} days={empty ? week([[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]) : sampleWeek()} usdByDay={usdByDay(sampleWeek())} defaultOpen={sample === 'problem'} />
+          <TokensCompare key={`tokens-${sample}`} days={empty ? week([[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]) : sampleWeek()} usdByDay={usdByDay(sampleWeek())} defaultOpen={sample === 'problem'}
+            note={sample === 'problem' ? 'Spend: some calls couldn’t be priced · prices 9 days old' : undefined} />
           {!empty && <SpendByModel models={MODELS} pricesNote={pricesFrom('2026-10-19')} trend={`spend per call ↓21% vs ${prior}`} stale={sample === 'problem' ? 'They are 9 days old.' : null} />}
           {!empty && <CostPredictionSection key={`pred-${sample}`} fleetId="acme-claims-prod" agentIds={null} fleetHourly={{ usdPerHour: CARDS.perHourMicros / 1_000_000, lookbackHours: 336 }} api={previewPredictionApi(sample === 'problem')} />}
           {sample === 'problem' && <p className="wr-cap" style={{ margin: '0 0 8px', color: 'var(--warn-tx)' }}>12 calls {label} came from agents without a name: in these totals, but no agent’s.</p>}
@@ -235,23 +265,13 @@ export function PerformancePreview() {
         {!empty && (
           <>
             <hr className="wr-perf-rule" />
+            {sample === 'quiet'
+              ? <HealthSection key={`quiet-${health}`} runs={health === 'truncated' ? FLAGGED : []} health={QUIET} recs={RECS_QUIET} as={health} />
+              : <HealthSection key={`problem-${health}`} runs={FLAGGED} health={PROBLEM} recs={RECS_PROBLEM} as={health} />}
+            <hr className="wr-perf-rule" />
             <section aria-labelledby="pv-control">
-              <SectionHeader id="pv-control" title="Rules" sub="What your rules caught." meta={<>{label} · <a href="#" className="wr-link">Manage in Controls →</a></>} />
+              <SectionHeader id="pv-control" title="Rules" sub="What your rules caught." meta={<>{label} · <a href="#" className="wr-link">See in Runs →</a> · <a href="#" className="wr-link">Manage in Controls →</a></>} />
               <RulesSummary counts={COUNTS} byRuleId={sample === 'quiet' ? BY_RULE_ID : undefined} rules={RULES} unknownRules={UNKNOWN_RULES} unavailable={false} />
-            </section>
-            <hr className="wr-perf-rule" />
-            <section aria-labelledby="pv-performance">
-              <SectionHeader id="pv-performance" title="Reliability" sub="How well your agents worked." meta={label} />
-              <div className="wr-perf-strip wr-perf-strip--3" style={{ marginBottom: 16 }}>
-                <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value={String(failed)} sub={`of ${CARDS.calls} calls · ${failed ? ((failed / CARDS.calls) * 100).toFixed(1) : 0}%`} />
-                <StatCard variant="card" label="Typical response" hint={HELP.typicalResponse} value={fmtLatency(CARDS.latencyMs)} sub={(() => { const t = latencyTrend(CARDS.latencyMs, CARDS.prevLatencyMs, prior)!; return <span style={{ color: 'var(--ok)' }}>{t.text}</span>; })()} />
-                <StatCard variant="card" label="Model calls" hint={HELP.modelCalls} value={String(CARDS.calls)} sub={countTrend(CARDS.calls, CARDS.prevCalls, prior)} />
-              </div>
-              {sample === 'quiet' ? <Insights key="quiet" runs={[]} health={QUIET} /> : <Insights key="problem" runs={FLAGGED} health={PROBLEM} />}
-            </section>
-            <hr className="wr-perf-rule" />
-            <section aria-label="Recommendations">
-              {sample === 'quiet' ? <Recs key="quiet-recs" recs={RECS_QUIET} /> : <Recs key="problem-recs" recs={RECS_PROBLEM} />}
             </section>
           </>
         )}

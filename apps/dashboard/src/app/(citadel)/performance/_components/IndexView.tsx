@@ -1,11 +1,11 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { performanceRecommendationsList } from '@/lib/whiteroom/client';
+import { performanceRecommendationGet, performanceRecommendationsList } from '@/lib/whiteroom/client';
 import Link from 'next/link';
 import { ROUTES } from '@/lib/routes';
-import { flaggedRunCount, useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
-import { AgentHealth } from '@/components/performance/AgentHealth';
+import { useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
+import { AgentHealthHeader, HealthByAgent, HealthChecks } from '@/components/performance/AgentHealth';
 import { downloadHealthReport } from '@/components/performance/HealthReport';
 import { DEFAULT_REC_STATUS, showRecAgentFilter } from '@/lib/performance-insights';
 import { cacheFigures, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
@@ -34,11 +34,15 @@ export type FeedbackResult = 'done' | 'closed' | 'failed';
 /** A card's sub-line when its numbers couldn't be loaded: unknown, never zero. */
 const UNAVAILABLE = 'couldn’t load, retrying on the next refresh';
 
+/** A health-table problem's recommendation couldn't be opened: the list shows that agent's instead. */
+export const REC_OPEN_FAILED = 'Couldn’t open that recommendation. Showing this agent’s open ones.';
+
 /** Recommendations per page, and how long the agent filter waits after typing. */
 const REC_PAGE_SIZE = 15;
 const REC_FILTER_DEBOUNCE_MS = 300;
 
 export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, govSavings, govCounts, savingsDays, agentIds, rangeLabel, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError,
+  recsExpanded = false, onRecsExpanded, runsHref = `${ROUTES.runs}?show=rules`,
   workingHour = null, rules = null, unknownRules, byRuleId, usdByDay = null, cacheSaved = null, predictionApi }: {
   data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null;
   /** The last 7 days by hour, for By day's input per day; null when it couldn't be read. */
@@ -57,6 +61,11 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
   onFeedback: (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string, recover?: boolean) => Promise<FeedbackResult>;
   feedbackLoading: string | null;
   feedbackError: { recId: string; message: string } | null;
+  /** Recommendations shows every loaded row. Held by the page, so it survives a visit to "See why". */
+  recsExpanded?: boolean;
+  onRecsExpanded?: (open: boolean) => void;
+  /** Runs, showing rule activity for the range these figures are for. */
+  runsHref?: string;
   /** Hourly cost's figure; null when it couldn't be read. */
   workingHour?: WorkingHourRate | null;
   /** The fleet's rules, for the Control section; null when unknown. */
@@ -85,13 +94,6 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
   const [recTotal, setRecTotal] = useState(0);
   const [recLoading, setRecLoading] = useState(false);
   const [recError, setRecError] = useState<string | null>(null);
-  // "Needs you": the open count from the last unfiltered Open read; null until there is one, so
-  // it never says nothing needs you before it knows, nor blinks while the list reloads.
-  const [openCount, setOpenCount] = useState<number | null>(null);
-  // Every open-count read takes a number; only the newest one's answer is kept.
-  const openReq = useRef(0);
-  // Another fleet: its count isn't known yet, and a read still out for the last one is dropped.
-  useEffect(() => { openReq.current++; setOpenCount(null); }, [fleetId]);
   // Monotonic request id: a response only lands if it is still the newest
   // request, so an out-of-order reply can't show the wrong list or store a
   // stale cursor for "Load more".
@@ -106,9 +108,6 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
   const fetchRecs = useCallback(async (cursor?: string) => {
     const req = ++recReq.current;
     const stale = () => recReq.current !== req;
-    // An unfiltered first page of Open is what "Needs you" counts: its answer, or a failure, is the newest count.
-    const countsOpen = recStatus === 'open' && !recAgentQuery.trim() && !cursor;
-    const setOpen = (n: number | null) => { if (countsOpen) { openReq.current++; setOpenCount(n); } };
     setRecLoading(true);
     try {
       const opts: { status?: string; agentId?: string; cursor?: string; pageSize?: number; includeSummaries?: boolean } = { pageSize: REC_PAGE_SIZE, includeSummaries: true };
@@ -117,15 +116,13 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
       if (cursor) opts.cursor = cursor;
       const res = await performanceRecommendationsList(fleetId, opts, authKey);
       if (stale()) return;
-      // A failed read hides "Needs you" rather than leave a count that may be wrong.
-      if (res.error) { setRecError(res.error); setOpen(null); return; }
+      if (res.error) { setRecError(res.error); return; }
       setRecError(null);
       setRecs(cursor ? prev => [...prev, ...res.recommendations] : res.recommendations);
       setRecCursor(res.cursor);
       setRecTotal(res.total);
-      setOpen(res.total);
     } catch {
-      if (!stale()) { setRecError('Failed to load recommendations.'); setOpen(null); }
+      if (!stale()) setRecError('Failed to load recommendations.');
     } finally {
       if (!stale()) setRecLoading(false);
     }
@@ -138,8 +135,33 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
   const diagnosisLine = statusLine(diagnosis.data, diagnosis.run, Date.now(), diagnosis.justRan);
   // Card-level, so it survives the row leaving the Open filter.
   const [diagnosisNotice, setDiagnosisNotice] = useState<string | null>(null);
-  // The notice is about the last action; changing what's listed moves on from it.
-  useEffect(() => { setDiagnosisNotice(null); }, [recStatus, recAgentQuery]);
+  // The recommendation a health-table problem opened: first in the list until the list changes.
+  const [pinned, setPinned] = useState<RecommendationDetail | null>(null);
+  // Said when that recommendation couldn't be opened and the list shows the agent's instead.
+  const [pinNotice, setPinNotice] = useState<string | null>(null);
+  // That fallback changes the list itself: its notice outlives the change it caused.
+  const openFailed = useRef(false);
+  // Only the newest open's answer lands; a fleet change drops one in flight.
+  const pinReq = useRef(0);
+  useEffect(() => { pinReq.current++; setPinned(null); setPinNotice(null); }, [fleetId]);
+  // The notice is about the last action, and the pinned row about the last problem opened; changing what's listed moves on from both.
+  const listed = useRef({ recStatus, recAgentQuery });
+  useEffect(() => {
+    if (listed.current.recStatus === recStatus && listed.current.recAgentQuery === recAgentQuery) return;
+    listed.current = { recStatus, recAgentQuery };
+    setDiagnosisNotice(null);
+    // The agent filter set by a failed open keeps its own notice.
+    if (!openFailed.current) setPinNotice(null);
+    openFailed.current = false;
+    setPinned(null);
+  }, [recStatus, recAgentQuery]);
+  // Once the pinned row is on the page, go to it: the problem was clicked a section above.
+  useEffect(() => {
+    if (!pinned) return;
+    const row = document.getElementById(`rec-${pinned.id}`);
+    row?.scrollIntoView({ block: 'start' });
+    row?.focus({ preventScroll: true });
+  }, [pinned]);
 
   // The list is owned here, not by the parent's index refresh, so reload it
   // once feedback is confirmed — otherwise a dismissed or snoozed item keeps
@@ -147,14 +169,9 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
   const submitFeedback = async (recId: string, findingVersion: string, action: 'dismiss' | 'snooze' | 'implemented', reason?: string, recover?: boolean): Promise<FeedbackResult> => {
     const result = await onFeedback(recId, findingVersion, action, reason, recover);
     if (result !== 'failed') {
+      // The pinned row was read before this: the reloaded list has its new state.
+      setPinned(null);
       void fetchRecs();
-      // Another list on screen (past ones, or filtered): "Needs you" rereads its own count.
-      if (recStatus !== 'open' || recAgentQuery.trim()) {
-        const req = ++openReq.current;
-        // A failed read hides the line rather than leave a count that may be wrong.
-        const land = (n: number | null) => { if (openReq.current === req) setOpenCount(n); };
-        void performanceRecommendationsList(fleetId, { status: 'open', pageSize: 1 }, authKey).then((r) => land(r.error ? null : r.total), () => land(null));
-      }
     }
     return result;
   };
@@ -171,17 +188,32 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
   };
   const runCheck = async () => {
     setDiagnosisNotice(null);
-    if (await diagnosis.checkNow()) void fetchRecs();
+    // A new check can change any finding: a row read before it would be out of date.
+    if (await diagnosis.checkNow()) { setPinned(null); void fetchRecs(); }
   };
   const flagged = useFlaggedRuns(fleetId, authKey);
-  const seeFindings = () => {
+  /**
+   * A problem in the health table opens its own recommendation: the loaded row
+   * if the list has it, else read by id (it may be past the first page, or no
+   * longer open). It shows first. If it can't be read, the list shows that
+   * agent's open ones and says so.
+   */
+  const openRec = async (recommendationId: string, agentId: string) => {
+    const req = ++pinReq.current;
     setDiagnosisNotice(null);
+    setPinNotice(null);
+    let rec = recs.find((r) => r.id === recommendationId) ?? null;
+    if (!rec) {
+      try { rec = (await performanceRecommendationGet(fleetId, recommendationId, authKey)).recommendation; } catch { rec = null; }
+      if (pinReq.current !== req) return;
+    }
+    if (rec) { setPinned({ ...rec }); return; }
+    openFailed.current = recStatus !== 'open' || recAgentQuery !== agentId;
+    setPinned(null);
     setRecStatus('open');
-    // An agent filter could hide the very findings the strip points to.
-    setRecAgent('');
-    setRecAgentQuery('');
-    // An instant jump, straight away: the filter only changes rows inside the
-    // card, and a smooth scroll can be cancelled mid-way and leave the page put.
+    setRecAgent(agentId);
+    setRecAgentQuery(agentId);
+    setPinNotice(REC_OPEN_FAILED);
     document.getElementById('recommendations')?.scrollIntoView({ block: 'start' });
     document.getElementById('recommendations-heading')?.focus({ preventScroll: true });
   };
@@ -212,13 +244,6 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
   const callsTrend = countTrend(s.totalCalls, prev?.totalCalls, prior);
   const spendTrend = trendText(pctChange(s.totalCost, prev?.totalCost), prior);
   const speed = latencyTrend(s.avgLatencyMs, prev?.avgLatencyMs, prior);
-  // Flagged runs: unknown while loading or after a failed read; an engine without run flags flags none.
-  const flaggedKnown = !flagged.loading && !flagged.failed;
-  const flaggedRuns = flaggedRunCount(flagged) ?? 0;
-  // Each count shows once known; "nothing needs you" only when both are known and zero.
-  const recsShown = openCount ?? 0;
-  const needs = recsShown > 0 || flaggedRuns > 0 ? { recs: recsShown, flagged: flaggedRuns }
-    : openCount === 0 && flaggedKnown ? { recs: 0, flagged: 0 } : null;
   const spendNotes = [gapLine, data.priceInfo.stale ? `prices ${data.priceInfo.ageDays} days old` : ''].filter(Boolean);
   const unnamed = s.unnamedCalls ?? 0;
   // Savings are input (the context is what gets smaller), so they compare with the input the
@@ -233,61 +258,53 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
     const input = inputByLocalDay(weekHourly.hourly);
     return savingsDays.map((d) => ({ ...d, used: input.get(d.day) ?? 0 }));
   }, [savingsDays, weekHourly]);
-  const toHealth = () => {
-    document.getElementById('agent-health-heading')?.scrollIntoView({ block: 'start' });
-    document.getElementById('agent-health-heading')?.focus({ preventScroll: true });
-  };
-  const toRecommendations = () => {
-    document.getElementById('recommendations')?.scrollIntoView({ block: 'start' });
-    document.getElementById('recommendations-heading')?.focus({ preventScroll: true });
-  };
+  // Agent health waits for both of its reads, so the table doesn't fill in and reorder in two steps.
+  const healthSettled = diagnosis.state !== 'pending' && !flagged.loading;
+  const healthKnown = diagnosis.state === 'ready' || diagnosis.state === 'failed' || flagged.runs !== null || flagged.failed;
+  // The list's own copy when it holds the pinned row: a reload may have changed it since it was opened.
+  const pinnedRow = pinned ? recs.find((r) => r.id === pinned.id) ?? pinned : null;
+  const expanded = recsExpanded || recStatus !== 'open' || !!recAgentQuery.trim();
+  const savedSub = context.value !== '—'
+    ? `${context.value} less input sent · estimated${savings.cacheMicros > 0 ? ' · includes cache reads' : ''}`
+    : savedCaption(savings.govTokensSaved, savings.cacheMicros);
 
   return (
     <>
-      {/* What needs you, always in the same place: open recommendations and flagged runs. It says
-          nothing needs you only once both are known; the figures are in the sections below. */}
-      {needs && (
-        <p className="wr-perf-lead">
-          <span className="wr-lbl">Needs you</span>{' '}
-          {needs.recs === 0 && needs.flagged === 0 && <span className="wr-cap">Nothing needs you right now.</span>}
-          {needs.recs > 0 && <button type="button" className="wr-btn wr-btn--secondary wr-btn--h28" onClick={toRecommendations}>{needs.recs} {needs.recs === 1 ? 'recommendation' : 'recommendations'} ↓</button>}
-          {needs.recs > 0 && needs.flagged > 0 && ' '}
-          {needs.flagged > 0 && <button type="button" className="wr-btn wr-btn--secondary wr-btn--h28" onClick={toHealth}>{needs.flagged} {needs.flagged === 1 ? 'run' : 'runs'} flagged ↓</button>}
-        </p>
-      )}
+      <section aria-label="Overview">
+        <p className="wr-cap" style={{ margin: '0 0 8px', textAlign: 'right' }}>{rangeLabel}</p>
+        {/* Cost first: what was spent and what WhiteRoom saved lead the page. */}
+        <div className="wr-perf-stripbox">
+          <div className="wr-perf-strip wr-perf-strip--5">
+            <StatCard
+              variant="card"
+              label="Spend"
+              hint={HELP.spend}
+              // "+", as on Runs: some calls are unpriced or only bounded, so this is a lower bound.
+              value={`${fmtCost(s.totalCost)}${partialMark(spendPartial)}`}
+              sub={spendTrend ?? (!prev ? rangeLabel : s.totalCost > 0 ? `nothing spent in the ${prior}` : `none in the ${prior} either`)}
+            />
+            <StatCard
+              variant="card"
+              label="Saved by WhiteRoom"
+              hint={`${HELP.savings} ${HELP.lessInputSent}`}
+              value={auditFailed ? '—' : <span style={{ color: savings.totalMicros > 0 ? 'var(--ok)' : undefined }}>{fmtCost(savings.totalMicros)}{partialMark(savings.partial)}</span>}
+              sub={auditFailed ? UNAVAILABLE : savedSub}
+            />
+            <StatCard variant="card" label="Model calls" hint={HELP.modelCalls} value={fmtCount(s.totalCalls)} sub={callsTrend ?? rangeLabel} />
+            <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value={fmtCount(failedCalls)} sub={`of ${fmtCount(s.totalCalls)} ${s.totalCalls === 1 ? 'call' : 'calls'} · ${fmtPctShort(s.errorRate)}`} />
+            <StatCard variant="card" label="Typical response" hint={HELP.typicalResponse} value={fmtLatency(s.avgLatencyMs)}
+              sub={speed ? <span style={{ color: speed.tone === 'ok' ? 'var(--ok)' : speed.tone === 'warn' ? 'var(--warn-tx)' : undefined }}>{speed.text}</span> : 'median time per call'} />
+          </div>
+        </div>
+      </section>
+
+      <hr className="wr-perf-rule" />
 
       <section aria-labelledby="perf-cost">
         <SectionHeader id="perf-cost" title="Cost" sub="What your agents spent, and what WhiteRoom saved." meta={rangeLabel} />
-        {/* Hourly cost is per agent, so it lives in Cost prediction; the fleet figure is that card's folded note. */}
-        <div className="wr-perf-strip wr-perf-strip--3" style={{ marginBottom: 16 }}>
-          <StatCard
-            variant="card"
-            label="Spend"
-            hint={HELP.spend}
-            // "+", as on Runs: some calls are unpriced or only bounded, so this is a lower bound.
-            value={`${fmtCost(s.totalCost)}${partialMark(spendPartial)}`}
-            sub={<>
-              {spendTrend ?? (!prev ? rangeLabel : s.totalCost > 0 ? `nothing spent in the ${prior}` : `none in the ${prior} either`)}
-              {spendNotes.length > 0 && <span style={{ display: 'block', marginTop: 8, color: 'var(--warn-tx)' }}>{spendNotes.join(' · ')}</span>}
-            </>}
-          />
-          <StatCard
-            variant="card"
-            label="Saved by WhiteRoom"
-            hint={HELP.savings}
-            value={auditFailed ? '—' : <span style={{ color: savings.totalMicros > 0 ? 'var(--ok)' : undefined }}>{fmtCost(savings.totalMicros)}{partialMark(savings.partial)}</span>}
-            sub={auditFailed ? UNAVAILABLE : savedCaption(savings.govTokensSaved, savings.cacheMicros)}
-          />
-          <StatCard
-            variant="card"
-            label="Less input sent"
-            hint={HELP.lessInputSent}
-            value={<span style={{ color: context.value !== '—' ? 'var(--ok)' : undefined }}>{context.value}</span>}
-            sub={auditFailed ? UNAVAILABLE : context.sub}
-          />
-        </div>
-        {/* The proof behind Saved, then Spend by model, then Cost prediction: each folded, its closed row a summary. */}
-        {(rangeTokens || inputDays) && <TokensCompare days={inputDays} usdByDay={usdByDay} range={rangeTokens} />}
+        {/* The proof behind Saved, always on show; then Spend by model and Cost prediction, each folded, its closed row a summary. */}
+        <TokensCompare days={inputDays} usdByDay={usdByDay} range={rangeTokens} unavailable={auditFailed || !rangeTokens}
+          note={spendNotes.length > 0 ? `Spend: ${spendNotes.join(' · ')}` : undefined} />
         {s.models.length > 0 && (
           <SpendByModel
             models={s.models}
@@ -296,6 +313,7 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
             trend={perCallTrend({ calls: s.totalCalls, cost: s.totalCost }, prev, prior)}
           />
         )}
+        {/* Hourly cost is per agent, so it lives in Cost prediction; the fleet figure is that card's folded note. */}
         <CostPredictionSection key={fleetId} fleetId={fleetId} authKey={authKey} agentIds={agentIds} fleetHourly={workingHour} {...(predictionApi && { api: predictionApi })} />
         {unnamed > 0 && (
           <p className="wr-cap" style={{ margin: '0 0 8px', color: 'var(--warn-tx)' }}>
@@ -306,38 +324,32 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
 
       <hr className="wr-perf-rule" />
 
-      <section aria-labelledby="perf-rules">
-        <SectionHeader id="perf-rules" title="Rules" sub="What your rules caught." meta={<>{rangeLabel} · <Link href={ROUTES.controls} className="wr-link">Manage in Controls →</Link></>} />
-        <RulesSummary counts={govCounts ? { ...govCounts, blocks: blocked } : null} byRuleId={byRuleId} rules={rules} unknownRules={unknownRules} unavailable={auditFailed} />
-      </section>
-
-      <hr className="wr-perf-rule" />
-
-      <section aria-labelledby="perf-reliability">
-        <SectionHeader id="perf-reliability" title="Reliability" sub="How well your agents worked." meta={rangeLabel} />
-        <div className="wr-perf-strip wr-perf-strip--3" style={{ marginBottom: 16 }}>
-          <StatCard variant="card" label="Failed calls" hint={HELP.failedCalls} value={fmtCount(failedCalls)} sub={`of ${fmtCount(s.totalCalls)} ${s.totalCalls === 1 ? 'call' : 'calls'} · ${fmtPctShort(s.errorRate)}`} />
-          <StatCard variant="card" label="Typical response" hint={HELP.typicalResponse} value={fmtLatency(s.avgLatencyMs)}
-            sub={speed ? <span style={{ color: speed.tone === 'ok' ? 'var(--ok)' : speed.tone === 'warn' ? 'var(--warn-tx)' : undefined }}>{speed.text}</span> : 'median time per call'} />
-          <StatCard variant="card" label="Model calls" hint={HELP.modelCalls} value={fmtCount(s.totalCalls)} sub={callsTrend ?? rangeLabel} />
-        </div>
-        <AgentHealth flagged={flagged} diagnosis={diagnosis.data} line={diagnosisLine} onCheck={() => void runCheck()} onReview={seeFindings} onReport={() => downloadHealthReport(fleetId, diagnosis.data, authKey)} />
-      </section>
-
-      <hr className="wr-perf-rule" />
-
-      <section aria-label="Recommendations">
+      <section aria-labelledby="agent-health-heading" className="wr-perf-health">
+        {/* The report exports the history even without a current result, so it stays wherever either source is known. */}
+        <AgentHealthHeader line={diagnosisLine} onCheck={() => void runCheck()} onReport={healthKnown ? () => downloadHealthReport(fleetId, diagnosis.data, authKey) : undefined} />
+        {!healthSettled
+          ? <div className="wr-pcard wr-hba"><p className="wr-cap" style={{ margin: 0, padding: '16px 20px' }}>Loading agent health…</p></div>
+          : <HealthByAgent flagged={flagged} diagnosis={diagnosis.data} state={diagnosis.state} line={diagnosisLine} onOpenRec={(id, agent) => void openRec(id, agent)} onSelectAgent={onSelectAgent} />}
         <RecommendationsCard
           recs={recs} total={recTotal} status={recStatus} onStatus={setRecStatus}
           showStatuses={showStatuses} onShowStatuses={() => { setShowStatuses(true); setRecStatus('all'); }}
           agentFilter={recAgent} onAgentFilter={setRecAgent} showAgentFilter={showRecAgentFilter(recs, agentIds, recAgent, recTotal)}
           filtered={!!recAgentQuery.trim()} hasCalls={s.totalCalls > 0}
-          loading={recLoading} error={recError} notice={diagnosisNotice} hasMore={!!recCursor} onMore={() => { if (recCursor) void fetchRecs(recCursor); }}
+          loading={recLoading} error={recError} notice={pinNotice ?? diagnosisNotice} hasMore={!!recCursor} onMore={() => { if (recCursor) void fetchRecs(recCursor); }}
+          expanded={expanded} onExpand={() => onRecsExpanded?.(true)} pinned={pinnedRow}
           onSelectAgent={onSelectAgent} onSelectEvidence={onSelectEvidence}
           onFeedback={(rec, f) => { if (rec.currentFindingId) void submitFeedback(rec.id, rec.currentFindingId, f.action, f.reason); }}
           onDiagnosisFeedback={submitDiagnosisFeedback}
           feedbackLoading={feedbackLoading} feedbackError={feedbackError}
         />
+        {healthSettled && diagnosis.state === 'ready' && <HealthChecks diagnosis={diagnosis.data} />}
+      </section>
+
+      <hr className="wr-perf-rule" />
+
+      <section aria-labelledby="perf-rules">
+        <SectionHeader id="perf-rules" title="Rules" sub="What your rules caught." meta={<>{rangeLabel} · <Link href={runsHref} className="wr-link">See in Runs →</Link> · <Link href={ROUTES.controls} className="wr-link">Manage in Controls →</Link></>} />
+        <RulesSummary counts={govCounts ? { ...govCounts, blocks: blocked } : null} byRuleId={byRuleId} rules={rules} unknownRules={unknownRules} unavailable={auditFailed} />
       </section>
 
       <p className="wr-cap" style={{ margin: '24px 0 0' }}>Per-agent numbers and scores are on <Link href={ROUTES.home} className="wr-link">Home → Agents</Link>.</p>

@@ -8,12 +8,27 @@
  * nothing renders.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { diagnoseFleet, getDiagnosis } from '@/lib/whiteroom/client';
+import { diagnoseFleet, getDiagnosis, WhiteRoomApiError } from '@/lib/whiteroom/client';
 import type { FleetDiagnosis } from '@/lib/whiteroom/types';
-import { createRequestGate, shouldRefetchOnFocus, type RunState } from './model';
+import { createRequestGate, shouldRefetchOnFocus, type DiagnosisState, type RunState } from './model';
+
+/** The engine's 400s that mean the check isn't there for this fleet: a sandbox fleet, or an engine older than the check. */
+const NOT_HERE = ['Diagnosis runs on production fleets.', 'Unknown action.'];
+
+/**
+ * A failed read's state, from its error. Only the engine's own "not here"
+ * answers are `unavailable` (404: switched off; 400 with one of its two
+ * reasons). Any other refusal is `failed`, so a real error is said, not hidden.
+ */
+export function diagnosisFailure(e: unknown): 'unavailable' | 'failed' {
+  if (!(e instanceof WhiteRoomApiError)) return 'failed';
+  if (e.status === 404) return 'unavailable';
+  return e.status === 400 && !!e.reason && NOT_HERE.includes(e.reason) ? 'unavailable' : 'failed';
+}
 
 export function useDiagnosis(fleetId: string, authKey?: string) {
   const [data, setData] = useState<FleetDiagnosis | null>(null);
+  const [state, setState] = useState<DiagnosisState>('pending');
   const [run, setRun] = useState<RunState>('idle');
   const [justRan, setJustRan] = useState(false);
   // Set on every attempt, failed ones too, so an engine with Diagnosis off
@@ -21,7 +36,7 @@ export function useDiagnosis(fleetId: string, authKey?: string) {
   const lastAttempt = useRef<number | null>(null);
   const gate = useRef(createRequestGate()).current;
 
-  useEffect(() => { gate.reset(); setData(null); setJustRan(false); setRun('idle'); }, [fleetId, gate]);
+  useEffect(() => { gate.reset(); setData(null); setState('pending'); setJustRan(false); setRun('idle'); }, [fleetId, gate]);
 
   const refresh = useCallback(async () => {
     const req = gate.startRead();
@@ -29,9 +44,10 @@ export function useDiagnosis(fleetId: string, authKey?: string) {
     lastAttempt.current = Date.now();
     try {
       const d = await getDiagnosis(fleetId, authKey);
-      if (gate.isCurrent(req)) { setData(d); setJustRan(false); }
-    } catch {
-      // Off on this engine, or unreachable: keep what's shown.
+      if (gate.isCurrent(req)) { setData(d); setState('ready'); setJustRan(false); }
+    } catch (e) {
+      // Off on this engine, or unreachable: keep what's shown, and say which when nothing is.
+      if (gate.isCurrent(req)) setState((s) => (s === 'ready' ? s : diagnosisFailure(e)));
     }
   }, [fleetId, authKey, gate]);
 
@@ -53,6 +69,7 @@ export function useDiagnosis(fleetId: string, authKey?: string) {
       const d = await diagnoseFleet(fleetId, { force: true }, authKey);
       if (!gate.isCurrent(req)) return false;
       setData(d);
+      setState('ready');
       setJustRan(true);
       setRun('idle');
       succeeded = true;
@@ -65,5 +82,5 @@ export function useDiagnosis(fleetId: string, authKey?: string) {
     }
   }, [fleetId, authKey, gate, refresh]);
 
-  return { data, run, justRan, refresh, checkNow };
+  return { data, state, run, justRan, refresh, checkNow };
 }
