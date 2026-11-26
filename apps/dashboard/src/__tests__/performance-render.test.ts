@@ -80,7 +80,12 @@ describe('Agent health, rendered', () => {
 
   it('hidden with no run flags and no health check', () => {
     expect(card({ flagged: flags(null), diagnosis: null, state: 'unavailable', line: null })).toBe('');
-    expect(renderToStaticMarkup(h(HealthChecks, { diagnosis: null }))).toBe('');
+  });
+
+  it('Health checks list every check as not checked yet before any agent has a result', () => {
+    const checks = renderToStaticMarkup(h(HealthChecks, { diagnosis: null }));
+    expect(checks).toMatch(/aria-expanded="false"[^>]*>[\s\S]*?Health checks/);
+    expect(checks).toContain('Not checked yet');
   });
 
   it('the heading is always there with its anchor; the check button and report link only when given', () => {

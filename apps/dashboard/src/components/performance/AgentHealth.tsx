@@ -154,17 +154,17 @@ export function HealthByAgent({ flagged, diagnosis, state, line, onOpenRec, onSe
  * problems first. Closed by default: each problem is already in the table
  * above, beside its fix.
  */
+const NOT_CHECKED = 'Not checked yet';
+
 export function HealthChecks({ diagnosis }: { diagnosis: FleetDiagnosis | null }) {
   const [open, setOpen] = useState(false);
   const bodyId = useId();
   const summary = diagnosisSummary(diagnosis);
-  if (!diagnosis || !summary) return null;
   const groups = checkGroups(diagnosis);
-  if (groups.length === 0) return null;
 
   return (
     <div className="wr-pcard wr-hck" style={{ overflow: 'hidden' }}>
-      <Disclosure first label="Health checks" note={healthCounts(summary)} open={open} onToggle={() => setOpen((v) => !v)} controls={bodyId}>
+      <Disclosure first label="Health checks" note={summary ? healthCounts(summary) : NOT_CHECKED} open={open} onToggle={() => setOpen((v) => !v)} controls={bodyId}>
         <div className="wr-hck__row wr-hck__head wr-cap" aria-hidden="true">
           <span>Check</span><span>Problem in</span><span>Passed</span><span>Waiting for</span>
         </div>
@@ -176,11 +176,11 @@ export function HealthChecks({ diagnosis }: { diagnosis: FleetDiagnosis | null }
               {[g.passed ? `${g.passed} passed` : '', g.setAside ? `${g.setAside} set aside` : ''].filter(Boolean).join(' · ')}
             </span>
             <span className="wr-cap">
-              {g.waiting.map((w) => <span key={w.note} style={{ display: 'block' }}>{w.note} · {w.agents} {plural(w.agents, 'agent')}</span>)}
+              {g.unchecked ? NOT_CHECKED : g.waiting.map((w) => <span key={w.note} style={{ display: 'block' }}>{w.note} · {w.agents} {plural(w.agents, 'agent')}</span>)}
             </span>
           </div>
         ))}
-        {diagnosis.waiting.length > 0 && (
+        {diagnosis && diagnosis.waiting.length > 0 && (
           <p className="wr-cap" style={{ margin: 0, padding: '10px 20px 14px' }}>
             Not checked yet: {diagnosis.waiting.map((w) => w.agentId).join(', ')} ({diagnosis.minCalls} calls a week needed).
           </p>

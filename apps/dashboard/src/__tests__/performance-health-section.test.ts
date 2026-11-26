@@ -2,6 +2,7 @@
 // Performance, mounted: the page's order, and Agent health as its reads land:
 // the loading card, the problems-by-agent table, a problem opening its own
 // recommendation, and a failed health read said rather than shown as nothing found.
+import { DIAGNOSIS_DETECTORS } from '@/lib/diagnosis/copy';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement as h } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -236,11 +237,14 @@ describe('Performance, mounted', () => {
     await act(async () => { fold.click(); });
     expect([...m.el.querySelectorAll('.wr-hck__head span')].map((c) => c.textContent)).toEqual(['Check', 'Problem in', 'Passed', 'Waiting for']);
     const checks = [...m.el.querySelectorAll('.wr-hck__row:not(.wr-hck__head)')].map((r) => [...r.children].map((c) => c.textContent));
-    expect(checks).toEqual([
+    expect(checks.slice(0, 3)).toEqual([
       ['A tool keeps failing', 'lead-agent', '', ''],
       ['Repeating the same call', '', '1 passed', ''],
       ['Unusually expensive days', '', '', 'starts in about 7 days · 1 agent'],
     ]);
+    // Every other check is still listed, as not checked yet.
+    expect(checks).toHaveLength(DIAGNOSIS_DETECTORS.length);
+    expect(checks.slice(3).every((c) => c[3] === 'Not checked yet')).toBe(true);
     m.root.unmount();
   });
 
