@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // The admin surface is guarded entirely in code — there is no row-level
 // security behind it — so "does a non-admin get refused" is the property most
 // worth pinning down. Both the session and the database are mocked so the
 // checks can be exercised without either.
 
-const session = vi.hoisted(() => ({ current: null as { user?: { id: string } } | null }));
+const session = vi.hoisted(() => ({ current: null as { user?: { id: string }; signInMethod?: string } | null }));
 const query = vi.hoisted(() => vi.fn());
 
 vi.mock('@/auth', () => ({
@@ -63,6 +63,49 @@ describe('requireAdmin', () => {
     session.current = { user: { id: ADMIN.id } };
     results([ADMIN]);
     await expect(requireAdmin()).resolves.toEqual({ id: ADMIN.id, email: ADMIN.email });
+  });
+
+  describe('with ADMIN_SIGN_IN_DOMAIN set (SOC 2 ID-01)', () => {
+    beforeEach(() => vi.stubEnv('ADMIN_SIGN_IN_DOMAIN', 'whiteroom.tech'));
+    afterEach(() => vi.unstubAllEnvs());
+
+    it('refuses an admin on an email-link session', async () => {
+      session.current = { user: { id: ADMIN.id }, signInMethod: 'email' };
+      results([ADMIN]);
+      await expect(requireAdmin()).rejects.toBeInstanceOf(NotAdminError);
+    });
+
+    it('refuses an admin on a personal Google session', async () => {
+      session.current = { user: { id: ADMIN.id }, signInMethod: 'google' };
+      results([ADMIN]);
+      await expect(requireAdmin()).rejects.toBeInstanceOf(NotAdminError);
+    });
+
+    it('refuses a session from before the method was recorded', async () => {
+      session.current = { user: { id: ADMIN.id } };
+      results([ADMIN]);
+      await expect(requireAdmin()).rejects.toBeInstanceOf(NotAdminError);
+    });
+
+    it('admits an admin signed in with the company Workspace', async () => {
+      session.current = { user: { id: ADMIN.id }, signInMethod: 'google:whiteroom.tech' };
+      results([ADMIN]);
+      await expect(requireAdmin()).resolves.toEqual({ id: ADMIN.id, email: ADMIN.email });
+    });
+
+    it('still refuses a non-admin on the Workspace sign-in', async () => {
+      session.current = { user: { id: PLAIN.id }, signInMethod: 'google:whiteroom.tech' };
+      results([PLAIN]);
+      await expect(requireAdmin()).rejects.toBeInstanceOf(NotAdminError);
+    });
+  });
+
+  it('admits an admin on any sign-in while ADMIN_SIGN_IN_DOMAIN is unset', async () => {
+    vi.stubEnv('ADMIN_SIGN_IN_DOMAIN', '');
+    session.current = { user: { id: ADMIN.id }, signInMethod: 'email' };
+    results([ADMIN]);
+    await expect(requireAdmin()).resolves.toBeTruthy();
+    vi.unstubAllEnvs();
   });
 
   // The JWT carries a copy of the role for drawing the nav item, and it can be

@@ -12,6 +12,8 @@ declare module 'next-auth' {
        */
       role: string;
     } & DefaultSession['user'];
+    /** How this session signed in; see lib/admin-sign-in.ts. */
+    signInMethod?: string;
   }
 }
 
@@ -32,5 +34,7 @@ declare module '@auth/core/jwt' {
     // throttle that read to once per SESSION_REVALIDATE_SECONDS.
     revalidatedAt?: number;
     role?: string;
+    // Set once at sign-in: 'google:<workspace domain>', 'google' or 'email'.
+    signInMethod?: string;
   }
 }
