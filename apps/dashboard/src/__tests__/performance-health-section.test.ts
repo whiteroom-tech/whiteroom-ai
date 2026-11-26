@@ -5,6 +5,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement as h } from 'react';
 import { createRoot } from 'react-dom/client';
+import { DIAGNOSIS_DETECTORS } from '@/lib/diagnosis/copy';
+import { checkTitle } from '@/lib/diagnosis/model';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {}, replace: () => {} }), useSearchParams: () => new URLSearchParams() }));
@@ -223,6 +225,19 @@ describe('Performance, mounted', () => {
     m.root.unmount();
   });
 
+  it('before any agent has a result, Health checks still list every check as not checked yet', async () => {
+    api.list.mockResolvedValue(page([]));
+    diag.data = null; diag.state = 'ready';
+    const m = await mount();
+    const fold = [...m.el.querySelectorAll<HTMLButtonElement>('.wr-hck button[aria-expanded]')][0];
+    expect(fold.getAttribute('aria-expanded')).toBe('false');
+    expect(fold.textContent).toContain('Not checked yet');
+    await act(async () => { fold.click(); });
+    const checks = [...m.el.querySelectorAll('.wr-hck__row:not(.wr-hck__head)')].map((r) => [...r.children].map((c) => c.textContent));
+    expect(checks).toEqual(DIAGNOSIS_DETECTORS.map((det) => [checkTitle(det), '', '', 'Not checked yet']));
+    m.root.unmount();
+  });
+
   it('Health checks start folded even with a problem, and unfold to one row per check, problems first', async () => {
     api.list.mockResolvedValue(page([]));
     const d = fleet([finding('a', 'review_tool_errors')]);
@@ -236,11 +251,14 @@ describe('Performance, mounted', () => {
     await act(async () => { fold.click(); });
     expect([...m.el.querySelectorAll('.wr-hck__head span')].map((c) => c.textContent)).toEqual(['Check', 'Problem in', 'Passed', 'Waiting for']);
     const checks = [...m.el.querySelectorAll('.wr-hck__row:not(.wr-hck__head)')].map((r) => [...r.children].map((c) => c.textContent));
-    expect(checks).toEqual([
+    expect(checks.slice(0, 3)).toEqual([
       ['A tool keeps failing', 'lead-agent', '', ''],
       ['Repeating the same call', '', '1 passed', ''],
       ['Unusually expensive days', '', '', 'starts in about 7 days · 1 agent'],
     ]);
+    // Every other check is still listed, as not checked yet.
+    expect(checks).toHaveLength(DIAGNOSIS_DETECTORS.length);
+    expect(checks.slice(3).every((c) => c[3] === 'Not checked yet')).toBe(true);
     m.root.unmount();
   });
 

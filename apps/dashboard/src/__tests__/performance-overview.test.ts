@@ -3,6 +3,8 @@
 import { describe, expect, it } from 'vitest';
 import type { FleetDiagnosis, GovernanceRule } from '@/lib/whiteroom/types';
 import type { GovernanceCounts } from '@/lib/governance';
+import { DIAGNOSIS_DETECTORS } from '@/lib/diagnosis/copy';
+import { checkTitle } from '@/lib/diagnosis/model';
 import {
   checkGroups, countTrend, fewerTokens, lookbackText, healthCounts, healthHeadline, latencyTrend, modelShares, pctChange, perCallTrend, pricesFrom, priorLabel,
   inputByLocalDay, inputTokensOf, predictionNote, rangeHoldsWeek, WEEK_HOURS, weekHourlyFrom, rangeContextCard, savedCaption, tokenTotals, topCaught, trendText,
@@ -122,18 +124,27 @@ describe('Agent health', () => {
   const d = { reports: [report('a', true), report('b', false)] } as FleetDiagnosis;
   it('groups the checks by check, across agents', () => {
     // Problems first, then what every agent passed, then the rest: each group in the checks' own order.
-    expect(checkGroups(d)).toEqual([
+    expect(checkGroups(d).filter((g) => !g.unchecked)).toEqual([
       { title: 'Repeating the same call', tone: 'problem', problemAgents: ['a'], passed: 0, setAside: 1, waiting: [] },
       { title: 'A tool keeps failing', tone: 'ok', problemAgents: [], passed: 2, setAside: 0, waiting: [] },
       { title: 'Unusually expensive days', tone: 'neutral', problemAgents: [], passed: 0, setAside: 0, waiting: [{ note: 'starts in about 7 days', agents: 2 }] },
     ]);
+  });
+  it('always lists every check; the ones no agent has a result for go last', () => {
+    const none = checkGroups(null);
+    expect(none.map((g) => g.title)).toEqual(DIAGNOSIS_DETECTORS.map(checkTitle));
+    expect(none.every((g) => g.unchecked && g.tone === 'neutral')).toBe(true);
+    expect(checkGroups({ reports: [] } as unknown as FleetDiagnosis)).toEqual(none);
+    const some = checkGroups(d);
+    expect(some).toHaveLength(DIAGNOSIS_DETECTORS.length);
+    expect(some.slice(3).every((g) => g.unchecked)).toBe(true);
   });
   it('is green only when every agent checked passed', () => {
     const r = (agentId: string, o: Partial<FleetDiagnosis['reports'][number]>) => ({ schema: 'diagnosis.v1', agentId, window: { from: '', to: '', days: 7, calls: 1, watches: 1 }, findings: [], clear: [], notMeasured: [], ...o }) as FleetDiagnosis['reports'][number];
     const tones = checkGroups({ reports: [
       r('a', { clear: [{ detector: 'review_tool_errors', note: null }], findings: [{ detector: 'review_tool_loops', status: 'dismissed' } as never], notMeasured: [{ detector: 'review_spend_outliers', code: 'x', reason: 'Not yet' }] }),
       r('b', { clear: [{ detector: 'review_tool_errors', note: null }, { detector: 'review_spend_outliers', note: null }] }),
-    ] } as FleetDiagnosis).map((g) => [g.title, g.tone]);
+    ] } as FleetDiagnosis).filter((g) => !g.unchecked).map((g) => [g.title, g.tone]);
     expect(tones).toEqual([['A tool keeps failing', 'ok'], ['Repeating the same call', 'neutral'], ['Unusually expensive days', 'neutral']]);
   });
   it('heads the card with what ran and what still needs data', () => {

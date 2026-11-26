@@ -202,16 +202,20 @@ export interface CheckGroup {
   setAside: number;
   /** What the rest still need, and for how many agents ("starts in about 7 days", 2). */
   waiting: Array<{ note: string; agents: number }>;
+  /** No agent has a result for this check yet: listed so the full set of checks always shows. */
+  unchecked?: true;
 }
 
 const GROUP_ORDER: Record<CheckGroup['tone'], number> = { problem: 0, ok: 1, neutral: 2 };
+/** Checks nobody has a result for go last. */
+const rank = (g: CheckGroup) => (g.unchecked ? 3 : GROUP_ORDER[g.tone]);
 
 /**
  * Health checks grouped by check, one row each, across agents: checks with a
  * problem first, then the ones every agent passed, then the rest, each group
  * in the checks' own order.
  */
-export function checkGroups(d: FleetDiagnosis): CheckGroup[] {
+export function checkGroups(d: FleetDiagnosis | null): CheckGroup[] {
   const order = [...DIAGNOSIS_DETECTORS as string[]];
   const groups = new Map<string, { problems: string[]; passed: number; setAside: number; waiting: Map<string, number> }>();
   const group = (detector: string) => {
@@ -220,20 +224,21 @@ export function checkGroups(d: FleetDiagnosis): CheckGroup[] {
     if (!g) groups.set(detector, g = { problems: [], passed: 0, setAside: 0, waiting: new Map() });
     return g;
   };
-  for (const r of d.reports) {
+  for (const r of d?.reports ?? []) {
     for (const f of r.findings) { const g = group(f.detector); if (f.status === 'open') g.problems.push(r.agentId); else g.setAside++; }
     for (const c of r.clear) group(c.detector).passed++;
     for (const n of r.notMeasured) { const g = group(n.detector); const note = notMeasuredShort(n.code, n.reason); g.waiting.set(note, (g.waiting.get(note) ?? 0) + 1); }
   }
-  return order.filter((det) => groups.has(det)).map((det): CheckGroup => {
-    const g = groups.get(det)!;
+  return order.map((det): CheckGroup => {
+    const g = groups.get(det);
+    if (!g) return { title: checkTitle(det), tone: 'neutral', problemAgents: [], passed: 0, setAside: 0, waiting: [], unchecked: true };
     return {
       title: checkTitle(det),
       tone: g.problems.length ? 'problem' : g.passed && !g.waiting.size && !g.setAside ? 'ok' : 'neutral',
       problemAgents: g.problems, passed: g.passed, setAside: g.setAside,
       waiting: [...g.waiting].map(([note, agents]) => ({ note, agents })),
     };
-  }).map((g, i) => ({ g, i })).sort((a, b) => GROUP_ORDER[a.g.tone] - GROUP_ORDER[b.g.tone] || a.i - b.i).map(({ g }) => g);
+  }).map((g, i) => ({ g, i })).sort((a, b) => rank(a.g) - rank(b.g) || a.i - b.i).map(({ g }) => g);
 }
 
 /** Agent health's headline: "No issues in 17 checks" / "2 problems in 19 checks", and what's still waiting. */

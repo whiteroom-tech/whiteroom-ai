@@ -80,8 +80,8 @@ describe('Agent health, rendered', () => {
 
   it('hidden with no run flags and no health check', () => {
     expect(card({ flagged: flags(null), diagnosis: null, state: 'unavailable', line: null })).toBe('');
-    expect(renderToStaticMarkup(h(HealthChecks, { diagnosis: null }))).toBe('');
   });
+
 
   it('the heading is always there with its anchor; the check button and report link only when given', () => {
     const on = renderToStaticMarkup(h(AgentHealthHeader, { line, onCheck: noop, onReport: async () => null }));
