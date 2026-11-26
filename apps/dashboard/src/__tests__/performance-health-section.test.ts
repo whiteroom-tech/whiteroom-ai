@@ -2,10 +2,11 @@
 // Performance, mounted: the page's order, and Agent health as its reads land:
 // the loading card, the problems-by-agent table, a problem opening its own
 // recommendation, and a failed health read said rather than shown as nothing found.
-import { DIAGNOSIS_DETECTORS } from '@/lib/diagnosis/copy';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement as h } from 'react';
 import { createRoot } from 'react-dom/client';
+import { DIAGNOSIS_DETECTORS } from '@/lib/diagnosis/copy';
+import { checkTitle } from '@/lib/diagnosis/model';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {}, replace: () => {} }), useSearchParams: () => new URLSearchParams() }));
@@ -221,6 +222,19 @@ describe('Performance, mounted', () => {
     await act(async () => { button(m.el, 'Show all 25')!.click(); });
     expect(agents()).toBe(25);
     expect(button(m.el, 'Show all 25')).toBeUndefined();
+    m.root.unmount();
+  });
+
+  it('before any agent has a result, Health checks still list every check as not checked yet', async () => {
+    api.list.mockResolvedValue(page([]));
+    diag.data = null; diag.state = 'ready';
+    const m = await mount();
+    const fold = [...m.el.querySelectorAll<HTMLButtonElement>('.wr-hck button[aria-expanded]')][0];
+    expect(fold.getAttribute('aria-expanded')).toBe('false');
+    expect(fold.textContent).toContain('Not checked yet');
+    await act(async () => { fold.click(); });
+    const checks = [...m.el.querySelectorAll('.wr-hck__row:not(.wr-hck__head)')].map((r) => [...r.children].map((c) => c.textContent));
+    expect(checks).toEqual(DIAGNOSIS_DETECTORS.map((det) => [checkTitle(det), '', '', 'Not checked yet']));
     m.root.unmount();
   });
 

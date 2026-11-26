@@ -149,13 +149,14 @@ export function HealthByAgent({ flagged, diagnosis, state, line, onOpenRec, onSe
   );
 }
 
-/**
- * Agent health › Health checks, folded: one row per check across agents,
- * problems first. Closed by default: each problem is already in the table
- * above, beside its fix.
- */
 const NOT_CHECKED = 'Not checked yet';
 
+/**
+ * Agent health › Health checks, folded: one row per check across agents,
+ * problems first. Every check is always listed; the ones no agent has a
+ * result for read "Not checked yet" and go last. Closed by default: each
+ * problem is already in the table above, beside its fix.
+ */
 export function HealthChecks({ diagnosis }: { diagnosis: FleetDiagnosis | null }) {
   const [open, setOpen] = useState(false);
   const bodyId = useId();
