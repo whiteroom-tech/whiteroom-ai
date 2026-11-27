@@ -101,7 +101,14 @@ function callSignal(caller: AbortSignal, timer: AbortSignal): { signal: AbortSig
   const onTimer = () => ctrl.abort(timer.reason);
   caller.addEventListener("abort", onCaller, { once: true });
   timer.addEventListener("abort", onTimer, { once: true });
-  return { signal: ctrl.signal, release: () => { caller.removeEventListener("abort", onCaller); timer.removeEventListener("abort", onTimer); } };
+  let released = false;
+  const release = () => {
+    if (released) return; // cancel and end-of-body can both call it
+    released = true;
+    caller.removeEventListener("abort", onCaller);
+    timer.removeEventListener("abort", onTimer);
+  };
+  return { signal: ctrl.signal, release };
 }
 
 /** The same response, calling `release` once its body has been read, cancelled or failed. */
