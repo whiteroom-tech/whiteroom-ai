@@ -48,11 +48,18 @@ async function fromWhiteRoom(res: Response): Promise<boolean> {
   }
 }
 
+/** Drops trailing slashes (a loop, not a regex: no slow cases on long input). */
+function trimSlashes(s: string): string {
+  let end = s.length;
+  while (end > 0 && s[end - 1] === "/") end--;
+  return s.slice(0, end);
+}
+
 /** The same request, addressed to the provider instead of WhiteRoom. */
 export function providerUrl(url: string, whiteroomBaseUrl: string, providerBaseUrl: string): string | null {
-  const wr = whiteroomBaseUrl.replace(/\/+$/, "");
+  const wr = trimSlashes(whiteroomBaseUrl);
   if (url !== wr && !url.startsWith(`${wr}/`) && !url.startsWith(`${wr}?`)) return null;
-  return providerBaseUrl.replace(/\/+$/, "") + url.slice(wr.length);
+  return trimSlashes(providerBaseUrl) + url.slice(wr.length);
 }
 
 /** Headers meant for WhiteRoom only. They aren't sent to the provider. */

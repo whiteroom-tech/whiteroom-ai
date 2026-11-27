@@ -11,7 +11,7 @@ function fake(wr) {
   const calls = [];
   const f = async (url, init = {}) => {
     calls.push({ url: String(url), headers: new Headers(init.headers), body: init.body });
-    if (String(url).startsWith(WR)) {
+    if (new URL(String(url)).origin === WR) {
       if (wr instanceof Error) throw wr;
       return wr();
     }
