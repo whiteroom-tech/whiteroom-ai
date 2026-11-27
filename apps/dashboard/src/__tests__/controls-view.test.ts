@@ -606,6 +606,9 @@ describe('Model routing', () => {
       // Only an enforcing rule is suspended: set to Watch or Off, it reads as that.
       expect(suspended(route({ mode: 'watch', params: { ladder: LADDER, suspended: true } }))).toBe(false);
       expect(suspended(enforcing())).toBe(false);
+      // It changes no call, so the counts put it with Watch; one that is routing counts as Enforce, never as Alert only.
+      expect(modeCount([stopped, enforcing()])).toBe('1 Enforce · 1 Watch');
+      expect(leadCounts([stopped, enforcing()])).toMatchObject({ total: 2, enforce: 1, alert: 0, watch: 1 });
       // The flag is read only: a save sends the model list alone.
       expect(draftFrom(stopped).params).toEqual({ ladder: LADDER });
     });
