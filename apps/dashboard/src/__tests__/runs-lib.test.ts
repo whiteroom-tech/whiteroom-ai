@@ -175,6 +175,9 @@ describe('run detail rows', () => {
     expect(timelineRow({ id: 'c3', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete', ruleActions: [routed] }).rule?.text).toBe('went to a cheaper model: model routing');
     const led = timelineRow({ id: 'c4', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete', ruleActions: [routed, { ruleId: 'a', ruleType: 'model_allowlist', mode: 'watch', response: 'block', outcome: 'would_block', reason: 'model_not_allowed' }] });
     expect(led.rule?.text).toBe('would have been blocked: model not on the allowlist (+1 more)');
+    // A Watch rule that would only have alerted changed nothing: the call that moved leads.
+    const overWatch = timelineRow({ id: 'c5', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete', ruleActions: [{ ruleId: 's', ruleType: 'spend_cap', mode: 'watch', response: 'notify', outcome: 'notified', reason: 'budget_exceeded' }, routed] });
+    expect(overWatch.rule?.text).toBe('went to a cheaper model: model routing (+1 more)');
   });
 
   it('shades a call a rule acted on, with what it did and the mode', () => {

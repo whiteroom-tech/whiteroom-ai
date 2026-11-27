@@ -481,8 +481,9 @@ function callRule(e: RunEvent): TimelineRow['rule'] {
   const all = e.ruleActions ?? [];
   // A rule that acted leads; else a Watch rule that would have blocked; else whatever came first.
   // A trim lets the call through, so a rule that stopped it leads over one that only trimmed it.
-  // A call Model routing moved had nothing wrong with it: any rule that caught something leads over it.
-  const a = all.find((x) => x.mode === 'enforce' && !isTrim(x) && !isRoute(x)) ?? all.find((x) => x.mode === 'enforce' && !isRoute(x)) ?? all.find((x) => x.outcome === 'would_block') ?? all[0];
+  // A call Model routing moved had nothing wrong with it: a rule that stopped it, or would have, leads over it.
+  // It still leads over a Watch rule that changed nothing.
+  const a = all.find((x) => x.mode === 'enforce' && !isTrim(x) && !isRoute(x)) ?? all.find((x) => x.mode === 'enforce' && !isRoute(x)) ?? all.find((x) => x.outcome === 'would_block') ?? all.find((x) => x.mode === 'enforce') ?? all[0];
   if (!a) return undefined;
   const more = all.filter((x) => x !== a);
   const why = reasonText(a.reason) ?? (a.ruleName ?? RULE_LABELS[a.ruleType as GovernanceRuleType] ?? 'a rule').toLowerCase();
