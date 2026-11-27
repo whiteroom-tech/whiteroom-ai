@@ -107,13 +107,15 @@ function RouteNetRow({ net }: { net: RouteNet }) {
  */
 function RouteRow({ totals, mode, rules }: { totals: RouteTotals; mode: 'watch' | 'enforce'; rules: GovernanceRule[] | null }) {
   const routed = mode === 'enforce';
+  // At least one call with a price: the dollars and the note about them show together or not at all.
+  const hasDollars = totals.calls > totals.unpricedCalls;
   const own = (rules ?? []).filter((r) => r.ruleType === 'model_route');
   const inner = (
     <>
       <span className="wr-ctrl__name">{RULE_LABELS.model_route}</span>
       <span className="wr-cap">
         <strong className="wr-strong">{fmtCount(totals.calls)}</strong> {plural(totals.calls, 'call')} {routed ? 'went to a cheaper model' : 'could use a cheaper model'}
-        {totals.calls > totals.unpricedCalls && <> · <strong className="wr-strong">{fmtCost(totals.baselineMicros)}</strong> {routed ? 'on the model asked for' : 'as sent'}, <strong className="wr-strong">{fmtCost(totals.costMicros)}</strong> on the cheaper model</>}
+        {hasDollars && <> · <strong className="wr-strong">{fmtCost(totals.baselineMicros)}</strong> {routed ? 'on the model asked for' : 'as sent'}, <strong className="wr-strong">{fmtCost(totals.costMicros)}</strong> on the cheaper model</>}
         {totals.unpricedCalls > 0 && <> · {fmtCount(totals.unpricedCalls)} not priced</>}
         {/* Beside the calls that went through: ones the cheaper model didn't answer, and ones it refused, which went as the agent wrote them. */}
         {!!totals.failedCalls && <> · {fmtCount(totals.failedCalls)} got no answer</>}
@@ -129,7 +131,7 @@ function RouteRow({ totals, mode, rules }: { totals: RouteTotals; mode: 'watch' 
         ? <Link href={`${ROUTES.controls}?rule=${encodeURIComponent(own[0].id)}`} className="wr-ctrl__row">{inner}</Link>
         : <div className="wr-ctrl__row">{inner}</div>}
       {/* A note on the dollars: only where the row has some. */}
-      {totals.calls > totals.unpricedCalls && <p className="wr-cap" style={{ margin: 0, padding: '0 0 10px' }}>{routed ? 'The same usage at list prices. It isn’t counted in what WhiteRoom saved.' : 'The same usage at list prices. Nothing was changed, so this isn’t a saving.'}</p>}
+      {hasDollars && <p className="wr-cap" style={{ margin: 0, padding: '0 0 10px' }}>{routed ? 'The same usage at list prices. It isn’t counted in what WhiteRoom saved.' : 'The same usage at list prices. Nothing was changed, so this isn’t a saving.'}</p>}
     </div>
   );
 }
