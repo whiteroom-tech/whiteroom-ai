@@ -8,7 +8,7 @@
 import Link from 'next/link';
 import type { GovernanceRule, RuleActionCounts, UnknownGovernanceRule } from '@/lib/whiteroom/types';
 import { RULE_LABELS, type GovernanceCounts } from '@/lib/governance';
-import type { RouteWatch } from '@/lib/analytics-metrics';
+import type { RouteTotals, RouteWatch } from '@/lib/analytics-metrics';
 import { topCaught } from '@/lib/performance-overview';
 import { fmtCost, fmtCount, plural } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
@@ -67,27 +67,31 @@ export function RulesSummary({ counts, byRuleId, rules, unknownRules, unavailabl
           })}
         </div>
       )}
-      {routeWatch && routeWatch.calls > 0 && <RouteWatchRow watch={routeWatch} rules={rules} />}
+      {routeWatch && routeWatch.calls > 0 && <RouteRow totals={routeWatch} mode="watch" rules={rules} />}
+      {routeWatch?.routed && routeWatch.routed.calls > 0 && <RouteRow totals={routeWatch.routed} mode="enforce" rules={rules} />}
     </div>
   );
 }
 
 /**
- * Model routing in Watch: the calls that could use a cheaper model, and what
- * they cost at each. Its own row, apart from what rules caught: nothing was
- * wrong with these calls, and nothing was changed, so it isn't a saving.
+ * Model routing: in Watch, the calls that could use a cheaper model; in
+ * Enforce, the ones that went to one; and what they cost at each model. Its
+ * own rows, apart from what rules caught: nothing was wrong with these calls.
+ * The dollars are the same usage at list prices, so neither row is a saving
+ * and neither is added to one.
  */
-function RouteWatchRow({ watch, rules }: { watch: RouteWatch; rules: GovernanceRule[] | null }) {
+function RouteRow({ totals: watch, mode, rules }: { totals: RouteTotals; mode: 'watch' | 'enforce'; rules: GovernanceRule[] | null }) {
+  const routed = mode === 'enforce';
   const own = (rules ?? []).filter((r) => r.ruleType === 'model_route');
   const inner = (
     <>
       <span className="wr-ctrl__name">{RULE_LABELS.model_route}</span>
       <span className="wr-cap">
-        <strong className="wr-strong">{fmtCount(watch.calls)}</strong> {plural(watch.calls, 'call')} could use a cheaper model
-        {watch.calls > watch.unpricedCalls && <> · <strong className="wr-strong">{fmtCost(watch.baselineMicros)}</strong> as sent, <strong className="wr-strong">{fmtCost(watch.costMicros)}</strong> on the cheaper model</>}
+        <strong className="wr-strong">{fmtCount(watch.calls)}</strong> {plural(watch.calls, 'call')} {routed ? 'went to a cheaper model' : 'could use a cheaper model'}
+        {watch.calls > watch.unpricedCalls && <> · <strong className="wr-strong">{fmtCost(watch.baselineMicros)}</strong> {routed ? 'on the model asked for' : 'as sent'}, <strong className="wr-strong">{fmtCost(watch.costMicros)}</strong> on the cheaper model</>}
         {watch.unpricedCalls > 0 && <> · {fmtCount(watch.unpricedCalls)} not priced</>}
       </span>
-      <ModeTag mode="watch" />
+      <ModeTag mode={mode} />
     </>
   );
   return (
@@ -96,7 +100,7 @@ function RouteWatchRow({ watch, rules }: { watch: RouteWatch; rules: GovernanceR
       {own.length === 1
         ? <Link href={`${ROUTES.controls}?rule=${encodeURIComponent(own[0].id)}`} className="wr-ctrl__row">{inner}</Link>
         : <div className="wr-ctrl__row">{inner}</div>}
-      <p className="wr-cap" style={{ margin: 0, padding: '0 0 10px' }}>The same usage at list prices. Nothing was changed, so this isn’t a saving.</p>
+      <p className="wr-cap" style={{ margin: 0, padding: '0 0 10px' }}>{routed ? 'The same usage at list prices. It isn’t counted in what WhiteRoom saved.' : 'The same usage at list prices. Nothing was changed, so this isn’t a saving.'}</p>
     </div>
   );
 }

@@ -34,6 +34,20 @@ describe('Model routing on Performance', () => {
     expect(none).not.toContain('$');
   });
 
+  it('shows the calls that went to a cheaper model on their own row, and never as a saving', () => {
+    const none = { calls: 0, unpricedCalls: 0, baselineMicros: 0, costMicros: 0 };
+    const routed = text(render({ ...none, routed: { calls: 12, unpricedCalls: 1, baselineMicros: 8_000_000, costMicros: 3_000_000 } }));
+    expect(routed).toContain('Model routing 12 calls went to a cheaper model · $8.00 on the model asked for, $3.00 on the cheaper model · 1 not priced Enforce');
+    expect(routed).toContain('The same usage at list prices. It isn’t counted in what WhiteRoom saved.');
+    expect(routed).not.toContain('could use a cheaper model');
+    // A range with both shows both, each with its own line.
+    const both = text(render({ calls: 41, unpricedCalls: 0, baselineMicros: 12_400_000, costMicros: 6_200_000, routed: { calls: 12, unpricedCalls: 0, baselineMicros: 8_000_000, costMicros: 3_000_000 } }));
+    expect(both).toContain('41 calls could use a cheaper model');
+    expect(both).toContain('12 calls went to a cheaper model');
+    // Neither changes what rules caught.
+    expect(both).toContain('3 blocked · 141 would have acted');
+  });
+
   it('shows nothing when no call could, the engine sent none, or its read failed', () => {
     for (const none of [{ calls: 0, unpricedCalls: 0, baselineMicros: 0, costMicros: 0 }, null, undefined]) {
       expect(text(render(none))).not.toContain('cheaper model');
