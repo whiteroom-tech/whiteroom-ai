@@ -78,21 +78,20 @@ export function RulesSummary({ counts, byRuleId, rules, unknownRules, unavailabl
  * wrong with these calls, and nothing was changed, so it isn't a saving.
  */
 function RouteWatchRow({ watch, rules }: { watch: RouteWatch; rules: GovernanceRule[] | null }) {
-  const priced = watch.calls - watch.unpricedCalls;
   const own = (rules ?? []).filter((r) => r.ruleType === 'model_route');
   const inner = (
     <>
       <span className="wr-ctrl__name">{RULE_LABELS.model_route}</span>
       <span className="wr-cap">
         <strong className="wr-strong">{fmtCount(watch.calls)}</strong> {plural(watch.calls, 'call')} could use a cheaper model
-        {priced > 0 && <> · <strong className="wr-strong">{fmtCost(watch.baselineMicros)}</strong> as sent, <strong className="wr-strong">{fmtCost(watch.costMicros)}</strong> on the cheaper model</>}
+        {watch.calls > watch.unpricedCalls && <> · <strong className="wr-strong">{fmtCost(watch.baselineMicros)}</strong> as sent, <strong className="wr-strong">{fmtCost(watch.costMicros)}</strong> on the cheaper model</>}
         {watch.unpricedCalls > 0 && <> · {fmtCount(watch.unpricedCalls)} not priced</>}
       </span>
       <ModeTag mode="watch" />
     </>
   );
   return (
-    <div className="wr-rules-top">
+    <div className="wr-rules-route">
       {/* One rule: the row opens it. Several: there is no single rule to open. */}
       {own.length === 1
         ? <Link href={`${ROUTES.controls}?rule=${encodeURIComponent(own[0].id)}`} className="wr-ctrl__row">{inner}</Link>

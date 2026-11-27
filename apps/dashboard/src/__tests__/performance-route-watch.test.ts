@@ -12,7 +12,7 @@ const route = (id: string): GovernanceRule => ({
   mode: 'watch', response: 'notify', appliesTo: ['support-agent'], version: 1, changedBy: 'test', changedAt: '2026-11-20T00:00:00Z',
 });
 const render = (routeWatch: Parameters<typeof RulesSummary>[0]['routeWatch'], rules: GovernanceRule[] = [route('gr_route')]) =>
-  renderToStaticMarkup(h(RulesSummary, { counts: governanceCounts([]), rules, unavailable: false, routeWatch }));
+  renderToStaticMarkup(h(RulesSummary, { counts: { ...governanceCounts([]), blocks: 3, wouldBlocks: 141 }, rules, unavailable: false, routeWatch }));
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
 describe('Model routing on Performance', () => {
@@ -22,8 +22,9 @@ describe('Model routing on Performance', () => {
     expect(text(html)).toContain('The same usage at list prices. Nothing was changed, so this isn’t a saving.');
     // The one rule opens from the row.
     expect(html).toContain('href="/controls?rule=gr_route"');
-    // What rules caught is still its own line, and these calls aren't in it.
-    expect(text(html)).toContain('0 blocked · 0 would have acted');
+    // What rules caught is its own line, the same with the row as without it: these calls aren't in it.
+    expect(text(html)).toContain('3 blocked · 141 would have acted');
+    expect(text(render(null))).toContain('3 blocked · 141 would have acted');
   });
 
   it('says how many calls had no price, and gives no dollars when none had one', () => {

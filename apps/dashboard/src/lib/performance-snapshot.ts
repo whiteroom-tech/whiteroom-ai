@@ -25,7 +25,7 @@ export interface OverviewExtras {
   routeWatch?: RouteWatch | null;
 }
 
-export const NO_EXTRAS: OverviewExtras = { workingHour: null, rules: null, byRuleId: undefined, weekHourly: null, usdByDay: null, cacheSaved: null };
+export const NO_EXTRAS: OverviewExtras = { workingHour: null, rules: null, byRuleId: undefined, weekHourly: null, usdByDay: null, cacheSaved: null, routeWatch: null };
 
 export interface PerformanceSnapshot {
   indexData: PerformanceIndexResult;
