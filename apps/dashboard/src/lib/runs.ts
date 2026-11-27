@@ -507,12 +507,6 @@ const DONE_EVENT = /^(watch_end|run_ended|run_finished)$/;
 const GAP_EVENT = 'calls_not_recorded';
 
 /**
- * One row of What happened. Calls say what the agent called and which tools
- * it asked for; the model shows only when it changes from the call before
- * (`prevModel`; the summary line names the run's models). Events reuse the
- * activity feed's plain-language copy, so the same event reads the same everywhere.
- */
-/**
  * A call's model, said when it changes from the call before. A call Model
  * routing moved also names the model it was asked for, once per change. A
  * call a cheaper model refused always says so: its model didn't change, and
@@ -524,6 +518,12 @@ function callModelText(e: RunEvent, prevModel: string | null): string {
   return `${model}${e.refusedModel ? ` · ${e.refusedModel} refused it first` : ''}`;
 }
 
+/**
+ * One row of What happened. Calls say what the agent called and which tools
+ * it asked for; the model shows only when it changes from the call before
+ * (`prevModel`; the summary line names the run's models). Events reuse the
+ * activity feed's plain-language copy, so the same event reads the same everywhere.
+ */
 export function timelineRow(e: RunEvent, prevModel: string | null = null): TimelineRow {
   if (e.kind === 'call') {
     const tools = callToolsText(e);
