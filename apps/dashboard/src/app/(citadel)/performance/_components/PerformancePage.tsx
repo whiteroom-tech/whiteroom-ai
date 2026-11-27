@@ -6,7 +6,7 @@ import { performanceIndex, performanceEvidence, performanceFeedback, performance
 import { addDays, clampSpan, dayStart, localDay, runsDays, runsWindow, spanLabel, viewInstants, windowKey, type RunsRange, type RunsView } from '@/lib/runs';
 import { legacyHoursBack, NEEDS_WINDOWS, PERF_MAX_DAYS, perfOldest, perfRangeParams, perfViewFromParams, windowUnsupported, rulesRunsHref } from '@/lib/performance-range';
 import { syncQueryParams } from '@/lib/url';
-import { agentTotalsFromBuckets, cacheSavedTotal, dailySavingsFromBuckets, savedByDay, savingsDollars, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
+import { agentTotalsFromBuckets, cacheSavedTotal, routeWatchTotal, dailySavingsFromBuckets, savedByDay, savingsDollars, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
 import { LoadFailed, LoadingLine, RefreshFailed } from '@/components/citadel/States';
 import { usePoll } from '@/hooks/usePoll';
 import { WEEK_POLL_MS } from '@/lib/home-agents';
@@ -190,6 +190,7 @@ export function PerformancePage({ retentionDays }: {
         weekHourly: weekHourlyFrom(holdsWeek, hourlyShown, weekHourlyRead ? weekHourlyOwn : cachedWeek),
         usdByDay: week?.savingsByDay ? savedByDay(week.savingsByDay, week.cacheByDay) : null,
         cacheSaved: cacheSavedTotal(audit?.cacheByDay),
+        routeWatch: routeWatchTotal(audit?.routeByDay),
       };
       const snapshot = {
         indexData: idx,
@@ -420,7 +421,7 @@ export function PerformancePage({ retentionDays }: {
         {loading && !overviewShown && view === 'index' && <LoadingLine padded={false}>Loading performance&hellip;</LoadingLine>}
 
         {overviewShown && <IndexView data={indexData} hourlyData={hourlyData} auditFailed={auditFailed} govSavings={govSavings} govCounts={govCounts} savingsDays={savingsDays} agentIds={agentIds} rangeLabel={rangeLabel} fleetId={fleetId!} authKey={authKey}
-          workingHour={extra.workingHour} rules={extra.rules} unknownRules={extra.unknownRules} byRuleId={extra.byRuleId} weekHourly={extra.weekHourly} usdByDay={extra.usdByDay} cacheSaved={extra.cacheSaved ?? null}
+          workingHour={extra.workingHour} rules={extra.rules} unknownRules={extra.unknownRules} byRuleId={extra.byRuleId} weekHourly={extra.weekHourly} usdByDay={extra.usdByDay} cacheSaved={extra.cacheSaved ?? null} routeWatch={extra.routeWatch ?? null}
           recsExpanded={recsExpanded} onRecsExpanded={setRecsExpanded} runsHref={rulesRunsHref(rangeView, dataMatches || !dataSpan ? null : dataSpan)}
           onSelectAgent={openAgent} onSelectEvidence={(id, agent, recId) => { setSelectedAgent(agent); setSelectedFindingId(id); setSelectedRecId(recId ?? null); setView('evidence'); }} onFeedback={handleFeedback} feedbackLoading={feedbackLoading} feedbackError={feedbackError} />}
         {view === 'evidence' && evidenceData && <EvidenceView data={evidenceData} fleetId={fleetId} recommendationId={selectedRecId} authKey={authKey} />}

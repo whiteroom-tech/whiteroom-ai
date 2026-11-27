@@ -49,6 +49,20 @@ export function cacheSavedTotal(days: Array<{ usdMicros: number; unpricedReadTok
   return { micros: days.reduce((n, d) => n + d.usdMicros, 0), unpricedReadTokens: days.reduce((n, d) => n + d.unpricedReadTokens, 0) };
 }
 
+/** A range's calls that could use a cheaper model, and what they cost at each (Watch: nothing was changed). */
+export interface RouteWatch { calls: number; unpricedCalls: number; baselineMicros: number; costMicros: number }
+
+/** The range's Watch figures summed from the engine's per-day rows; null when the engine sends none or its read failed. */
+export function routeWatchTotal(days: Array<{ applied: boolean; calls: number; unpricedCalls: number; baselineMicros: number; costMicros: number }> | undefined): RouteWatch | null {
+  if (!days) return null;
+  const out: RouteWatch = { calls: 0, unpricedCalls: 0, baselineMicros: 0, costMicros: 0 };
+  for (const d of days) {
+    if (d.applied) continue;
+    out.calls += d.calls; out.unpricedCalls += d.unpricedCalls; out.baselineMicros += d.baselineMicros; out.costMicros += d.costMicros;
+  }
+  return out;
+}
+
 /** Prompt-cache figures for the Performance page. */
 export interface CacheFigures {
   /** Read savings less the write premium, never below zero (micro-dollars): caching WhiteRoom added only. */

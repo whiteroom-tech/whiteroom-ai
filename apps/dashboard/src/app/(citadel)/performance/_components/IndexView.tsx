@@ -8,7 +8,7 @@ import { useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
 import { AgentHealthHeader, HealthByAgent, HealthChecks } from '@/components/performance/AgentHealth';
 import { downloadHealthReport } from '@/components/performance/HealthReport';
 import { DEFAULT_REC_STATUS, showRecAgentFilter } from '@/lib/performance-insights';
-import { cacheFigures, type DaySavings, type GovSavings } from '@/lib/analytics-metrics';
+import { cacheFigures, type DaySavings, type GovSavings, type RouteWatch } from '@/lib/analytics-metrics';
 import { TokensCompare } from '@/components/performance/SavingsPanels';
 import { fmtCost, fmtCount, partialMark } from '@/lib/format';
 import { spendSummary } from '@/lib/spend-completeness';
@@ -43,7 +43,7 @@ const REC_FILTER_DEBOUNCE_MS = 300;
 
 export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, govSavings, govCounts, savingsDays, agentIds, rangeLabel, fleetId, authKey, onSelectAgent, onSelectEvidence, onFeedback, feedbackLoading, feedbackError,
   recsExpanded = false, onRecsExpanded, runsHref = `${ROUTES.runs}?show=rules`,
-  workingHour = null, rules = null, unknownRules, byRuleId, usdByDay = null, cacheSaved = null, predictionApi }: {
+  workingHour = null, rules = null, unknownRules, byRuleId, usdByDay = null, cacheSaved = null, routeWatch = null, predictionApi }: {
   data: PerformanceIndexResult; hourlyData: FleetHourlyResult | null;
   /** The last 7 days by hour, for By day's input per day; null when it couldn't be read. */
   weekHourly?: FleetHourlyResult | null;
@@ -78,6 +78,8 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
   usdByDay?: Record<string, number> | null;
   /** The range's caching WhiteRoom added, from the engine's per-day figures (what billing sums); null on older engines. */
   cacheSaved?: { micros: number; unpricedReadTokens: number } | null;
+  /** The range's calls that could use a cheaper model (Model routing in Watch); null on older engines or when unread. */
+  routeWatch?: RouteWatch | null;
   /** The dev preview's Cost prediction reads and writes. */
   predictionApi?: CostPredictionApi;
 }) {
@@ -352,7 +354,7 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
 
       <section aria-labelledby="perf-rules">
         <SectionHeader id="perf-rules" title="Rules" sub="What your rules caught." meta={<>{rangeLabel} · <Link href={runsHref} className="wr-link">See in Runs →</Link> · <Link href={ROUTES.controls} className="wr-link">Manage in Controls →</Link></>} />
-        <RulesSummary counts={govCounts ? { ...govCounts, blocks: blocked } : null} byRuleId={byRuleId} rules={rules} unknownRules={unknownRules} unavailable={auditFailed} />
+        <RulesSummary counts={govCounts ? { ...govCounts, blocks: blocked } : null} byRuleId={byRuleId} rules={rules} unknownRules={unknownRules} unavailable={auditFailed} routeWatch={routeWatch} />
       </section>
 
       <p className="wr-cap" style={{ margin: '24px 0 0' }}>Per-agent numbers and scores are on <Link href={ROUTES.home} className="wr-link">Home → Agents</Link>.</p>
