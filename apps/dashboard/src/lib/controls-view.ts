@@ -237,9 +237,9 @@ export const trims = (r: { ruleType?: string }) => r.ruleType === 'trim_results'
  */
 export const routes = (r: { ruleType?: string }) => r.ruleType === 'model_route';
 
-/** A Model routing rule's models as the request names them, strongest first. */
 /** A Model routing rule's model list, strongest first. One read for every use: a rule that came in with none has an empty list, not a missing one. */
 export const ladderOf = (p: ModelRouteParams): LadderEntry[] => p.ladder ?? [];
+/** Its models as the request names them. */
 export const ladderIds = (p: ModelRouteParams): string[] => ladderOf(p).map((e) => (typeof e === 'string' ? e : e.id));
 /** A ladder needs two models before there is a cheaper one to compare with. */
 const LADDER_MIN = 2;
