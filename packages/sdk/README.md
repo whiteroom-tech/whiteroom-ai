@@ -22,6 +22,8 @@ const client = new Anthropic({
 
 For OpenAI, use `baseURL: "https://proxy.whiteroom.tech/v1"`, `whiteroomBaseUrl: "https://proxy.whiteroom.tech/v1"` and `providerBaseUrl: "https://api.openai.com/v1"`.
 
-A call goes direct only when WhiteRoom can't be reached: the connection fails or times out, or a 502, 503 or 504 comes back that WhiteRoom didn't send. Anything WhiteRoom answers is passed back unchanged, including a block, a rest (429), a quota refusal (402), and a 503 when rules couldn't be checked. Failing open never gets around a rule WhiteRoom can enforce.
+A call goes direct only when WhiteRoom can't be reached: the connection fails, or a 503 comes back that WhiteRoom didn't send. Anything WhiteRoom answers is passed back unchanged, including a block, a rest (429), a quota refusal (402), and a 503 when rules couldn't be checked. Failing open never gets around a rule WhiteRoom can enforce.
+
+502 and 504 are passed back, not resent: WhiteRoom may already have sent the call to the provider, and sending it again would run it twice. A connection that drops mid-call carries the same small risk. To also fail open when WhiteRoom is slow, set `whiteroomTimeoutMs`; it's off by default for the same reason.
 
 A call sent direct isn't governed or recorded by WhiteRoom. Use `onFailOpen` to log each one.

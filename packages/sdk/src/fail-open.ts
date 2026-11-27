@@ -13,12 +13,17 @@
 //     fetch: whiteroomFetch({ failOpen: true, providerBaseUrl: "https://api.anthropic.com" }),
 //   });
 //
-// "Can't be reached" means only: the request to WhiteRoom failed before any
-// reply (DNS, connection, timeout), or the reply was a 502, 503 or 504 that
-// didn't come from WhiteRoom itself (a load balancer's error page). Anything
-// WhiteRoom answers, including a block, a rest (429), a quota refusal (402) or
-// a 503 because rules couldn't be checked, is passed back unchanged. Failing
-// open never gets around a rule WhiteRoom is able to enforce.
+// "Can't be reached" means only: the request to WhiteRoom failed with no reply
+// (DNS, refused or dropped connection), or a 503 came back that WhiteRoom
+// didn't send (the platform in front of it had no instance to serve it).
+// Anything WhiteRoom answers, including a block, a rest (429), a quota refusal
+// (402) or a 503 because rules couldn't be checked, is passed back unchanged,
+// so failing open never gets around a rule WhiteRoom is able to enforce.
+//
+// 502 and 504 are passed back too: they can mean WhiteRoom already sent the
+// call to the provider, and sending it again would run it twice. A dropped
+// connection carries the same small risk; that's the trade fail open makes.
+// A timeout fails open only if you set whiteroomTimeoutMs, for the same reason.
 //
 // A call sent straight to the provider isn't governed or recorded by
 // WhiteRoom. onFailOpen is called each time so you can log it.
@@ -30,13 +35,19 @@ export interface WhiteRoomFetchOptions {
   providerBaseUrl?: string;
   /** WhiteRoom's base URL as given to the provider SDK. Default https://proxy.whiteroom.tech. */
   whiteroomBaseUrl?: string;
-  /** Called whenever a call goes straight to the provider. */
+  /** Called whenever a call goes straight to the provider. An error it throws is ignored. */
   onFailOpen?: (info: { url: string; reason: string }) => void;
+  /**
+   * Give up on WhiteRoom after this many milliseconds and send the call direct.
+   * Off by default: after a timeout WhiteRoom may already have sent the call
+   * on, so the model could run it twice. Your own abort signal still cancels
+   * the call outright.
+   */
+  whiteroomTimeoutMs?: number;
   /** The fetch to wrap. Default the global fetch. */
   fetch?: typeof fetch;
 }
 
-const UNREACHABLE_STATUSES = new Set([502, 503, 504]);
 
 /** True when a reply came from the WhiteRoom engine (its error bodies carry a `whiteroom` field). */
 async function fromWhiteRoom(res: Response): Promise<boolean> {
@@ -69,6 +80,17 @@ function withoutWhiteRoomHeaders(headers: HeadersInit | undefined): Headers {
   return h;
 }
 
+/** Aborts when either signal does. AbortSignal.any is missing before Node 20.3. */
+function anySignal(a: AbortSignal, b: AbortSignal): AbortSignal {
+  if (typeof AbortSignal.any === "function") return AbortSignal.any([a, b]);
+  const ctrl = new AbortController();
+  for (const s of [a, b]) {
+    if (s.aborted) { ctrl.abort(s.reason); break; }
+    s.addEventListener("abort", () => ctrl.abort(s.reason), { once: true });
+  }
+  return ctrl.signal;
+}
+
 export function whiteroomFetch(options: WhiteRoomFetchOptions = {}): typeof fetch {
   const base = options.fetch ?? fetch;
   const failOpen = options.failOpen === true;
@@ -91,19 +113,29 @@ export function whiteroomFetch(options: WhiteRoomFetchOptions = {}): typeof fetc
     const signal = init?.signal ?? req?.signal;
 
     const sendDirect = (reason: string) => {
-      options.onFailOpen?.({ url: direct, reason });
-      return base(direct, { ...init, method, body, signal, headers: withoutWhiteRoomHeaders(headers) });
+      try {
+        options.onFailOpen?.({ url: direct, reason });
+      } catch {
+        // A logging hook mustn't stop the call it is logging.
+      }
+      return base(direct, { ...init, method, body, signal: signal ?? undefined, headers: withoutWhiteRoomHeaders(headers) });
     };
+
+    const timeout = options.whiteroomTimeoutMs ? AbortSignal.timeout(options.whiteroomTimeoutMs) : null;
+    const wrSignal = timeout && signal ? anySignal(signal, timeout) : (timeout ?? signal ?? undefined);
 
     let res: Response;
     try {
-      res = await base(url, { ...init, method, body, signal, headers });
+      res = await base(url, { ...init, method, body, signal: wrSignal, headers });
     } catch (err) {
       // The caller cancelled: don't turn that into a provider call.
       if (signal?.aborted) throw err;
-      return sendDirect("unreachable");
+      return sendDirect(timeout?.aborted ? "timeout" : "unreachable");
     }
-    if (UNREACHABLE_STATUSES.has(res.status) && !(await fromWhiteRoom(res))) return sendDirect(`status_${res.status}`);
+    if (res.status === 503 && !(await fromWhiteRoom(res))) {
+      await res.body?.cancel().catch(() => {});
+      return sendDirect("status_503");
+    }
     return res;
   };
   return wrapped as typeof fetch;
