@@ -16,9 +16,14 @@
       "import": "./dist/index.js"
     }
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/fail-open.test.mjs"
   },
   "license": "Apache-2.0",
   "devDependencies": {
