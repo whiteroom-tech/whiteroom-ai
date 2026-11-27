@@ -57,6 +57,12 @@ describe('routeWatchTotal', () => {
       day({ applied: true, calls: 100, baselineMicros: 50_000_000, costMicros: 25_000_000 }),
     ])).toEqual({ calls: 41, unpricedCalls: 3, baselineMicros: 12_400_000, costMicros: 6_200_000, routed: { calls: 100, unpricedCalls: 0, baselineMicros: 50_000_000, costMicros: 25_000_000 } });
   });
+  it('adds up the routed calls that got no answer or were refused, only where the engine counts them', () => {
+    const total = routeWatchTotal([day({ applied: true, calls: 5, failedCalls: 2, refusedCalls: 1 } as never), day({ applied: true, calls: 3, failedCalls: 1 } as never), day({ calls: 9 })]);
+    expect(total?.routed).toMatchObject({ calls: 8, failedCalls: 3, refusedCalls: 1 });
+    expect(total).not.toHaveProperty('failedCalls');
+    expect(routeWatchTotal([day({ applied: true, calls: 5 })])?.routed).not.toHaveProperty('failedCalls');
+  });
   it('carries the measured comparison when the engine sends one', () => {
     const net = { routed: { periods: 40, calls: 400, costMicros: 28_000_000 }, control: { periods: 30, calls: 300, costMicros: 30_000_000 }, unpricedPeriods: 0, savedMicros: 12_000_000 };
     expect(routeWatchTotal([], net)?.net).toEqual(net);

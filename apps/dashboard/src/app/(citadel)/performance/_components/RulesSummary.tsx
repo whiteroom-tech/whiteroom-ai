@@ -68,7 +68,7 @@ export function RulesSummary({ counts, byRuleId, rules, unknownRules, unavailabl
         </div>
       )}
       {routeWatch && routeWatch.calls > 0 && <RouteRow totals={routeWatch} mode="watch" rules={rules} />}
-      {routeWatch?.routed && routeWatch.routed.calls > 0 && <RouteRow totals={routeWatch.routed} mode="enforce" rules={rules} />}
+      {routeWatch?.routed && routeWatch.routed.calls + (routeWatch.routed.failedCalls ?? 0) + (routeWatch.routed.refusedCalls ?? 0) > 0 && <RouteRow totals={routeWatch.routed} mode="enforce" rules={rules} />}
       {routeWatch?.net && routeWatch.net.routed.periods + routeWatch.net.control.periods + routeWatch.net.unpricedPeriods > 0 && <RouteNetRow net={routeWatch.net} />}
     </div>
   );
@@ -115,6 +115,9 @@ function RouteRow({ totals, mode, rules }: { totals: RouteTotals; mode: 'watch' 
         <strong className="wr-strong">{fmtCount(totals.calls)}</strong> {plural(totals.calls, 'call')} {routed ? 'went to a cheaper model' : 'could use a cheaper model'}
         {totals.calls > totals.unpricedCalls && <> · <strong className="wr-strong">{fmtCost(totals.baselineMicros)}</strong> {routed ? 'on the model asked for' : 'as sent'}, <strong className="wr-strong">{fmtCost(totals.costMicros)}</strong> on the cheaper model</>}
         {totals.unpricedCalls > 0 && <> · {fmtCount(totals.unpricedCalls)} not priced</>}
+        {/* Beside the calls that went through: ones the cheaper model didn't answer, and ones it refused, which went as the agent wrote them. */}
+        {!!totals.failedCalls && <> · {fmtCount(totals.failedCalls)} got no answer</>}
+        {!!totals.refusedCalls && <> · {fmtCount(totals.refusedCalls)} refused, sent to the model asked for</>}
       </span>
       <ModeTag mode={mode} />
     </>

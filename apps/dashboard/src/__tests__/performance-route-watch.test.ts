@@ -57,6 +57,17 @@ describe('Model routing on Performance', () => {
     expect(both).toContain('3 blocked · 141 would have acted');
   });
 
+  it('says how many routed calls the cheaper model didn’t answer or refused, also when none got through', () => {
+    const none = { calls: 0, unpricedCalls: 0, baselineMicros: 0, costMicros: 0 };
+    const some = text(render({ ...none, routed: { calls: 12, unpricedCalls: 0, baselineMicros: 8_000_000, costMicros: 3_000_000, failedCalls: 3, refusedCalls: 2 } }));
+    expect(some).toContain('12 calls went to a cheaper model · $8.00 on the model asked for, $3.00 on the cheaper model · 3 got no answer · 2 refused, sent to the model asked for Enforce');
+    const onlyRefused = text(render({ ...none, routed: { ...none, refusedCalls: 4 } }));
+    expect(onlyRefused).toContain('0 calls went to a cheaper model · 4 refused, sent to the model asked for');
+    expect(onlyRefused).not.toContain('$');
+    // An engine that doesn't count them says nothing about them.
+    expect(text(render({ ...none, routed: { calls: 12, unpricedCalls: 0, baselineMicros: 8_000_000, costMicros: 3_000_000 } }))).not.toMatch(/no answer|refused/);
+  });
+
   describe('the measured line', () => {
     const none = { calls: 0, unpricedCalls: 0, baselineMicros: 0, costMicros: 0 };
     const net = (routed: number, control: number, savedMicros: number | null, unpricedPeriods = 0) => ({ ...none, net: { routed: { periods: routed, calls: routed * 10, costMicros: 1 }, control: { periods: control, calls: control * 10, costMicros: 1 }, unpricedPeriods, savedMicros } });

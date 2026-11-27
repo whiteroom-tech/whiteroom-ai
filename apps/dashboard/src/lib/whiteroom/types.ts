@@ -1022,7 +1022,11 @@ export interface AuditSummaryResult {
    * cheaper model and nothing was changed. `applied` true is Enforce: they went to one. Neither is a
    * saving, and neither is in any of the figures above. Left out when its read failed; absent on older engines.
    */
-  routeByDay?: Array<{ day: string; applied: boolean; calls: number; unpricedCalls: number; baselineMicros: number; costMicros: number }>;
+  routeByDay?: Array<{
+    day: string; applied: boolean; calls: number; unpricedCalls: number; baselineMicros: number; costMicros: number;
+    /** Calls sent to the cheaper model that it didn't answer, and ones it refused, which then went as the agent wrote them. Not in `calls`. Absent on older engines. */
+    failedCalls?: number; refusedCalls?: number;
+  }>;
   /**
    * What Model routing saved, measured: the runs it routed against the runs it left on the model asked for.
    * `savedMicros` is signed (a loss is negative) and null until there are enough runs of each kind. In none
