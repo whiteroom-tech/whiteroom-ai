@@ -3,8 +3,8 @@ import { logSafe } from '@/lib/log-safe';
 
 describe('logSafe', () => {
   it("a line break can't start a fake log entry", () => {
-    expect(logSafe('u1\n[entitlements] ALERT: forged')).toBe('u1 [entitlements] ALERT: forged');
-    expect(logSafe('a\r\nb')).toBe('a  b');
+    expect(logSafe('u1\n[entitlements] ALERT: forged')).toBe('u1[entitlements] ALERT: forged');
+    expect(logSafe('a\r\nb')).toBe('ab');
   });
 
   it('other control characters become spaces', () => {
