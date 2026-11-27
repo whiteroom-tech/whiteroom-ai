@@ -10,11 +10,16 @@
 #
 # Usage: ops/monitoring/setup.sh                       (needs gcloud auth and jq)
 #        PROJECT=whiteroom-eu ops/monitoring/setup.sh
-# Env:   PROJECT (default whiteroom-prod), ALERT_EMAIL (default info@whiteroom.tech)
+#        ALERT_SMS=+15555550100 ops/monitoring/setup.sh   (adds a text-message route)
+# Env:   PROJECT (default whiteroom-prod), ALERT_EMAIL (default info@whiteroom.tech),
+#        ALERT_SMS (optional, E.164). This repo is public: pass the number at run
+#        time, never commit it. Google texts a code to the number; verify it in
+#        Monitoring → Alerting → Notification channels, or texts won't be sent.
 set -euo pipefail
 
 PROJECT="${PROJECT:-whiteroom-prod}"
 ALERT_EMAIL="${ALERT_EMAIL:-info@whiteroom.tech}"
+ALERT_SMS="${ALERT_SMS:-}"
 case "$PROJECT" in
   whiteroom-prod)
     REGION="us-central1"; SQL_INSTANCE="whiteroom-db-v2"
@@ -52,6 +57,22 @@ if [ -z "$CHANNEL" ]; then
   CHANNEL="$(api POST notificationChannels "$(jq -n --arg e "$ALERT_EMAIL" \
     '{type: "email", displayName: "Email \($e)", labels: {email_address: $e}}')" | jq -r .name)"
   echo "created channel $CHANNEL"
+fi
+CHANNELS="$(jq -n --arg c "$CHANNEL" '[$c]')"
+
+# A second route (SOC 2 MON-01): a text message, so an alert still reaches
+# someone when email doesn't. Named by its last four digits only.
+if [ -n "$ALERT_SMS" ]; then
+  case "$ALERT_SMS" in +[0-9]*) ;; *) echo "ALERT_SMS must be E.164, like +15555550100" >&2; exit 1 ;; esac
+  SMS_NAME="SMS ...${ALERT_SMS: -4}"
+  SMS_CHANNEL="$(find_named notificationChannels notificationChannels "$SMS_NAME")"
+  if [ -z "$SMS_CHANNEL" ]; then
+    SMS_CHANNEL="$(api POST notificationChannels "$(jq -n --arg n "$SMS_NAME" --arg num "$ALERT_SMS" \
+      '{type: "sms", displayName: $n, labels: {number: $num}}')" | jq -r .name)"
+    echo "created channel $SMS_CHANNEL; verify it in the console before it can send"
+    api POST "${SMS_CHANNEL#projects/*/}:sendVerificationCode" '{}' >/dev/null || true
+  fi
+  CHANNELS="$(jq -n --arg a "$CHANNEL" --arg b "$SMS_CHANNEL" '[$a, $b]')"
 fi
 
 # ---------- Uptime checks ----------
@@ -94,13 +115,20 @@ PROXY_ID="$(uptime_check "Proxy $PROXY_HOST" "$PROXY_HOST" /health '"status":"ok
 # policy NAME DOCS CONDITIONS_JSON
 policy() {
   local name="$1" docs="$2" conditions="$3"
-  if [ -n "$(find_named alertPolicies alertPolicies "$name")" ]; then return; fi
-  api POST alertPolicies "$(jq -n --arg name "$name" --arg docs "$docs" --arg ch "$CHANNEL" \
+  local existing
+  existing="$(find_named alertPolicies alertPolicies "$name")"
+  if [ -n "$existing" ]; then
+    # Routes follow this file: an existing policy gets every channel above.
+    api PATCH "${existing#projects/*/}?updateMask=notificationChannels" \
+      "$(jq -n --argjson ch "$CHANNELS" '{notificationChannels: $ch}')" >/dev/null
+    return
+  fi
+  api POST alertPolicies "$(jq -n --arg name "$name" --arg docs "$docs" --argjson ch "$CHANNELS" \
     --argjson conditions "$conditions" '{
       displayName: $name,
       combiner: "OR",
       conditions: $conditions,
-      notificationChannels: [$ch],
+      notificationChannels: $ch,
       documentation: {content: $docs, mimeType: "text/markdown"},
       alertStrategy: {autoClose: "1800s"}
     }')" >/dev/null
