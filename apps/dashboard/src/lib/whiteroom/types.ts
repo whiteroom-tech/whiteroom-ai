@@ -868,6 +868,9 @@ export interface RuleActionCounts {
   /** Calls a Model routing rule sent to a cheaper model (Enforce). Never a block. Absent from older engines: read as 0. */
   routed?: number;
 }
+/** One side of Model routing's measured comparison: how many runs, their calls and what they cost. */
+export interface RouteNetArm { periods: number; calls: number; costMicros: number }
+export interface RouteNet { routed: RouteNetArm; control: RouteNetArm; unpricedPeriods: number; savedMicros: number | null }
 export interface RuleActionsResult { fleetId: string; totals: RuleActionCounts; byAgent: Record<string, RuleActionCounts>; /** Per rule type, from the same rows as totals (newer engines). */ byRule?: Record<string, RuleActionCounts>; /** Per rule id (gr_…), from the same rows (engine E1a). */ byRuleId?: Record<string, RuleActionCounts> }
 export interface RunRuleAction {
   /** `trim` is an Old tool results rule's own: it isn't a response a rule can be set to. */
@@ -1015,6 +1018,12 @@ export interface AuditSummaryResult {
    * saving, and neither is in any of the figures above. Left out when its read failed; absent on older engines.
    */
   routeByDay?: Array<{ day: string; applied: boolean; calls: number; unpricedCalls: number; baselineMicros: number; costMicros: number }>;
+  /**
+   * What Model routing saved, measured: the runs it routed against the runs it left on the model asked for.
+   * `savedMicros` is signed (a loss is negative) and null until there are enough runs of each kind. In none
+   * of the figures above. Left out when its read failed; absent on older engines.
+   */
+  routeNet?: RouteNet;
   governance: { blocks: number; wouldBlocks: number; byAgent: Record<string, { blocks: number; wouldBlocks: number }>; byRule: Record<string, { blocks: number; wouldBlocks: number }> };
 }
 
