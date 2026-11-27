@@ -248,10 +248,10 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
       <p className="ctl-status">{status}</p>
       {/* A rule that stopped itself: said where its status is, with the one way back. */}
       {suspended(rule) && routeEnforce && onResume && (
-        <p className="ctl-warnbox" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 12px' }}>
-          <span style={{ flex: '1 1 200px' }}>This rule suspended itself and is changing no calls. Check the agents it covers, then turn it back on.</span>
-          <button type="button" className="wr-btn wr-btn--secondary wr-btn--h28" disabled={saving || dirty} onClick={onResume}>Turn back on</button>
-        </p>
+        <div className="ctl-warnbox">
+          <p style={{ margin: '0 0 8px' }}>This rule suspended itself and is changing no calls. Check the agents it covers, then turn it back on.</p>
+          <Button size={28} disabled={saving || dirty} onClick={onResume}>Turn back on</Button>
+        </div>
       )}
       {rule.sourceRecommendationId && (
         <p style={{ margin: '-12px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>

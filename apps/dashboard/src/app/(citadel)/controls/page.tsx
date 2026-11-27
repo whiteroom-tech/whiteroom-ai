@@ -457,15 +457,17 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     const next: GovernanceRule = { ...selected, mode: draft.mode, response: draft.response, alsoNotify: draft.alsoNotify, appliesTo: draft.appliesTo, params: "params" in parsed ? parsed.params : selected.params };
     const ask = (d: Dialog) => setDialog(d);
     // Anything that makes the rule weaker is said and confirmed first (the change log can undo it).
-    // A rule that suspended itself is changing no call, so no change to it takes anything away.
-    if (!weakenChecked && !suspended(selected)) {
-      const reasons = weakenings(selected, next);
+    if (!weakenChecked) {
+      // A rule that suspended itself is changing no call: stepping it down takes nothing away, so only
+      // its other changes are weighed. Who it covers is still asked.
+      const was = suspended(selected) ? { ...selected, mode: next.mode } : selected;
+      const reasons = weakenings(was, next);
       // Narrowing a rule for all agents asks who it should cover: a copy (the safe choice) or a move.
       if (selected.appliesTo === "all" && next.appliesTo !== "all" && next.appliesTo.length > 0) {
         return ask({ kind: "narrow", rule: selected, next, reasons: weakenings(selected, { ...next, appliesTo: "all" }) });
       }
       // Only stepping down from Enforce, nothing else weaker: "Stop blocking with this rule?"
-      if (selected.mode === "enforce" && next.mode !== "enforce" && !weakenings(selected, { ...next, mode: selected.mode }).length) {
+      if (was.mode === "enforce" && next.mode !== "enforce" && !weakenings(selected, { ...next, mode: selected.mode }).length) {
         return ask({ kind: "downgrade", rule: selected, next });
       }
       if (reasons.length) return ask({ kind: "weaken", rule: selected, next, reasons });

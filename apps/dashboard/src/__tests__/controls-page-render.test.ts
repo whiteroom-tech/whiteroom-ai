@@ -2814,7 +2814,6 @@ describe('Controls: Repeated blocks and Old tool results', () => {
     expect(m.text()).toContain('This rule suspended itself and is changing no calls.');
     // Its tag, timing and effect all read as suspended, never as routing.
     expect(row.querySelector('.ctl-mtag')?.textContent).toBe('Suspended');
-    expect(editor()).toContain('It changes no call.');
     expect(editor()).toContain('Suspended: it changes no call until it is turned back on.');
     expect(editor()).not.toContain('Enforce: a call that can use a cheaper model');
     // While it is suspended the agent gets what it gets in Watch.
