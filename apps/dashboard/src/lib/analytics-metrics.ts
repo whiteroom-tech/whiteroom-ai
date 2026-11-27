@@ -57,10 +57,11 @@ export interface RouteTotals { calls: number; unpricedCalls: number; baselineMic
  */
 export interface RouteWatch extends RouteTotals { routed?: RouteTotals; net?: RouteNet }
 
-/** The range's figures summed from the engine's per-day rows, Watch and routed apart; null when the engine sends none or its read failed. */
+/** The range's figures summed from the engine's per-day rows, Watch and routed apart, with the measured comparison when there is one; null when the engine sends neither. */
 export function routeWatchTotal(days: Array<{ applied: boolean; calls: number; unpricedCalls: number; baselineMicros: number; costMicros: number }> | undefined, net?: RouteNet): RouteWatch | null {
-  if (!days) return null;
   const zero = (): RouteTotals => ({ calls: 0, unpricedCalls: 0, baselineMicros: 0, costMicros: 0 });
+  // The two are read apart: the measured comparison still shows when the per-day rows couldn't be read.
+  if (!days) return net ? { ...zero(), net } : null;
   const watch = zero(), routed = zero();
   for (const d of days) {
     const to = d.applied ? routed : watch;
