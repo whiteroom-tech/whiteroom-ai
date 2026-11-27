@@ -79,15 +79,39 @@ function withoutWhiteRoomHeaders(headers: HeadersInit | undefined): Headers {
   return h;
 }
 
-/** Aborts when either signal does. AbortSignal.any is missing before Node 20.3. */
-function anySignal(a: AbortSignal, b: AbortSignal): AbortSignal {
-  if (typeof AbortSignal.any === "function") return AbortSignal.any([a, b]);
+/**
+ * A signal that aborts when the caller's does or the timer fires. It stays
+ * tied to the caller's signal for the whole call, so the caller can still
+ * cancel a reply mid-stream. AbortSignal.any (Node 20.3+) is used where it
+ * exists; the fallback's listener on the caller is removed when the caller
+ * aborts or the response body ends (`release`).
+ */
+function callSignal(caller: AbortSignal, timer: AbortSignal): { signal: AbortSignal; release: () => void } {
+  if (typeof AbortSignal.any === "function") return { signal: AbortSignal.any([caller, timer]), release: () => {} };
   const ctrl = new AbortController();
-  for (const s of [a, b]) {
-    if (s.aborted) { ctrl.abort(s.reason); break; }
-    s.addEventListener("abort", () => ctrl.abort(s.reason), { once: true });
-  }
-  return ctrl.signal;
+  if (caller.aborted) ctrl.abort(caller.reason);
+  else if (timer.aborted) ctrl.abort(timer.reason);
+  const onCaller = () => ctrl.abort(caller.reason);
+  const onTimer = () => ctrl.abort(timer.reason);
+  caller.addEventListener("abort", onCaller, { once: true });
+  timer.addEventListener("abort", onTimer, { once: true });
+  return { signal: ctrl.signal, release: () => { caller.removeEventListener("abort", onCaller); timer.removeEventListener("abort", onTimer); } };
+}
+
+/** The same response, calling `release` once its body has been read, cancelled or failed. */
+function releaseWhenDone(res: Response, release: () => void): Response {
+  if (!res.body) { release(); return res; }
+  const reader = res.body.getReader();
+  const body = new ReadableStream<Uint8Array>({
+    async pull(ctrl) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) { release(); ctrl.close(); } else ctrl.enqueue(value);
+      } catch (err) { release(); ctrl.error(err); }
+    },
+    cancel(reason) { release(); return reader.cancel(reason); },
+  });
+  return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
 }
 
 export function whiteroomFetch(options: WhiteRoomFetchOptions = {}): typeof fetch {
@@ -125,12 +149,14 @@ export function whiteroomFetch(options: WhiteRoomFetchOptions = {}): typeof fetc
     const timeoutMs = options.whiteroomTimeoutMs;
     const timer = timeoutMs ? new AbortController() : null;
     const timerId = timer ? setTimeout(() => timer.abort(new DOMException("WhiteRoom didn't answer in time", "TimeoutError")), timeoutMs) : undefined;
-    const wrSignal = timer && signal ? anySignal(signal, timer.signal) : (timer?.signal ?? signal ?? undefined);
+    const combined = timer && signal ? callSignal(signal, timer.signal) : null;
+    const wrSignal = combined?.signal ?? timer?.signal ?? signal ?? undefined;
 
     let res: Response;
     try {
       res = await base(url, { ...init, method, body, signal: wrSignal, headers });
     } catch (err) {
+      combined?.release();
       // The caller cancelled: don't turn that into a provider call.
       if (signal?.aborted) throw err;
       return sendDirect(timer?.signal.aborted ? "timeout" : "unreachable");
@@ -138,10 +164,11 @@ export function whiteroomFetch(options: WhiteRoomFetchOptions = {}): typeof fetc
       clearTimeout(timerId);
     }
     if (res.status === 503 && !(await fromWhiteRoom(res))) {
+      combined?.release();
       await res.body?.cancel().catch(() => {});
       return sendDirect("status_503");
     }
-    return res;
+    return combined ? releaseWhenDone(res, combined.release) : res;
   };
   return wrapped as typeof fetch;
 }

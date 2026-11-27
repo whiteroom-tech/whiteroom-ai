@@ -94,8 +94,8 @@ test("a timeout fails open only when whiteroomTimeoutMs is set", async (t) => {
     };
     return { f, calls };
   };
-  // AbortSignal.timeout doesn't hold the event loop open, and the fake
-  // WhiteRoom has no socket that would; a real hanging fetch does.
+  // The fake WhiteRoom has no socket to hold the event loop open while it
+  // waits for the timer; a real hanging fetch does.
   const keepAlive = setInterval(() => {}, 1000);
   t.after(() => clearInterval(keepAlive));
   const on = hang();
@@ -170,4 +170,59 @@ test("the timeout stops once WhiteRoom answers: a slow streamed reply isn't cut 
   };
   const res = await send(whiteroomFetch({ fetch: f, failOpen: true, providerBaseUrl: ANTHROPIC, whiteroomTimeoutMs: 20 }));
   assert.equal(await res.text(), "part1 part2");
+});
+
+test("x-wr- headers stay with WhiteRoom too, and query strings carry over", async () => {
+  const { f, calls } = fake(new TypeError("fetch failed"));
+  await whiteroomFetch({ fetch: f, failOpen: true, providerBaseUrl: ANTHROPIC })(`${WR}/v1/messages?beta=true`, {
+    method: "POST", body: "{}", headers: { "x-wr-key": "wr_placeholder", "authorization": "Bearer sk-placeholder" },
+  });
+  assert.equal(calls[1].url, `${ANTHROPIC}/v1/messages?beta=true`);
+  assert.equal(calls[1].headers.get("x-wr-key"), null);
+  assert.equal(calls[1].headers.get("authorization"), "Bearer sk-placeholder");
+  assert.equal(providerUrl(`${WR}?x=1`, WR, ANTHROPIC), `${ANTHROPIC}?x=1`);
+});
+
+test("with a timeout set, the caller can still cancel a reply mid-stream", async () => {
+  let pulls = 0;
+  const f = (_url, init = {}) => {
+    const stream = new ReadableStream({
+      pull(ctrl) {
+        if (init.signal?.aborted) return ctrl.error(init.signal.reason);
+        pulls++;
+        ctrl.enqueue(new TextEncoder().encode("x"));
+      },
+    });
+    return Promise.resolve(new Response(stream, { status: 200 }));
+  };
+  const ctrl = new AbortController();
+  const res = await whiteroomFetch({ fetch: f, failOpen: true, providerBaseUrl: ANTHROPIC, whiteroomTimeoutMs: 1_000 })(`${WR}/v1/messages`, { method: "POST", body: "{}", signal: ctrl.signal });
+  const reader = res.body.getReader();
+  await reader.read();
+  ctrl.abort();
+  await assert.rejects(async () => { for (;;) { const r = await reader.read(); if (r.done) break; } });
+  assert.ok(pulls < 1000);
+});
+
+test("without AbortSignal.any (Node before 20.3), timeout and caller abort still work", async (t) => {
+  const original = AbortSignal.any;
+  delete AbortSignal.any;
+  t.after(() => { AbortSignal.any = original; });
+  const keepAlive = setInterval(() => {}, 1000);
+  t.after(() => clearInterval(keepAlive));
+
+  // Timer fires while WhiteRoom hangs: goes direct.
+  const hangOrDirect = (url, init = {}) =>
+    new URL(String(url)).origin !== WR
+      ? Promise.resolve(new Response("{}", { status: 200 }))
+      : new Promise((_, reject) => init.signal?.addEventListener("abort", () => reject(init.signal.reason)));
+  const ctrl = new AbortController();
+  const res = await whiteroomFetch({ fetch: hangOrDirect, failOpen: true, providerBaseUrl: ANTHROPIC, whiteroomTimeoutMs: 20 })(`${WR}/v1/messages`, { method: "POST", body: "{}", signal: ctrl.signal });
+  assert.equal(res.status, 200);
+
+  // Caller aborts while WhiteRoom hangs: rejects, no direct call.
+  const ctrl2 = new AbortController();
+  const p = whiteroomFetch({ fetch: hangOrDirect, failOpen: true, providerBaseUrl: ANTHROPIC, whiteroomTimeoutMs: 5_000 })(`${WR}/v1/messages`, { method: "POST", body: "{}", signal: ctrl2.signal });
+  ctrl2.abort();
+  await assert.rejects(p);
 });
