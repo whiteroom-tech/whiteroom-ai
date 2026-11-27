@@ -2,6 +2,11 @@
   "name": "@whiteroom-ai/cli",
   "version": "2.2.0",
   "description": "CLI for WhiteRoom — manage AI agent fleets from the terminal",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/whiteroom-tech/whiteroom-ai.git",
+    "directory": "packages/cli"
+  },
   "type": "module",
   "bin": {
     "whiteroom": "dist/index.js"

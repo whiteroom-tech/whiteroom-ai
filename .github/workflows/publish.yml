@@ -1,0 +1,62 @@
+# Publish @whiteroom-ai/sdk or @whiteroom-ai/cli to npm from CI, with
+# provenance, instead of from a laptop (SOC 2 REL-01, spec item D-3).
+#
+# Run by hand from main. npm trusted publishing (OIDC) must be set up for
+# each package on npmjs.com first (spec item M12): Settings → Trusted
+# publishing → GitHub Actions, repo whiteroom-tech/whiteroom-ai, workflow
+# publish.yml, environment npm. No npm token is stored anywhere.
+name: Publish package
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Package to publish
+        required: true
+        type: choice
+        options: [sdk, cli]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ inputs.package }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Releases come from reviewed code only.
+    if: github.ref == 'refs/heads/main'
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing and provenance
+    defaults:
+      run:
+        working-directory: packages/${{ inputs.package }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+      - name: Install
+        # Same as CI: the CLI has no lockfile yet.
+        run: |
+          if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
+      - name: Version not already on npm
+        run: |
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "::error::$name@$version is already published. Bump the version in a reviewed PR first."
+            exit 1
+          fi
+          echo "Publishing $name@$version"
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test --if-present
+      - name: Publish with provenance
+        run: npm publish --provenance --access public
