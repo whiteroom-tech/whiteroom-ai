@@ -579,6 +579,8 @@ describe('Model routing', () => {
     expect(draftProblem(draft())).toBeNull();
     expect(draftProblem(draft({ appliesTo: 'all' }))).toBe('Pick the agents this rule covers.');
     expect(draftProblem(draft({ appliesTo: [] }))).toBe('Pick the agents this rule covers.');
+    // Switching it off needs no agents.
+    expect(draftProblem(draft({ appliesTo: [], mode: 'off' }))).toBeNull();
     expect(draftProblem(draft({ mode: 'enforce' }))).toBe('This rule runs in Watch for now.');
     expect(draftProblem(draft({ params: { ladder: ['claude-opus-5-5'] } }))).toBe('Add a second model, cheaper than the first.');
     expect(draftProblem(draft({ params: { ladder: ['a', 'b', 'c', 'd', 'e', 'f'] } }))).toBe('A rule holds up to 5 models. Remove one to save.');

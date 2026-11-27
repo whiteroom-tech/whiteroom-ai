@@ -632,13 +632,14 @@ export function draftProblem(d: RuleDraft): string | null {
   if (d.ruleType === 'data_deletion' && (p.params as DataDeletionParams).commandTools.length > COMMAND_TOOLS_MAX) return toolsFull(COMMAND_TOOLS_MAX);
   if (d.ruleType === 'model_route') {
     // The engine refuses each of these: routing is turned on agent by agent, and only watches for now.
-    if (d.appliesTo === 'all' || d.appliesTo.length === 0) return 'Pick the agents this rule covers.';
+    // Turning it off needs no agents: a rule with none picked yet can still be switched off.
+    if (d.appliesTo === 'all' || (d.appliesTo.length === 0 && d.mode !== 'off')) return 'Pick the agents this rule covers.';
     if (d.mode === 'enforce') return 'This rule runs in Watch for now.';
     const models = (p.params as ModelRouteParams).ladder.length;
     if (models === 1) return 'Add a second model, cheaper than the first.';
     if (models > LADDER_MAX) return `A rule holds up to ${LADDER_MAX} models. Remove one to save.`;
   }
-  if (d.appliesTo !== 'all' && d.appliesTo.length === 0) return 'Pick at least one agent, or choose All agents.';
+  if (d.appliesTo !== 'all' && d.appliesTo.length === 0 && !routes(d)) return 'Pick at least one agent, or choose All agents.';
   if (d.mode !== 'enforce') return null;
   switch (d.ruleType) {
     case 'model_allowlist': return (p.params as ModelAllowlistParams).allowedModels.length === 0 ? 'Pick at least one model before you turn on Enforce.' : null;
