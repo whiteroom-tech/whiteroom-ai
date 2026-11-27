@@ -48,8 +48,14 @@ export interface WhiteRoomFetchOptions {
   fetch?: typeof fetch;
 }
 
-/** True when a reply came from the WhiteRoom engine (its error bodies carry a `whiteroom` field). */
+/**
+ * True when the WhiteRoom engine handled the reply: it adds its security
+ * headers to every response, including a provider's own error it passes back,
+ * and its own errors carry a `whiteroom` body field. A 503 with neither came
+ * from the platform in front of WhiteRoom.
+ */
 async function fromWhiteRoom(res: Response): Promise<boolean> {
+  if (res.headers.get("x-frame-options") === "DENY" && res.headers.has("permissions-policy")) return true;
   try {
     const body: unknown = await res.clone().json();
     return typeof body === "object" && body !== null && "whiteroom" in body;
@@ -138,6 +144,10 @@ export function whiteroomFetch(options: WhiteRoomFetchOptions = {}): typeof fetc
     const method = init?.method ?? req?.method;
     const headers = init?.headers ?? req?.headers;
     const signal = init?.signal ?? req?.signal;
+    // A Request's other settings (redirect, credentials, cache…) carry over to both calls.
+    const fromReq: RequestInit = req
+      ? { redirect: req.redirect, credentials: req.credentials, cache: req.cache, referrer: req.referrer, referrerPolicy: req.referrerPolicy, integrity: req.integrity, keepalive: req.keepalive, mode: req.mode }
+      : {};
 
     const sendDirect = (reason: string) => {
       try {
@@ -145,7 +155,7 @@ export function whiteroomFetch(options: WhiteRoomFetchOptions = {}): typeof fetc
       } catch {
         // A logging hook mustn't stop the call it is logging.
       }
-      return base(direct, { ...init, method, body, signal: signal ?? undefined, headers: withoutWhiteRoomHeaders(headers) });
+      return base(direct, { ...fromReq, ...init, method, body, signal: signal ?? undefined, headers: withoutWhiteRoomHeaders(headers) });
     };
 
     // The timeout covers only the wait for WhiteRoom to start answering. It's
@@ -158,7 +168,7 @@ export function whiteroomFetch(options: WhiteRoomFetchOptions = {}): typeof fetc
 
     let res: Response;
     try {
-      res = await base(url, { ...init, method, body, signal: wrSignal, headers });
+      res = await base(url, { ...fromReq, ...init, method, body, signal: wrSignal, headers });
     } catch (err) {
       combined?.release();
       // The caller cancelled: don't turn that into a provider call.

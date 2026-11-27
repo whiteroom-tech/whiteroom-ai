@@ -249,3 +249,20 @@ test("without AbortSignal.any, the fallback removes its listeners when the reply
   assert.equal(added, 1);
   assert.equal(removed, 1);
 });
+
+test("a provider's 503 passed back by WhiteRoom isn't resent (engine headers mark it)", async () => {
+  const engineHeaders = { "content-type": "application/json", "x-frame-options": "DENY", "permissions-policy": "camera=(), microphone=(), geolocation=()" };
+  const { f, calls } = fake(() => new Response(JSON.stringify({ type: "error", error: { type: "overloaded_error", message: "Overloaded" } }), { status: 503, headers: engineHeaders }));
+  const res = await send(whiteroomFetch({ fetch: f, failOpen: true, providerBaseUrl: ANTHROPIC }));
+  assert.equal(res.status, 503);
+  assert.equal(calls.length, 1);
+});
+
+test("a Request's redirect and credentials settings carry over", async () => {
+  const seen = [];
+  const f = async (url, init = {}) => { seen.push(init); throw new TypeError("fetch failed"); };
+  const req = new Request(`${WR}/v1/messages`, { method: "POST", body: "{}", redirect: "error", credentials: "omit" });
+  await assert.rejects(whiteroomFetch({ fetch: f, failOpen: true, providerBaseUrl: ANTHROPIC })(req));
+  assert.equal(seen[0].redirect, "error");
+  assert.equal(seen[1].credentials, "omit");
+});
