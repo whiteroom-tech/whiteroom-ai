@@ -87,7 +87,7 @@ const SEEN: Record<string, { tool: string; domain: string; agentId: string; firs
     ],
   s2: [{ tool: 'post_message', domain: '(none)', agentId: 'support-triage', firstSeen: day(1) }],
 };
-const RULE_TYPES = ['spend_cap', 'loop_breaker', 'model_allowlist', 'tool_list', 'call_rate', 'keyword', ...(state === 'send-old' ? [] : ['send_limit']), ...(state === 'flow-old' ? [] : ['outside_then_send']), 'block_streak', 'trim_results', ...(state === 'deletion-old' ? [] : ['data_deletion'])];
+const RULE_TYPES = ['spend_cap', 'loop_breaker', 'model_allowlist', 'tool_list', 'call_rate', 'keyword', ...(state === 'send-old' ? [] : ['send_limit']), ...(state === 'flow-old' ? [] : ['outside_then_send']), 'block_streak', 'trim_results', 'model_route', ...(state === 'deletion-old' ? [] : ['data_deletion'])];
 const AGENTS = ['code-reviewer', 'contract-summarizer', 'invoice-reconciler', 'lead-agent', 'market-researcher', 'ops-scheduler', 'support-triage'];
 const history = state === 'empty' ? [] : [
   { id: 'h5', ruleId: 'r10', ruleType: 'loop_breaker', description: 'Added new Loop breaker rule', by: 'user:u1', time: new Date(Date.now() - 40 * 60_000).toISOString() },
@@ -113,6 +113,7 @@ function engine(body: Record<string, unknown>): unknown {
         model_allowlist: { allowedModels: [] }, tool_list: { blockedTools: [] }, call_rate: { maxCalls: 60 }, keyword: { keywords: [], where: 'incoming', wholeWord: true },
         send_limit: { tools: [], domains: [] }, outside_then_send: { readTools: [], sendTools: [] },
         block_streak: { threshold: 3 }, trim_results: { keepRecent: 5, minTokens: 50_000 }, data_deletion: { commandTools: [] },
+        model_route: { ladder: [] },
       };
       const rule = { ...base, changedAt: new Date().toISOString(), id: `n${++version}`, version: 1, ruleType: type, mode: 'watch', response: (body.response as GovernanceRule['response']) ?? (type === 'outside_then_send' ? 'notify' : 'block'), appliesTo: (body.applies_to as GovernanceRule['appliesTo']) ?? 'all', params: (body.params as GovernanceRule['params']) ?? defaults[type] } as GovernanceRule;
       rules = [...rules, rule];

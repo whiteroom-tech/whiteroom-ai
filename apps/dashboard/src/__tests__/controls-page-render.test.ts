@@ -2788,6 +2788,15 @@ describe('Controls: Repeated blocks and Old tool results', () => {
     m.root.unmount();
   });
 
+  it('a Model routing rule that came in covering all agents still shows the agent picker, so it can be fixed', async () => {
+    api.created.push({ ...base, id: 'mr-all', ruleType: 'model_route', mode: 'watch', response: 'notify', appliesTo: 'all', params: { ladder: ['claude-opus-5-5', 'claude-sonnet-5-5'] } });
+    const m = await mount();
+    await m.click([...m.el.querySelectorAll('button.ctl-row')].find((r) => r.querySelector('.ctl-row__main .ctl-cap')?.textContent === 'Model routing'));
+    expect(m.el.querySelector('[aria-label="Which agents this rule applies to"]')).toBeNull();
+    expect(m.text()).toContain('Add agent');
+    m.root.unmount();
+  });
+
   it('Old tool results is added in Watch with its defaults, and opens on both numbers', async () => {
     api.ruleTypes = ALL_TYPES;
     creates();

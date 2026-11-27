@@ -171,7 +171,8 @@ export function ScopeField({ scope, agents, onChange, namedOnly = false }: {
           <option value="some">Specific agents</option>
         </FieldSelect>
       )}
-      {scope !== 'all' && (
+      {/* A named-only rule that somehow covers all agents still gets the picker, so there is a way to fix it. */}
+      {(scope !== 'all' || namedOnly) && (
         <>
           {/* Agents the fleet has seen, or any name typed in: a rule can cover an agent before its first call. */}
           <GroupPicker values={chosen} onChange={onChange} groups={agents.length ? [{ label: 'Agents', options: agents.map((a) => ({ id: a, label: a })) }] : []}
