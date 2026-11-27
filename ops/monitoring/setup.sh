@@ -50,6 +50,17 @@ find_named() { # find_named COLLECTION FIELD DISPLAY_NAME
   api GET "$1?pageSize=100" | jq -r --arg n "$3" ".$2[]? | select(.displayName == \$n) | .name"
 }
 
+# Every notification channel, one JSON object per line, across all pages.
+all_channels() {
+  local token="" page
+  while :; do
+    page="$(api GET "notificationChannels?pageSize=100${token:+&pageToken=$token}")"
+    jq -c '.notificationChannels[]?' <<<"$page"
+    token="$(jq -r '.nextPageToken // empty' <<<"$page")"
+    [ -n "$token" ] || break
+  done
+}
+
 # ---------- Notification channel ----------
 
 CHANNEL="$(find_named notificationChannels notificationChannels "Email $ALERT_EMAIL")"
@@ -67,8 +78,8 @@ if [ -n "$ALERT_SMS" ]; then
   SMS_NAME="SMS ...${ALERT_SMS: -4}"
   # Matched on the full number, not the display name, so two numbers ending
   # in the same four digits stay two channels.
-  SMS_CHANNEL="$(api GET "notificationChannels?pageSize=100" | jq -r --arg n "$ALERT_SMS" \
-    '.notificationChannels[]? | select(.type == "sms" and .labels.number == $n) | .name' | head -1)"
+  SMS_CHANNEL="$(all_channels | jq -r --arg n "$ALERT_SMS" \
+    'select(.type == "sms" and .labels.number == $n) | .name' | head -1)"
   if [ -z "$SMS_CHANNEL" ]; then
     SMS_CHANNEL="$(api POST notificationChannels "$(jq -n --arg n "$SMS_NAME" --arg num "$ALERT_SMS" \
       '{type: "sms", displayName: $n, labels: {number: $num}}')" | jq -r .name)"
