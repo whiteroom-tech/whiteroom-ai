@@ -10,11 +10,16 @@
 #
 # Usage: ops/monitoring/setup.sh                       (needs gcloud auth and jq)
 #        PROJECT=whiteroom-eu ops/monitoring/setup.sh
-# Env:   PROJECT (default whiteroom-prod), ALERT_EMAIL (default info@whiteroom.tech)
+#        ALERT_SMS=+15555550100 ops/monitoring/setup.sh   (adds a text-message route)
+# Env:   PROJECT (default whiteroom-prod), ALERT_EMAIL (default info@whiteroom.tech),
+#        ALERT_SMS (optional, E.164). This repo is public: pass the number at run
+#        time, never commit it. Google texts a code to the number; verify it in
+#        Monitoring → Alerting → Notification channels, or texts won't be sent.
 set -euo pipefail
 
 PROJECT="${PROJECT:-whiteroom-prod}"
 ALERT_EMAIL="${ALERT_EMAIL:-info@whiteroom.tech}"
+ALERT_SMS="${ALERT_SMS:-}"
 case "$PROJECT" in
   whiteroom-prod)
     REGION="us-central1"; SQL_INSTANCE="whiteroom-db-v2"
@@ -45,6 +50,17 @@ find_named() { # find_named COLLECTION FIELD DISPLAY_NAME
   api GET "$1?pageSize=100" | jq -r --arg n "$3" ".$2[]? | select(.displayName == \$n) | .name"
 }
 
+# Every notification channel, one JSON object per line, across all pages.
+all_channels() {
+  local token="" page
+  while :; do
+    page="$(api GET "notificationChannels?pageSize=100${token:+&pageToken=$(jq -rn --arg t "$token" '$t|@uri')}")"
+    jq -c '.notificationChannels[]?' <<<"$page"
+    token="$(jq -r '.nextPageToken // empty' <<<"$page")"
+    [ -n "$token" ] || break
+  done
+}
+
 # ---------- Notification channel ----------
 
 CHANNEL="$(find_named notificationChannels notificationChannels "Email $ALERT_EMAIL")"
@@ -52,6 +68,33 @@ if [ -z "$CHANNEL" ]; then
   CHANNEL="$(api POST notificationChannels "$(jq -n --arg e "$ALERT_EMAIL" \
     '{type: "email", displayName: "Email \($e)", labels: {email_address: $e}}')" | jq -r .name)"
   echo "created channel $CHANNEL"
+fi
+CHANNELS="$(jq -n --arg c "$CHANNEL" '[$c]')"
+
+# A second route (SOC 2 MON-01): a text message, so an alert still reaches
+# someone when email doesn't. Named by its last four digits only.
+if [ -n "$ALERT_SMS" ]; then
+  if ! [[ "$ALERT_SMS" =~ ^\+[1-9][0-9]{7,14}$ ]]; then echo "ALERT_SMS must be E.164, like +15555550100" >&2; exit 1; fi
+  SMS_NAME="SMS ...${ALERT_SMS: -4}"
+  # Matched on the full number, not the display name, so two numbers ending
+  # in the same four digits stay two channels.
+  SMS_CHANNEL="$(all_channels | jq -r --arg n "$ALERT_SMS" \
+    'select(.type == "sms" and .labels.number == $n) | .name' | head -1)"
+  if [ -z "$SMS_CHANNEL" ]; then
+    SMS_CHANNEL="$(api POST notificationChannels "$(jq -n --arg n "$SMS_NAME" --arg num "$ALERT_SMS" \
+      '{type: "sms", displayName: $n, labels: {number: $num}}')" | jq -r .name)"
+    echo "created channel $SMS_CHANNEL"
+  fi
+  # Until the code Google texts is entered, the channel sends nothing. A rerun
+  # sends a fresh code if it still isn't verified.
+  if [ "$(api GET "${SMS_CHANNEL#projects/*/}" | jq -r '.verificationStatus // ""')" != "VERIFIED" ]; then
+    if api POST "${SMS_CHANNEL#projects/*/}:sendVerificationCode" '{}' >/dev/null; then
+      echo "sent a verification code to $SMS_NAME; enter it in Monitoring → Alerting → Notification channels"
+    else
+      echo "couldn't send a verification code to $SMS_NAME; send one from Monitoring → Alerting → Notification channels" >&2
+    fi
+  fi
+  CHANNELS="$(jq -n --arg a "$CHANNEL" --arg b "$SMS_CHANNEL" '[$a, $b]')"
 fi
 
 # ---------- Uptime checks ----------
@@ -94,13 +137,27 @@ PROXY_ID="$(uptime_check "Proxy $PROXY_HOST" "$PROXY_HOST" /health '"status":"ok
 # policy NAME DOCS CONDITIONS_JSON
 policy() {
   local name="$1" docs="$2" conditions="$3"
-  if [ -n "$(find_named alertPolicies alertPolicies "$name")" ]; then return; fi
-  api POST alertPolicies "$(jq -n --arg name "$name" --arg docs "$docs" --arg ch "$CHANNEL" \
+  local existing
+  existing="$(find_named alertPolicies alertPolicies "$name")"
+  if [ -n "$existing" ]; then
+    # Add this file's channels to an existing policy, keeping any it already
+    # has (one added in the console stays). Only patched when something's new.
+    local have want
+    have="$(api GET "${existing#projects/*/}" | jq -c '.notificationChannels // []')"
+    want="$(jq -cn --argjson a "$have" --argjson b "$CHANNELS" '$a + $b | unique')"
+    if [ "$(jq -cn --argjson a "$have" '$a | unique')" != "$want" ]; then
+      api PATCH "${existing#projects/*/}?updateMask=notificationChannels" \
+        "$(jq -n --argjson ch "$want" '{notificationChannels: $ch}')" >/dev/null
+      echo "added channels to policy $name"
+    fi
+    return
+  fi
+  api POST alertPolicies "$(jq -n --arg name "$name" --arg docs "$docs" --argjson ch "$CHANNELS" \
     --argjson conditions "$conditions" '{
       displayName: $name,
       combiner: "OR",
       conditions: $conditions,
-      notificationChannels: [$ch],
+      notificationChannels: $ch,
       documentation: {content: $docs, mimeType: "text/markdown"},
       alertStrategy: {autoClose: "1800s"}
     }')" >/dev/null
