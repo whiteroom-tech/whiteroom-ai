@@ -2819,6 +2819,54 @@ describe('Controls: Repeated blocks and Old tool results', () => {
     m.root.unmount();
   });
 
+  describe('Model routing where the engine offers Enforce', () => {
+    const routeRule = (over: Partial<GovernanceRule> = {}): GovernanceRule => ({ ...base, id: 'mr1', ruleType: 'model_route', mode: 'watch', response: 'notify', appliesTo: ['lead-agent'], params: { ladder: ['claude-opus-5-5', 'claude-sonnet-5-5'] }, ...over });
+    const open = async (rule: GovernanceRule) => {
+      api.routeEnforce = true;
+      api.created.push(rule);
+      const m = await mount();
+      await m.click([...m.el.querySelectorAll('button.ctl-row')].find((r) => r.querySelector('.ctl-row__main .ctl-cap')?.textContent === 'Model routing'));
+      return m;
+    };
+
+    it('turning on Enforce asks first, in its own words, with the calls it found while watching', async () => {
+      api.byRule = { model_route: { blocked: 0, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0, wouldRoute: 41 } as never };
+      saves();
+      const m = await open(routeRule());
+      await m.click(m.seg('Enforce'));
+      await m.click(m.button('Save'));
+      expect(m.text()).toContain('Start sending calls to cheaper models?');
+      expect(m.text()).toContain('Could have used a cheaper model41 calls');
+      expect(m.text()).toContain('From now on, a call that can use a cheaper model on your list is sent to it. This changes the model the agent asked for. No call is blocked.');
+      expect(api.update).not.toHaveBeenCalled();
+      await m.click(m.button('Start routing'));
+      expect(api.update).toHaveBeenCalledWith('f1', 'mr1', { mode: 'enforce', ifVersion: 1 }, 'k');
+      m.root.unmount();
+    });
+
+    it('stepping down from Enforce asks in its own words', async () => {
+      saves();
+      const m = await open(routeRule({ mode: 'enforce' }));
+      await m.click(m.seg('Watch'));
+      await m.click(m.button('Save'));
+      expect(m.text()).toContain('Stop sending calls to cheaper models?');
+      expect(m.text()).toContain('Calls from lead-agent will go to the model the agent asks for. In Watch it changes nothing and records the calls that could use a cheaper model. You can undo it.');
+      expect(m.text()).not.toContain('You won’t get alerts');
+      expect(m.button('Keep routing')).toBeTruthy();
+      await m.click(m.button('Switch to Watch'));
+      expect(api.update).toHaveBeenCalledWith('f1', 'mr1', { mode: 'watch', ifVersion: 1 }, 'k');
+      m.root.unmount();
+    });
+
+    it('Turn back on says so when the rule changed somewhere else', async () => {
+      api.update.mockImplementation(async () => { throw new WhiteRoomApiError('HTTP 409', 409, 'changed'); });
+      const m = await open(routeRule({ mode: 'enforce', params: { ladder: ['claude-opus-5-5', 'claude-sonnet-5-5'], suspended: true } }));
+      await m.click(m.button('Turn back on'));
+      expect(m.text()).toContain('This rule changed somewhere else. It’s been reloaded: try again.');
+      m.root.unmount();
+    });
+  });
+
   it('a Model routing rule that came in covering all agents still shows the agent picker, so it can be fixed', async () => {
     api.created.push({ ...base, id: 'mr-all', ruleType: 'model_route', mode: 'watch', response: 'notify', appliesTo: 'all', params: { ladder: ['claude-opus-5-5', 'claude-sonnet-5-5'] } });
     const m = await mount();

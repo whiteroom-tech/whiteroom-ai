@@ -986,12 +986,14 @@ export function rowCount(rule: GovernanceRule, ctx: {
   if (ctx.neverFirst) return { text: `Never triggers (${ctx.neverFirst} cap first)`, tone: 'warn' };
   const week = ctx.byRuleId ? ctx.byRuleId[rule.id] ?? NO_ACTIONS : ctx.onlyOfItsType && ctx.byRuleType ? ctx.byRuleType[rule.ruleType] ?? NO_ACTIONS : undefined;
   const response = rule.response ?? 'block';
+  // The rule's own state, not a count: said whichever agent is in view, and before any count has loaded.
+  if (suspended(rule)) return { text: 'Suspended · acting as Watch', tone: 'warn' };
   if (rule.mode === 'enforce') {
     const justThem = !ctx.agent || (rule.appliesTo !== 'all' && rule.appliesTo.length === 1 && rule.appliesTo[0] === ctx.agent);
     if (!justThem || !week) return { text: '', tone: 'plain' };
     const n = enforcedCount(rule, week);
     // Nothing was wrong with a call Model routing moved: said plainly, never as caught.
-    if (routes(rule)) return suspended(rule) ? { text: 'Suspended · acting as Watch', tone: 'warn' } : { text: n ? `${fmtCount(n)} sent to a cheaper model · 7 days` : 'None yet · 7 days', tone: 'plain' };
+    if (routes(rule)) return { text: n ? `${fmtCount(n)} sent to a cheaper model · 7 days` : 'None yet · 7 days', tone: 'plain' };
     return n ? { text: `${fmtCount(n)} ${trims(rule) ? 'trimmed' : TALLY_WORD[response]} · 7 days`, tone: 'hot' } : NONE_CAUGHT;
   }
   if (routes(rule)) {
