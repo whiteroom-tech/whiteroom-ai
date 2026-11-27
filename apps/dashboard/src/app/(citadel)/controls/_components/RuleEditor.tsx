@@ -25,7 +25,7 @@ import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
 import {
   canAddSeen, COMMAND_TOOLS_MAX, DELETION_DOCS_URL, domainEntry, domainProblem, domainsHidden, domainTotal, FLOW_TOOLS_MAX, FLOW_WHEN, looksLikeCommandRunner, looksLikeReader, looksLikeSender, SEEN_RESERVED_TEXT, seenFullLine, seenNotOnList, SEND_DOMAINS_MAX, SEND_TOOLS_MAX, toolsFull, toolsWithNoDomain, trims,
 } from '@/lib/controls-view';
-import { AGENT_NOTE, isMarker, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, looksLikeDeleteOrChange, newMarker, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, ladderIds, ladderOf, modeChoices, responseChoices, routes, sendsAlert, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
+import { AGENT_NOTE, isMarker, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, looksLikeDeleteOrChange, newMarker, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, ladderIds, ladderOf, modeChoices, suspended, SUSPENDED_TAG, responseChoices, routes, sendsAlert, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
 import { Chip, field, GroupPicker, InlineSelect, MarkerChip, MODEL_GROUPS, NumberField, ScopeField, ToolPicker } from './pickers';
 import { ReplayEstimate } from './ReplayEstimate';
 
@@ -42,7 +42,7 @@ const ACTS: Record<Exclude<GovernanceRule['ruleType'], 'keyword' | 'loop_breaker
   outside_then_send: 'Checks each reply once the agent has read outside content. It never holds a call.',
   block_streak: 'Acts on the blocked call that reaches the limit.',
   trim_results: 'Acts before the request goes to the model.',
-  model_route: 'It changes no call.',
+  model_route: 'Acts before the call goes to the model.',
   data_deletion: 'Acts before the agent gets the tool call.',
 };
 const KEYWORD_ACTS: Record<KeywordWhere, string> = {
@@ -87,7 +87,7 @@ export function toolEstimateBlocker(p: ToolListParams & { targets?: unknown }): 
   return p.blockedTools.length === 0 ? 'Add a tool first.' : null;
 }
 
-export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fleetTools, onToolPicker, govV1, alertChannel, history, ruleHistory, actors, undoOf, onUndo, fleetDailySpend = null, agentSpend = [], status, startOpen = false, dirty, error, saving, onSave, onDiscard, onClose, onRemove, seen, onSeenRetry, onStaged }: {
+export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fleetTools, onToolPicker, govV1, routeEnforce = false, onResume, alertChannel, history, ruleHistory, actors, undoOf, onUndo, fleetDailySpend = null, agentSpend = [], status, startOpen = false, dirty, error, saving, onSave, onDiscard, onClose, onRemove, seen, onSeenRetry, onStaged }: {
   /** The fleet, for the Estimate under the rule's settings; without it there is none. */
   fleetId?: string;
   authKey?: string;
@@ -106,6 +106,10 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
   /** A tool picker is showing: read the fleet's tools, if not already. */
   onToolPicker: () => void;
   govV1: boolean;
+  /** Whether a Model routing rule can be set to Enforce on this fleet. */
+  routeEnforce?: boolean;
+  /** Turn a Model routing rule that suspended itself back on. */
+  onResume?: () => void;
   /** Whether the fleet has somewhere to send alerts (Slack or Teams); null while unknown. */
   alertChannel: boolean | null;
   /** This rule's own history, newest first. */
@@ -190,7 +194,7 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
   const [whenOpen, setWhenOpen] = useState(() => startOpen || !!emptyPick(rule) || 'error' in draftParams(draft));
   const when = whenSentence({ ruleType: rule.ruleType, params: asRule.params });
   const where = rule.ruleType === 'keyword' ? (p as KeywordParams).where : null;
-  const timing = draft.mode === 'off' ? '' : rule.ruleType === 'keyword' ? KEYWORD_ACTS[where!] : rule.ruleType === 'loop_breaker' ? loopActs(draft.number, (p as LoopBreakerParams).threshold) : ACTS[rule.ruleType];
+  const timing = draft.mode === 'off' ? '' : rule.ruleType === 'keyword' ? KEYWORD_ACTS[where!] : rule.ruleType === 'loop_breaker' ? loopActs(draft.number, (p as LoopBreakerParams).threshold) : rule.ruleType === 'model_route' && (draft.mode !== 'enforce' || suspended(rule)) ? 'It changes no call.' : ACTS[rule.ruleType];
   // What the fleet spends a day, to set a dollars-a-day cap by: behind When's ⓘ with the fine print.
   const dailyCap = rule.ruleType === 'spend_cap' && (p as SpendCapParams).unit === 'dollars' && (p as SpendCapParams).scope === 'day';
   const days = (n: number) => (n === 1 ? 'day' : `${n} days`);
@@ -209,7 +213,7 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
     return needs ? actionAvailableFrom(rule.id, ruleHistory, rule.mode) : null;
   };
   const actions = responseChoices(govV1, rule.ruleType, rule.response ?? 'block', draft.response);
-  const oneAction = !trim && actions.length === 1;
+  const oneAction = !trim && !route && actions.length === 1;
   const nextOpen = Math.min(...actions.map(waitUntil).filter((t): t is number => typeof t === 'number'));
   useEffect(() => {
     if (!Number.isFinite(nextOpen)) return;
@@ -237,11 +241,18 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
         <RuleCategory type={rule.ruleType} />
         <Button variant="ghost" size={28} onClick={onClose} className="gov-edhead__close">Close</Button>
         <h2 id="ctl-ed-title" tabIndex={-1} className="gov-edhead__title ctl-ed-title">{RULE_LABELS[rule.ruleType]}</h2>
-        <span className={`gov-edhead__mode${draft.mode === 'enforce' && draft.response !== 'notify' ? ' is-on' : ''}`}>{modeTagText(draft)}{dirty ? ' · unsaved' : ''}</span>
+        <span className={`gov-edhead__mode${draft.mode === 'enforce' && draft.response !== 'notify' ? ' is-on' : ''}`}>{suspended(rule) && draft.mode === 'enforce' ? SUSPENDED_TAG : modeTagText(draft)}{dirty ? ' · unsaved' : ''}</span>
       </div>
       {/* Phone only: the header cuts the name short and has no room for the category. */}
       <p className="gov-edhead__full"><RuleCategory type={rule.ruleType} /><span aria-hidden="true">{RULE_LABELS[rule.ruleType]}</span></p>
       <p className="ctl-status">{status}</p>
+      {/* A rule that stopped itself: said where its status is, with the one way back. */}
+      {suspended(rule) && routeEnforce && onResume && (
+        <div className="ctl-warnbox">
+          <p style={{ margin: '0 0 8px' }}>This rule suspended itself and is changing no calls. Check the agents it covers, then turn it back on.</p>
+          <Button size={28} disabled={saving || dirty} onClick={onResume}>Turn back on</Button>
+        </div>
+      )}
       {rule.sourceRecommendationId && (
         <p style={{ margin: '-12px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
           From a Diagnosis suggestion · <Link href={ROUTES.performance} style={{ color: 'var(--brand)', fontWeight: 600 }}>see it in Performance</Link>
@@ -521,13 +532,13 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
         <div className="gov-fill" style={{ alignSelf: 'flex-start', display: 'flex', maxWidth: '100%' }}>
           <SegmentedControl<GovernanceMode> label="What happens" value={draft.mode}
             onChange={(m) => onDraft(chooseMode(draft, m, rule, actions, (r) => !waitFor(r)))}
-            options={modeChoices(rule.ruleType).map((m) => ({ value: m, label: MODE_LABEL[m] }))} />
+            options={modeChoices(rule.ruleType, routeEnforce).map((m) => ({ value: m, label: MODE_LABEL[m] }))} />
         </div>
         {/* Outside content, then send data only alerts: fixed text, no choice (DLP spec 3.3). The same for Repeated blocks on a fleet without Pause and Stop. */}
         {draft.mode === 'enforce' && oneAction && (
           <p style={{ margin: 0, fontSize: 'var(--fs-md)' }}>When enforced: <strong>{RESPONSE_LABEL[actions[0]]}</strong></p>
         )}
-        {draft.mode === 'enforce' && !oneAction && !trim && (
+        {draft.mode === 'enforce' && !oneAction && !trim && !route && (
           <label style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, fontSize: 'var(--fs-md)' }}>
             When enforced:
             {/* An action that needs a day in Watch first stays in the list, disabled, saying when it opens. */}
@@ -548,7 +559,7 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
           </label>
         )}
         <p style={help}>{send && draft.mode === 'enforce' && draft.response === 'notify' ? 'You get an alert the first time a tool sends to a new domain. The call goes through.'
-          : flow && draft.mode === 'enforce' ? 'You get one alert per run. The agent keeps going.' : whatHappensLine(draft)}</p>
+          : flow && draft.mode === 'enforce' ? 'You get one alert per run. The agent keeps going.' : suspended(rule) && routeEnforce && draft.mode === 'enforce' ? 'Suspended: it changes no call until it is turned back on.' : whatHappensLine(draft, routeEnforce)}</p>
         {send && draft.mode === 'enforce' && draft.response === 'block' && (
           <p style={help}>Streamed replies from agents with these tools arrive all at once. Replies on Bedrock can’t be checked yet.</p>
         )}
@@ -573,7 +584,7 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
       <details className="gov-details">
         <summary>What the agent sees</summary>
         <pre style={{ margin: '10px 0 0', background: 'var(--sunk)', borderRadius: 7, padding: 12, fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', lineHeight: 1.6, color: 'var(--tx2)', overflowX: 'auto' }}>
-          {agentGets({ ruleType: rule.ruleType, params: asRule.params, response: draft.response })}
+          {agentGets({ ruleType: rule.ruleType, params: asRule.params, response: draft.response, mode: suspended(rule) ? 'watch' : draft.mode })}
         </pre>
         {draft.response !== 'notify' && <p style={{ ...help, marginTop: 8 }}>{AGENT_NOTE[rule.ruleType]}</p>}
       </details>

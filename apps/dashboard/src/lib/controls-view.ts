@@ -236,6 +236,21 @@ export const trims = (r: { ruleType?: string }) => r.ruleType === 'trim_results'
  * outcome is put into words, it has its own.
  */
 export const routes = (r: { ruleType?: string }) => r.ruleType === 'model_route';
+/** Old tool results and Model routing change the request that goes out. They hold the notify response and never alert or block. */
+const changesRequest = (r: { ruleType?: string }) => trims(r) || routes(r);
+/**
+ * Rules as the page reads them. A Model routing rule set to Enforce on a fleet where Enforce isn't
+ * offered changes no call either, so it reads the same as one that suspended itself: acting as Watch.
+ */
+export function readRules(rules: GovernanceRule[], routeEnforce: boolean): GovernanceRule[] {
+  if (routeEnforce) return rules;
+  return rules.map((r) => (routes(r) && r.mode === 'enforce' ? { ...r, params: { ...(r.params as ModelRouteParams), suspended: true as const } } : r));
+}
+
+/** A suspended rule's tag, where another rule's says Enforce. */
+export const SUSPENDED_TAG = 'Suspended';
+/** A Model routing rule that stopped changing calls on its own: it acts as Watch until someone turns it back on. */
+export const suspended = (r: Pick<GovernanceRule, 'ruleType' | 'params' | 'mode'>) => routes(r) && r.mode === 'enforce' && (r.params as ModelRouteParams).suspended === true;
 
 /** A Model routing rule's model list, strongest first. One read for every use: a rule that came in with none has an empty list, not a missing one. */
 export const ladderOf = (p: ModelRouteParams): LadderEntry[] => p.ladder ?? [];
@@ -314,7 +329,9 @@ export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 
     }
     case 'model_route': {
       const p = rule.params as ModelRouteParams;
-      return ladderOf(p).length ? { pre: 'Record the calls that could use a cheaper model. Models, strongest first: ', val: ladderText(p), post: '.' } : { pre: 'No models picked yet.', val: '', post: '' };
+      // A rule that suspended itself changes no call: it reads as it acts.
+      const does = rule.mode === 'enforce' && p.suspended !== true ? 'Send calls that can use a cheaper model to it.' : 'Record the calls that could use a cheaper model.';
+      return ladderOf(p).length ? { pre: `${does} Models, strongest first: `, val: ladderText(p), post: '.' } : { pre: 'No models picked yet.', val: '', post: '' };
     }
     default:
       return unhandledType(rule.ruleType, { pre: UNKNOWN_RULE, val: '', post: '' });
@@ -355,9 +372,10 @@ function categoryRank(t: GovernanceRuleType): number {
 }
 
 /** Strongest first: Stop, Pause, Block, Only alert me, Watch, Off. Trimming changes the call, so it sits with Block. */
-function strengthRank(r: Pick<GovernanceRule, 'mode' | 'response' | 'ruleType'>): number {
-  if (r.mode !== 'enforce') return r.mode === 'watch' ? 4 : 5;
-  return trims(r) ? 2 : 3 - RESPONSE_RANK[r.response ?? 'block'];
+function strengthRank(r: Pick<GovernanceRule, 'mode' | 'response' | 'ruleType' | 'params'>): number {
+  // A rule that suspended itself changes no call: it sorts with Watch.
+  if (r.mode !== 'enforce' || suspended(r)) return r.mode === 'off' ? 5 : 4;
+  return changesRequest(r) ? 2 : 3 - RESPONSE_RANK[r.response ?? 'block'];
 }
 
 function typeRank(t: GovernanceRuleType): number {
@@ -399,7 +417,7 @@ export function spendOverlap(rules: readonly GovernanceRule[]): { never: Governa
 const TALLY: Record<GovernanceResponse, keyof RuleActionCounts> = { notify: 'toldYou', block: 'blocked', pause: 'paused', stop: 'stopped' };
 const TALLY_WORD: Record<GovernanceResponse, string> = { notify: NOTIFY.done, block: 'blocked', pause: 'paused', stop: 'stopped' };
 /** What an enforced rule did this week: Old tool results counts under trimmed (0 from an engine that doesn't send it), never under its response. */
-const enforcedCount = (rule: Pick<GovernanceRule, 'ruleType' | 'response'>, week: RuleActionCounts) => (trims(rule) ? week.trimmed ?? 0 : week[TALLY[rule.response ?? 'block']] ?? 0);
+const enforcedCount = (rule: Pick<GovernanceRule, 'ruleType' | 'response'>, week: RuleActionCounts) => (trims(rule) ? week.trimmed ?? 0 : routes(rule) ? week.routed ?? 0 : week[TALLY[rule.response ?? 'block']] ?? 0);
 const times = (n: number) => (n === 1 ? 'once' : `${fmtCount(n)} times`);
 /** A rule (or agent) with no actions. */
 export const NO_ACTIONS: RuleActionCounts = { blocked: 0, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0 };
@@ -431,10 +449,10 @@ const REASON: Record<Exclude<GovernanceRuleType, 'block_streak' | 'trim_results'
 };
 
 /** The engine's 403 for this rule (blockResponseBody); nothing for Only alert me. */
-export function agentGets(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'response'>): string {
+export function agentGets(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'response'> & { mode?: GovernanceMode }): string {
   const response = rule.response ?? 'block';
   if (rule.ruleType === 'trim_results') return 'Nothing: the call goes through.\nOld tool results in it are replaced with a short note.';
-  if (rule.ruleType === 'model_route') return 'Nothing: the call goes through unchanged.';
+  if (rule.ruleType === 'model_route') return rule.mode === 'enforce' && (rule.params as ModelRouteParams).suspended !== true ? 'The reply, from a cheaper model on your list when the call can use one.\nNothing else changes.' : 'Nothing: the call goes through unchanged.';
   if (rule.ruleType === 'block_streak') {
     // The call that reaches the limit was blocked by another rule: that rule's 403 is what the agent gets.
     const then = response === 'notify' ? 'You get an alert; the agent doesn’t.' : `Then the agent is ${response === 'stop' ? 'stopped' : 'paused'} until someone resumes it.`;
@@ -590,7 +608,7 @@ export function changeUnit(d: RuleDraft, unit: 'tokens' | 'dollars'): RuleDraft 
 
 /** Whether the rule, as drafted, sends an alert when it acts: Only alert me, Pause, Stop, or Block with an alert. Old tool results never does. */
 export function sendsAlert(d: Pick<RuleDraft, 'mode' | 'response' | 'alsoNotify'> & { ruleType?: GovernanceRuleType }): boolean {
-  return d.mode === 'enforce' && !trims(d) && (d.response !== 'block' || d.alsoNotify);
+  return d.mode === 'enforce' && !changesRequest(d) && (d.response !== 'block' || d.alsoNotify);
 }
 
 /** A new response; "Also alert me" only applies to Block, so it's cleared otherwise. */
@@ -617,7 +635,7 @@ export function draftChanges(d: RuleDraft, rule: GovernanceRule): {
 }
 
 /** Why Save can't go ahead yet, or null. */
-export function draftProblem(d: RuleDraft): string | null {
+export function draftProblem(d: RuleDraft, opts: { /** Whether the engine takes Enforce for Model routing on this fleet. */ routeEnforce?: boolean } = {}): string | null {
   const p = draftParams(d);
   if ('error' in p) return p.error;
   if (d.ruleType === 'send_limit') {
@@ -633,10 +651,10 @@ export function draftProblem(d: RuleDraft): string | null {
   }
   if (d.ruleType === 'data_deletion' && (p.params as DataDeletionParams).commandTools.length > COMMAND_TOOLS_MAX) return toolsFull(COMMAND_TOOLS_MAX);
   if (d.ruleType === 'model_route') {
-    // The engine refuses each of these: routing is turned on agent by agent, and only watches for now.
+    // The engine refuses each of these: routing is turned on agent by agent, and enforces only where that is turned on.
     // Turning it off needs no agents: a rule with none picked yet can still be switched off.
     if (d.appliesTo === 'all' || (d.appliesTo.length === 0 && d.mode !== 'off')) return 'Pick the agents this rule covers.';
-    if (d.mode === 'enforce') return 'This rule runs in Watch for now.';
+    if (d.mode === 'enforce' && !opts.routeEnforce) return 'This rule runs in Watch for now.';
     // The engine refuses a list of one model, or of more than five, in any mode: these hold for Off too.
     const models = ladderOf(p.params as ModelRouteParams).length;
     if (models === 1) return 'Add a second model, cheaper than the first.';
@@ -710,7 +728,7 @@ export function weakenings(prev: GovernanceRule, next: GovernanceRule): string[]
   const pr = prev.response ?? 'block', nr = next.response ?? 'block';
   if (next.mode === 'enforce' && prev.mode === 'enforce' && RESPONSE_RANK[nr] < RESPONSE_RANK[pr]) out.push(`When enforced: ${VERB[pr]} → ${VERB[nr]}`);
   // Any lost alert, whatever the response: Pause, Stop and Only alert me alert; Block does when asked to.
-  const alerts = (r: GovernanceRule) => r.mode === 'enforce' && !trims(r) && ((r.response ?? 'block') !== 'block' || !!r.alsoNotify);
+  const alerts = (r: GovernanceRule) => r.mode === 'enforce' && !changesRequest(r) && ((r.response ?? 'block') !== 'block' || !!r.alsoNotify);
   if (alerts(prev) && !alerts(next) && MODE_RANK[next.mode] >= MODE_RANK[prev.mode]) out.push('It stops sending you an alert');
   if (prev.appliesTo === 'all' && next.appliesTo !== 'all') out.push(`Covers only ${next.appliesTo.join(', ') || 'no agents'}, not every agent`);
   else if (prev.appliesTo !== 'all' && next.appliesTo !== 'all') {
@@ -912,12 +930,15 @@ export function ruleGroups(rules: readonly GovernanceRule[]): {
 }
 
 /** An on rule that only alerts: it acts, but never stops a call, so it isn't counted as Enforce. */
-export const alertOnly = (r: Pick<GovernanceRule, 'mode' | 'response'> & { ruleType?: GovernanceRuleType }) => r.mode === 'enforce' && r.response === 'notify' && !trims(r);
+export const alertOnly = (r: Pick<GovernanceRule, 'mode' | 'response'> & { ruleType?: GovernanceRuleType }) => r.mode === 'enforce' && r.response === 'notify' && !changesRequest(r);
+
+/** The mode a rule acts in, for the counts: a rule that suspended itself changes no call, so it counts as Watch. */
+const actsAs = (r: GovernanceRule): GovernanceMode => (suspended(r) ? 'watch' : r.mode);
 
 /** A group's sub-line, worded like the lead line: "1 Enforce · 6 Watch" (and "· 1 Alert only" when there is one). */
 export function modeCount(rules: readonly GovernanceRule[]): string {
   const a = rules.filter(alertOnly).length;
-  const e = rules.filter((r) => r.mode === 'enforce').length - a, w = rules.filter((r) => r.mode === 'watch').length;
+  const e = rules.filter((r) => actsAs(r) === 'enforce').length - a, w = rules.filter((r) => actsAs(r) === 'watch').length;
   return `${e} ${MODE_LABEL.enforce}${a ? ` · ${a} ${NOTIFY.tag}` : ''} · ${w} ${MODE_LABEL.watch}`;
 }
 
@@ -925,7 +946,7 @@ export function modeCount(rules: readonly GovernanceRule[]): string {
 export function leadCounts(rules: readonly GovernanceRule[]): { total: number; enforce: number; alert: number; watch: number; off: number } {
   const set = rules.filter((r) => !notSetUp(r));
   const alert = set.filter(alertOnly).length;
-  return { total: set.length, enforce: set.filter((r) => r.mode === 'enforce').length - alert, alert, watch: set.filter((r) => r.mode === 'watch').length, off: set.filter((r) => r.mode === 'off').length };
+  return { total: set.length, enforce: set.filter((r) => actsAs(r) === 'enforce').length - alert, alert, watch: set.filter((r) => actsAs(r) === 'watch').length, off: set.filter((r) => r.mode === 'off').length };
 }
 
 /** When the one rule that blocks acts, for the amber box: "only after 100 repeated calls". */
@@ -981,10 +1002,14 @@ export function rowCount(rule: GovernanceRule, ctx: {
   if (ctx.neverFirst) return { text: `Never triggers (${ctx.neverFirst} cap first)`, tone: 'warn' };
   const week = ctx.byRuleId ? ctx.byRuleId[rule.id] ?? NO_ACTIONS : ctx.onlyOfItsType && ctx.byRuleType ? ctx.byRuleType[rule.ruleType] ?? NO_ACTIONS : undefined;
   const response = rule.response ?? 'block';
+  // The rule's own state, not a count: said whichever agent is in view, and before any count has loaded.
+  if (suspended(rule)) return { text: 'Suspended · acting as Watch', tone: 'warn' };
   if (rule.mode === 'enforce') {
     const justThem = !ctx.agent || (rule.appliesTo !== 'all' && rule.appliesTo.length === 1 && rule.appliesTo[0] === ctx.agent);
     if (!justThem || !week) return { text: '', tone: 'plain' };
     const n = enforcedCount(rule, week);
+    // Nothing was wrong with a call Model routing moved: said plainly, never as caught.
+    if (routes(rule)) return { text: n ? `${fmtCount(n)} sent to a cheaper model · 7 days` : 'None yet · 7 days', tone: 'plain' };
     return n ? { text: `${fmtCount(n)} ${trims(rule) ? 'trimmed' : TALLY_WORD[response]} · 7 days`, tone: 'hot' } : NONE_CAUGHT;
   }
   if (routes(rule)) {
@@ -1029,6 +1054,11 @@ export function ruleStatus(rule: GovernanceRule, ctx: {
   const nothingPicked = emptyPick(rule);
   if (nothingPicked) return `Does nothing until you add ${nothingPicked}`;
   if (ctx.neverFirst) return `Never triggers · the ${ctx.neverFirst} cap catches it first`;
+  if (suspended(rule)) return `Suspended for ${who} · changing no calls, acting as Watch`;
+  if (rule.mode === 'enforce' && routes(rule)) {
+    const n = ctx.week ? enforcedCount(rule, ctx.week) : null;
+    return `Routing for ${who}${n === null ? '' : n ? ` · ${fmtCount(n)} ${plural(n, 'call')} sent to a cheaper model in 7 days` : ' · none yet in 7 days'}`;
+  }
   if (rule.mode === 'enforce') {
     const n = ctx.week ? enforcedCount(rule, ctx.week) : null;
     const tail = n === null ? '' : n ? ` · ${trims(rule) ? `${fmtCount(n)} trimmed` : DID[response](n)} in 7 days` : ' · nothing caught in 7 days';
@@ -1179,8 +1209,8 @@ export function whenSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params'>):
 
 /** "What happens": Off · Watch · Enforce, in that order. */
 export const MODE_CHOICES: readonly GovernanceMode[] = ['off', 'watch', 'enforce'];
-/** The modes a rule type can be set to: Model routing only watches for now, so it isn't offered Enforce. */
-export const modeChoices = (ruleType: GovernanceRuleType): readonly GovernanceMode[] => (ruleType === 'model_route' ? MODE_CHOICES.filter((m) => m !== 'enforce') : MODE_CHOICES);
+/** The modes a rule type can be set to: Model routing is offered Enforce only where the engine takes it for the fleet. */
+export const modeChoices = (ruleType: GovernanceRuleType, routeEnforce = false): readonly GovernanceMode[] => (ruleType === 'model_route' && !routeEnforce ? MODE_CHOICES.filter((m) => m !== 'enforce') : MODE_CHOICES);
 
 /**
  * The draft with a new mode. Leaving Enforce puts back the saved rule's
@@ -1249,10 +1279,11 @@ const ENFORCE_LINE: Record<GovernanceResponse, string> = {
 };
 
 /** The one plain line under What happens, for the pick. */
-export function whatHappensLine(d: Pick<RuleDraft, 'mode' | 'response' | 'alsoNotify'> & { ruleType?: GovernanceRuleType }): string {
+export function whatHappensLine(d: Pick<RuleDraft, 'mode' | 'response' | 'alsoNotify'> & { ruleType?: GovernanceRuleType }, routeEnforce = false): string {
   if (d.mode === 'off') return 'Off: does nothing and records nothing.';
-  // Enforce isn't offered for it; a rule that came in enforced says so, and Save asks for Watch.
-  if (routes(d)) return d.mode === 'enforce' ? 'Enforce isn’t available for this rule yet. Set it to Watch or Off.' : 'Watch: changes nothing and records the calls that could use a cheaper model on the list.';
+  // Where Enforce isn't offered for it, a rule that came in enforced says so, and Save asks for Watch.
+  if (routes(d) && d.mode === 'enforce') return routeEnforce ? 'Enforce: a call that can use a cheaper model on the list is sent to it. Any other call goes as the agent wrote it.' : 'Enforce isn’t available for this rule yet. Set it to Watch or Off.';
+  if (routes(d)) return 'Watch: changes nothing and records the calls that could use a cheaper model on the list.';
   if (trims(d)) {
     return d.mode === 'watch' ? 'Watch: changes nothing and records what it would have removed.'
       : 'Enforce: edits what the agent sends to the model. It never blocks a call or alerts you.';

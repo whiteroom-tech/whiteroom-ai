@@ -40,7 +40,7 @@ import { UNNAMED_CALLS_REFUSED } from "@/lib/setup";
 import {
   appliesNow, commandLookingTools, deleteLookingTools, draftChanges, draftFrom, draftParams, draftProblem, isDirty, money, NO_ACTIONS, rulesFor, ruleSentenceText, spendOverlap,
   type RuleDraft,
-  stopping, trims,
+  stopping, readRules, routes, suspended, SUSPENDED_TAG, trims,
   weakenings,
   averageDailySpend,
   sameValue,
@@ -107,6 +107,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   const [history, setHistory] = useState<GovernanceHistoryEntry[]>([]);
   const [agents, setAgents] = useState<string[]>([]);
   const [govV1, setGovV1] = useState(false);
+  /** Whether a Model routing rule can be set to Enforce here (governance_list routeEnforce); false from an older engine. */
+  const [routeEnforce, setRouteEnforce] = useState(false);
   /** The rule types the engine takes (governance_list ruleTypes); undefined from an older engine. */
   const [ruleTypes, setRuleTypes] = useState<string[] | undefined>(undefined);
   const [actors, setActors] = useState<ControlActor[]>([]);
@@ -249,13 +251,14 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       const req = ++wouldReq.current;
       void wouldActsFor(fleetId, d.rules.filter((r) => r.mode === "watch"), authKey)
         .then((counts) => { if (req === wouldReq.current) setWouldActs(counts); });
-      setRules(d.rules);
+      setRules(readRules(d.rules, d.routeEnforce === true));
       setUnknownRules(d.unknownRules ?? []);
       setSkippedRules(Array.isArray(d.skippedRules) ? d.skippedRules : []);
       setHistory(d.history);
       void loadActors(d.history);
       setAgents(d.agents);
       setGovV1(!!d.govV1);
+      setRouteEnforce(d.routeEnforce === true);
       setRuleTypes(Array.isArray(d.ruleTypes) ? d.ruleTypes : undefined);
       setLoaded(true);
       setListed(true);
@@ -448,20 +451,23 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
   /** Saves the draft, or asks first. */
   const save = (weakenChecked = false) => {
     if (!selected || !draft || !dirty) return;
-    const problem = draftProblem(draft);
+    const problem = draftProblem(draft, { routeEnforce });
     if (problem) { setError(problem); return; }
     const parsed = draftParams(draft);
     const next: GovernanceRule = { ...selected, mode: draft.mode, response: draft.response, alsoNotify: draft.alsoNotify, appliesTo: draft.appliesTo, params: "params" in parsed ? parsed.params : selected.params };
     const ask = (d: Dialog) => setDialog(d);
     // Anything that makes the rule weaker is said and confirmed first (the change log can undo it).
     if (!weakenChecked) {
-      const reasons = weakenings(selected, next);
+      // A rule that suspended itself is changing no call: stepping it down takes nothing away, so only
+      // its other changes are weighed. Who it covers is still asked.
+      const was = suspended(selected) ? { ...selected, mode: next.mode } : selected;
+      const reasons = weakenings(was, next);
       // Narrowing a rule for all agents asks who it should cover: a copy (the safe choice) or a move.
       if (selected.appliesTo === "all" && next.appliesTo !== "all" && next.appliesTo.length > 0) {
         return ask({ kind: "narrow", rule: selected, next, reasons: weakenings(selected, { ...next, appliesTo: "all" }) });
       }
       // Only stepping down from Enforce, nothing else weaker: "Stop blocking with this rule?"
-      if (selected.mode === "enforce" && next.mode !== "enforce" && !weakenings(selected, { ...next, mode: selected.mode }).length) {
+      if (was.mode === "enforce" && next.mode !== "enforce" && !weakenings(selected, { ...next, mode: selected.mode }).length) {
         return ask({ kind: "downgrade", rule: selected, next });
       }
       if (reasons.length) return ask({ kind: "weaken", rule: selected, next, reasons });
@@ -476,6 +482,26 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     if (kw.kind === "confirm") return ask({ kind: "keyword", rule: selected, next });
     if (draft.mode === "enforce" && selected.mode !== "enforce") return ask({ kind: "enforce", rule: selected, next });
     void commit(selected, draft);
+  };
+
+  /** Turns a Model routing rule that suspended itself back on: a save that sets it to Enforce again. */
+  const resume = async (rule: GovernanceRule) => {
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const { rule: saved } = await governanceUpdateRule(fleetId, rule.id, { mode: "enforce", ifVersion: rule.version }, authKey);
+      setRules((rs) => rs.map((r) => (r.id === saved.id && saved.version >= r.version ? saved : r)));
+      if (selectedRef.current === saved.id) setDraft(draftFrom(saved));
+      showToast(`${RULE_LABELS[saved.ruleType]} is back on for ${whoFor(saved.appliesTo)}.`);
+      void fetchData();
+    } catch (e) {
+      if (e instanceof WhiteRoomApiError && e.status === 409) setError("This rule changed somewhere else. It’s been reloaded: try again.");
+      else handleError(e, "turn the rule back on");
+      void fetchData();
+    } finally {
+      setSaving(false);
+    }
   };
 
   // ── Undo (lib/rule-history) ─────────────────────────────────────
@@ -885,7 +911,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     if (notSetUp(r)) return <span className="ctl-mtag is-off">Not set up</span>;
     if (r.mode === "off") return <span className="ctl-mtag is-off">{MODE_LABEL.off}</span>;
     if (r.mode === "watch") return <span className="ctl-mtag">{MODE_LABEL.watch}</span>;
-    return <span className={`ctl-mtag${r.response === "notify" ? "" : " is-block"}`}>{modeTagText(r)}</span>;
+    return <span className={`ctl-mtag${r.response === "notify" ? "" : " is-block"}`}>{suspended(r) ? SUSPENDED_TAG : modeTagText(r)}</span>;
   };
 
   const row = (r: GovernanceRule, showScope = false, key: string = r.id) => {
@@ -1141,6 +1167,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
                   fleetTools={fleetTools}
                   onToolPicker={readFleetTools}
                   govV1={govV1}
+                  routeEnforce={routeEnforce}
+                  onResume={() => void resume(edited)}
                   alertChannel={alertChannel}
                   history={history.filter((h) => h.ruleId === edited.id)}
                   actors={actors}
@@ -1203,7 +1231,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
         body={dialog?.kind === "downgrade" ? (
           <>
             <p style={{ margin: "0 0 8px" }}><strong>{RULE_LABELS[dialog.rule.ruleType]}</strong> · {ruleConditionText(dialog.rule)}</p>
-            <p style={{ margin: 0 }}>{trims(dialog.rule) ? `Requests from ${whoFor(dialog.next.appliesTo)} will go to the model unchanged.` : (dialog.rule.response ?? "block") === "notify" ? `You won’t get alerts for ${whoFor(dialog.next.appliesTo)} any more.` : dialog.rule.ruleType === "block_streak" ? `It won’t ${dialog.rule.response === "stop" ? "stop" : "pause"} ${whoFor(dialog.next.appliesTo)} any more.` : `Matching calls will go through for ${whoFor(dialog.next.appliesTo)}.`} {dialog.next.mode !== "watch" ? "Nothing will be recorded." : trims(dialog.rule) ? "In Watch it changes nothing and records what it would have removed." : dialog.rule.ruleType === "block_streak" ? "In Watch it only records what it would have done." : "They’ll still be recorded."} You can undo it.</p>
+            <p style={{ margin: 0 }}>{trims(dialog.rule) ? `Requests from ${whoFor(dialog.next.appliesTo)} will go to the model unchanged.` : routes(dialog.rule) ? `Calls from ${whoFor(dialog.next.appliesTo)} will go to the model the agent asks for.` : (dialog.rule.response ?? "block") === "notify" ? `You won’t get alerts for ${whoFor(dialog.next.appliesTo)} any more.` : dialog.rule.ruleType === "block_streak" ? `It won’t ${dialog.rule.response === "stop" ? "stop" : "pause"} ${whoFor(dialog.next.appliesTo)} any more.` : `Matching calls will go through for ${whoFor(dialog.next.appliesTo)}.`} {dialog.next.mode !== "watch" ? "Nothing will be recorded." : trims(dialog.rule) ? "In Watch it changes nothing and records what it would have removed." : routes(dialog.rule) ? "In Watch it changes nothing and records the calls that could use a cheaper model." : dialog.rule.ruleType === "block_streak" ? "In Watch it only records what it would have done." : "They’ll still be recorded."} You can undo it.</p>
           </>
         ) : null}
         busy={saving}
@@ -1362,8 +1390,15 @@ const STREAK_THEN: Record<GovernanceResponse, string> = {
   // Never offered or saved (the engine refuses Block for this rule): kept for the full record.
   block: "you get an alert. The agent keeps going.",
 };
+/** Model routing holds the notify response too, and changes the model a call goes to. */
+const ROUTE_WORDS: (typeof ACT_WORDS)[GovernanceResponse] = {
+  title: "Start sending calls to cheaper models?", start: "Start routing", would: "Could have used a cheaper model",
+  effect: "a call that can use a cheaper model on your list is sent to it. This changes the model the agent asked for. No call is blocked.",
+  stopTitle: "Stop sending calls to cheaper models?", keep: "Keep routing",
+};
 const actWords = (rule: Pick<GovernanceRule, "ruleType" | "response" | "params">) => {
   if (trims(rule)) return TRIM_WORDS;
+  if (routes(rule)) return ROUTE_WORDS;
   const words = ACT_WORDS[rule.response ?? "block"];
   if (rule.ruleType !== "block_streak") return words;
   return { ...words, effect: `when an agent has ${(rule.params as BlockStreakParams).threshold.toLocaleString("en-US")} calls in a row blocked in a run, ${STREAK_THEN[rule.response ?? "notify"]}` };
@@ -1396,7 +1431,8 @@ function EnforcePreview({ rule, next, wouldAct, week, agentCalls }: {
   rule: GovernanceRule; next: GovernanceRule; wouldAct: RuleWouldActResult | null; week: RuleActionCounts | undefined; agentCalls: Record<string, number>;
 }) {
   const watched = rule.mode === "watch";
-  const n = watched && week ? week.wouldAct : watched && wouldAct ? Object.values(wouldAct.byAgent).reduce((a, b) => a + b, 0) : null;
+  // Model routing's calls are counted apart: nothing was caught on them.
+  const n = watched && routes(next) ? (week ? week.wouldRoute ?? 0 : null) : watched && week ? week.wouldAct : watched && wouldAct ? Object.values(wouldAct.byAgent).reduce((a, b) => a + b, 0) : null;
   const since = watched && wouldAct?.since ? fmtDay(wouldAct.since) : null;
   const all = wouldAct && !wouldAct.unversioned && next.ruleType === "model_allowlist"
     ? Object.entries(wouldAct.byAgent).filter(([a, c]) => c > 0 && agentCalls[callsKey(rule, wouldAct.since ?? "", a)] !== undefined && c >= agentCalls[callsKey(rule, wouldAct.since ?? "", a)] && (next.appliesTo === "all" || next.appliesTo.includes(a)))

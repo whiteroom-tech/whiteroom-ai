@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   agentGets, appliesNow, changeResponse, changeUnit, draftChanges, draftParams, typedNumber, draftFrom, draftProblem, isDirty, ruleSentence, rulesFor, ruleSentenceText, spendOverlap,
   blocksWhen, duplicateRules, keywordGaps, keywordsShort, leadCounts, modeCount, ruleCondition, ruleConditionText, ruleGroups, rowCount, ruleStatus, whoFor,
-  CATEGORY_ORDER, RULE_ROW_ORDER, RULE_TEMPLATES, modeChoices, responseChoices, whatHappensLine,
+  CATEGORY_ORDER, RULE_ROW_ORDER, RULE_TEMPLATES, modeChoices, responseChoices, whatHappensLine, suspended, alertOnly, sendsAlert, readRules,
 } from '@/lib/controls-view';
 import { RULE_CATEGORY, RULE_LABELS } from '@/lib/governance';
 import type { GovernanceRule } from '@/lib/whiteroom/types';
@@ -563,6 +563,64 @@ describe('Model routing', () => {
     expect(whatHappensLine(draft({ mode: 'off' }))).toBe('Off: does nothing and records nothing.');
     // A rule that came in enforced never reads as watching.
     expect(whatHappensLine(draft({ mode: 'enforce' }))).toBe('Enforce isn’t available for this rule yet. Set it to Watch or Off.');
+  });
+
+  describe('where the engine takes Enforce for it', () => {
+    const enforcing = (over: Partial<GovernanceRule> = {}) => route({ mode: 'enforce', ...over });
+    const counts = (routed: number) => ({ ...week(0), routed });
+
+    it('is offered Enforce only there, and saves only there', () => {
+      expect(modeChoices('model_route')).toEqual(['off', 'watch']);
+      expect(modeChoices('model_route', true)).toEqual(['off', 'watch', 'enforce']);
+      expect(draftProblem(draft({ mode: 'enforce' }))).toBe('This rule runs in Watch for now.');
+      expect(draftProblem(draft({ mode: 'enforce' }), { routeEnforce: true })).toBeNull();
+    });
+
+    it('says what it does to a call, and never reads as an alert or a block', () => {
+      expect(whatHappensLine(draft({ mode: 'enforce' }), true)).toBe('Enforce: a call that can use a cheaper model on the list is sent to it. Any other call goes as the agent wrote it.');
+      expect(ruleSentenceText(enforcing())).toBe('Send calls that can use a cheaper model to it. Models, strongest first: claude-opus-5-5 → claude-sonnet-5-5.');
+      expect(agentGets(enforcing())).toBe('The reply, from a cheaper model on your list when the call can use one.\nNothing else changes.');
+      expect(alertOnly(enforcing())).toBe(false);
+      expect(sendsAlert(draft({ mode: 'enforce' }))).toBe(false);
+    });
+
+    it('counts the calls it sent to a cheaper model, plainly', () => {
+      const r = enforcing();
+      const ctx = (routed: number) => ({ byRuleId: { [r.id]: counts(routed) }, onlyOfItsType: true });
+      expect(rowCount(r, ctx(12))).toEqual({ text: '12 sent to a cheaper model · 7 days', tone: 'plain' });
+      expect(rowCount(r, ctx(0))).toEqual({ text: 'None yet · 7 days', tone: 'plain' });
+      expect(ruleStatus(r, { week: counts(12) })).toBe('Routing for support-agent · 12 calls sent to a cheaper model in 7 days');
+      expect(ruleStatus(r, { week: counts(0) })).toBe('Routing for support-agent · none yet in 7 days');
+      // An older engine sends no such count: read as none.
+      expect(rowCount(r, { byRuleId: { [r.id]: week(0) }, onlyOfItsType: true }).text).toBe('None yet · 7 days');
+    });
+
+    it('a rule that suspended itself says so, in its row and its status', () => {
+      const stopped = enforcing({ params: { ladder: LADDER, suspended: true } });
+      expect(suspended(stopped)).toBe(true);
+      expect(rowCount(stopped, { byRuleId: { [stopped.id]: counts(12) }, onlyOfItsType: true })).toEqual({ text: 'Suspended · acting as Watch', tone: 'warn' });
+      // Before any count has loaded, and with another agent in view.
+      expect(rowCount(stopped, { onlyOfItsType: true })).toEqual({ text: 'Suspended · acting as Watch', tone: 'warn' });
+      expect(rowCount(stopped, { onlyOfItsType: true, agent: 'other-agent' }).text).toBe('Suspended · acting as Watch');
+      expect(ruleStatus(stopped, { week: counts(12) })).toBe('Suspended for support-agent · changing no calls, acting as Watch');
+      // Only an enforcing rule is suspended: set to Watch or Off, it reads as that.
+      expect(suspended(route({ mode: 'watch', params: { ladder: LADDER, suspended: true } }))).toBe(false);
+      expect(suspended(enforcing())).toBe(false);
+      // It reads as it acts: nothing is sent anywhere.
+      expect(ruleSentenceText(stopped)).toBe('Record the calls that could use a cheaper model. Models, strongest first: claude-opus-5-5 → claude-sonnet-5-5.');
+      expect(agentGets(stopped)).toBe('Nothing: the call goes through unchanged.');
+      // It changes no call, so the counts put it with Watch; one that is routing counts as Enforce, never as Alert only.
+      expect(modeCount([stopped, enforcing()])).toBe('1 Enforce · 1 Watch');
+      expect(leadCounts([stopped, enforcing()])).toMatchObject({ total: 2, enforce: 1, alert: 0, watch: 1 });
+      // Where Enforce isn't offered, a rule set to Enforce changes no call either: it reads the same way.
+      const [withdrawn] = readRules([enforcing()], false);
+      expect(suspended(withdrawn)).toBe(true);
+      expect(ruleSentenceText(withdrawn)).toContain('Record the calls that could use a cheaper model.');
+      expect(readRules([enforcing()], true).map(suspended)).toEqual([false]);
+      expect(readRules([route()], false).map(suspended)).toEqual([false]);
+      // The flag is read only: a save sends the model list alone.
+      expect(draftFrom(stopped).params).toEqual({ ladder: LADDER });
+    });
   });
 
   it('reads a rule that came in with no model list as one with none picked', () => {
