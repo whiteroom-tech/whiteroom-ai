@@ -54,7 +54,7 @@ find_named() { # find_named COLLECTION FIELD DISPLAY_NAME
 all_channels() {
   local token="" page
   while :; do
-    page="$(api GET "notificationChannels?pageSize=100${token:+&pageToken=$token}")"
+    page="$(api GET "notificationChannels?pageSize=100${token:+&pageToken=$(jq -rn --arg t "$token" '$t|@uri')}")"
     jq -c '.notificationChannels[]?' <<<"$page"
     token="$(jq -r '.nextPageToken // empty' <<<"$page")"
     [ -n "$token" ] || break
@@ -88,8 +88,11 @@ if [ -n "$ALERT_SMS" ]; then
   # Until the code Google texts is entered, the channel sends nothing. A rerun
   # sends a fresh code if it still isn't verified.
   if [ "$(api GET "${SMS_CHANNEL#projects/*/}" | jq -r '.verificationStatus // ""')" != "VERIFIED" ]; then
-    api POST "${SMS_CHANNEL#projects/*/}:sendVerificationCode" '{}' >/dev/null || true
-    echo "sent a verification code to $SMS_NAME; enter it in Monitoring → Alerting → Notification channels"
+    if api POST "${SMS_CHANNEL#projects/*/}:sendVerificationCode" '{}' >/dev/null; then
+      echo "sent a verification code to $SMS_NAME; enter it in Monitoring → Alerting → Notification channels"
+    else
+      echo "couldn't send a verification code to $SMS_NAME; send one from Monitoring → Alerting → Notification channels" >&2
+    fi
   fi
   CHANNELS="$(jq -n --arg a "$CHANNEL" --arg b "$SMS_CHANNEL" '[$a, $b]')"
 fi
