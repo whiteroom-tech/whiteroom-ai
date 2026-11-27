@@ -33,6 +33,8 @@ describe('Model routing on Performance', () => {
     const none = text(render({ calls: 1, unpricedCalls: 1, baselineMicros: 0, costMicros: 0 }));
     expect(none).toContain('1 call could use a cheaper model · 1 not priced');
     expect(none).not.toContain('$');
+    // No dollars on the Watch row either, so no note about prices under it.
+    expect(none).not.toContain('list prices');
   });
 
   it('shows the calls that went to a cheaper model on their own row, and never as a saving', () => {
