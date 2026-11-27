@@ -599,7 +599,7 @@ describe('Model routing', () => {
       const stopped = enforcing({ params: { ladder: LADDER, suspended: true } });
       expect(suspended(stopped)).toBe(true);
       expect(rowCount(stopped, { byRuleId: { [stopped.id]: counts(12) }, onlyOfItsType: true })).toEqual({ text: 'Suspended · acting as Watch', tone: 'warn' });
-      expect(ruleStatus(stopped, { week: counts(12) })).toBe('Suspended for support-agent · too many stretches on the cheaper model went badly, so it is acting as Watch');
+      expect(ruleStatus(stopped, { week: counts(12) })).toBe('Suspended for support-agent · changing no calls, acting as Watch');
       // Only an enforcing rule is suspended: set to Watch or Off, it reads as that.
       expect(suspended(route({ mode: 'watch', params: { ladder: LADDER, suspended: true } }))).toBe(false);
       expect(suspended(enforcing())).toBe(false);

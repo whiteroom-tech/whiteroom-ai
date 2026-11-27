@@ -493,7 +493,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       showToast(`${RULE_LABELS[saved.ruleType]} is back on for ${whoFor(saved.appliesTo)}.`);
       void fetchData();
     } catch (e) {
-      handleError(e, "turn the rule back on");
+      if (e instanceof WhiteRoomApiError && e.status === 409) setError("This rule changed somewhere else. It’s been reloaded: try again.");
+      else handleError(e, "turn the rule back on");
       void fetchData();
     } finally {
       setSaving(false);

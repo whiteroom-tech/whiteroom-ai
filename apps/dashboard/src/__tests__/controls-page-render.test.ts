@@ -88,6 +88,8 @@ const api = vi.hoisted(() => ({
   toolsReplies: null as Array<(tools: string[]) => void> | null,
   /** governance_list's ruleTypes (undefined: an older engine that doesn't say). */
   ruleTypes: undefined as string[] | undefined,
+  /** governance_list's routeEnforce: whether a Model routing rule can be set to Enforce. */
+  routeEnforce: false,
   /** governance_list's skippedRules: rules an older engine isn't running. */
   skipped: undefined as Array<{ id: string; ruleType: string; mode: string }> | undefined,
   /** send_seen_list fails (an engine blip). */
@@ -105,7 +107,7 @@ vi.mock('@/lib/whiteroom/client', async (orig) => ({
   // Read as the real governanceList reads the engine's reply (knownRulesOnly).
   governanceList: async () => {
     api.lists++; if (api.listFail) throw new Error('down'); if (api.listGate) await api.listGate;
-    return knownRulesOnly({ fleetId: 'f1', rules: api.empty ? [] : [...RULES.map((r) => api.saved[r.id] ?? r), ...api.created, ...(api.unknown as unknown as GovernanceRule[])], history: api.history as GovernanceListResult['history'], agents: ['lead-agent', 'market-researcher'], govV1: api.govV1, ...(api.ruleTypes && { ruleTypes: api.ruleTypes }), ...(api.skipped && { skippedRules: api.skipped }) });
+    return knownRulesOnly({ fleetId: 'f1', rules: api.empty ? [] : [...RULES.map((r) => api.saved[r.id] ?? r), ...api.created, ...(api.unknown as unknown as GovernanceRule[])], history: api.history as GovernanceListResult['history'], agents: ['lead-agent', 'market-researcher'], govV1: api.govV1, ...(api.routeEnforce && { routeEnforce: true }), ...(api.ruleTypes && { ruleTypes: api.ruleTypes }), ...(api.skipped && { skippedRules: api.skipped }) });
   },
   performanceRecommendationGet: () => new Promise(() => {}),
   alertsGet: async () => api.alerts,
@@ -174,7 +176,7 @@ beforeEach(() => {
   sessionStorage.clear();
   nav.params = new URLSearchParams(); nav.replace.mockClear(); nav.push.mockClear();
   api.update.mockReset(); api.remove.mockClear(); api.create.mockReset(); api.created = []; api.saved = {}; api.lists = 0; api.alerts = { slack: null, teams: null }; api.govV1 = false; api.models = null; api.hourly = []; api.listGate = null; api.listFail = false; api.empty = false; api.would = {}; api.agentCalls = {}; api.history = []; api.totals = null; api.byRule = {}; api.unknown = []; api.tools = []; api.toolsAsked = 0; api.toolsFail = false; api.toolsHang = false; api.toolsReplies = null; api.replayStarts = []; session.key = 'k';
-  api.ruleTypes = undefined; api.skipped = undefined; api.seenRows = {}; api.seenFull = false; api.seenAsked = []; api.seenFail = false;
+  api.ruleTypes = undefined; api.routeEnforce = false; api.skipped = undefined; api.seenRows = {}; api.seenFull = false; api.seenAsked = []; api.seenFail = false;
   api.oldEngine = false; api.wouldBatches = []; api.wouldSingle = 0; resetBatchSupport();
   document.body.innerHTML = '';
 });
@@ -2785,6 +2787,35 @@ describe('Controls: Repeated blocks and Old tool results', () => {
     expect(modes).toEqual(['Off', 'Watch']);
     // It can't cover all agents, so that choice isn't offered: only the agents to pick.
     expect(m.el.querySelector('[aria-label="Which agents this rule applies to"]')).toBeNull();
+    m.root.unmount();
+  });
+
+  it('where the engine offers it, Model routing can be set to Enforce, with no action to pick; a suspended rule is turned back on with one button', async () => {
+    api.routeEnforce = true;
+    const rule = { ...base, id: 'mr-enf', ruleType: 'model_route' as const, mode: 'enforce' as const, response: 'notify' as const, appliesTo: ['lead-agent'], params: { ladder: ['claude-opus-5-5', 'claude-sonnet-5-5'], suspended: true as const } };
+    api.created.push(rule);
+    // The engine reads the rule back without the flag once it is on again, on the save and on the next list.
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => {
+      const saved = { ...rule, ...ch, id, version: rule.version + 1, params: { ladder: rule.params.ladder } };
+      api.created = [saved];
+      return { rule: saved };
+    });
+    const m = await mount();
+    const row = [...m.el.querySelectorAll('button.ctl-row')].find((r) => r.querySelector('.ctl-row__main .ctl-cap')?.textContent === 'Model routing')!;
+    expect(row.textContent).toContain('Suspended · acting as Watch');
+    await m.click(row);
+    const modes = [...m.el.querySelectorAll('[role="radiogroup"][aria-label="What happens"] button')].map((b) => b.textContent);
+    expect(modes).toEqual(['Off', 'Watch', 'Enforce']);
+    // It sends no alert and blocks nothing: no action is named under Enforce.
+    const editor = () => m.el.querySelector('[aria-label="Edit rule"]')!.textContent ?? '';
+    expect(editor()).toContain('Model routing');
+    expect(editor()).not.toContain('Only alert me');
+    expect(editor()).not.toContain('It changes no call.');
+    expect(editor()).toContain('Enforce: a call that can use a cheaper model on the list is sent to it.');
+    expect(m.text()).toContain('This rule suspended itself and is changing no calls.');
+    await m.click(m.button('Turn back on'));
+    expect(api.update).toHaveBeenCalledWith('f1', 'mr-enf', { mode: 'enforce', ifVersion: rule.version }, 'k');
+    expect(m.text()).not.toContain('This rule suspended itself');
     m.root.unmount();
   });
 

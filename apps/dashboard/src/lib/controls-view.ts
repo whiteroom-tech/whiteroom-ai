@@ -1036,7 +1036,7 @@ export function ruleStatus(rule: GovernanceRule, ctx: {
   const nothingPicked = emptyPick(rule);
   if (nothingPicked) return `Does nothing until you add ${nothingPicked}`;
   if (ctx.neverFirst) return `Never triggers · the ${ctx.neverFirst} cap catches it first`;
-  if (suspended(rule)) return `Suspended for ${who} · too many stretches on the cheaper model went badly, so it is acting as Watch`;
+  if (suspended(rule)) return `Suspended for ${who} · changing no calls, acting as Watch`;
   if (rule.mode === 'enforce' && routes(rule)) {
     const n = ctx.week ? enforcedCount(rule, ctx.week) : null;
     return `Routing for ${who}${n === null ? '' : n ? ` · ${fmtCount(n)} ${plural(n, 'call')} sent to a cheaper model in 7 days` : ' · none yet in 7 days'}`;

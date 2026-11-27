@@ -42,7 +42,7 @@ const ACTS: Record<Exclude<GovernanceRule['ruleType'], 'keyword' | 'loop_breaker
   outside_then_send: 'Checks each reply once the agent has read outside content. It never holds a call.',
   block_streak: 'Acts on the blocked call that reaches the limit.',
   trim_results: 'Acts before the request goes to the model.',
-  model_route: 'It changes no call.',
+  model_route: 'Acts before the call goes to the model.',
   data_deletion: 'Acts before the agent gets the tool call.',
 };
 const KEYWORD_ACTS: Record<KeywordWhere, string> = {
@@ -194,7 +194,7 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
   const [whenOpen, setWhenOpen] = useState(() => startOpen || !!emptyPick(rule) || 'error' in draftParams(draft));
   const when = whenSentence({ ruleType: rule.ruleType, params: asRule.params });
   const where = rule.ruleType === 'keyword' ? (p as KeywordParams).where : null;
-  const timing = draft.mode === 'off' ? '' : rule.ruleType === 'keyword' ? KEYWORD_ACTS[where!] : rule.ruleType === 'loop_breaker' ? loopActs(draft.number, (p as LoopBreakerParams).threshold) : ACTS[rule.ruleType];
+  const timing = draft.mode === 'off' ? '' : rule.ruleType === 'keyword' ? KEYWORD_ACTS[where!] : rule.ruleType === 'loop_breaker' ? loopActs(draft.number, (p as LoopBreakerParams).threshold) : rule.ruleType === 'model_route' && draft.mode !== 'enforce' ? 'It changes no call.' : ACTS[rule.ruleType];
   // What the fleet spends a day, to set a dollars-a-day cap by: behind When's ⓘ with the fine print.
   const dailyCap = rule.ruleType === 'spend_cap' && (p as SpendCapParams).unit === 'dollars' && (p as SpendCapParams).scope === 'day';
   const days = (n: number) => (n === 1 ? 'day' : `${n} days`);
@@ -213,7 +213,7 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
     return needs ? actionAvailableFrom(rule.id, ruleHistory, rule.mode) : null;
   };
   const actions = responseChoices(govV1, rule.ruleType, rule.response ?? 'block', draft.response);
-  const oneAction = !trim && actions.length === 1;
+  const oneAction = !trim && !route && actions.length === 1;
   const nextOpen = Math.min(...actions.map(waitUntil).filter((t): t is number => typeof t === 'number'));
   useEffect(() => {
     if (!Number.isFinite(nextOpen)) return;
@@ -247,7 +247,7 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
       <p className="gov-edhead__full"><RuleCategory type={rule.ruleType} /><span aria-hidden="true">{RULE_LABELS[rule.ruleType]}</span></p>
       <p className="ctl-status">{status}</p>
       {/* A rule that stopped itself: said where its status is, with the one way back. */}
-      {suspended(rule) && onResume && (
+      {suspended(rule) && routeEnforce && onResume && (
         <p className="ctl-warnbox" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 12px' }}>
           <span style={{ flex: '1 1 200px' }}>This rule suspended itself and is changing no calls. Check the agents it covers, then turn it back on.</span>
           <button type="button" className="wr-btn wr-btn--secondary wr-btn--h28" disabled={saving || dirty} onClick={onResume}>Turn back on</button>
@@ -538,7 +538,7 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
         {draft.mode === 'enforce' && oneAction && (
           <p style={{ margin: 0, fontSize: 'var(--fs-md)' }}>When enforced: <strong>{RESPONSE_LABEL[actions[0]]}</strong></p>
         )}
-        {draft.mode === 'enforce' && !oneAction && !trim && (
+        {draft.mode === 'enforce' && !oneAction && !trim && !route && (
           <label style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, fontSize: 'var(--fs-md)' }}>
             When enforced:
             {/* An action that needs a day in Watch first stays in the list, disabled, saying when it opens. */}

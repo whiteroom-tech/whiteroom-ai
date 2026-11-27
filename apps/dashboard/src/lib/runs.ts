@@ -486,7 +486,7 @@ function callRule(e: RunEvent): TimelineRow['rule'] {
   if (!a) return undefined;
   const more = all.filter((x) => x !== a);
   const why = reasonText(a.reason) ?? (a.ruleName ?? RULE_LABELS[a.ruleType as GovernanceRuleType] ?? 'a rule').toLowerCase();
-  const did = isRoute(a) ? (a.mode === 'enforce' ? CALL_OUTCOME_TEXT.routed : CALL_OUTCOME_TEXT.would_route) : isTrim(a) ? (a.mode === 'enforce' ? CALL_OUTCOME_TEXT.trimmed : 'would have been trimmed') : a.mode === 'enforce' ? CALL_OUTCOME_TEXT[a.outcome] : WOULD_TEXT[a.response];
+  const did = isRoute(a) ? (a.outcome === 'routed' ? CALL_OUTCOME_TEXT.routed : CALL_OUTCOME_TEXT.would_route) : isTrim(a) ? (a.mode === 'enforce' ? CALL_OUTCOME_TEXT.trimmed : 'would have been trimmed') : a.mode === 'enforce' ? CALL_OUTCOME_TEXT[a.outcome] : WOULD_TEXT[a.response];
   const tail = `${why}${more.length ? ` (+${more.length} more)` : ''}`;
   const text = `${did ?? 'a rule acted'}: ${tail}`;
   const watchBlock = a.mode !== 'enforce' && a.response === 'block';
