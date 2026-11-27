@@ -40,7 +40,7 @@ import { UNNAMED_CALLS_REFUSED } from "@/lib/setup";
 import {
   appliesNow, commandLookingTools, deleteLookingTools, draftChanges, draftFrom, draftParams, draftProblem, isDirty, money, NO_ACTIONS, rulesFor, ruleSentenceText, spendOverlap,
   type RuleDraft,
-  stopping, routes, suspended, SUSPENDED_TAG, trims,
+  stopping, readRules, routes, suspended, SUSPENDED_TAG, trims,
   weakenings,
   averageDailySpend,
   sameValue,
@@ -251,7 +251,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       const req = ++wouldReq.current;
       void wouldActsFor(fleetId, d.rules.filter((r) => r.mode === "watch"), authKey)
         .then((counts) => { if (req === wouldReq.current) setWouldActs(counts); });
-      setRules(d.rules);
+      setRules(readRules(d.rules, d.routeEnforce === true));
       setUnknownRules(d.unknownRules ?? []);
       setSkippedRules(Array.isArray(d.skippedRules) ? d.skippedRules : []);
       setHistory(d.history);

@@ -238,6 +238,15 @@ export const trims = (r: { ruleType?: string }) => r.ruleType === 'trim_results'
 export const routes = (r: { ruleType?: string }) => r.ruleType === 'model_route';
 /** Old tool results and Model routing change the request that goes out. They hold the notify response and never alert or block. */
 const changesRequest = (r: { ruleType?: string }) => trims(r) || routes(r);
+/**
+ * Rules as the page reads them. A Model routing rule set to Enforce on a fleet where Enforce isn't
+ * offered changes no call either, so it reads the same as one that suspended itself: acting as Watch.
+ */
+export function readRules(rules: GovernanceRule[], routeEnforce: boolean): GovernanceRule[] {
+  if (routeEnforce) return rules;
+  return rules.map((r) => (routes(r) && r.mode === 'enforce' ? { ...r, params: { ...(r.params as ModelRouteParams), suspended: true as const } } : r));
+}
+
 /** A suspended rule's tag, where another rule's says Enforce. */
 export const SUSPENDED_TAG = 'Suspended';
 /** A Model routing rule that stopped changing calls on its own: it acts as Watch until someone turns it back on. */

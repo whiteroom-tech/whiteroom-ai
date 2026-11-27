@@ -559,7 +559,7 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
           </label>
         )}
         <p style={help}>{send && draft.mode === 'enforce' && draft.response === 'notify' ? 'You get an alert the first time a tool sends to a new domain. The call goes through.'
-          : flow && draft.mode === 'enforce' ? 'You get one alert per run. The agent keeps going.' : suspended(rule) && draft.mode === 'enforce' ? 'Suspended: it changes no call until it is turned back on.' : whatHappensLine(draft, routeEnforce)}</p>
+          : flow && draft.mode === 'enforce' ? 'You get one alert per run. The agent keeps going.' : suspended(rule) && routeEnforce && draft.mode === 'enforce' ? 'Suspended: it changes no call until it is turned back on.' : whatHappensLine(draft, routeEnforce)}</p>
         {send && draft.mode === 'enforce' && draft.response === 'block' && (
           <p style={help}>Streamed replies from agents with these tools arrive all at once. Replies on Bedrock can’t be checked yet.</p>
         )}

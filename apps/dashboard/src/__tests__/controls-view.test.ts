@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   agentGets, appliesNow, changeResponse, changeUnit, draftChanges, draftParams, typedNumber, draftFrom, draftProblem, isDirty, ruleSentence, rulesFor, ruleSentenceText, spendOverlap,
   blocksWhen, duplicateRules, keywordGaps, keywordsShort, leadCounts, modeCount, ruleCondition, ruleConditionText, ruleGroups, rowCount, ruleStatus, whoFor,
-  CATEGORY_ORDER, RULE_ROW_ORDER, RULE_TEMPLATES, modeChoices, responseChoices, whatHappensLine, suspended, alertOnly, sendsAlert,
+  CATEGORY_ORDER, RULE_ROW_ORDER, RULE_TEMPLATES, modeChoices, responseChoices, whatHappensLine, suspended, alertOnly, sendsAlert, readRules,
 } from '@/lib/controls-view';
 import { RULE_CATEGORY, RULE_LABELS } from '@/lib/governance';
 import type { GovernanceRule } from '@/lib/whiteroom/types';
@@ -612,6 +612,12 @@ describe('Model routing', () => {
       // It changes no call, so the counts put it with Watch; one that is routing counts as Enforce, never as Alert only.
       expect(modeCount([stopped, enforcing()])).toBe('1 Enforce · 1 Watch');
       expect(leadCounts([stopped, enforcing()])).toMatchObject({ total: 2, enforce: 1, alert: 0, watch: 1 });
+      // Where Enforce isn't offered, a rule set to Enforce changes no call either: it reads the same way.
+      const [withdrawn] = readRules([enforcing()], false);
+      expect(suspended(withdrawn)).toBe(true);
+      expect(ruleSentenceText(withdrawn)).toContain('Record the calls that could use a cheaper model.');
+      expect(readRules([enforcing()], true).map(suspended)).toEqual([false]);
+      expect(readRules([route()], false).map(suspended)).toEqual([false]);
       // The flag is read only: a save sends the model list alone.
       expect(draftFrom(stopped).params).toEqual({ ladder: LADDER });
     });
