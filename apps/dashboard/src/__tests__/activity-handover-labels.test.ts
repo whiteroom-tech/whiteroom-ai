@@ -16,6 +16,13 @@ describe('handover health labels', () => {
     expect(at({ type: 'rest_end' }).said).toBe('started again');
   });
 
+  it('Model routing events say what was found, never how, and never read as a block', () => {
+    const route = at({ type: 'governance_would_route', ruleType: 'model_route', reason: 'model_routed' });
+    expect(route.said).toBe('made a call that could use a cheaper model');
+    expect([route.code, route.tone, route.who]).toEqual(['RTE', 'idle', 'Lead-agent']);
+    expect(at({ type: 'route_decided', reason: 'calm_watch', stepsAfter: 1 }).said).toBe('had its run checked by Model routing');
+  });
+
   it('handover loop names the new limit from the payload', () => {
     const m = at({ type: 'handover_loop_detected', previousLimit: 20000, newLimit: 40000, watchNumber: 12 });
     expect(m.who).toBe('Lead-agent');

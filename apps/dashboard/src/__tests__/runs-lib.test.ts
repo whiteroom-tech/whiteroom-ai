@@ -163,6 +163,15 @@ describe('run detail rows', () => {
     // Without the run's models (older engines), the first call names its model.
     expect(timelineRows([{ id: 'c1', kind: 'call', at, type: 'complete', model: 'm1' }])[0].text).toBe('Model call · m1');
   });
+  it('says a call could use a cheaper model, never that it would have been blocked', () => {
+    const route = { ruleId: 'r', ruleType: 'model_route', ruleName: 'Model routing', mode: 'watch', response: 'route', outcome: 'would_route' as const, reason: 'model_routed' };
+    const row = timelineRow({ id: 'c1', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete', ruleActions: [route] });
+    expect(row.rule).toEqual({ text: 'could use a cheaper model: model routing', screen: 'could use a cheaper model: model routing', mode: 'watch' });
+    // A rule that would have blocked the same call still leads.
+    const both = timelineRow({ id: 'c2', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete', ruleActions: [route, { ruleId: 'a', ruleType: 'model_allowlist', mode: 'watch', response: 'block', outcome: 'would_block', reason: 'model_not_allowed' }] });
+    expect(both.rule?.text).toBe('would have been blocked: model not on the allowlist (+1 more)');
+  });
+
   it('shades a call a rule acted on, with what it did and the mode', () => {
     const row = timelineRow({ id: 'c1', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'complete', ruleActions: [{ ruleId: 'r', ruleType: 'model_allowlist', mode: 'watch', response: 'block', outcome: 'would_block', reason: 'model_not_allowed' }] });
     // On screen a Watch block says the reason alone (the Watch badge says "would have"); the export keeps the words.
