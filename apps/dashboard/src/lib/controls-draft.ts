@@ -53,6 +53,7 @@ const PARAMS_FIT: Record<GovernanceRuleType, (p: Record<string, unknown>) => boo
   // Saved values the editor shows until a new number is typed: in the engine's ranges, or the draft isn't one it made.
   block_streak: (p) => streakFits(p.threshold),
   trim_results: (p) => trimTurnsFit(p.keepRecent) && trimTokensFit(p.minTokens),
+  model_route: (p) => Array.isArray(p.ladder) && p.ladder.every((e) => typeof e === 'string' || (!!e && typeof e === 'object' && typeof (e as { id?: unknown }).id === 'string')),
 };
 
 /** The fields the rule editor reads, of the right kinds, with params that fit the rule type. */

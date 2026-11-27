@@ -67,7 +67,7 @@ describe('Performance › Rules with a rule type this build doesn’t know', () 
     const el = document.createElement('div');
     document.body.appendChild(el);
     const root = createRoot(el);
-    const counts = { blocks: 3, wouldBlocks: 141, byAgent: {}, byRule: { spend_cap: { blocks: 0, wouldBlocks: 0 }, loop_breaker: { blocks: 0, wouldBlocks: 0 }, model_allowlist: { blocks: 0, wouldBlocks: 60 }, tool_list: { blocks: 0, wouldBlocks: 0 }, call_rate: { blocks: 0, wouldBlocks: 0 }, keyword: { blocks: 0, wouldBlocks: 0 }, send_limit: { blocks: 0, wouldBlocks: 0 }, outside_then_send: { blocks: 0, wouldBlocks: 0 }, block_streak: { blocks: 0, wouldBlocks: 0 }, trim_results: { blocks: 0, wouldBlocks: 0 }, data_deletion: { blocks: 0, wouldBlocks: 0 } } };
+    const counts = { blocks: 3, wouldBlocks: 141, byAgent: {}, byRule: { spend_cap: { blocks: 0, wouldBlocks: 0 }, loop_breaker: { blocks: 0, wouldBlocks: 0 }, model_allowlist: { blocks: 0, wouldBlocks: 60 }, tool_list: { blocks: 0, wouldBlocks: 0 }, call_rate: { blocks: 0, wouldBlocks: 0 }, keyword: { blocks: 0, wouldBlocks: 0 }, send_limit: { blocks: 0, wouldBlocks: 0 }, outside_then_send: { blocks: 0, wouldBlocks: 0 }, block_streak: { blocks: 0, wouldBlocks: 0 }, trim_results: { blocks: 0, wouldBlocks: 0 }, data_deletion: { blocks: 0, wouldBlocks: 0 }, model_route: { blocks: 0, wouldBlocks: 0 } } };
     await act(async () => { root.render(h(RulesSummary, { counts, byRuleId, rules: [KNOWN], unknownRules: unknown, unavailable: false })); });
     // The top rules are on show, not folded.
     expect(el.querySelector('button[aria-expanded]')).toBeNull();

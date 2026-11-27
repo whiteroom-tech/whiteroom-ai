@@ -13,7 +13,7 @@ import type { GovernanceMode, GovernanceResponse } from '@/lib/whiteroom/types';
 import Link from 'next/link';
 import { Banner, Button, FONT_MONO, Hint, SegmentedControl } from '@whiteroom/ui';
 import type {
-  DataDeletionParams, GovernanceHistoryEntry, GovernanceRule, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, OutsideThenSendParams, SendLimitParams, SendSeenRow, SpendCapParams, ToolListParams,
+  DataDeletionParams, GovernanceHistoryEntry, GovernanceRule, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, ModelRouteParams, OutsideThenSendParams, SendLimitParams, SendSeenRow, SpendCapParams, ToolListParams,
 } from '@/lib/whiteroom/types';
 import { RESPONSE_LABEL, RULE_LABELS } from '@/lib/governance';
 import { actionAvailableFrom, canAct, keywordBlockCheck, stopCheck } from '@/lib/controls-guard';
@@ -25,7 +25,7 @@ import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
 import {
   canAddSeen, COMMAND_TOOLS_MAX, DELETION_DOCS_URL, domainEntry, domainProblem, domainsHidden, domainTotal, FLOW_TOOLS_MAX, FLOW_WHEN, looksLikeCommandRunner, looksLikeReader, looksLikeSender, SEEN_RESERVED_TEXT, seenFullLine, seenNotOnList, SEND_DOMAINS_MAX, SEND_TOOLS_MAX, toolsFull, toolsWithNoDomain, trims,
 } from '@/lib/controls-view';
-import { AGENT_NOTE, isMarker, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, looksLikeDeleteOrChange, newMarker, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, MODE_CHOICES, responseChoices, sendsAlert, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
+import { AGENT_NOTE, isMarker, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, looksLikeDeleteOrChange, newMarker, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, ladderIds, LADDER_MAX, modeChoices, responseChoices, routes, sendsAlert, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
 import { Chip, field, GroupPicker, InlineSelect, MarkerChip, MODEL_GROUPS, NumberField, ScopeField, ToolPicker } from './pickers';
 import { ReplayEstimate } from './ReplayEstimate';
 
@@ -42,6 +42,7 @@ const ACTS: Record<Exclude<GovernanceRule['ruleType'], 'keyword' | 'loop_breaker
   outside_then_send: 'Checks each reply once the agent has read outside content. It never holds a call.',
   block_streak: 'Acts on the blocked call that reaches the limit.',
   trim_results: 'Acts before the request goes to the model.',
+  model_route: 'It changes no call.',
   data_deletion: 'Acts before the agent gets the tool call.',
 };
 const KEYWORD_ACTS: Record<KeywordWhere, string> = {
@@ -64,6 +65,7 @@ const WHEN_NOTES: Record<GovernanceRule['ruleType'], string | null> = {
   outside_then_send: null,
   block_streak: 'Call rate blocks don’t count.',
   trim_results: 'Native Bedrock Converse calls aren’t trimmed.',
+  model_route: 'It covers agents that work on their own, and leaves native Bedrock Converse calls out.',
   data_deletion: HELD_REPLY_NOTE,
 };
 
@@ -163,6 +165,8 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
   };
   // Old tool results edits requests: no action to pick and no alert (its response is fixed and unused).
   const trim = trims(rule);
+  // Model routing: the models the agent may use, strongest first. No action to pick here either.
+  const route = routes(rule) ? (p as ModelRouteParams) : null;
   const readOnly = domainsHidden(rule);
   const [domain, setDomain] = useState('');
   const domainTyped = domainEntry(domain);
@@ -390,6 +394,16 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
             <p style={help}>Each old result is replaced with a short note. The agent can call the tool again if it needs one back.</p>
           </>
         )}
+        {route && (
+          <>
+            <span style={{ fontSize: 'var(--fs-md)' }}>Models this agent may use, strongest first:</span>
+            {/* The picker edits the names; an entry that also says which model a deployment runs keeps that. */}
+            <GroupPicker values={ladderIds(route)} onChange={(ids) => setParams({ ladder: ids.map((id) => route.ladder.find((x) => typeof x !== 'string' && x.id === id) ?? id) })} groups={MODEL_GROUPS}
+              addLabel="+ Add model" ariaLabel="Add a model" otherLabel="Other (type deployment name or model ID)…" placeholder="deployment name or model ID" />
+            {route.ladder.length > LADDER_MAX && <p style={help}>A rule holds up to {LADDER_MAX} models. Remove one to save.</p>}
+            <p style={help}>Add the strongest first, then each cheaper one. You’ll see which calls a cheaper model could take, and what they would cost there.</p>
+          </>
+        )}
         {flow && (
           <>
             <span style={{ fontSize: 'var(--fs-md)' }}>{FLOW_WHEN}.</span>
@@ -508,7 +522,7 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
         <div className="gov-fill" style={{ alignSelf: 'flex-start', display: 'flex', maxWidth: '100%' }}>
           <SegmentedControl<GovernanceMode> label="What happens" value={draft.mode}
             onChange={(m) => onDraft(chooseMode(draft, m, rule, actions, (r) => !waitFor(r)))}
-            options={MODE_CHOICES.map((m) => ({ value: m, label: MODE_LABEL[m] }))} />
+            options={modeChoices(rule.ruleType).map((m) => ({ value: m, label: MODE_LABEL[m] }))} />
         </div>
         {/* Outside content, then send data only alerts: fixed text, no choice (DLP spec 3.3). The same for Repeated blocks on a fleet without Pause and Stop. */}
         {draft.mode === 'enforce' && oneAction && (
