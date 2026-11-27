@@ -608,7 +608,9 @@ export function draftChanges(d: RuleDraft, rule: GovernanceRule): {
   if (d.alsoNotify !== !!rule.alsoNotify) out.alsoNotify = d.alsoNotify;
   if (!same(d.appliesTo, rule.appliesTo)) out.appliesTo = d.appliesTo;
   // A list the engine hid (domainCount) is never written back: it would save an empty list over the real one.
-  if (!same(p.params, rule.params) && !domainsHidden(rule)) out.params = p.params;
+  // Model routing is compared on what the editor holds, its model list, so a rule isn't "unsaved" the moment it opens.
+  const saved = routes(rule) ? { ladder: (rule.params as ModelRouteParams).ladder ?? [] } : rule.params;
+  if (!same(p.params, saved) && !domainsHidden(rule)) out.params = p.params;
   return Object.keys(out).length ? out : null;
 }
 

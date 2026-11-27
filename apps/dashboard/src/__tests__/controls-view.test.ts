@@ -614,6 +614,9 @@ describe('Model routing', () => {
     const saved = rule({ ruleType: 'model_route', response: 'notify', appliesTo: ['support-agent'], params: { ladder: LADDER, somethingElse: 1 } as unknown as GovernanceRule['params'] });
     const d = draftFrom(saved);
     expect(d.params).toEqual({ ladder: LADDER });
+    // Opening it changes nothing: it isn't unsaved, and Save has nothing to send.
+    expect(isDirty(d, saved)).toBe(false);
+    expect(draftChanges(d, saved)).toBeNull();
     expect(draftChanges({ ...d, params: { ladder: [...LADDER, 'claude-haiku-5-5'] } }, saved)).toEqual({ params: { ladder: [...LADDER, 'claude-haiku-5-5'] } });
   });
 });
