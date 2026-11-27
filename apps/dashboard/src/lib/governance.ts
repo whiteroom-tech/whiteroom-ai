@@ -31,6 +31,7 @@ export const RULE_LABELS: Record<GovernanceRuleType, string> = {
   block_streak: 'Repeated blocks',
   trim_results: 'Old tool results',
   data_deletion: 'Data deletion',
+  model_route: 'Model routing',
 };
 
 /** Each rule's category label on Controls, in sentence case (.ctl-cat upper-cases it). */
@@ -46,6 +47,7 @@ export const RULE_CATEGORY: Record<GovernanceRuleType, string> = {
   block_streak: 'Cost & reliability',
   trim_results: 'Cost & reliability',
   data_deletion: 'Data protection',
+  model_route: 'Cost & reliability',
 };
 
 /** What a rule of a type this build doesn't know shows as, wherever rules are listed. */
@@ -98,9 +100,9 @@ export const REASON_LABELS: Record<string, string> = {
 
 /**
  * Each rule's own reason: said after its name, it only repeats it ("the spend cap (budget exceeded)").
- * Repeated blocks and Old tool results never block a call, so they have none.
+ * Repeated blocks, Old tool results and Model routing never block a call, so they have none.
  */
-const OWN_REASON: Record<Exclude<GovernanceRuleType, 'block_streak' | 'trim_results'>, string> = {
+const OWN_REASON: Record<Exclude<GovernanceRuleType, 'block_streak' | 'trim_results' | 'model_route'>, string> = {
   spend_cap: 'budget_exceeded',
   loop_breaker: 'loop_detected',
   model_allowlist: 'model_not_allowed',
@@ -195,6 +197,7 @@ export function governanceFromSummary(g: { blocks: number; wouldBlocks: number; 
       block_streak: g.byRule.block_streak ?? emptyTally(),
       trim_results: g.byRule.trim_results ?? emptyTally(),
       data_deletion: g.byRule.data_deletion ?? emptyTally(),
+      model_route: g.byRule.model_route ?? emptyTally(),
     },
   };
 }
@@ -205,7 +208,7 @@ export function governanceCounts(entries: AuditEntry[], sinceMs = 0): Governance
     blocks: 0,
     wouldBlocks: 0,
     byAgent: {},
-    byRule: { spend_cap: emptyTally(), loop_breaker: emptyTally(), model_allowlist: emptyTally(), tool_list: emptyTally(), call_rate: emptyTally(), keyword: emptyTally(), send_limit: emptyTally(), outside_then_send: emptyTally(), block_streak: emptyTally(), trim_results: emptyTally(), data_deletion: emptyTally() },
+    byRule: { spend_cap: emptyTally(), loop_breaker: emptyTally(), model_allowlist: emptyTally(), tool_list: emptyTally(), call_rate: emptyTally(), keyword: emptyTally(), send_limit: emptyTally(), outside_then_send: emptyTally(), block_streak: emptyTally(), trim_results: emptyTally(), data_deletion: emptyTally(), model_route: emptyTally() },
   };
   for (const e of entries) {
     if (!isGovernanceDecision(e)) continue;

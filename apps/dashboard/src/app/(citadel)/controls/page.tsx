@@ -709,14 +709,16 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
       const picked = ruleType === "tool_list" ? deleteLookingTools(tools) : ruleType === "send_limit" ? sendLookingTools(tools) : deletion ? commandLookingTools(tools) : [];
       const readPicked = flow ? readLookingTools(tools) : [], sendPicked = flow ? sendLookingTools(tools) : [];
       const params = ruleType === "tool_list" && picked.length > 0 ? { blockedTools: picked } : ruleType === "send_limit" ? { tools: picked, domains: [] }
-        : flow ? { readTools: readPicked, sendTools: sendPicked } : deletion ? { commandTools: picked } : ruleType === "block_streak" ? { threshold: 3 } : ruleType === "trim_results" ? { keepRecent: 5, minTokens: 50_000 } : undefined;
+        : flow ? { readTools: readPicked, sendTools: sendPicked } : deletion ? { commandTools: picked } : ruleType === "block_streak" ? { threshold: 3 } : ruleType === "trim_results" ? { keepRecent: 5, minTokens: 50_000 } : ruleType === "model_route" ? { ladder: [] } : undefined;
       // New rules start in Watch; while viewing one agent, they start for that agent. A data rule
       // starts on Only alert me, the engine's default for it (DLP spec 5.2); Outside content, then
       // send data has no other response (5.3). Repeated blocks and Old tool results start on the
       // engine's own defaults, sent in full: Pause where the fleet has it, and notify (its fixed value).
       const { rule } = await governanceCreateRule(fleetId, {
-        ruleType, mode: "watch", ...((ruleType === "send_limit" || flow || ruleType === "trim_results") && { response: "notify" as const }),
-        ...(ruleType === "block_streak" && { response: govV1 ? "pause" as const : "notify" as const }), ...(params && { params }), ...(agentFilter && { appliesTo: [agentFilter] }),
+        ruleType, mode: "watch", ...((ruleType === "send_limit" || flow || ruleType === "trim_results" || ruleType === "model_route") && { response: "notify" as const }),
+        ...(ruleType === "block_streak" && { response: govV1 ? "pause" as const : "notify" as const }), ...(params && { params }),
+        // Model routing never covers all agents (the engine refuses it): it starts for the agent in view, else for none until one is picked.
+        ...(agentFilter ? { appliesTo: [agentFilter] } : ruleType === "model_route" ? { appliesTo: [] } : {}),
       }, authKey);
       setRules((rs) => [...rs, rule]);
       setAdding("closed");
@@ -1371,7 +1373,7 @@ const actWords = (rule: Pick<GovernanceRule, "ruleType" | "response" | "params">
 const RULE_PLURAL: Record<GovernanceRuleType, string> = {
   spend_cap: "spend caps", loop_breaker: "loop breakers", call_rate: "call rate rules", model_allowlist: "model allowlists", tool_list: "tool lists", keyword: "Keywords rules",
   send_limit: "Where tools can send data rules", outside_then_send: "Outside content, then send data rules",
-  block_streak: "Repeated blocks rules", trim_results: "Old tool results rules", data_deletion: "Data deletion rules",
+  block_streak: "Repeated blocks rules", trim_results: "Old tool results rules", data_deletion: "Data deletion rules", model_route: "Model routing rules",
 };
 
 /** "6 agents will lose this rule", for moving a rule from all agents to some. */

@@ -76,3 +76,17 @@ it.each([
   writeDraft('f1', { ruleId: 'r1', version: 1, draft: { ...draft, ...shape } as RuleDraft });
   expect(readDraft('f1')).not.toBeNull();
 });
+
+it('keeps a Model routing draft whose model list reads, and drops one whose list doesn\'t', () => {
+  const route = (ladder: unknown) => ({ ruleType: 'model_route', mode: 'watch', response: 'notify', alsoNotify: false, appliesTo: ['support-agent'], params: { ladder }, number: '' }) as unknown as RuleDraft;
+  const kept = (ladder: unknown) => { writeDraft('f1', { ruleId: 'r1', version: 1, draft: route(ladder) }); return readDraft('f1'); };
+  // Model ids, a deployment with the model it runs, or none picked yet.
+  expect(kept(['claude-opus-5-5', { id: 'team-small', is: 'gpt-5.4-mini' }])).toMatchObject({ draft: { params: { ladder: ['claude-opus-5-5', { id: 'team-small', is: 'gpt-5.4-mini' }] } } });
+  expect(kept([])).not.toBeNull();
+  // Not a list, or an entry that names no model: not a draft this editor made.
+  expect(kept('claude-opus-5-5')).toBeNull();
+  expect(kept(undefined)).toBeNull();
+  expect(kept(['claude-opus-5-5', 7])).toBeNull();
+  expect(kept([{ is: 'gpt-5.5' }])).toBeNull();
+  expect(kept([null])).toBeNull();
+});

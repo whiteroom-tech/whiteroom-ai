@@ -4,7 +4,7 @@
 
 import type {
   BlockStreakParams, CallRateParams, GovernanceMode, GovernanceParams, GovernanceResponse, GovernanceRule, GovernanceRuleType,
-  DataDeletionParams, GovernanceScope, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, OutsideThenSendParams, RuleActionCounts, SendLimitParams, SendSeenRow, SpendCapParams, ToolListParams, TrimResultsParams,
+  DataDeletionParams, GovernanceScope, KeywordParams, KeywordWhere, LadderEntry, LoopBreakerParams, ModelAllowlistParams, ModelRouteParams, OutsideThenSendParams, RuleActionCounts, SendLimitParams, SendSeenRow, SpendCapParams, ToolListParams, TrimResultsParams,
 } from '@/lib/whiteroom/types';
 import { convertSpendCap, engineTakes, RULE_CATEGORY, UNKNOWN_RULE, unhandledType } from '@/lib/governance';
 import { MODE_LABEL, NOTIFY } from '@/lib/vocab';
@@ -230,6 +230,24 @@ export const commandLookingTools = (tools: readonly string[]) => tools.filter(lo
  */
 export const trims = (r: { ruleType?: string }) => r.ruleType === 'trim_results';
 
+/**
+ * Model routing never blocks or alerts either (its response is the engine's
+ * fixed notify), and in this version it only watches: wherever a count or an
+ * outcome is put into words, it has its own.
+ */
+export const routes = (r: { ruleType?: string }) => r.ruleType === 'model_route';
+
+/** A Model routing rule's model list, strongest first. One read for every use: a rule that came in with none has an empty list, not a missing one. */
+export const ladderOf = (p: ModelRouteParams): LadderEntry[] => p.ladder ?? [];
+/** Its models as the request names them. */
+export const ladderIds = (p: ModelRouteParams): string[] => ladderOf(p).map((e) => (typeof e === 'string' ? e : e.id));
+/** A ladder needs two models before there is a cheaper one to compare with. */
+const LADDER_MIN = 2;
+/** The most models a Model routing rule lists (the engine's limit). */
+export const LADDER_MAX = 5;
+/** The ladder as it reads in a sentence: "claude-opus-5-5 → claude-sonnet-5-5". */
+const ladderText = (p: ModelRouteParams) => ladderIds(p).join(' → ');
+
 /** "the newest 5 turns", "the newest turn". */
 const newest = (n: number) => (n === 1 ? 'the newest turn' : `the newest ${fmtCount(n)} turns`);
 
@@ -294,6 +312,10 @@ export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 
       const removes = `remove tool results older than ${newest(p.keepRecent)}`;
       return { pre: 'When a request is about ', val: `${fmtCount(p.minTokens)} tokens`, post: ` or more, ${rule.mode === undefined || rule.mode === 'enforce' ? removes : `it would ${removes}`}.` };
     }
+    case 'model_route': {
+      const p = rule.params as ModelRouteParams;
+      return ladderOf(p).length ? { pre: 'Record the calls that could use a cheaper model. Models, strongest first: ', val: ladderText(p), post: '.' } : { pre: 'No models picked yet.', val: '', post: '' };
+    }
     default:
       return unhandledType(rule.ruleType, { pre: UNKNOWN_RULE, val: '', post: '' });
   }
@@ -322,7 +344,7 @@ function ruleOrder(a: GovernanceRule, b: GovernanceRule): number {
 }
 
 /** The order rules of equal strength are listed in on Controls: each category's types together. Its own list, so the Add-a-rule choices can change without moving rows. */
-export const RULE_ROW_ORDER: readonly GovernanceRuleType[] = ['spend_cap', 'call_rate', 'model_allowlist', 'loop_breaker', 'block_streak', 'trim_results', 'tool_list', 'keyword', 'send_limit', 'outside_then_send', 'data_deletion'];
+export const RULE_ROW_ORDER: readonly GovernanceRuleType[] = ['spend_cap', 'call_rate', 'model_allowlist', 'loop_breaker', 'block_streak', 'trim_results', 'model_route', 'tool_list', 'keyword', 'send_limit', 'outside_then_send', 'data_deletion'];
 
 /** The categories in the order Controls lists them. A type this build doesn't know goes last. */
 export const CATEGORY_ORDER: readonly string[] = ['Cost & reliability', 'Data protection'];
@@ -394,6 +416,7 @@ export function emptyPick(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): st
     // No send tools is "Not set up" (DLP spec 5.3). No read tools is a real rule: the provider's web search and fetch always count.
     case 'outside_then_send': return (rule.params as OutsideThenSendParams).sendTools.length ? null : 'a send tool';
     case 'data_deletion': return (rule.params as DataDeletionParams).commandTools.length ? null : 'a tool';
+    case 'model_route': { const n = ladderOf(rule.params as ModelRouteParams).length; return n >= LADDER_MIN ? null : n ? 'a second model' : 'two models'; }
     case 'spend_cap': case 'loop_breaker': case 'call_rate': case 'block_streak': case 'trim_results': return null;
     default: return unhandledType(rule.ruleType, null);
   }
@@ -401,8 +424,8 @@ export function emptyPick(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): st
 
 // ── What the agent gets ─────────────────────────────────────────────
 
-// Repeated blocks and Old tool results never block a call themselves, so they have no reason of their own.
-const REASON: Record<Exclude<GovernanceRuleType, 'block_streak' | 'trim_results'>, string> = {
+// Repeated blocks, Old tool results and Model routing never block a call themselves, so they have no reason of their own.
+const REASON: Record<Exclude<GovernanceRuleType, 'block_streak' | 'trim_results' | 'model_route'>, string> = {
   spend_cap: 'budget_exceeded', loop_breaker: 'loop_detected', model_allowlist: 'model_not_allowed', tool_list: 'tool_not_allowed', call_rate: 'rate_exceeded',
   keyword: 'keyword_found', send_limit: 'destination_not_allowed', outside_then_send: 'outside_then_send', data_deletion: 'data_deletion',
 };
@@ -411,6 +434,7 @@ const REASON: Record<Exclude<GovernanceRuleType, 'block_streak' | 'trim_results'
 export function agentGets(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'response'>): string {
   const response = rule.response ?? 'block';
   if (rule.ruleType === 'trim_results') return 'Nothing: the call goes through.\nOld tool results in it are replaced with a short note.';
+  if (rule.ruleType === 'model_route') return 'Nothing: the call goes through unchanged.';
   if (rule.ruleType === 'block_streak') {
     // The call that reaches the limit was blocked by another rule: that rule's 403 is what the agent gets.
     const then = response === 'notify' ? 'You get an alert; the agent doesn’t.' : `Then the agent is ${response === 'stop' ? 'stopped' : 'paused'} until someone resumes it.`;
@@ -429,7 +453,7 @@ export function agentGets(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 're
 function resetsWhen(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): string {
   switch (rule.ruleType) {
     case 'call_rate': return 'once the last minute is back under the limit';
-    case 'model_allowlist': case 'tool_list': case 'keyword': case 'send_limit': case 'outside_then_send': case 'block_streak': case 'trim_results': case 'data_deletion': return 'never';
+    case 'model_allowlist': case 'tool_list': case 'keyword': case 'send_limit': case 'outside_then_send': case 'block_streak': case 'trim_results': case 'data_deletion': case 'model_route': return 'never';
     case 'spend_cap': case 'loop_breaker': return (rule.params as SpendCapParams | LoopBreakerParams).scope === 'day' ? 'next day (00:00 UTC)' : 'next run';
     default: return unhandledType(rule.ruleType, 'never');
   }
@@ -448,6 +472,7 @@ export const AGENT_NOTE: Record<GovernanceRuleType, string> = {
   block_streak: 'Acts after the blocked call that reaches the limit.',
   // Never stops a call, so this never shows.
   trim_results: 'It never stops a call.',
+  model_route: 'It never stops a call.',
   data_deletion: 'Stops the model’s reply before the agent gets it, so the command never runs. You still pay for that model call.',
 };
 
@@ -483,7 +508,7 @@ const numberOf = (rule: Pick<GovernanceRule, 'ruleType' | 'params'>): string => 
     case 'call_rate': return String((rule.params as CallRateParams).maxCalls);
     case 'block_streak': return String((rule.params as BlockStreakParams).threshold);
     case 'trim_results': return String((rule.params as TrimResultsParams).keepRecent);
-    case 'model_allowlist': case 'tool_list': case 'keyword': case 'send_limit': case 'outside_then_send': case 'data_deletion': return '';
+    case 'model_allowlist': case 'tool_list': case 'keyword': case 'send_limit': case 'outside_then_send': case 'data_deletion': case 'model_route': return '';
     default: return unhandledType(rule.ruleType, '');
   }
 };
@@ -493,13 +518,14 @@ export function draftFrom(rule: GovernanceRule): RuleDraft {
   return {
     ruleType: rule.ruleType, mode: rule.mode, response: typeResponse(rule.ruleType, rule.response), alsoNotify: !!rule.alsoNotify,
     appliesTo: rule.appliesTo === 'all' ? 'all' : [...rule.appliesTo],
-    params: JSON.parse(JSON.stringify(rule.params)) as GovernanceParams,
+    // Model routing: the editor holds, and Save sends, the model list alone.
+    params: (rule.ruleType === 'model_route' ? { ladder: JSON.parse(JSON.stringify(ladderOf(rule.params as ModelRouteParams))) } : JSON.parse(JSON.stringify(rule.params))) as GovernanceParams,
     number: numberOf(rule),
     ...(rule.ruleType === 'trim_results' && { number2: number2Of(rule) }),
   };
 }
 
-const HAS_NUMBER: Record<GovernanceRuleType, boolean> = { spend_cap: true, loop_breaker: true, call_rate: true, model_allowlist: false, tool_list: false, keyword: false, send_limit: false, outside_then_send: false, block_streak: true, trim_results: true, data_deletion: false };
+const HAS_NUMBER: Record<GovernanceRuleType, boolean> = { spend_cap: true, loop_breaker: true, call_rate: true, model_allowlist: false, tool_list: false, keyword: false, send_limit: false, outside_then_send: false, block_streak: true, trim_results: true, data_deletion: false, model_route: false };
 const hasNumber = (t: GovernanceRuleType) => HAS_NUMBER[t] === true;
 
 /**
@@ -584,7 +610,9 @@ export function draftChanges(d: RuleDraft, rule: GovernanceRule): {
   if (d.alsoNotify !== !!rule.alsoNotify) out.alsoNotify = d.alsoNotify;
   if (!same(d.appliesTo, rule.appliesTo)) out.appliesTo = d.appliesTo;
   // A list the engine hid (domainCount) is never written back: it would save an empty list over the real one.
-  if (!same(p.params, rule.params) && !domainsHidden(rule)) out.params = p.params;
+  // Model routing is compared on what the editor holds, its model list, so a rule isn't "unsaved" the moment it opens.
+  const saved = routes(rule) ? { ladder: ladderOf(rule.params as ModelRouteParams) } : rule.params;
+  if (!same(p.params, saved) && !domainsHidden(rule)) out.params = p.params;
   return Object.keys(out).length ? out : null;
 }
 
@@ -604,7 +632,17 @@ export function draftProblem(d: RuleDraft): string | null {
     if (d.response !== 'notify') return 'This rule can only alert you.';
   }
   if (d.ruleType === 'data_deletion' && (p.params as DataDeletionParams).commandTools.length > COMMAND_TOOLS_MAX) return toolsFull(COMMAND_TOOLS_MAX);
-  if (d.appliesTo !== 'all' && d.appliesTo.length === 0) return 'Pick at least one agent, or choose All agents.';
+  if (d.ruleType === 'model_route') {
+    // The engine refuses each of these: routing is turned on agent by agent, and only watches for now.
+    // Turning it off needs no agents: a rule with none picked yet can still be switched off.
+    if (d.appliesTo === 'all' || (d.appliesTo.length === 0 && d.mode !== 'off')) return 'Pick the agents this rule covers.';
+    if (d.mode === 'enforce') return 'This rule runs in Watch for now.';
+    // The engine refuses a list of one model, or of more than five, in any mode: these hold for Off too.
+    const models = ladderOf(p.params as ModelRouteParams).length;
+    if (models === 1) return 'Add a second model, cheaper than the first.';
+    if (models > LADDER_MAX) return `A rule holds up to ${LADDER_MAX} models. Remove one to save.`;
+  }
+  if (d.appliesTo !== 'all' && d.appliesTo.length === 0 && !routes(d)) return 'Pick at least one agent, or choose All agents.';
   if (d.mode !== 'enforce') return null;
   switch (d.ruleType) {
     case 'model_allowlist': return (p.params as ModelAllowlistParams).allowedModels.length === 0 ? 'Pick at least one model before you turn on Enforce.' : null;
@@ -613,7 +651,7 @@ export function draftProblem(d: RuleDraft): string | null {
     case 'send_limit': return (p.params as SendLimitParams).tools.length === 0 ? 'Pick at least one tool before you turn on Enforce.' : null;
     case 'outside_then_send': return (p.params as OutsideThenSendParams).sendTools.length === 0 ? 'Pick at least one tool under Sends data out before you turn on Enforce.' : null;
     case 'data_deletion': return (p.params as DataDeletionParams).commandTools.length === 0 ? 'Pick at least one tool before you turn on Enforce.' : null;
-    case 'spend_cap': case 'loop_breaker': case 'call_rate': case 'block_streak': case 'trim_results': return null;
+    case 'spend_cap': case 'loop_breaker': case 'call_rate': case 'block_streak': case 'trim_results': case 'model_route': return null;
     // Never saved: the editor doesn't open a rule of a type it doesn't know.
     default: return unhandledType(d.ruleType, UNKNOWN_RULE);
   }
@@ -629,6 +667,7 @@ export const RULE_TEMPLATES: { type: GovernanceRuleType; title: string; desc: st
   { type: 'loop_breaker', title: 'Break loops', desc: 'Catch an agent making the same call over and over.' },
   { type: 'block_streak', title: 'Act on repeated blocks', desc: 'Catch an agent that keeps making calls your rules block.' },
   { type: 'trim_results', title: 'Trim old tool results', desc: 'Keep long conversations short by removing old tool results before they go to the model.' },
+  { type: 'model_route', title: 'Find calls that could use a cheaper model', desc: 'List the models your agents may use, strongest first, and see which calls could use a cheaper one.' },
   { type: 'tool_list', title: 'Block tools', desc: 'Keep agents from running tools you name.' },
   { type: 'keyword', title: 'Flag keywords', desc: 'Get an alert, or block the call, when words you pick show up.' },
   { type: 'send_limit', title: 'Limit where tools can send data', desc: 'For example, email only to your own domain.' },
@@ -757,6 +796,8 @@ function looser(prev: GovernanceRule, next: GovernanceRule): string[] {
     }
     // It guards nothing: trimming less is never a weaker rule.
     case 'trim_results': return [];
+    // Nor does a shorter list of models.
+    case 'model_route': return [];
     default:
       return unhandledType(prev.ruleType, []);
   }
@@ -833,6 +874,10 @@ export function ruleCondition(rule: Pick<GovernanceRule, 'ruleType' | 'params'>)
       const p = rule.params as TrimResultsParams;
       return { pre: 'Tool results older than the newest ', val: fmtCount(p.keepRecent), post: ` ${plural(p.keepRecent, 'turn')}, once a request is about ${fmtCount(p.minTokens)} tokens` };
     }
+    case 'model_route': {
+      const p = rule.params as ModelRouteParams;
+      return ladderOf(p).length ? { pre: 'Calls that could use a cheaper model, from ', val: ladderText(p), post: '' } : { pre: 'No models picked yet', val: '', post: '' };
+    }
     default:
       return unhandledType(rule.ruleType, { pre: UNKNOWN_RULE, val: '', post: '' });
   }
@@ -901,6 +946,8 @@ export function blocksWhen(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'a
     case 'block_streak': return `only after ${fmtCount((rule.params as BlockStreakParams).threshold)} blocked calls in a row${only}`;
     // Never blocks (canAct is false): kept for the exhaustive switch.
     case 'trim_results': return `only for old tool results${only}`;
+    // Never blocks (canAct is false): kept for the exhaustive switch.
+    case 'model_route': return `only for calls that could use a cheaper model${only}`;
     default: return unhandledType(rule.ruleType, `only in some cases${only}`);
   }
 }
@@ -939,6 +986,12 @@ export function rowCount(rule: GovernanceRule, ctx: {
     if (!justThem || !week) return { text: '', tone: 'plain' };
     const n = enforcedCount(rule, week);
     return n ? { text: `${fmtCount(n)} ${trims(rule) ? 'trimmed' : TALLY_WORD[response]} · 7 days`, tone: 'hot' } : NONE_CAUGHT;
+  }
+  if (routes(rule)) {
+    // Not caught: nothing was wrong with these calls. The count is the rule's, so it shows only where that is the view's: the fleet, or the one agent it covers.
+    const justThem = !ctx.agent || (rule.appliesTo !== 'all' && rule.appliesTo.length === 1 && rule.appliesTo[0] === ctx.agent);
+    if (!justThem || !week) return { text: '', tone: 'plain' };
+    return { text: week.wouldRoute ? `${fmtCount(week.wouldRoute)} could use a cheaper model · 7 days` : 'None yet · 7 days', tone: 'plain' };
   }
   const since = ctx.wouldAct && !ctx.wouldAct.unversioned ? ctx.wouldAct : null;
   const sinceN = since ? (ctx.agent ? since.byAgent[ctx.agent] ?? 0 : Object.values(since.byAgent).reduce((a, b) => a + b, 0)) : null;
@@ -980,6 +1033,11 @@ export function ruleStatus(rule: GovernanceRule, ctx: {
     const n = ctx.week ? enforcedCount(rule, ctx.week) : null;
     const tail = n === null ? '' : n ? ` · ${trims(rule) ? `${fmtCount(n)} trimmed` : DID[response](n)} in 7 days` : ' · nothing caught in 7 days';
     return `${response === 'notify' && !trims(rule) ? 'Alerting you' : 'Enforcing'} for ${who}${tail}`;
+  }
+  if (routes(rule)) {
+    if (!ctx.week) return `Watching ${who}`;
+    const n = ctx.week.wouldRoute ?? 0;
+    return `Watching ${who} · ${n ? `${fmtCount(n)} ${plural(n, 'call')}` : 'no calls'} could use a cheaper model in 7 days`;
   }
   const w = ctx.wouldAct;
   if (w && !w.unversioned && w.since) {
@@ -1111,12 +1169,18 @@ export function whenSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params'>):
       const p = rule.params as TrimResultsParams;
       return { pre: 'Sends a request of about ', val: `${fmtCount(p.minTokens)} tokens`, post: ` or more, with tool results older than ${newest(p.keepRecent)}` };
     }
+    case 'model_route': {
+      const p = rule.params as ModelRouteParams;
+      return ladderOf(p).length ? { pre: 'Models, strongest first: ', val: ladderText(p), post: '' } : { pre: 'No models picked yet', val: '', post: '' };
+    }
     default: return unhandledType(rule.ruleType, { pre: UNKNOWN_RULE, val: '', post: '' });
   }
 }
 
 /** "What happens": Off · Watch · Enforce, in that order. */
 export const MODE_CHOICES: readonly GovernanceMode[] = ['off', 'watch', 'enforce'];
+/** The modes a rule type can be set to: Model routing only watches for now, so it isn't offered Enforce. */
+export const modeChoices = (ruleType: GovernanceRuleType): readonly GovernanceMode[] => (ruleType === 'model_route' ? MODE_CHOICES.filter((m) => m !== 'enforce') : MODE_CHOICES);
 
 /**
  * The draft with a new mode. Leaving Enforce puts back the saved rule's
@@ -1152,6 +1216,8 @@ const TYPE_RESPONSES: Record<GovernanceRuleType, readonly GovernanceResponse[]> 
   block_streak: ['pause', 'stop', 'notify'],
   // The engine's fixed value; the rule never alerts, so the editor shows no action at all.
   trim_results: ['notify'],
+  // The engine's fixed value here too: the rule never alerts or blocks.
+  model_route: ['notify'],
   data_deletion: ['block', 'pause', 'stop', 'notify'],
 };
 
@@ -1185,6 +1251,8 @@ const ENFORCE_LINE: Record<GovernanceResponse, string> = {
 /** The one plain line under What happens, for the pick. */
 export function whatHappensLine(d: Pick<RuleDraft, 'mode' | 'response' | 'alsoNotify'> & { ruleType?: GovernanceRuleType }): string {
   if (d.mode === 'off') return 'Off: does nothing and records nothing.';
+  // Enforce isn't offered for it; a rule that came in enforced says so, and Save asks for Watch.
+  if (routes(d)) return d.mode === 'enforce' ? 'Enforce isn’t available for this rule yet. Set it to Watch or Off.' : 'Watch: changes nothing and records the calls that could use a cheaper model on the list.';
   if (trims(d)) {
     return d.mode === 'watch' ? 'Watch: changes nothing and records what it would have removed.'
       : 'Enforce: edits what the agent sends to the model. It never blocks a call or alerts you.';

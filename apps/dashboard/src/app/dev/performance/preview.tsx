@@ -201,7 +201,7 @@ const tally = (blocks: number, wouldBlocks: number) => ({ blocks, wouldBlocks })
 const COUNTS: GovernanceCounts = {
   // What the Old tool results rule did: its own word, never blocked or alerted.
   blocks: 0, wouldBlocks: 120, trimmed: 38,
-  byRule: { spend_cap: tally(0, 59), loop_breaker: tally(0, 0), model_allowlist: tally(0, 60), tool_list: tally(0, 0), call_rate: tally(0, 0), keyword: tally(0, 1), send_limit: tally(0, 0), outside_then_send: tally(0, 0), block_streak: tally(0, 0), trim_results: tally(0, 0), data_deletion: tally(0, 0) },
+  byRule: { spend_cap: tally(0, 59), loop_breaker: tally(0, 0), model_allowlist: tally(0, 60), tool_list: tally(0, 0), call_rate: tally(0, 0), keyword: tally(0, 1), send_limit: tally(0, 0), outside_then_send: tally(0, 0), block_streak: tally(0, 0), trim_results: tally(0, 0), data_deletion: tally(0, 0), model_route: tally(0, 0) },
   byAgent: { 'code-reviewer': tally(0, 60), 'lead-agent': tally(0, 59), 'keyword-test': tally(0, 1) },
 };
 

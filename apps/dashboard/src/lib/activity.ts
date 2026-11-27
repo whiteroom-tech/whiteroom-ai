@@ -81,6 +81,9 @@ const EVENT_COPY: Record<string, EventCopy> = {
   agent_resumed: { icon: '▶', tone: 'start', code: 'RES', say: () => 'was resumed' },
   governance_block: { icon: '⛔', tone: 'block', code: 'BLK', say: (e) => `was blocked by ${governancePhrase(e)}` },
   governance_would_block: { icon: '⚠', tone: 'wouldBlock', code: 'W/B', say: (e) => `would have been blocked by ${governancePhrase(e)}` },
+  // Model routing (Watch): nothing was blocked or caught.
+  governance_would_route: { icon: '↘', tone: 'idle', code: 'RTE', say: () => 'made a call that could use a cheaper model' },
+  route_decided: { icon: '↘', tone: 'idle', code: 'RTE', say: () => 'had its run checked by Model routing' },
   governance_rule_changed: { icon: '⚙', tone: 'idle', code: 'GOV', who: 'Controls', say: (e) => String(e.message ?? `${ruleLabel(e.ruleType)} changed`) },
   // Calls WhiteRoom couldn't tie to an agent while the fleet has Pause/Stop or
   // an Enforce rule on. Fleet-level: there's no agent to name.

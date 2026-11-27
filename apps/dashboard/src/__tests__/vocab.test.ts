@@ -17,6 +17,13 @@ describe('rule mode words', () => {
     expect(modeTagText({ mode: 'enforce', response: 'notify' })).toBe('Alert only');
   });
 
+  it('tags Model routing Off or Watch, and never Alert only: it holds the notify response but never alerts', () => {
+    const route = { ruleType: 'model_route', response: 'notify' as const };
+    expect(modeTagText({ ...route, mode: 'off' })).toBe('Off');
+    expect(modeTagText({ ...route, mode: 'watch' })).toBe('Watch');
+    expect(modeTagText({ ...route, mode: 'enforce' })).toBe('Enforce');
+  });
+
   it('shows engine history text, and entries written with the retired labels, in today’s words', () => {
     expect(modeWords('Off → Watch')).toBe('Off → Watch');
     expect(modeWords('Watch → Enforce')).toBe('Watch → Enforce');

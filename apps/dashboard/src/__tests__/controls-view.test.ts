@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   agentGets, appliesNow, changeResponse, changeUnit, draftChanges, draftParams, typedNumber, draftFrom, draftProblem, isDirty, ruleSentence, rulesFor, ruleSentenceText, spendOverlap,
   blocksWhen, duplicateRules, keywordGaps, keywordsShort, leadCounts, modeCount, ruleCondition, ruleConditionText, ruleGroups, rowCount, ruleStatus, whoFor,
-  CATEGORY_ORDER, RULE_ROW_ORDER, RULE_TEMPLATES,
+  CATEGORY_ORDER, RULE_ROW_ORDER, RULE_TEMPLATES, modeChoices, responseChoices, whatHappensLine,
 } from '@/lib/controls-view';
 import { RULE_CATEGORY, RULE_LABELS } from '@/lib/governance';
 import type { GovernanceRule } from '@/lib/whiteroom/types';
@@ -124,7 +124,7 @@ describe('the agent filter and groups', () => {
   });
 
   it('keeps rows in the row order whatever order the Add a rule choices are in', () => {
-    expect(RULE_ROW_ORDER).toEqual(['spend_cap', 'call_rate', 'model_allowlist', 'loop_breaker', 'block_streak', 'trim_results', 'tool_list', 'keyword', 'send_limit', 'outside_then_send', 'data_deletion']);
+    expect(RULE_ROW_ORDER).toEqual(['spend_cap', 'call_rate', 'model_allowlist', 'loop_breaker', 'block_streak', 'trim_results', 'model_route', 'tool_list', 'keyword', 'send_limit', 'outside_then_send', 'data_deletion']);
     expect([...RULE_ROW_ORDER].sort()).toEqual(Object.keys(RULE_LABELS).sort());
     // Each category's types sit together, in the category order.
     expect([...new Set(RULE_ROW_ORDER.map((t) => RULE_CATEGORY[t]))]).toEqual(CATEGORY_ORDER);
@@ -134,6 +134,7 @@ describe('the agent filter and groups', () => {
       loop_breaker: { threshold: 100, scope: 'run', ignoreTools: [] }, tool_list: { blockedTools: ['x'] }, keyword: { where: 'incoming', keywords: ['x'], wholeWord: true },
       send_limit: { tools: ['send_email'], domains: [] }, outside_then_send: { readTools: [], sendTools: ['send_email'] },
       block_streak: { threshold: 3 }, trim_results: { keepRecent: 5, minTokens: 50_000 }, data_deletion: { commandTools: ['bash'] },
+      model_route: { ladder: ['claude-opus-5-5', 'claude-sonnet-5-5'] },
     } as const;
     const rules = RULE_ROW_ORDER.map((t) => rule({ ruleType: t, params: params[t] as GovernanceRule['params'] }));
     RULE_TEMPLATES.reverse();
@@ -148,6 +149,7 @@ describe('the agent filter and groups', () => {
     expect(RULE_TEMPLATES.map((t) => [t.type, t.title])).toEqual([
       ['spend_cap', 'Cap spending'], ['call_rate', 'Limit calls per minute'], ['model_allowlist', 'Allow only certain models'],
       ['loop_breaker', 'Break loops'], ['block_streak', 'Act on repeated blocks'], ['trim_results', 'Trim old tool results'],
+      ['model_route', 'Find calls that could use a cheaper model'],
       ['tool_list', 'Block tools'], ['keyword', 'Flag keywords'], ['send_limit', 'Limit where tools can send data'],
       ['outside_then_send', 'Flag sends after outside content'], ['data_deletion', 'Stop agents deleting data'],
     ]);
@@ -159,7 +161,7 @@ describe('the agent filter and groups', () => {
     expect(RULE_CATEGORY).toEqual({
       spend_cap: 'Cost & reliability', call_rate: 'Cost & reliability', model_allowlist: 'Cost & reliability', loop_breaker: 'Cost & reliability',
       tool_list: 'Data protection', keyword: 'Data protection', send_limit: 'Data protection', outside_then_send: 'Data protection', data_deletion: 'Data protection',
-      block_streak: 'Cost & reliability', trim_results: 'Cost & reliability',
+      block_streak: 'Cost & reliability', trim_results: 'Cost & reliability', model_route: 'Cost & reliability',
     });
   });
 
@@ -543,5 +545,92 @@ describe('What happens: Off · Watch · Enforce, and the action when enforced', 
     expect(actionAvailableFrom('r', added(30), 'watch', now)).toBeNull();
     expect(actionAvailableFrom('r', [], 'off', now)).toBe('record-first');
     expect(actionAvailableFrom('r', [], 'watch', now)).toBe('unknown');
+  });
+});
+
+describe('Model routing', () => {
+  const LADDER = ['claude-opus-5-5', 'claude-sonnet-5-5'];
+  const route = (over: Partial<GovernanceRule> = {}) => rule({ ruleType: 'model_route', response: 'notify', appliesTo: ['support-agent'], params: { ladder: LADDER }, ...over });
+  const draft = (over: Partial<GovernanceRule> = {}) => draftFrom(route(over));
+  const week = (wouldRoute: number) => ({ blocked: 0, paused: 0, stopped: 0, toldYou: 0, wouldAct: 0, wouldRoute });
+
+  it('reads as the list of models, strongest first, and never as a block', () => {
+    expect(ruleSentenceText(route())).toBe('Record the calls that could use a cheaper model. Models, strongest first: claude-opus-5-5 → claude-sonnet-5-5.');
+    expect(ruleConditionText(route())).toBe('Calls that could use a cheaper model, from claude-opus-5-5 → claude-sonnet-5-5');
+    expect(ruleSentenceText(route({ params: { ladder: [] } }))).toBe('No models picked yet.');
+    expect(agentGets(route())).toBe('Nothing: the call goes through unchanged.');
+    expect(whatHappensLine(draft())).toBe('Watch: changes nothing and records the calls that could use a cheaper model on the list.');
+    expect(whatHappensLine(draft({ mode: 'off' }))).toBe('Off: does nothing and records nothing.');
+    // A rule that came in enforced never reads as watching.
+    expect(whatHappensLine(draft({ mode: 'enforce' }))).toBe('Enforce isn’t available for this rule yet. Set it to Watch or Off.');
+  });
+
+  it('reads a rule that came in with no model list as one with none picked', () => {
+    const bare = route({ params: {} as GovernanceRule['params'] });
+    expect(ruleSentenceText(bare)).toBe('No models picked yet.');
+    expect(ruleConditionText(bare)).toBe('No models picked yet');
+    expect(rowCount(bare, { onlyOfItsType: true })).toEqual({ text: 'Does nothing until you add two models', tone: 'warn' });
+    expect(draftFrom(bare).params).toEqual({ ladder: [] });
+    expect(draftProblem(draftFrom(bare))).toBeNull();
+  });
+
+  it('shows a deployment by its name', () => {
+    expect(ruleConditionText(route({ params: { ladder: [{ id: 'team-large', is: 'gpt-5.5' }, 'team-small'] } }))).toBe('Calls that could use a cheaper model, from team-large → team-small');
+  });
+
+  it('offers Off and Watch only', () => {
+    expect(modeChoices('model_route')).toEqual(['off', 'watch']);
+    expect(modeChoices('spend_cap')).toEqual(['off', 'watch', 'enforce']);
+    expect(responseChoices(true, 'model_route')).toEqual(['notify']);
+  });
+
+  it('can’t be saved for all agents, for none, in Enforce, or with one model', () => {
+    expect(draftProblem(draft())).toBeNull();
+    expect(draftProblem(draft({ appliesTo: 'all' }))).toBe('Pick the agents this rule covers.');
+    expect(draftProblem(draft({ appliesTo: [] }))).toBe('Pick the agents this rule covers.');
+    // Switching it off needs no agents.
+    expect(draftProblem(draft({ appliesTo: [], mode: 'off' }))).toBeNull();
+    expect(draftProblem(draft({ mode: 'enforce' }))).toBe('This rule runs in Watch for now.');
+    expect(draftProblem(draft({ params: { ladder: ['claude-opus-5-5'] } }))).toBe('Add a second model, cheaper than the first.');
+    expect(draftProblem(draft({ params: { ladder: ['a', 'b', 'c', 'd', 'e', 'f'] } }))).toBe('A rule holds up to 5 models. Remove one to save.');
+    // No models yet is a rule that isn't set up: it saves, and its row says what it needs.
+    expect(draftProblem(draft({ params: { ladder: [] } }))).toBeNull();
+  });
+
+  it('says what it still needs until two models are listed', () => {
+    const ctx = { onlyOfItsType: true };
+    expect(rowCount(route({ params: { ladder: [] } }), ctx)).toEqual({ text: 'Does nothing until you add two models', tone: 'warn' });
+    expect(rowCount(route({ params: { ladder: ['claude-opus-5-5'] } }), ctx)).toEqual({ text: 'Does nothing until you add a second model', tone: 'warn' });
+  });
+
+  it('counts calls that could use a cheaper model, never as caught or as would-haves', () => {
+    const r = route();
+    expect(rowCount(r, { onlyOfItsType: false, byRuleId: { [r.id]: week(41) } })).toEqual({ text: '41 could use a cheaper model · 7 days', tone: 'plain' });
+    expect(rowCount(r, { onlyOfItsType: false, byRuleId: {} })).toEqual({ text: 'None yet · 7 days', tone: 'plain' });
+    // Would-haves from other rules never show on this row.
+    expect(rowCount(r, { onlyOfItsType: false, byRuleId: { [r.id]: { ...week(0), wouldAct: 9 } } })).toEqual({ text: 'None yet · 7 days', tone: 'plain' });
+    expect(ruleStatus(r, { week: week(41) })).toBe('Watching support-agent · 41 calls could use a cheaper model in 7 days');
+    expect(ruleStatus(r, { week: week(1) })).toBe('Watching support-agent · 1 call could use a cheaper model in 7 days');
+    expect(ruleStatus(r, { week: week(0) })).toBe('Watching support-agent · no calls could use a cheaper model in 7 days');
+    expect(ruleStatus(r, {})).toBe('Watching support-agent');
+  });
+
+  it('with one agent in view, shows the count only when the rule is that agent’s alone', () => {
+    const r = route();
+    const since = { byAgent: { 'support-agent': 5 } };
+    // Its own words here too, never "caught since edit".
+    expect(rowCount(r, { onlyOfItsType: false, byRuleId: { [r.id]: week(41) }, agent: 'support-agent', wouldAct: since })).toEqual({ text: '41 could use a cheaper model · 7 days', tone: 'plain' });
+    const shared = route({ appliesTo: ['support-agent', 'intake-agent'] });
+    expect(rowCount(shared, { onlyOfItsType: false, byRuleId: { [shared.id]: week(41) }, agent: 'support-agent', wouldAct: since })).toEqual({ text: '', tone: 'plain' });
+  });
+
+  it('holds and saves the model list alone', () => {
+    const saved = rule({ ruleType: 'model_route', response: 'notify', appliesTo: ['support-agent'], params: { ladder: LADDER, somethingElse: 1 } as unknown as GovernanceRule['params'] });
+    const d = draftFrom(saved);
+    expect(d.params).toEqual({ ladder: LADDER });
+    // Opening it changes nothing: it isn't unsaved, and Save has nothing to send.
+    expect(isDirty(d, saved)).toBe(false);
+    expect(draftChanges(d, saved)).toBeNull();
+    expect(draftChanges({ ...d, params: { ladder: [...LADDER, 'claude-haiku-5-5'] } }, saved)).toEqual({ params: { ladder: [...LADDER, 'claude-haiku-5-5'] } });
   });
 });

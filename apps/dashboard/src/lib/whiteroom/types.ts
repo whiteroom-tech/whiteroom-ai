@@ -701,7 +701,7 @@ export interface CustomControlInput {
 
 // -- Fleet governance rules (Controls page) --
 
-export type GovernanceRuleType = 'spend_cap' | 'loop_breaker' | 'model_allowlist' | 'tool_list' | 'call_rate' | 'keyword' | 'send_limit' | 'outside_then_send' | 'block_streak' | 'trim_results' | 'data_deletion';
+export type GovernanceRuleType = 'spend_cap' | 'loop_breaker' | 'model_allowlist' | 'tool_list' | 'call_rate' | 'keyword' | 'send_limit' | 'outside_then_send' | 'block_streak' | 'trim_results' | 'data_deletion' | 'model_route';
 export type GovernanceMode = 'off' | 'watch' | 'enforce';
 /** What Enforce does (engine P2.3): notify, block, pause or stop. */
 export type GovernanceResponse = 'notify' | 'block' | 'pause' | 'stop';
@@ -755,7 +755,15 @@ export interface TrimResultsParams { keepRecent: number; minTokens: number }
  * commandTools is "Not set up".
  */
 export interface DataDeletionParams { commandTools: string[] }
-export type GovernanceParams = SpendCapParams | LoopBreakerParams | ModelAllowlistParams | ToolListParams | CallRateParams | KeywordParams | SendLimitParams | OutsideThenSendParams | BlockStreakParams | TrimResultsParams | DataDeletionParams;
+/** A Model routing ladder entry: a model id, or a deployment name with the model it runs. */
+export type LadderEntry = string | { id: string; is: string };
+/**
+ * Model routing: the models an agent may use, strongest first. In Watch the
+ * engine records which calls could use a cheaper one. It holds the notify
+ * response but never alerts or blocks.
+ */
+export interface ModelRouteParams { ladder: LadderEntry[] }
+export type GovernanceParams = SpendCapParams | LoopBreakerParams | ModelAllowlistParams | ToolListParams | CallRateParams | KeywordParams | SendLimitParams | OutsideThenSendParams | BlockStreakParams | TrimResultsParams | DataDeletionParams | ModelRouteParams;
 
 export interface GovernanceRule {
   id: string;
@@ -849,11 +857,13 @@ export interface RuleActionCounts {
   couldntCheck?: number;
   /** Requests an Old tool results rule trimmed. Absent from older engines: read as 0. */
   trimmed?: number;
+  /** Calls a Model routing rule found could use a cheaper model (Watch). Never in wouldAct: nothing was caught. Absent from older engines: read as 0. */
+  wouldRoute?: number;
 }
 export interface RuleActionsResult { fleetId: string; totals: RuleActionCounts; byAgent: Record<string, RuleActionCounts>; /** Per rule type, from the same rows as totals (newer engines). */ byRule?: Record<string, RuleActionCounts>; /** Per rule id (gr_…), from the same rows (engine E1a). */ byRuleId?: Record<string, RuleActionCounts> }
 export interface RunRuleAction {
   /** `trim` is an Old tool results rule's own: it isn't a response a rule can be set to. */
-  at: string; ruleId: string; ruleType: GovernanceRuleType; response: GovernanceResponse | 'trim'; mode: GovernanceMode; occurrences: number;
+  at: string; ruleId: string; ruleType: GovernanceRuleType; response: GovernanceResponse | 'trim' | 'route'; mode: GovernanceMode; occurrences: number;
   /** Timeline ids of the calls it was for, in timeline order (engine PR 298; empty on older rows, absent on older engines). */
   eventIds?: string[];
   ruleName?: string | null;
@@ -863,7 +873,7 @@ export interface RunRuleAction {
 }
 
 /** A rule that acted, or would have, on one call (engine PR 298). */
-export interface CallRuleAction { ruleId: string; ruleType: string; ruleName?: string | null; mode: string; response: string; outcome: 'blocked' | 'paused' | 'stopped' | 'notified' | 'would_block' | 'trimmed' | 'couldnt_check'; reason?: string | null }
+export interface CallRuleAction { ruleId: string; ruleType: string; ruleName?: string | null; mode: string; response: string; outcome: 'blocked' | 'paused' | 'stopped' | 'notified' | 'would_block' | 'would_route' | 'trimmed' | 'couldnt_check'; reason?: string | null }
 
 // -- Runs (engine list_runs / get_run_events; a run is one agent's shift) --
 

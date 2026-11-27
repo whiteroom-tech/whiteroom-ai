@@ -2262,7 +2262,8 @@ describe('Controls: category labels', () => {
   const streak: GovernanceRule = { ...base, id: 'b1', ruleType: 'block_streak', mode: 'watch', response: 'notify', appliesTo: 'all', params: { threshold: 3 } };
   const trim: GovernanceRule = { ...base, id: 't1', ruleType: 'trim_results', mode: 'watch', response: 'notify', appliesTo: 'all', params: { keepRecent: 5, minTokens: 50_000 } };
   const deletion: GovernanceRule = { ...base, id: 'd1', ruleType: 'data_deletion', mode: 'watch', response: 'block', appliesTo: 'all', params: { commandTools: ['run_sql'] } };
-  const everyType = () => { api.created.push(keyword, send, flow, streak, trim, deletion); api.saved.r6 = { ...RULES[5], mode: 'watch', params: { blockedTools: ['delete_file'] } }; };
+  const route: GovernanceRule = { ...base, id: 'mr1', ruleType: 'model_route', mode: 'watch', response: 'notify', appliesTo: ['code-reviewer'], params: { ladder: ['claude-opus-5-5', 'claude-sonnet-5-5'] } };
+  const everyType = () => { api.created.push(keyword, send, flow, streak, trim, deletion, route); api.saved.r6 = { ...RULES[5], mode: 'watch', params: { blockedTools: ['delete_file'] } }; };
   const nameToCat = Object.fromEntries(Object.entries(RULE_LABELS).map(([t, name]) => [name, RULE_CATEGORY[t as keyof typeof RULE_CATEGORY]]));
 
   it('shows each row’s category above its count and mode tag, for every type', async () => {
@@ -2295,7 +2296,7 @@ describe('Controls: category labels', () => {
       expect(m.el.querySelector('.gov-edhead__full')!.textContent).toBe(nameToCat[name] + name);
       opened.add(name);
     }
-    expect(opened.size).toBe(11);
+    expect(opened.size).toBe(12);
     m.root.unmount();
   });
 
@@ -2766,6 +2767,33 @@ describe('Controls: Repeated blocks and Old tool results', () => {
     expect(input(m, 'Blocked calls in a row')!.value).toBe('3');
     expect(m.text()).toContain('Counts calls that another rule in Enforce blocked. A call that isn’t blocked starts the count over.');
     expect(m.el.querySelector('#ctl-ed-title')!.textContent).toBe('Repeated blocks');
+    m.root.unmount();
+  });
+
+  it('Model routing is added in Watch for no agent yet, and its editor has the model list and no Enforce', async () => {
+    api.ruleTypes = [...ALL_TYPES, 'model_route'];
+    creates();
+    const m = await mount();
+    await m.click(m.button('Add rule'));
+    await m.click(template(m, 'Find calls that could use a cheaper model'));
+    // Never for all agents: the engine refuses that for this rule.
+    expect(api.create).toHaveBeenCalledWith('f1', { ruleType: 'model_route', mode: 'watch', response: 'notify', params: { ladder: [] }, appliesTo: [] }, 'k');
+    expect(m.el.querySelector('#ctl-ed-title')!.textContent).toBe('Model routing');
+    expect(m.text()).toContain('Models, strongest first:');
+    expect(m.text()).toContain('Add the strongest first, then each cheaper one.');
+    const modes = [...m.el.querySelectorAll('[role="radiogroup"][aria-label="What happens"] button')].map((b) => b.textContent);
+    expect(modes).toEqual(['Off', 'Watch']);
+    // It can't cover all agents, so that choice isn't offered: only the agents to pick.
+    expect(m.el.querySelector('[aria-label="Which agents this rule applies to"]')).toBeNull();
+    m.root.unmount();
+  });
+
+  it('a Model routing rule that came in covering all agents still shows the agent picker, so it can be fixed', async () => {
+    api.created.push({ ...base, id: 'mr-all', ruleType: 'model_route', mode: 'watch', response: 'notify', appliesTo: 'all', params: { ladder: ['claude-opus-5-5', 'claude-sonnet-5-5'] } });
+    const m = await mount();
+    await m.click([...m.el.querySelectorAll('button.ctl-row')].find((r) => r.querySelector('.ctl-row__main .ctl-cap')?.textContent === 'Model routing'));
+    expect(m.el.querySelector('[aria-label="Which agents this rule applies to"]')).toBeNull();
+    expect(m.text()).toContain('Add agent');
     m.root.unmount();
   });
 
