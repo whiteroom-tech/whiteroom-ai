@@ -3,7 +3,7 @@
 // on every visit). Memory only: it lasts until the tab reloads, and never
 // outlives the figures' own refresh, which always runs.
 import type { PerformanceIndexResult, FleetHourlyResult, GovernanceRule, RuleActionCounts, UnknownGovernanceRule } from '@/lib/whiteroom/types';
-import type { DaySavings, GovSavings } from '@/lib/analytics-metrics';
+import type { DaySavings, GovSavings, RouteWatch } from '@/lib/analytics-metrics';
 import type { GovernanceCounts } from '@/lib/governance';
 
 /** The overview's figures beyond the index and audit reads; each null (or undefined) when unknown. */
@@ -21,9 +21,11 @@ export interface OverviewExtras {
   usdByDay: Record<string, number> | null;
   /** The range's caching WhiteRoom added, summed from the engine's cacheByDay as billing sums it; null on older engines. */
   cacheSaved?: { micros: number; unpricedReadTokens: number } | null;
+  /** The range's calls that could use a cheaper model (Model routing in Watch); null on older engines or when unread. */
+  routeWatch?: RouteWatch | null;
 }
 
-export const NO_EXTRAS: OverviewExtras = { workingHour: null, rules: null, byRuleId: undefined, weekHourly: null, usdByDay: null, cacheSaved: null };
+export const NO_EXTRAS: OverviewExtras = { workingHour: null, rules: null, byRuleId: undefined, weekHourly: null, usdByDay: null, cacheSaved: null, routeWatch: null };
 
 export interface PerformanceSnapshot {
   indexData: PerformanceIndexResult;

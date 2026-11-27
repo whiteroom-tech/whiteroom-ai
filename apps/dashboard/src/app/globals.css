@@ -709,6 +709,9 @@ a.wr-agent-name:hover { color: var(--brand); text-decoration: underline; }
 .wr-rules-line { margin: 0; padding: 16px 20px; font-size: var(--fs-md); line-height: 1.5; color: var(--tx); }
 .wr-rules-top { padding: 0 20px 6px; }
 .wr-rules-top > .wr-ctrl__row:last-child { border-bottom: 0; }
+/* Model routing's row, apart from what rules caught: a line above it, none between the row and its note. */
+.wr-rules-route { margin: 0 20px; padding: 0 0 6px; border-top: 1px solid var(--line); }
+.wr-rules-route > .wr-ctrl__row { border-bottom: 0; }
 .wr-ctrl__row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 10px 0; border-bottom: 1px solid var(--line); color: var(--tx); text-decoration: none; }
 a.wr-ctrl__row:hover .wr-ctrl__name { color: var(--brand); text-decoration: underline; }
 .wr-ctrl__name { flex: 1 1 160px; min-width: 0; }

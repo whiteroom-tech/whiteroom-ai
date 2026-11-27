@@ -7,13 +7,14 @@
  */
 import Link from 'next/link';
 import type { GovernanceRule, RuleActionCounts, UnknownGovernanceRule } from '@/lib/whiteroom/types';
-import type { GovernanceCounts } from '@/lib/governance';
+import { RULE_LABELS, type GovernanceCounts } from '@/lib/governance';
+import type { RouteWatch } from '@/lib/analytics-metrics';
 import { topCaught } from '@/lib/performance-overview';
-import { fmtCount } from '@/lib/format';
+import { fmtCost, fmtCount, plural } from '@/lib/format';
 import { ROUTES } from '@/lib/routes';
 import { ModeTag } from './primitives';
 
-export function RulesSummary({ counts, byRuleId, rules, unknownRules, unavailable }: {
+export function RulesSummary({ counts, byRuleId, rules, unknownRules, unavailable, routeWatch = null }: {
   /** Null while unknown. */
   counts: GovernanceCounts | null;
   /** Per rule id, from the same rows as the totals (newer engines). */
@@ -24,6 +25,8 @@ export function RulesSummary({ counts, byRuleId, rules, unknownRules, unavailabl
   unknownRules?: UnknownGovernanceRule[];
   /** The counts couldn't be read: unknown, never zero. */
   unavailable: boolean;
+  /** The range's calls that could use a cheaper model (Model routing in Watch); null when the engine sends none. */
+  routeWatch?: RouteWatch | null;
 }) {
   const top = topCaught(counts, byRuleId, rules, unknownRules);
   const extra = counts ? [
@@ -64,6 +67,36 @@ export function RulesSummary({ counts, byRuleId, rules, unknownRules, unavailabl
           })}
         </div>
       )}
+      {routeWatch && routeWatch.calls > 0 && <RouteWatchRow watch={routeWatch} rules={rules} />}
+    </div>
+  );
+}
+
+/**
+ * Model routing in Watch: the calls that could use a cheaper model, and what
+ * they cost at each. Its own row, apart from what rules caught: nothing was
+ * wrong with these calls, and nothing was changed, so it isn't a saving.
+ */
+function RouteWatchRow({ watch, rules }: { watch: RouteWatch; rules: GovernanceRule[] | null }) {
+  const own = (rules ?? []).filter((r) => r.ruleType === 'model_route');
+  const inner = (
+    <>
+      <span className="wr-ctrl__name">{RULE_LABELS.model_route}</span>
+      <span className="wr-cap">
+        <strong className="wr-strong">{fmtCount(watch.calls)}</strong> {plural(watch.calls, 'call')} could use a cheaper model
+        {watch.calls > watch.unpricedCalls && <> · <strong className="wr-strong">{fmtCost(watch.baselineMicros)}</strong> as sent, <strong className="wr-strong">{fmtCost(watch.costMicros)}</strong> on the cheaper model</>}
+        {watch.unpricedCalls > 0 && <> · {fmtCount(watch.unpricedCalls)} not priced</>}
+      </span>
+      <ModeTag mode="watch" />
+    </>
+  );
+  return (
+    <div className="wr-rules-route">
+      {/* One rule: the row opens it. Several: there is no single rule to open. */}
+      {own.length === 1
+        ? <Link href={`${ROUTES.controls}?rule=${encodeURIComponent(own[0].id)}`} className="wr-ctrl__row">{inner}</Link>
+        : <div className="wr-ctrl__row">{inner}</div>}
+      <p className="wr-cap" style={{ margin: 0, padding: '0 0 10px' }}>The same usage at list prices. Nothing was changed, so this isn’t a saving.</p>
     </div>
   );
 }

@@ -1000,6 +1000,13 @@ export interface AuditSummaryResult {
   savingsByDay?: Array<{ day: string; tokens: number; usdMicros: number; unpricedTokens: number }>;
   /** The prompt caching WhiteRoom added, per local day, net of write premiums; with savingsByDay, each day's "Saved by WhiteRoom" (absent on older engines). */
   cacheByDay?: Array<{ day: string; usdMicros: number; unpricedReadTokens: number }>;
+  /**
+   * Model routing's price difference per local day: what the calls that could use a cheaper model cost at
+   * the model asked for (baseline) and at the cheaper one (cost), on the same usage. `applied` false is
+   * Watch: nothing was changed. Not a saving, and in none of the figures above. Left out when its read
+   * failed; absent on older engines.
+   */
+  routeByDay?: Array<{ day: string; applied: boolean; calls: number; unpricedCalls: number; baselineMicros: number; costMicros: number }>;
   governance: { blocks: number; wouldBlocks: number; byAgent: Record<string, { blocks: number; wouldBlocks: number }>; byRule: Record<string, { blocks: number; wouldBlocks: number }> };
 }
 

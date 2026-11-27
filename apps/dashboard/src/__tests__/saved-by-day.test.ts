@@ -3,7 +3,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { cacheSavedTotal, savedByDay } from '@/lib/analytics-metrics';
+import { cacheSavedTotal, routeWatchTotal, savedByDay } from '@/lib/analytics-metrics';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {}, replace: () => {} }), useSearchParams: () => new URLSearchParams() }));
 
@@ -45,5 +45,20 @@ describe('Performance › Saved by WhiteRoom', async () => {
   });
   it('falls back to the range\'s cache figure on an engine without the split', () => {
     expect(saved(null)).toMatch(/Saved by WhiteRoom \$1\.90/);
+  });
+});
+
+describe('routeWatchTotal', () => {
+  const day = (over: Partial<{ applied: boolean; calls: number; unpricedCalls: number; baselineMicros: number; costMicros: number }>) => ({ day: '2026-11-20', applied: false, calls: 0, unpricedCalls: 0, baselineMicros: 0, costMicros: 0, ...over });
+  it('adds up the range’s Watch days, and leaves applied routes out', () => {
+    expect(routeWatchTotal([
+      day({ calls: 30, unpricedCalls: 2, baselineMicros: 9_000_000, costMicros: 4_500_000 }),
+      day({ calls: 11, unpricedCalls: 1, baselineMicros: 3_400_000, costMicros: 1_700_000 }),
+      day({ applied: true, calls: 100, baselineMicros: 50_000_000, costMicros: 25_000_000 }),
+    ])).toEqual({ calls: 41, unpricedCalls: 3, baselineMicros: 12_400_000, costMicros: 6_200_000 });
+  });
+  it('is nothing routed for an empty list, and unknown when the engine sent none', () => {
+    expect(routeWatchTotal([])).toEqual({ calls: 0, unpricedCalls: 0, baselineMicros: 0, costMicros: 0 });
+    expect(routeWatchTotal(undefined)).toBeNull();
   });
 });
