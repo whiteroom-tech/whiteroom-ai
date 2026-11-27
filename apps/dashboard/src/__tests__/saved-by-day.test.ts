@@ -49,13 +49,19 @@ describe('Performance › Saved by WhiteRoom', async () => {
 });
 
 describe('routeWatchTotal', () => {
-  const day = (over: Partial<{ applied: boolean; calls: number; unpricedCalls: number; baselineMicros: number; costMicros: number }>) => ({ day: '2026-11-20', applied: false, calls: 0, unpricedCalls: 0, baselineMicros: 0, costMicros: 0, ...over });
+  const day = (over: Partial<{ applied: boolean; calls: number; unpricedCalls: number; baselineMicros: number; costMicros: number; failedCalls: number; refusedCalls: number }>) => ({ day: '2026-11-20', applied: false, calls: 0, unpricedCalls: 0, baselineMicros: 0, costMicros: 0, ...over });
   it('adds up the range’s Watch days, and the routed ones apart', () => {
     expect(routeWatchTotal([
       day({ calls: 30, unpricedCalls: 2, baselineMicros: 9_000_000, costMicros: 4_500_000 }),
       day({ calls: 11, unpricedCalls: 1, baselineMicros: 3_400_000, costMicros: 1_700_000 }),
       day({ applied: true, calls: 100, baselineMicros: 50_000_000, costMicros: 25_000_000 }),
     ])).toEqual({ calls: 41, unpricedCalls: 3, baselineMicros: 12_400_000, costMicros: 6_200_000, routed: { calls: 100, unpricedCalls: 0, baselineMicros: 50_000_000, costMicros: 25_000_000 } });
+  });
+  it('adds up the routed calls that got no answer or were refused, only where the engine counts them', () => {
+    const total = routeWatchTotal([day({ applied: true, calls: 5, failedCalls: 2, refusedCalls: 1 }), day({ applied: true, calls: 3, failedCalls: 1 }), day({ calls: 9, failedCalls: 7 })]);
+    expect(total?.routed).toMatchObject({ calls: 8, failedCalls: 3, refusedCalls: 1 });
+    expect(total).not.toHaveProperty('failedCalls');
+    expect(routeWatchTotal([day({ applied: true, calls: 5 })])?.routed).not.toHaveProperty('failedCalls');
   });
   it('carries the measured comparison when the engine sends one', () => {
     const net = { routed: { periods: 40, calls: 400, costMicros: 28_000_000 }, control: { periods: 30, calls: 300, costMicros: 30_000_000 }, unpricedPeriods: 0, savedMicros: 12_000_000 };

@@ -33,6 +33,8 @@ describe('Model routing on Performance', () => {
     const none = text(render({ calls: 1, unpricedCalls: 1, baselineMicros: 0, costMicros: 0 }));
     expect(none).toContain('1 call could use a cheaper model · 1 not priced');
     expect(none).not.toContain('$');
+    // No dollars on the Watch row either, so no note about prices under it.
+    expect(none).not.toContain('list prices');
   });
 
   it('shows the calls that went to a cheaper model on their own row, and never as a saving', () => {
@@ -55,6 +57,19 @@ describe('Model routing on Performance', () => {
     expect(both).toContain('12 calls went to a cheaper model');
     // Neither changes what rules caught.
     expect(both).toContain('3 blocked · 141 would have acted');
+  });
+
+  it('says how many routed calls the cheaper model didn’t answer or refused, also when none got through', () => {
+    const none = { calls: 0, unpricedCalls: 0, baselineMicros: 0, costMicros: 0 };
+    const some = text(render({ ...none, routed: { calls: 12, unpricedCalls: 0, baselineMicros: 8_000_000, costMicros: 3_000_000, failedCalls: 3, refusedCalls: 2 } }));
+    expect(some).toContain('12 calls went to a cheaper model · $8.00 on the model asked for, $3.00 on the cheaper model · 3 got no answer · 2 refused by the cheaper model, sent to the model asked for Enforce');
+    const onlyRefused = text(render({ ...none, routed: { ...none, refusedCalls: 4 } }));
+    expect(onlyRefused).toContain('0 calls went to a cheaper model · 4 refused by the cheaper model, sent to the model asked for');
+    expect(onlyRefused).not.toContain('$');
+    // No dollars on the row, so no note about prices under it.
+    expect(onlyRefused).not.toContain('list prices');
+    // An engine that doesn't count them says nothing about them.
+    expect(text(render({ ...none, routed: { calls: 12, unpricedCalls: 0, baselineMicros: 8_000_000, costMicros: 3_000_000 } }))).not.toMatch(/no answer|refused/);
   });
 
   describe('the measured line', () => {

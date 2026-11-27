@@ -50,7 +50,11 @@ export function cacheSavedTotal(days: Array<{ usdMicros: number; unpricedReadTok
 }
 
 /** A count of calls and what the same usage costs on the model asked for (baseline) and on the cheaper one (cost). */
-export interface RouteTotals { calls: number; unpricedCalls: number; baselineMicros: number; costMicros: number }
+export interface RouteTotals {
+  calls: number; unpricedCalls: number; baselineMicros: number; costMicros: number;
+  /** Calls sent to the cheaper model that it didn't answer, and ones it refused: beside `calls`, not in it. Only when the engine counts them. */
+  failedCalls?: number; refusedCalls?: number;
+}
 /**
  * Model routing in a range: the calls that could use a cheaper model (Watch), under `routed` the ones that went
  * to one (Enforce), and under `net` what that saved, measured against runs left on the model asked for.
@@ -58,7 +62,7 @@ export interface RouteTotals { calls: number; unpricedCalls: number; baselineMic
 export interface RouteWatch extends RouteTotals { routed?: RouteTotals; net?: RouteNet }
 
 /** The range's figures summed from the engine's per-day rows, Watch and routed apart, with the measured comparison when there is one; null when the engine sends neither. */
-export function routeWatchTotal(days: Array<{ applied: boolean; calls: number; unpricedCalls: number; baselineMicros: number; costMicros: number }> | undefined, net?: RouteNet): RouteWatch | null {
+export function routeWatchTotal(days: Array<{ applied: boolean; calls: number; unpricedCalls: number; baselineMicros: number; costMicros: number; failedCalls?: number; refusedCalls?: number }> | undefined, net?: RouteNet): RouteWatch | null {
   const zero = (): RouteTotals => ({ calls: 0, unpricedCalls: 0, baselineMicros: 0, costMicros: 0 });
   // The two are read apart: the measured comparison still shows when the per-day rows couldn't be read.
   if (!days) return net ? { ...zero(), net } : null;
@@ -66,6 +70,9 @@ export function routeWatchTotal(days: Array<{ applied: boolean; calls: number; u
   for (const d of days) {
     const to = d.applied ? routed : watch;
     to.calls += d.calls; to.unpricedCalls += d.unpricedCalls; to.baselineMicros += d.baselineMicros; to.costMicros += d.costMicros;
+    // Only a call that was sent elsewhere can fail there or be refused: never a Watch day's.
+    if (d.applied && d.failedCalls) to.failedCalls = (to.failedCalls ?? 0) + d.failedCalls;
+    if (d.applied && d.refusedCalls) to.refusedCalls = (to.refusedCalls ?? 0) + d.refusedCalls;
   }
   return { ...watch, routed, ...(net && { net }) };
 }
