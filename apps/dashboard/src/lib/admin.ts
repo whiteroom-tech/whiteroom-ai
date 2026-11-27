@@ -7,6 +7,7 @@
 import 'server-only';
 
 import { auth } from '@/auth';
+import { adminSignInAllowed } from '@/lib/admin-sign-in';
 import { db } from '@/lib/db';
 import { fetchFleetUsage, type FleetUsage } from '@/lib/fleet-usage';
 import { effectivePlan, PLANS, type PlanId } from '@/lib/plans';
@@ -27,6 +28,9 @@ export class NotAdminError extends Error {
 /**
  * The single gate. Every admin read and every admin write goes through this.
  *
+ * Also requires the company Workspace sign-in once ADMIN_SIGN_IN_DOMAIN is
+ * set (lib/admin-sign-in.ts).
+ *
  * Reads the role from the database rather than the session: the JWT is minted
  * at sign-in and lives up to a week, so a role revoked today would otherwise
  * keep working until the token expired. Revoking admin has to take effect on
@@ -40,6 +44,9 @@ export async function requireAdmin(): Promise<AdminActor> {
   const { rows } = await db().query(`SELECT id, email, role FROM users WHERE id = $1`, [userId]);
   const user = rows[0];
   if (!user || user.role !== 'admin') throw new NotAdminError();
+  // An admin on an email-link or personal Google session is refused once
+  // ADMIN_SIGN_IN_DOMAIN is set (SOC 2 ID-01).
+  if (!adminSignInAllowed(session.signInMethod)) throw new NotAdminError();
 
   return { id: user.id, email: user.email };
 }

@@ -6,6 +6,7 @@ import { db } from '@/lib/db';
 import { authAdapter } from '@/lib/auth-adapter';
 import { authCookies } from '@/lib/auth-cookies';
 import { resolvePostLoginUrl } from '@/lib/auth-redirect';
+import { signInMethod } from '@/lib/admin-sign-in';
 import { magicLinkEmail } from '@/lib/magic-link-email';
 import { tooManyMagicLinks } from '@/lib/magic-link-limit';
 import { sessionCheckRow } from '@/lib/session-check';
@@ -139,13 +140,16 @@ const nextAuth = NextAuth({
     // per token, which is what keeps this from reintroducing the per-request
     // query that choosing JWT sessions avoided. Revocation is therefore
     // effective within that window rather than instantly.
-    async jwt({ token, user }) {
+    async jwt({ token, user, account, profile }) {
       const now = Math.floor(Date.now() / 1000);
 
       if (user) {
         token.sessionStart = now;
         token.revalidatedAt = now;
         token.role = await readRole(user.id);
+        // Fixed for the life of the session, like sessionStart. requireAdmin()
+        // checks it against ADMIN_SIGN_IN_DOMAIN (lib/admin-sign-in.ts).
+        token.signInMethod = signInMethod(account, profile);
         return token;
       }
 
@@ -188,6 +192,7 @@ const nextAuth = NextAuth({
         session.user.id = token.sub;
         session.user.role = token.role ?? 'user';
       }
+      session.signInMethod = token.signInMethod;
       return session;
     },
   },
