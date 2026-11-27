@@ -23,6 +23,8 @@ describe('handover health labels', () => {
     expect(at({ type: 'route_decided', reason: 'calm_watch', stepsAfter: 1 }).said).toBe('had its run checked by Model routing');
     const routed = at({ type: 'governance_route', ruleType: 'model_route', reason: 'model_routed' });
     expect([routed.said, routed.tone]).toEqual(['made a call that went to a cheaper model', 'idle']);
+    expect(at({ type: 'route_skipped' }).said).toBe('made a call that kept the model it asked for');
+    expect(at({ type: 'route_target_unavailable' }).said).toBe('had a cheaper model refuse a call, which its own model then took');
     const stopped = at({ type: 'route_suspended' });
     expect([stopped.said, stopped.tone]).toEqual(['had its Model routing rule suspend itself', 'wouldBlock']);
   });

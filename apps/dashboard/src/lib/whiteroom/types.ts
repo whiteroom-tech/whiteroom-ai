@@ -950,7 +950,12 @@ export interface RunEvent {
   kind: 'call' | 'event';
   at: string;
   type: string;
+  /** Calls: the model that answered. */
   model?: string | null;
+  /** A call Model routing sent to a cheaper model: the model the agent asked for. Absent on every other call and on older engines. */
+  askedModel?: string;
+  /** A call a cheaper model refused and the agent's own model answered: the model that refused. Absent otherwise. */
+  refusedModel?: string;
   /** Older engines: the tools the request offered, which is not use. Current engines: requested tools. */
   tools?: string[];
   /** Tools the model's reply asked for; null when the reply wasn't read (streamed). Absent on older engines. */

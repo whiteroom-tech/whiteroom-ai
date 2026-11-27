@@ -115,6 +115,19 @@ describe('run detail rows', () => {
     expect(activityRow({ id: 'e', type: 'calls_not_recorded', timestamp: '2026-10-01T14:00:00Z', calls: 1 } as Parameters<typeof activityRow>[0])).toMatchObject({ text: 'WhiteRoom couldn’t record 1 call', tag: { label: 'Gap' } });
   });
 
+  it('names the model that answered a call Model routing moved, and a cheaper model that refused one', () => {
+    const call = { id: 'call:1', kind: 'call' as const, at: '2026-10-01T14:00:00Z', type: 'complete' };
+    const routed = { ...call, model: 'claude-sonnet-5-5', askedModel: 'claude-opus-5-5' };
+    // Said where the model changes, not on every call after it.
+    expect(timelineRow(routed, 'claude-opus-5-5').text).toBe('Model call · claude-sonnet-5-5, in place of claude-opus-5-5');
+    expect(timelineRow(routed, 'claude-sonnet-5-5').text).toBe('Model call');
+    // Stepping back up is a change of model like any other.
+    expect(timelineRow({ ...call, model: 'claude-opus-5-5' }, 'claude-sonnet-5-5').text).toBe('Model call · claude-opus-5-5');
+    // A refusal is said even though the call's model is the one before it.
+    expect(timelineRow({ ...call, model: 'claude-opus-5-5', refusedModel: 'claude-sonnet-5-5' }, 'claude-opus-5-5').text).toBe('Model call · claude-sonnet-5-5 refused it first');
+    expect(timelineRow({ ...call, model: 'claude-opus-5-5', refusedModel: 'claude-sonnet-5-5', requestedTools: ['search'] }, null).text).toBe('Model call · claude-opus-5-5 · claude-sonnet-5-5 refused it first · asked for search');
+  });
+
   it('describes a call by model and tools, tagging a non-complete outcome', () => {
     const row = timelineRow({ id: 'call:1', kind: 'call', at: '2026-10-01T14:00:00Z', type: 'upstream_error', model: 'claude-haiku-4-5', requestedTools: ['search', 'read_file'] });
     expect(row.text).toBe('Model call · claude-haiku-4-5 · asked for search, read_file');
