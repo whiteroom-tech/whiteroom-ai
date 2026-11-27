@@ -21,7 +21,7 @@ export interface OverviewExtras {
   usdByDay: Record<string, number> | null;
   /** The range's caching WhiteRoom added, summed from the engine's cacheByDay as billing sums it; null on older engines. */
   cacheSaved?: { micros: number; unpricedReadTokens: number } | null;
-  /** The range's calls that could use a cheaper model (Model routing in Watch); null on older engines or when unread. */
+  /** Model routing in the range: the calls that could use a cheaper model, and the ones that went to one; null on older engines or when unread. */
   routeWatch?: RouteWatch | null;
 }
 
