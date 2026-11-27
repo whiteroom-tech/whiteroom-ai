@@ -2811,13 +2811,19 @@ describe('Controls: Repeated blocks and Old tool results', () => {
     expect(editor()).toContain('Model routing');
     expect(editor()).not.toContain('Only alert me');
     expect(editor()).not.toContain('It changes no call.');
-    expect(editor()).toContain('Enforce: a call that can use a cheaper model on the list is sent to it.');
     expect(m.text()).toContain('This rule suspended itself and is changing no calls.');
+    // Its tag, timing and effect all read as suspended, never as routing.
+    expect(row.querySelector('.ctl-mtag')?.textContent).toBe('Suspended');
+    expect(editor()).toContain('It changes no call.');
+    expect(editor()).toContain('Suspended: it changes no call until it is turned back on.');
+    expect(editor()).not.toContain('Enforce: a call that can use a cheaper model');
     // While it is suspended the agent gets what it gets in Watch.
     expect(editor()).not.toContain('The reply, from a cheaper model');
     await m.click(m.button('Turn back on'));
     expect(api.update).toHaveBeenCalledWith('f1', 'mr-enf', { mode: 'enforce', ifVersion: rule.version }, 'k');
     expect(m.text()).not.toContain('This rule suspended itself');
+    // Back on, it reads as what Enforce does.
+    expect(editor()).toContain('Enforce: a call that can use a cheaper model on the list is sent to it.');
     m.root.unmount();
   });
 
@@ -2856,6 +2862,16 @@ describe('Controls: Repeated blocks and Old tool results', () => {
       expect(m.text()).not.toContain('You won’t get alerts');
       expect(m.button('Keep routing')).toBeTruthy();
       await m.click(m.button('Switch to Watch'));
+      expect(api.update).toHaveBeenCalledWith('f1', 'mr1', { mode: 'watch', ifVersion: 1 }, 'k');
+      m.root.unmount();
+    });
+
+    it('stepping a suspended rule down asks nothing: it was changing no call', async () => {
+      saves();
+      const m = await open(routeRule({ mode: 'enforce', params: { ladder: ['claude-opus-5-5', 'claude-sonnet-5-5'], suspended: true } }));
+      await m.click(m.seg('Watch'));
+      await m.click(m.button('Save'));
+      expect(m.text()).not.toContain('Stop sending calls to cheaper models?');
       expect(api.update).toHaveBeenCalledWith('f1', 'mr1', { mode: 'watch', ifVersion: 1 }, 'k');
       m.root.unmount();
     });

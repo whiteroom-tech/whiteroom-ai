@@ -40,7 +40,7 @@ import { UNNAMED_CALLS_REFUSED } from "@/lib/setup";
 import {
   appliesNow, commandLookingTools, deleteLookingTools, draftChanges, draftFrom, draftParams, draftProblem, isDirty, money, NO_ACTIONS, rulesFor, ruleSentenceText, spendOverlap,
   type RuleDraft,
-  stopping, routes, trims,
+  stopping, routes, suspended, SUSPENDED_TAG, trims,
   weakenings,
   averageDailySpend,
   sameValue,
@@ -457,7 +457,8 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     const next: GovernanceRule = { ...selected, mode: draft.mode, response: draft.response, alsoNotify: draft.alsoNotify, appliesTo: draft.appliesTo, params: "params" in parsed ? parsed.params : selected.params };
     const ask = (d: Dialog) => setDialog(d);
     // Anything that makes the rule weaker is said and confirmed first (the change log can undo it).
-    if (!weakenChecked) {
+    // A rule that suspended itself is changing no call, so no change to it takes anything away.
+    if (!weakenChecked && !suspended(selected)) {
       const reasons = weakenings(selected, next);
       // Narrowing a rule for all agents asks who it should cover: a copy (the safe choice) or a move.
       if (selected.appliesTo === "all" && next.appliesTo !== "all" && next.appliesTo.length > 0) {
@@ -908,7 +909,7 @@ function ControlsContent({ fleetId, authKey, onAuthError }: { fleetId: string; a
     if (notSetUp(r)) return <span className="ctl-mtag is-off">Not set up</span>;
     if (r.mode === "off") return <span className="ctl-mtag is-off">{MODE_LABEL.off}</span>;
     if (r.mode === "watch") return <span className="ctl-mtag">{MODE_LABEL.watch}</span>;
-    return <span className={`ctl-mtag${r.response === "notify" ? "" : " is-block"}`}>{modeTagText(r)}</span>;
+    return <span className={`ctl-mtag${r.response === "notify" ? "" : " is-block"}`}>{suspended(r) ? SUSPENDED_TAG : modeTagText(r)}</span>;
   };
 
   const row = (r: GovernanceRule, showScope = false, key: string = r.id) => {

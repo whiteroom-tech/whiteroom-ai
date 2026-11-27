@@ -238,6 +238,8 @@ export const trims = (r: { ruleType?: string }) => r.ruleType === 'trim_results'
 export const routes = (r: { ruleType?: string }) => r.ruleType === 'model_route';
 /** Old tool results and Model routing change the request that goes out. They hold the notify response and never alert or block. */
 const changesRequest = (r: { ruleType?: string }) => trims(r) || routes(r);
+/** A suspended rule's tag, where another rule's says Enforce. */
+export const SUSPENDED_TAG = 'Suspended';
 /** A Model routing rule that stopped changing calls on its own: it acts as Watch until someone turns it back on. */
 export const suspended = (r: Pick<GovernanceRule, 'ruleType' | 'params' | 'mode'>) => routes(r) && r.mode === 'enforce' && (r.params as ModelRouteParams).suspended === true;
 
@@ -361,8 +363,9 @@ function categoryRank(t: GovernanceRuleType): number {
 }
 
 /** Strongest first: Stop, Pause, Block, Only alert me, Watch, Off. Trimming changes the call, so it sits with Block. */
-function strengthRank(r: Pick<GovernanceRule, 'mode' | 'response' | 'ruleType'>): number {
-  if (r.mode !== 'enforce') return r.mode === 'watch' ? 4 : 5;
+function strengthRank(r: Pick<GovernanceRule, 'mode' | 'response' | 'ruleType' | 'params'>): number {
+  // A rule that suspended itself changes no call: it sorts with Watch.
+  if (r.mode !== 'enforce' || suspended(r)) return r.mode === 'off' ? 5 : 4;
   return changesRequest(r) ? 2 : 3 - RESPONSE_RANK[r.response ?? 'block'];
 }
 

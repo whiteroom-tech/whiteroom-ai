@@ -25,7 +25,7 @@ import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
 import {
   canAddSeen, COMMAND_TOOLS_MAX, DELETION_DOCS_URL, domainEntry, domainProblem, domainsHidden, domainTotal, FLOW_TOOLS_MAX, FLOW_WHEN, looksLikeCommandRunner, looksLikeReader, looksLikeSender, SEEN_RESERVED_TEXT, seenFullLine, seenNotOnList, SEND_DOMAINS_MAX, SEND_TOOLS_MAX, toolsFull, toolsWithNoDomain, trims,
 } from '@/lib/controls-view';
-import { AGENT_NOTE, isMarker, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, looksLikeDeleteOrChange, newMarker, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, ladderIds, ladderOf, modeChoices, suspended, responseChoices, routes, sendsAlert, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
+import { AGENT_NOTE, isMarker, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, looksLikeDeleteOrChange, newMarker, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, ladderIds, ladderOf, modeChoices, suspended, SUSPENDED_TAG, responseChoices, routes, sendsAlert, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
 import { Chip, field, GroupPicker, InlineSelect, MarkerChip, MODEL_GROUPS, NumberField, ScopeField, ToolPicker } from './pickers';
 import { ReplayEstimate } from './ReplayEstimate';
 
@@ -194,7 +194,7 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
   const [whenOpen, setWhenOpen] = useState(() => startOpen || !!emptyPick(rule) || 'error' in draftParams(draft));
   const when = whenSentence({ ruleType: rule.ruleType, params: asRule.params });
   const where = rule.ruleType === 'keyword' ? (p as KeywordParams).where : null;
-  const timing = draft.mode === 'off' ? '' : rule.ruleType === 'keyword' ? KEYWORD_ACTS[where!] : rule.ruleType === 'loop_breaker' ? loopActs(draft.number, (p as LoopBreakerParams).threshold) : rule.ruleType === 'model_route' && draft.mode !== 'enforce' ? 'It changes no call.' : ACTS[rule.ruleType];
+  const timing = draft.mode === 'off' ? '' : rule.ruleType === 'keyword' ? KEYWORD_ACTS[where!] : rule.ruleType === 'loop_breaker' ? loopActs(draft.number, (p as LoopBreakerParams).threshold) : rule.ruleType === 'model_route' && (draft.mode !== 'enforce' || suspended(rule)) ? 'It changes no call.' : ACTS[rule.ruleType];
   // What the fleet spends a day, to set a dollars-a-day cap by: behind When's ⓘ with the fine print.
   const dailyCap = rule.ruleType === 'spend_cap' && (p as SpendCapParams).unit === 'dollars' && (p as SpendCapParams).scope === 'day';
   const days = (n: number) => (n === 1 ? 'day' : `${n} days`);
@@ -241,7 +241,7 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
         <RuleCategory type={rule.ruleType} />
         <Button variant="ghost" size={28} onClick={onClose} className="gov-edhead__close">Close</Button>
         <h2 id="ctl-ed-title" tabIndex={-1} className="gov-edhead__title ctl-ed-title">{RULE_LABELS[rule.ruleType]}</h2>
-        <span className={`gov-edhead__mode${draft.mode === 'enforce' && draft.response !== 'notify' ? ' is-on' : ''}`}>{modeTagText(draft)}{dirty ? ' · unsaved' : ''}</span>
+        <span className={`gov-edhead__mode${draft.mode === 'enforce' && draft.response !== 'notify' ? ' is-on' : ''}`}>{suspended(rule) && draft.mode === 'enforce' ? SUSPENDED_TAG : modeTagText(draft)}{dirty ? ' · unsaved' : ''}</span>
       </div>
       {/* Phone only: the header cuts the name short and has no room for the category. */}
       <p className="gov-edhead__full"><RuleCategory type={rule.ruleType} /><span aria-hidden="true">{RULE_LABELS[rule.ruleType]}</span></p>
@@ -559,7 +559,7 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
           </label>
         )}
         <p style={help}>{send && draft.mode === 'enforce' && draft.response === 'notify' ? 'You get an alert the first time a tool sends to a new domain. The call goes through.'
-          : flow && draft.mode === 'enforce' ? 'You get one alert per run. The agent keeps going.' : whatHappensLine(draft, routeEnforce)}</p>
+          : flow && draft.mode === 'enforce' ? 'You get one alert per run. The agent keeps going.' : suspended(rule) && draft.mode === 'enforce' ? 'Suspended: it changes no call until it is turned back on.' : whatHappensLine(draft, routeEnforce)}</p>
         {send && draft.mode === 'enforce' && draft.response === 'block' && (
           <p style={help}>Streamed replies from agents with these tools arrive all at once. Replies on Bedrock can’t be checked yet.</p>
         )}
