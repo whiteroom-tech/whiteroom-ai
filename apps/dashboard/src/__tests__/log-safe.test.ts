@@ -11,6 +11,10 @@ describe('logSafe', () => {
     expect(logSafe('a\u0000b\u001bc\u007fd')).toBe('a b c d');
   });
 
+  it('C1 controls and Unicode line separators become spaces too', () => {
+    expect(logSafe('a\u0085b\u009bc\u2028d\u2029e')).toBe('a b c d e');
+  });
+
   it('caps the length and stringifies non-strings', () => {
     expect(logSafe('x'.repeat(500)).length).toBe(200);
     expect(logSafe('abcdef', 3)).toBe('abc');

@@ -5,5 +5,6 @@
  * short reasons; never for secrets, which don't go in logs at all.
  */
 export function logSafe(value: unknown, max = 200): string {
-  return String(value).replace(/\r|\n/g, ' ').replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, max);
+  // C0 and C1 controls, DEL, and the Unicode line and paragraph separators.
+  return String(value).replace(/\r|\n/g, ' ').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').slice(0, max);
 }
