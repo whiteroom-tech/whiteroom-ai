@@ -2,6 +2,11 @@
   "name": "@whiteroom-ai/sdk",
   "version": "1.2.0",
   "description": "TypeScript SDK for the WhiteRoom API",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/whiteroom-tech/whiteroom-ai.git",
+    "directory": "packages/sdk"
+  },
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
