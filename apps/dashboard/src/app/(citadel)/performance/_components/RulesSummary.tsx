@@ -117,7 +117,7 @@ function RouteRow({ totals, mode, rules }: { totals: RouteTotals; mode: 'watch' 
         {totals.unpricedCalls > 0 && <> · {fmtCount(totals.unpricedCalls)} not priced</>}
         {/* Beside the calls that went through: ones the cheaper model didn't answer, and ones it refused, which went as the agent wrote them. */}
         {!!totals.failedCalls && <> · {fmtCount(totals.failedCalls)} got no answer</>}
-        {!!totals.refusedCalls && <> · {fmtCount(totals.refusedCalls)} refused, sent to the model asked for</>}
+        {!!totals.refusedCalls && <> · {fmtCount(totals.refusedCalls)} refused by the cheaper model, sent to the model asked for</>}
       </span>
       <ModeTag mode={mode} />
     </>
@@ -128,7 +128,8 @@ function RouteRow({ totals, mode, rules }: { totals: RouteTotals; mode: 'watch' 
       {own.length === 1
         ? <Link href={`${ROUTES.controls}?rule=${encodeURIComponent(own[0].id)}`} className="wr-ctrl__row">{inner}</Link>
         : <div className="wr-ctrl__row">{inner}</div>}
-      <p className="wr-cap" style={{ margin: 0, padding: '0 0 10px' }}>{routed ? 'The same usage at list prices. It isn’t counted in what WhiteRoom saved.' : 'The same usage at list prices. Nothing was changed, so this isn’t a saving.'}</p>
+      {/* A note on the dollars: only where the row has some. */}
+      {totals.calls > totals.unpricedCalls && <p className="wr-cap" style={{ margin: 0, padding: '0 0 10px' }}>{routed ? 'The same usage at list prices. It isn’t counted in what WhiteRoom saved.' : 'The same usage at list prices. Nothing was changed, so this isn’t a saving.'}</p>}
     </div>
   );
 }

@@ -70,8 +70,9 @@ export function routeWatchTotal(days: Array<{ applied: boolean; calls: number; u
   for (const d of days) {
     const to = d.applied ? routed : watch;
     to.calls += d.calls; to.unpricedCalls += d.unpricedCalls; to.baselineMicros += d.baselineMicros; to.costMicros += d.costMicros;
-    if (d.failedCalls) to.failedCalls = (to.failedCalls ?? 0) + d.failedCalls;
-    if (d.refusedCalls) to.refusedCalls = (to.refusedCalls ?? 0) + d.refusedCalls;
+    // Only a call that was sent elsewhere can fail there or be refused: never a Watch day's.
+    if (d.applied && d.failedCalls) to.failedCalls = (to.failedCalls ?? 0) + d.failedCalls;
+    if (d.applied && d.refusedCalls) to.refusedCalls = (to.refusedCalls ?? 0) + d.refusedCalls;
   }
   return { ...watch, routed, ...(net && { net }) };
 }
