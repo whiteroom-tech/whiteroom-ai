@@ -218,7 +218,7 @@ describe('run detail rows', () => {
     expect(ruleActivityRow(a)).toEqual({ lead: 'Model allowlist would have blocked', count: 5, tail: 'calls: model not on the allowlist' });
     expect(ruleActivityRow({ ...a, occurrences: 1, reason: undefined })).toEqual({ lead: 'Model allowlist would have blocked', count: 1, tail: 'call' });
     // Model routing caught nothing: a cheaper model on the owner's list could have taken the calls.
-    expect(ruleActivityRow({ at: '', ruleId: 'r', ruleType: 'model_route', response: 'route', mode: 'watch', occurrences: 12, ruleName: 'Model routing' })).toEqual({ lead: 'Model routing: a cheaper model could have taken', count: 12, tail: 'calls' });
+    expect(ruleActivityRow({ at: '', ruleId: 'r', ruleType: 'model_route', response: 'route', mode: 'watch', occurrences: 12, ruleName: 'Model routing' })).toEqual({ lead: 'Model routing:', count: 12, tail: 'calls could use a cheaper model' });
     expect(ruleActivityRow({ ...a, ruleType: 'spend_cap', response: 'pause', mode: 'enforce', occurrences: 1, reason: null }).lead).toBe('Spend cap paused the agent');
     expect(ruleActivityFooter([a])).toBe('These rules are in Watch, so the calls went through.');
     expect(ruleActivityFooter([a, { ...a, mode: 'enforce' }])).toBe('Rules in Watch let their calls through; rules set to Enforce acted.');

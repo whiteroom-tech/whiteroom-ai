@@ -2775,14 +2775,16 @@ describe('Controls: Repeated blocks and Old tool results', () => {
     creates();
     const m = await mount();
     await m.click(m.button('Add rule'));
-    await m.click(template(m, 'Find calls a cheaper model could take'));
+    await m.click(template(m, 'Find calls that could use a cheaper model'));
     // Never for all agents: the engine refuses that for this rule.
     expect(api.create).toHaveBeenCalledWith('f1', { ruleType: 'model_route', mode: 'watch', response: 'notify', params: { ladder: [] }, appliesTo: [] }, 'k');
     expect(m.el.querySelector('#ctl-ed-title')!.textContent).toBe('Model routing');
-    expect(m.text()).toContain('Models this agent may use, strongest first:');
+    expect(m.text()).toContain('Models, strongest first:');
     expect(m.text()).toContain('Add the strongest first, then each cheaper one.');
-    const modes = [...m.el.querySelectorAll('[aria-label="What happens"] button, [role="radiogroup"][aria-label="What happens"] [role="radio"]')].map((b) => b.textContent);
+    const modes = [...m.el.querySelectorAll('[role="radiogroup"][aria-label="What happens"] button')].map((b) => b.textContent);
     expect(modes).toEqual(['Off', 'Watch']);
+    // It can't cover all agents, so that choice isn't offered: only the agents to pick.
+    expect(m.el.querySelector('[aria-label="Which agents this rule applies to"]')).toBeNull();
     m.root.unmount();
   });
 

@@ -460,7 +460,7 @@ export function callToolErrorsText(e: Pick<RunEvent, 'toolErrors'>): string {
 /** What a rule did to a call, past tense: "would have been blocked", "blocked", "paused the agent". */
 const CALL_OUTCOME_TEXT_UNCHECKED = 'couldn’t check its target';
 const CALL_OUTCOME_TEXT: Record<CallRuleAction['outcome'], string> = {
-  would_block: 'would have been blocked', would_route: 'could have used a cheaper model', blocked: 'blocked', paused: 'paused the agent', stopped: 'stopped the agent', notified: NOTIFY.done, trimmed: 'trimmed',
+  would_block: 'would have been blocked', would_route: 'could use a cheaper model', blocked: 'blocked', paused: 'paused the agent', stopped: 'stopped the agent', notified: NOTIFY.done, trimmed: 'trimmed',
   couldnt_check: CALL_OUTCOME_TEXT_UNCHECKED,
 };
 /** A Watch rule's would-be outcome, by its response: it only blocks when the response is Block. */
@@ -473,7 +473,7 @@ const WOULD_TEXT: Record<string, string> = {
 /** An Old tool results rule's row: it trims, whatever response the row carries, so it never reads as blocked or alerted. */
 const isTrim = (a: { ruleType: string; response: string }) => a.ruleType === 'trim_results' || a.response === 'trim';
 
-/** A Model routing rule's row: nothing was caught, a cheaper model on the owner's list could have taken the call. */
+/** A Model routing rule's row: nothing was caught, the call could use a cheaper model on the owner's list. */
 const isRoute = (a: { ruleType: string; response: string }) => a.ruleType === 'model_route' || a.response === 'route';
 
 /** A call's rule note: "would have been blocked: model not on the allowlist". */
@@ -632,7 +632,7 @@ export function ruleActivityRow(a: RunRuleAction): { lead: string; count: number
   const n = a.occurrences;
   const would = a.mode === 'enforce' ? '' : 'would have ';
   if (isTrim(a)) return { lead: `${name} ${would}trimmed`, count: n, tail: plural(n, 'request') };
-  if (isRoute(a)) return { lead: `${name}: a cheaper model could have taken`, count: n, tail: plural(n, 'call') };
+  if (isRoute(a)) return { lead: `${name}:`, count: n, tail: `${plural(n, 'call')} could use a cheaper model` };
   if (a.response === 'block') return { lead: `${name} ${a.mode === 'enforce' ? 'blocked' : 'would have blocked'}`, count: n, tail: `${plural(n, 'call')}${why ? `: ${why}` : ''}` };
   return { lead: `${name} ${would}${RESPONSE_DONE[a.response] ?? 'acted'}${n > 1 ? ` ×${n}` : ''}${why ? `: ${why}` : ''}`, count: null, tail: '' };
 }

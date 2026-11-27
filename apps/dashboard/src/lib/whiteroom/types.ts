@@ -759,11 +759,10 @@ export interface DataDeletionParams { commandTools: string[] }
 export type LadderEntry = string | { id: string; is: string };
 /**
  * Model routing: the models an agent may use, strongest first. In Watch the
- * engine records which calls could have used a cheaper one. It holds the
- * notify response but never alerts or blocks. The engine keeps other settings
- * of its own on the rule; they are sent back as they came.
+ * engine records which calls could use a cheaper one. It holds the notify
+ * response but never alerts or blocks.
  */
-export interface ModelRouteParams { ladder: LadderEntry[]; [setting: string]: unknown }
+export interface ModelRouteParams { ladder: LadderEntry[] }
 export type GovernanceParams = SpendCapParams | LoopBreakerParams | ModelAllowlistParams | ToolListParams | CallRateParams | KeywordParams | SendLimitParams | OutsideThenSendParams | BlockStreakParams | TrimResultsParams | DataDeletionParams | ModelRouteParams;
 
 export interface GovernanceRule {
@@ -858,6 +857,8 @@ export interface RuleActionCounts {
   couldntCheck?: number;
   /** Requests an Old tool results rule trimmed. Absent from older engines: read as 0. */
   trimmed?: number;
+  /** Calls a Model routing rule found could use a cheaper model (Watch). Never in wouldAct: nothing was caught. Absent from older engines: read as 0. */
+  wouldRoute?: number;
 }
 export interface RuleActionsResult { fleetId: string; totals: RuleActionCounts; byAgent: Record<string, RuleActionCounts>; /** Per rule type, from the same rows as totals (newer engines). */ byRule?: Record<string, RuleActionCounts>; /** Per rule id (gr_…), from the same rows (engine E1a). */ byRuleId?: Record<string, RuleActionCounts> }
 export interface RunRuleAction {

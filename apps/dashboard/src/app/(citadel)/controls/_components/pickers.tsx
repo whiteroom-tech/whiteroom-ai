@@ -157,14 +157,20 @@ export function ToolPicker({ values, onChange, fleetTools, onShow, first, ariaLa
 }
 
 /** All agents, or chosen ones; an empty choice applies to none, and Save says so. */
-export function ScopeField({ scope, agents, onChange }: { scope: GovernanceScope; agents: string[]; onChange: (s: GovernanceScope) => void }) {
+export function ScopeField({ scope, agents, onChange, namedOnly = false }: {
+  scope: GovernanceScope; agents: string[]; onChange: (s: GovernanceScope) => void;
+  /** The rule can't cover all agents (Model routing): only the agents to pick, with no All agents choice. */
+  namedOnly?: boolean;
+}) {
   const chosen = scope === 'all' ? [] : scope;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <FieldSelect label="Which agents this rule applies to" value={scope === 'all' ? 'all' : 'some'} onChange={(v) => onChange(v === 'all' ? 'all' : [])} style={{ alignSelf: 'flex-start' }}>
-        <option value="all">All agents</option>
-        <option value="some">Specific agents</option>
-      </FieldSelect>
+      {!namedOnly && (
+        <FieldSelect label="Which agents this rule applies to" value={scope === 'all' ? 'all' : 'some'} onChange={(v) => onChange(v === 'all' ? 'all' : [])} style={{ alignSelf: 'flex-start' }}>
+          <option value="all">All agents</option>
+          <option value="some">Specific agents</option>
+        </FieldSelect>
+      )}
       {scope !== 'all' && (
         <>
           {/* Agents the fleet has seen, or any name typed in: a rule can cover an agent before its first call. */}

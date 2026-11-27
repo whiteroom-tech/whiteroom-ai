@@ -25,7 +25,7 @@ import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
 import {
   canAddSeen, COMMAND_TOOLS_MAX, DELETION_DOCS_URL, domainEntry, domainProblem, domainsHidden, domainTotal, FLOW_TOOLS_MAX, FLOW_WHEN, looksLikeCommandRunner, looksLikeReader, looksLikeSender, SEEN_RESERVED_TEXT, seenFullLine, seenNotOnList, SEND_DOMAINS_MAX, SEND_TOOLS_MAX, toolsFull, toolsWithNoDomain, trims,
 } from '@/lib/controls-view';
-import { AGENT_NOTE, isMarker, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, looksLikeDeleteOrChange, newMarker, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, ladderIds, LADDER_MAX, modeChoices, responseChoices, routes, sendsAlert, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
+import { AGENT_NOTE, isMarker, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, looksLikeDeleteOrChange, newMarker, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, ladderIds, modeChoices, responseChoices, routes, sendsAlert, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
 import { Chip, field, GroupPicker, InlineSelect, MarkerChip, MODEL_GROUPS, NumberField, ScopeField, ToolPicker } from './pickers';
 import { ReplayEstimate } from './ReplayEstimate';
 
@@ -65,7 +65,7 @@ const WHEN_NOTES: Record<GovernanceRule['ruleType'], string | null> = {
   outside_then_send: null,
   block_streak: 'Call rate blocks don’t count.',
   trim_results: 'Native Bedrock Converse calls aren’t trimmed.',
-  model_route: 'It covers agents that work on their own, and leaves native Bedrock Converse calls out.',
+  model_route: 'Native Bedrock Converse calls aren’t covered.',
   data_deletion: HELD_REPLY_NOTE,
 };
 
@@ -396,12 +396,11 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
         )}
         {route && (
           <>
-            <span style={{ fontSize: 'var(--fs-md)' }}>Models this agent may use, strongest first:</span>
-            {/* The picker edits the names; an entry that also says which model a deployment runs keeps that. */}
-            <GroupPicker values={ladderIds(route)} onChange={(ids) => setParams({ ladder: ids.map((id) => route.ladder.find((x) => typeof x !== 'string' && x.id === id) ?? id) })} groups={MODEL_GROUPS}
+            <span style={{ fontSize: 'var(--fs-md)' }}>Models, strongest first:</span>
+            {/* The picker edits the names; an entry that also says which model a deployment runs keeps that, also when it is removed and added back. */}
+            <GroupPicker values={ladderIds(route)} onChange={(ids) => setParams({ ladder: ids.map((id) => [...route.ladder, ...(rule.params as ModelRouteParams).ladder].find((x) => typeof x !== 'string' && x.id === id) ?? id) })} groups={MODEL_GROUPS}
               addLabel="+ Add model" ariaLabel="Add a model" otherLabel="Other (type deployment name or model ID)…" placeholder="deployment name or model ID" />
-            {route.ladder.length > LADDER_MAX && <p style={help}>A rule holds up to {LADDER_MAX} models. Remove one to save.</p>}
-            <p style={help}>Add the strongest first, then each cheaper one. You’ll see which calls a cheaper model could take, and what they would cost there.</p>
+            <p style={help}>Add the strongest first, then each cheaper one. To change the order, remove a model and add it back.</p>
           </>
         )}
         {flow && (
@@ -513,7 +512,7 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
         {/* Narrowing a rule for all agents: Save asks whether to keep it for everyone and add a copy, or move it. */}
         <p className="gov-eyebrow ctl-q">Who{rule.appliesTo === 'all' && draft.appliesTo !== 'all' && draft.appliesTo.length > 0
           && <Hint text="When you save, you’ll choose: keep this rule for everyone and add a copy, or move it." size={12} />}</p>
-        <ScopeField scope={draft.appliesTo} agents={agents} onChange={(appliesTo) => set({ appliesTo })} />
+        <ScopeField scope={draft.appliesTo} agents={agents} onChange={(appliesTo) => set({ appliesTo })} namedOnly={!!route} />
       </section>
 
       <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

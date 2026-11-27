@@ -312,7 +312,7 @@ export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 
     }
     case 'model_route': {
       const p = rule.params as ModelRouteParams;
-      return p.ladder.length ? { pre: 'Record the calls a cheaper model could take. Models, strongest first: ', val: ladderText(p), post: '.' } : { pre: 'No models picked yet.', val: '', post: '' };
+      return p.ladder.length ? { pre: 'Record the calls that could use a cheaper model. Models, strongest first: ', val: ladderText(p), post: '.' } : { pre: 'No models picked yet.', val: '', post: '' };
     }
     default:
       return unhandledType(rule.ruleType, { pre: UNKNOWN_RULE, val: '', post: '' });
@@ -516,7 +516,8 @@ export function draftFrom(rule: GovernanceRule): RuleDraft {
   return {
     ruleType: rule.ruleType, mode: rule.mode, response: typeResponse(rule.ruleType, rule.response), alsoNotify: !!rule.alsoNotify,
     appliesTo: rule.appliesTo === 'all' ? 'all' : [...rule.appliesTo],
-    params: JSON.parse(JSON.stringify(rule.params)) as GovernanceParams,
+    // Model routing: the editor holds, and Save sends, the model list alone.
+    params: (rule.ruleType === 'model_route' ? { ladder: JSON.parse(JSON.stringify((rule.params as ModelRouteParams).ladder ?? [])) } : JSON.parse(JSON.stringify(rule.params))) as GovernanceParams,
     number: numberOf(rule),
     ...(rule.ruleType === 'trim_results' && { number2: number2Of(rule) }),
   };
@@ -660,7 +661,7 @@ export const RULE_TEMPLATES: { type: GovernanceRuleType; title: string; desc: st
   { type: 'loop_breaker', title: 'Break loops', desc: 'Catch an agent making the same call over and over.' },
   { type: 'block_streak', title: 'Act on repeated blocks', desc: 'Catch an agent that keeps making calls your rules block.' },
   { type: 'trim_results', title: 'Trim old tool results', desc: 'Keep long conversations short by removing old tool results before they go to the model.' },
-  { type: 'model_route', title: 'Find calls a cheaper model could take', desc: 'List the models an agent may use, and see what its calls would cost on a cheaper one.' },
+  { type: 'model_route', title: 'Find calls that could use a cheaper model', desc: 'List the models your agents may use, strongest first, and see which calls could use a cheaper one.' },
   { type: 'tool_list', title: 'Block tools', desc: 'Keep agents from running tools you name.' },
   { type: 'keyword', title: 'Flag keywords', desc: 'Get an alert, or block the call, when words you pick show up.' },
   { type: 'send_limit', title: 'Limit where tools can send data', desc: 'For example, email only to your own domain.' },
@@ -869,7 +870,7 @@ export function ruleCondition(rule: Pick<GovernanceRule, 'ruleType' | 'params'>)
     }
     case 'model_route': {
       const p = rule.params as ModelRouteParams;
-      return p.ladder.length ? { pre: 'Calls a cheaper model could take, from ', val: ladderText(p), post: '' } : { pre: 'No models picked yet', val: '', post: '' };
+      return p.ladder.length ? { pre: 'Calls that could use a cheaper model, from ', val: ladderText(p), post: '' } : { pre: 'No models picked yet', val: '', post: '' };
     }
     default:
       return unhandledType(rule.ruleType, { pre: UNKNOWN_RULE, val: '', post: '' });
@@ -940,7 +941,7 @@ export function blocksWhen(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'a
     // Never blocks (canAct is false): kept for the exhaustive switch.
     case 'trim_results': return `only for old tool results${only}`;
     // Never blocks (canAct is false): kept for the exhaustive switch.
-    case 'model_route': return `only for calls a cheaper model could take${only}`;
+    case 'model_route': return `only for calls that could use a cheaper model${only}`;
     default: return unhandledType(rule.ruleType, `only in some cases${only}`);
   }
 }
@@ -980,14 +981,18 @@ export function rowCount(rule: GovernanceRule, ctx: {
     const n = enforcedCount(rule, week);
     return n ? { text: `${fmtCount(n)} ${trims(rule) ? 'trimmed' : TALLY_WORD[response]} · 7 days`, tone: 'hot' } : NONE_CAUGHT;
   }
+  if (routes(rule)) {
+    // Not caught: nothing was wrong with these calls. The count is the rule's, so it shows only where that is the view's: the fleet, or the one agent it covers.
+    const justThem = !ctx.agent || (rule.appliesTo !== 'all' && rule.appliesTo.length === 1 && rule.appliesTo[0] === ctx.agent);
+    if (!justThem || !week) return { text: '', tone: 'plain' };
+    return { text: week.wouldRoute ? `${fmtCount(week.wouldRoute)} could use a cheaper model · 7 days` : 'None yet · 7 days', tone: 'plain' };
+  }
   const since = ctx.wouldAct && !ctx.wouldAct.unversioned ? ctx.wouldAct : null;
   const sinceN = since ? (ctx.agent ? since.byAgent[ctx.agent] ?? 0 : Object.values(since.byAgent).reduce((a, b) => a + b, 0)) : null;
   if (ctx.agent || !week) {
     if (sinceN === null) return { text: '', tone: 'plain' };
     return sinceN ? { text: `${fmtCount(sinceN)} caught since edit`, tone: 'hot' } : NONE_SINCE_EDIT;
   }
-  // Not caught: nothing was wrong with these calls.
-  if (routes(rule)) return { text: week.wouldAct ? `${fmtCount(week.wouldAct)} could use a cheaper model · 7 days` : 'None yet · 7 days', tone: 'plain' };
   if (week.wouldAct) return { text: `${fmtCount(week.wouldAct)} caught · 7 days`, tone: 'hot' };
   return sinceN === 0 ? NONE_SINCE_EDIT : NONE_CAUGHT;
 }
@@ -1024,8 +1029,9 @@ export function ruleStatus(rule: GovernanceRule, ctx: {
     return `${response === 'notify' && !trims(rule) ? 'Alerting you' : 'Enforcing'} for ${who}${tail}`;
   }
   if (routes(rule)) {
-    const n = ctx.week?.wouldAct;
-    return `Watching ${who}${n === undefined ? '' : n ? ` · ${fmtCount(n)} ${plural(n, 'call')} could have used a cheaper model in 7 days` : ' · no calls a cheaper model could take in 7 days'}`;
+    if (!ctx.week) return `Watching ${who}`;
+    const n = ctx.week.wouldRoute ?? 0;
+    return `Watching ${who} · ${n ? `${fmtCount(n)} ${plural(n, 'call')}` : 'no calls'} could use a cheaper model in 7 days`;
   }
   const w = ctx.wouldAct;
   if (w && !w.unversioned && w.since) {
@@ -1159,7 +1165,7 @@ export function whenSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params'>):
     }
     case 'model_route': {
       const p = rule.params as ModelRouteParams;
-      return p.ladder.length ? { pre: 'May use, strongest first: ', val: ladderText(p), post: '' } : { pre: 'No models picked yet', val: '', post: '' };
+      return p.ladder.length ? { pre: 'Models, strongest first: ', val: ladderText(p), post: '' } : { pre: 'No models picked yet', val: '', post: '' };
     }
     default: return unhandledType(rule.ruleType, { pre: UNKNOWN_RULE, val: '', post: '' });
   }
@@ -1239,7 +1245,7 @@ const ENFORCE_LINE: Record<GovernanceResponse, string> = {
 /** The one plain line under What happens, for the pick. */
 export function whatHappensLine(d: Pick<RuleDraft, 'mode' | 'response' | 'alsoNotify'> & { ruleType?: GovernanceRuleType }): string {
   if (d.mode === 'off') return 'Off: does nothing and records nothing.';
-  if (routes(d)) return 'Watch: changes nothing and records the calls a cheaper model on the list could take.';
+  if (routes(d)) return 'Watch: changes nothing and records the calls that could use a cheaper model on the list.';
   if (trims(d)) {
     return d.mode === 'watch' ? 'Watch: changes nothing and records what it would have removed.'
       : 'Enforce: edits what the agent sends to the model. It never blocks a call or alerts you.';
