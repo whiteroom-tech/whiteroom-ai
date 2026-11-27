@@ -5,6 +5,7 @@ import { getFleetAuthCookie, tokenFromUserFleets } from '@/lib/fleet-session';
 import { PROXY_URL } from '@/lib/whiteroom/client';
 import { retryPlatform429, withEngineReadRetry } from '@/lib/whiteroom/engine-retry';
 import { PRACTICE_UNAVAILABLE } from './model';
+import { logSafe } from '@/lib/log-safe';
 
 // The BFF side of practice tests (spec §4 Start, §9.1). The engine's
 // /api/readiness owner routes take only the dashboard's service secret, so
@@ -74,7 +75,7 @@ export async function practiceEngine(method: 'GET' | 'POST', path: string, body:
   const data = await res.json().catch(() => null);
   if (engineUnavailable(res.status, data)) {
     // A 404 that isn't the engine's own JSON may be a misrouted PROXY_URL or a proxy in between: leave a trail.
-    if (data === null || typeof data !== 'object') console.warn(`[practice] engine answered 404 without JSON on ${method} /api/readiness/${path.split('?')[0]}; showing practice tests as unavailable`);
+    if (data === null || typeof data !== 'object') console.warn(`[practice] engine answered 404 without JSON on ${logSafe(method, 10)} /api/readiness/${logSafe(path.split('?')[0])}; showing practice tests as unavailable`);
     return unavailable(404);
   }
   // An unreadable answer is never passed on as a success.

@@ -20,6 +20,7 @@ import {
   type Closing,
   type CloseReason,
 } from '@/lib/closing-shared';
+import { logSafe } from '@/lib/log-safe';
 
 // Account deletion and plan lapse.
 //
@@ -195,7 +196,7 @@ export async function sendClosingEmail(userId: string, closing: Closing): Promis
       throw err;
     }
   } catch {
-    console.error(`[closing] couldn't send the ${closing.reason} email for user ${userId}`);
+    console.error(`[closing] couldn't send the ${logSafe(closing.reason)} email for user ${logSafe(userId)}`);
   }
 }
 

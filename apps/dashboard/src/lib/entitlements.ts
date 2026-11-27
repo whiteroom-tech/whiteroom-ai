@@ -28,6 +28,7 @@ import {
   type FleetTransfer, type PrincipalSnapshot, type V2Result,
 } from '@/lib/entitlement-snapshot';
 import { isClosingOpen, type Closing } from '@/lib/closing-shared';
+import { logSafe } from '@/lib/log-safe';
 
 export interface SubscriptionRow {
   plan: string;
@@ -503,7 +504,7 @@ async function pushEntitlements(userId: string, held: { lost: boolean }): Promis
     // while this side thinks it open (a cancel that came too late) is
     // recorded closed, so checkout refuses and the banner tells the truth.
     if (closed?.some((id) => fleetIds.includes(id as string)) && (!closing || isClosingOpen(closing))) {
-      if (await markClosed(userId)) console.warn(`[entitlements] user ${userId}: the engine reports the fleet closed; recorded`);
+      if (await markClosed(userId)) console.warn(`[entitlements] user ${logSafe(userId)}: the engine reports the fleet closed; recorded`);
     }
     return true;
   } catch (err) {
@@ -612,7 +613,7 @@ async function sendSnapshot(snapshot: PrincipalSnapshot, secret: string): Promis
 
 /** Logs a push the engine didn't take: it needs a person (monitoring alerts on [entitlements] errors). */
 function alert(userId: string, revision: number, what: string): void {
-  console.error(`[entitlements] ALERT: engine answered ${what} for user ${userId} revision ${revision}; left undelivered until the next change`);
+  console.error(`[entitlements] ALERT: engine answered ${logSafe(what)} for user ${logSafe(userId)} revision ${logSafe(revision)}; left undelivered until the next change`);
 }
 
 /**
@@ -693,7 +694,7 @@ async function pushEntitlementsV2(userId: string, held: { lost: boolean }, secre
     alert(userId, revision, `${outcome} without closing: "stored"`);
     return false;
   }
-  if (outcome === 'stale') console.warn(`[entitlements] engine already has a newer revision than ${revision} for user ${userId}; dropped`);
+  if (outcome === 'stale') console.warn(`[entitlements] engine already has a newer revision than ${logSafe(revision)} for user ${logSafe(userId)}; dropped`);
 
   await db().query(`UPDATE entitlement_outbox SET delivered_at = now() WHERE id = $1 AND delivered_at IS NULL`, [row.id]);
   await markChanges();
@@ -701,7 +702,7 @@ async function pushEntitlementsV2(userId: string, held: { lost: boolean }, secre
   // As the unversioned push: the engine has the final say on closing.
   const fleetIds = row.snapshot.fleets.map((f) => f.id);
   if (sent.closed?.some((id) => fleetIds.includes(id as string)) && (!closing || isClosingOpen(closing))) {
-    if (await markClosed(userId)) console.warn(`[entitlements] user ${userId}: the engine reports the fleet closed; recorded`);
+    if (await markClosed(userId)) console.warn(`[entitlements] user ${logSafe(userId)}: the engine reports the fleet closed; recorded`);
   }
   return true;
 }
