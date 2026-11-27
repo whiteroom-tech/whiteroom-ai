@@ -83,8 +83,13 @@ if [ -n "$ALERT_SMS" ]; then
   if [ -z "$SMS_CHANNEL" ]; then
     SMS_CHANNEL="$(api POST notificationChannels "$(jq -n --arg n "$SMS_NAME" --arg num "$ALERT_SMS" \
       '{type: "sms", displayName: $n, labels: {number: $num}}')" | jq -r .name)"
-    echo "created channel $SMS_CHANNEL; verify it in the console before it can send"
+    echo "created channel $SMS_CHANNEL"
+  fi
+  # Until the code Google texts is entered, the channel sends nothing. A rerun
+  # sends a fresh code if it still isn't verified.
+  if [ "$(api GET "${SMS_CHANNEL#projects/*/}" | jq -r '.verificationStatus // ""')" != "VERIFIED" ]; then
     api POST "${SMS_CHANNEL#projects/*/}:sendVerificationCode" '{}' >/dev/null || true
+    echo "sent a verification code to $SMS_NAME; enter it in Monitoring → Alerting → Notification channels"
   fi
   CHANNELS="$(jq -n --arg a "$CHANNEL" --arg b "$SMS_CHANNEL" '[$a, $b]')"
 fi
