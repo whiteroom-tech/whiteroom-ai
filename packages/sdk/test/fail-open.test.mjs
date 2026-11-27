@@ -226,3 +226,26 @@ test("without AbortSignal.any (Node before 20.3), timeout and caller abort still
   ctrl2.abort();
   await assert.rejects(p);
 });
+
+test("without AbortSignal.any, the fallback removes its listeners when the reply ends, and keeps url", async (t) => {
+  const original = AbortSignal.any;
+  delete AbortSignal.any;
+  t.after(() => { AbortSignal.any = original; });
+
+  const ctrl = new AbortController();
+  let added = 0, removed = 0;
+  const add = ctrl.signal.addEventListener.bind(ctrl.signal), remove = ctrl.signal.removeEventListener.bind(ctrl.signal);
+  ctrl.signal.addEventListener = (...a) => { added++; return add(...a); };
+  ctrl.signal.removeEventListener = (...a) => { removed++; return remove(...a); };
+
+  const f = async (url) => {
+    const r = new Response("done", { status: 200 });
+    Object.defineProperty(r, "url", { value: String(url) });
+    return r;
+  };
+  const res = await whiteroomFetch({ fetch: f, failOpen: true, providerBaseUrl: ANTHROPIC, whiteroomTimeoutMs: 1_000 })(`${WR}/v1/messages`, { method: "POST", body: "{}", signal: ctrl.signal });
+  assert.equal(res.url, `${WR}/v1/messages`);
+  assert.equal(await res.text(), "done");
+  assert.equal(added, 1);
+  assert.equal(removed, 1);
+});

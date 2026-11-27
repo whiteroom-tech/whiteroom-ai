@@ -111,7 +111,11 @@ function releaseWhenDone(res: Response, release: () => void): Response {
     },
     cancel(reason) { release(); return reader.cancel(reason); },
   });
-  return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
+  const out = new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
+  // A new Response loses where the reply came from; keep it for callers that read it.
+  Object.defineProperty(out, "url", { value: res.url });
+  Object.defineProperty(out, "redirected", { value: res.redirected });
+  return out;
 }
 
 export function whiteroomFetch(options: WhiteRoomFetchOptions = {}): typeof fetch {
