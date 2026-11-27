@@ -167,6 +167,8 @@ export interface GovernanceTally {
   toldYou?: number;
   /** Requests an Old tool results rule trimmed: never a block or an alert. */
   trimmed?: number;
+  /** Calls a Model routing rule sent to a cheaper model: never a block or an alert, and nothing was wrong with them. */
+  routed?: number;
 }
 
 export interface GovernanceCounts extends GovernanceTally {
@@ -236,7 +238,7 @@ export function ruleActionsByAgent(byAgent: Record<string, GovernanceTally>): Re
     const prev = out[key] ?? emptyTally();
     const merged: GovernanceTally = { blocks: prev.blocks + t.blocks, wouldBlocks: prev.wouldBlocks + t.wouldBlocks };
     // The rule_actions kinds, only where a source has them (the audit log doesn't).
-    for (const k of ['paused', 'stopped', 'toldYou', 'trimmed'] as const) {
+    for (const k of ['paused', 'stopped', 'toldYou', 'trimmed', 'routed'] as const) {
       if (prev[k] !== undefined || t[k] !== undefined) merged[k] = (prev[k] ?? 0) + (t[k] ?? 0);
     }
     out[key] = merged;
@@ -287,9 +289,9 @@ export const RESPONSE_EFFECT: Record<GovernanceResponse, string> = {
 
 // ── Rule actions (P2.4) ─────────────────────────────────────────────
 
-/** The engine's rule_actions counts as a tally (the words tallyWords and tallyTotal read). `trimmed` only when there are some: an older engine sends none. */
+/** The engine's rule_actions counts as a tally (the words tallyWords and tallyTotal read). `trimmed` and `routed` only when there are some: an older engine sends neither. */
 export const tallyFromRuleActions = (c: RuleActionCounts): GovernanceTally => ({
-  blocks: c.blocked, wouldBlocks: c.wouldAct, paused: c.paused, stopped: c.stopped, toldYou: c.toldYou, ...(c.trimmed ? { trimmed: c.trimmed } : {}),
+  blocks: c.blocked, wouldBlocks: c.wouldAct, paused: c.paused, stopped: c.stopped, toldYou: c.toldYou, ...(c.trimmed ? { trimmed: c.trimmed } : {}), ...(c.routed ? { routed: c.routed } : {}),
 });
 
 /**
@@ -311,6 +313,9 @@ export function countsFromRuleActions(res: RuleActionsResult, fallbackByRule: Go
   return { ...tallyFromRuleActions(res.totals), byRule, byAgent: Object.fromEntries(Object.entries(res.byAgent).map(([a, c]) => [a, tallyFromRuleActions(c)])) };
 }
 
+/** What a routed call is called after its count: "12 sent to a cheaper model". */
+export const ROUTED_WORDS = 'sent to a cheaper model';
+
 /** Every action in a tally, in words, worst first: "3 blocked", "1 paused", "2 would have acted (Watch)". */
 export function tallyWords(t: GovernanceTally): { text: string; tone: 'bad' | 'warn' | 'tx2' }[] {
   const out: { text: string; tone: 'bad' | 'warn' | 'tx2' }[] = [];
@@ -319,6 +324,7 @@ export function tallyWords(t: GovernanceTally): { text: string; tone: 'bad' | 'w
   if (t.blocks) out.push({ text: `${t.blocks} blocked`, tone: 'bad' });
   if (t.toldYou) out.push({ text: `${t.toldYou} ${NOTIFY.done}`, tone: 'tx2' });
   if (t.trimmed) out.push({ text: `${t.trimmed} trimmed`, tone: 'tx2' });
+  if (t.routed) out.push({ text: `${t.routed} ${ROUTED_WORDS}`, tone: 'tx2' });
   if (t.wouldBlocks) out.push({ text: `${t.wouldBlocks} would have acted (${MODE_LABEL.watch})`, tone: 'warn' });
   return out;
 }
@@ -336,6 +342,7 @@ export function tallyParts(t: GovernanceTally): { count: number; word: string }[
   if (t.blocks) out.push({ count: t.blocks, word: 'blocked' });
   if (t.toldYou) out.push({ count: t.toldYou, word: NOTIFY.done });
   if (t.trimmed) out.push({ count: t.trimmed, word: 'trimmed' });
+  if (t.routed) out.push({ count: t.routed, word: ROUTED_WORDS });
   if (t.wouldBlocks) out.push({ count: t.wouldBlocks, word: 'would have acted' });
   return out;
 }
@@ -345,6 +352,12 @@ export function tallyShort(t: GovernanceTally): string {
   return tallyParts(t).map((p) => `${p.count} ${p.word}`).join(' · ');
 }
 
+/**
+ * How many times rules caught or changed something. Calls sent to a cheaper
+ * model are left out: this number reads as "caught" on Controls and puts an
+ * agent first on Home, and nothing was wrong with those calls. They are said
+ * in words beside it (tallyWords, ruleOutcomes).
+ */
 export function tallyTotal(t: GovernanceTally): number {
   return t.blocks + t.wouldBlocks + (t.paused ?? 0) + (t.stopped ?? 0) + (t.toldYou ?? 0) + (t.trimmed ?? 0);
 }

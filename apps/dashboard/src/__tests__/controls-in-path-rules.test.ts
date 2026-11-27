@@ -278,6 +278,21 @@ describe('trimmed in the fleet’s rule-action counts', () => {
     expect(ruleOutcomes(t)).toBe('2 blocked · 1 alert · 40 trimmed · 5 would have acted');
   });
 
+  it('calls sent to a cheaper model are said in words, and never counted as caught', () => {
+    const t = tallyFromRuleActions(counts({ blocked: 2, wouldAct: 5, routed: 12 }));
+    expect(t).toMatchObject({ blocks: 2, wouldBlocks: 5, routed: 12 });
+    // Nothing was wrong with them: the total that reads as "caught" leaves them out.
+    expect(tallyTotal(t)).toBe(7);
+    expect(tallyShort(t)).toBe('2 blocked · 12 sent to a cheaper model · 5 would have acted');
+    expect(tallyWords(t).map((w) => [w.text, w.tone])).toEqual([['2 blocked', 'bad'], ['12 sent to a cheaper model', 'tx2'], ['5 would have acted (Watch)', 'warn']]);
+    expect(ruleOutcomes(t)).toBe('2 blocked · 12 sent to a cheaper model · 5 would have acted');
+    // Calls that only could have used one changed nothing and are not in the tally at all.
+    expect(tallyFromRuleActions(counts({ wouldRoute: 9 }))).not.toHaveProperty('routed');
+    expect(ruleOutcomes(tallyFromRuleActions(counts({ wouldRoute: 9 })))).toBe('');
+    // Per agent, summed across the sources that have it.
+    expect(ruleActionsByAgent({ 'Lead-Agent': tallyFromRuleActions(counts({ routed: 3 })), 'lead-agent': tallyFromRuleActions(counts({ routed: 4 })) })['lead-agent'].routed).toBe(7);
+  });
+
   it('an engine without trimmed reads as 0: the tally and its words are as before', () => {
     const old = { blocked: 2, paused: 0, stopped: 0, toldYou: 1, wouldAct: 5 };
     expect(tallyFromRuleActions(old)).toEqual({ blocks: 2, wouldBlocks: 5, paused: 0, stopped: 0, toldYou: 1 });

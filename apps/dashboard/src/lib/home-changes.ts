@@ -6,7 +6,7 @@ import type { AuditEntry, RunDaysResult } from '@/lib/whiteroom/types';
 import type { ControlActor } from '@/lib/control-actors';
 import type { GovernanceTally } from '@/lib/governance';
 import { agentChangeWho, historyWho } from '@/lib/control-actors';
-import { RULE_LABELS } from '@/lib/governance';
+import { ROUTED_WORDS, RULE_LABELS } from '@/lib/governance';
 import { historyText } from '@/lib/rule-history';
 import { ROUTES } from '@/lib/routes';
 import { fmtCount, fmtWhen, plural } from '@/lib/format';
@@ -116,6 +116,7 @@ export function ruleOutcomes(t: GovernanceTally, always = false): string {
   if (t.blocks || always) bits.push(`${fmtCount(t.blocks)} blocked`);
   if (t.toldYou) bits.push(`${fmtCount(t.toldYou)} ${plural(t.toldYou, 'alert')}`);
   if (t.trimmed) bits.push(`${fmtCount(t.trimmed)} trimmed`);
+  if (t.routed) bits.push(`${fmtCount(t.routed)} ${ROUTED_WORDS}`);
   if (t.wouldBlocks || always) bits.push(`${fmtCount(t.wouldBlocks)} would have acted`);
   return bits.join(' · ');
 }
