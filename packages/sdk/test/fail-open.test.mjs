@@ -266,3 +266,39 @@ test("a Request's redirect and credentials settings carry over", async () => {
   assert.equal(seen[0].redirect, "error");
   assert.equal(seen[1].credentials, "omit");
 });
+
+test("a WhiteRoom 503 is recognised by its body alone, and a bare 503 by neither", async () => {
+  const bodyOnly = fake(json(503, { type: "error", error: { message: "x" }, whiteroom: { reason: "db_unavailable" } }));
+  assert.equal((await send(whiteroomFetch({ fetch: bodyOnly.f, failOpen: true, providerBaseUrl: ANTHROPIC }))).status, 503);
+  assert.equal(bodyOnly.calls.length, 1);
+  const headerHalf = fake(() => new Response("busy", { status: 503, headers: { "x-frame-options": "DENY" } }));
+  assert.equal((await send(whiteroomFetch({ fetch: headerHalf.f, failOpen: true, providerBaseUrl: ANTHROPIC }))).status, 200);
+  assert.equal(headerHalf.calls.length, 2, "one engine header alone isn't enough");
+});
+
+test("without AbortSignal.any, cancelling or a failing body also releases the listeners", async (t) => {
+  const original = AbortSignal.any;
+  delete AbortSignal.any;
+  t.after(() => { AbortSignal.any = original; });
+  const watch = () => {
+    const ctrl = new AbortController();
+    const counts = { added: 0, removed: 0 };
+    const add = ctrl.signal.addEventListener.bind(ctrl.signal), remove = ctrl.signal.removeEventListener.bind(ctrl.signal);
+    ctrl.signal.addEventListener = (...a) => { counts.added++; return add(...a); };
+    ctrl.signal.removeEventListener = (...a) => { counts.removed++; return remove(...a); };
+    return { ctrl, counts };
+  };
+  const endless = async () => new Response(new ReadableStream({ pull(c) { c.enqueue(new Uint8Array([1])); } }), { status: 200 });
+  const broken = async () => new Response(new ReadableStream({ pull(c) { c.error(new Error("reset")); } }), { status: 200 });
+  const opts = (f) => ({ fetch: f, failOpen: true, providerBaseUrl: ANTHROPIC, whiteroomTimeoutMs: 1_000 });
+
+  const a = watch();
+  const r1 = await whiteroomFetch(opts(endless))(`${WR}/v1/messages`, { method: "POST", body: "{}", signal: a.ctrl.signal });
+  await r1.body.cancel();
+  assert.deepEqual(a.counts, { added: 1, removed: 1 });
+
+  const b = watch();
+  const r2 = await whiteroomFetch(opts(broken))(`${WR}/v1/messages`, { method: "POST", body: "{}", signal: b.ctrl.signal });
+  await assert.rejects(r2.text());
+  assert.deepEqual(b.counts, { added: 1, removed: 1 });
+});
