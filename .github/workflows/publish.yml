@@ -43,14 +43,21 @@ jobs:
           node-version: "24"
           registry-url: https://registry.npmjs.org
       - name: Install
-        # Same as CI: the CLI has no lockfile yet.
-        run: |
-          if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
+        # Exact versions only: this job can publish, so nothing unlocked runs in it.
+        run: npm ci --no-audit --no-fund
       - name: Version not already on npm
         run: |
           name=$(node -p "require('./package.json').name")
           version=$(node -p "require('./package.json').version")
-          if npm view "$name@$version" version >/dev/null 2>&1; then
+          # Exit 0 with output: published. Exit 0 with no output, or E404:
+          # not published. Anything else (network, auth, registry): stop.
+          set +e
+          out=$(npm view "$name@$version" version 2>err.txt); rc=$?
+          set -e
+          if [ $rc -ne 0 ] && ! grep -q E404 err.txt; then
+            echo "::error::Couldn't check npm for $name@$version:"; cat err.txt; exit 1
+          fi
+          if [ -n "$out" ]; then
             echo "::error::$name@$version is already published. Bump the version in a reviewed PR first."
             exit 1
           fi
