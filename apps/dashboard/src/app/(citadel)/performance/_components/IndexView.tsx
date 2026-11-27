@@ -78,7 +78,7 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
   usdByDay?: Record<string, number> | null;
   /** The range's caching WhiteRoom added, from the engine's per-day figures (what billing sums); null on older engines. */
   cacheSaved?: { micros: number; unpricedReadTokens: number } | null;
-  /** The range's calls that could use a cheaper model (Model routing in Watch); null on older engines or when unread. */
+  /** Model routing in the range: the calls that could use a cheaper model, and the ones that went to one; null on older engines or when unread. */
   routeWatch?: RouteWatch | null;
   /** The dev preview's Cost prediction reads and writes. */
   predictionApi?: CostPredictionApi;

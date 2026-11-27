@@ -25,7 +25,7 @@ export function RulesSummary({ counts, byRuleId, rules, unknownRules, unavailabl
   unknownRules?: UnknownGovernanceRule[];
   /** The counts couldn't be read: unknown, never zero. */
   unavailable: boolean;
-  /** The range's calls that could use a cheaper model (Model routing in Watch); null when the engine sends none. */
+  /** Model routing in the range: the calls that could use a cheaper model, and the ones that went to one; null when the engine sends none. */
   routeWatch?: RouteWatch | null;
 }) {
   const top = topCaught(counts, byRuleId, rules, unknownRules);
