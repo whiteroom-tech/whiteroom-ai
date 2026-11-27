@@ -4,7 +4,7 @@
 
 import type {
   BlockStreakParams, CallRateParams, GovernanceMode, GovernanceParams, GovernanceResponse, GovernanceRule, GovernanceRuleType,
-  DataDeletionParams, GovernanceScope, KeywordParams, KeywordWhere, LoopBreakerParams, ModelAllowlistParams, ModelRouteParams, OutsideThenSendParams, RuleActionCounts, SendLimitParams, SendSeenRow, SpendCapParams, ToolListParams, TrimResultsParams,
+  DataDeletionParams, GovernanceScope, KeywordParams, KeywordWhere, LadderEntry, LoopBreakerParams, ModelAllowlistParams, ModelRouteParams, OutsideThenSendParams, RuleActionCounts, SendLimitParams, SendSeenRow, SpendCapParams, ToolListParams, TrimResultsParams,
 } from '@/lib/whiteroom/types';
 import { convertSpendCap, engineTakes, RULE_CATEGORY, UNKNOWN_RULE, unhandledType } from '@/lib/governance';
 import { MODE_LABEL, NOTIFY } from '@/lib/vocab';
@@ -238,7 +238,9 @@ export const trims = (r: { ruleType?: string }) => r.ruleType === 'trim_results'
 export const routes = (r: { ruleType?: string }) => r.ruleType === 'model_route';
 
 /** A Model routing rule's models as the request names them, strongest first. */
-export const ladderIds = (p: ModelRouteParams): string[] => p.ladder.map((e) => (typeof e === 'string' ? e : e.id));
+/** A Model routing rule's model list, strongest first. One read for every use: a rule that came in with none has an empty list, not a missing one. */
+export const ladderOf = (p: ModelRouteParams): LadderEntry[] => p.ladder ?? [];
+export const ladderIds = (p: ModelRouteParams): string[] => ladderOf(p).map((e) => (typeof e === 'string' ? e : e.id));
 /** A ladder needs two models before there is a cheaper one to compare with. */
 const LADDER_MIN = 2;
 /** The most models a Model routing rule lists (the engine's limit). */
@@ -312,7 +314,7 @@ export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 
     }
     case 'model_route': {
       const p = rule.params as ModelRouteParams;
-      return p.ladder.length ? { pre: 'Record the calls that could use a cheaper model. Models, strongest first: ', val: ladderText(p), post: '.' } : { pre: 'No models picked yet.', val: '', post: '' };
+      return ladderOf(p).length ? { pre: 'Record the calls that could use a cheaper model. Models, strongest first: ', val: ladderText(p), post: '.' } : { pre: 'No models picked yet.', val: '', post: '' };
     }
     default:
       return unhandledType(rule.ruleType, { pre: UNKNOWN_RULE, val: '', post: '' });
@@ -414,7 +416,7 @@ export function emptyPick(rule: Pick<GovernanceRule, 'ruleType' | 'params'>): st
     // No send tools is "Not set up" (DLP spec 5.3). No read tools is a real rule: the provider's web search and fetch always count.
     case 'outside_then_send': return (rule.params as OutsideThenSendParams).sendTools.length ? null : 'a send tool';
     case 'data_deletion': return (rule.params as DataDeletionParams).commandTools.length ? null : 'a tool';
-    case 'model_route': { const n = (rule.params as ModelRouteParams).ladder.length; return n >= LADDER_MIN ? null : n ? 'a second model' : 'two models'; }
+    case 'model_route': { const n = ladderOf(rule.params as ModelRouteParams).length; return n >= LADDER_MIN ? null : n ? 'a second model' : 'two models'; }
     case 'spend_cap': case 'loop_breaker': case 'call_rate': case 'block_streak': case 'trim_results': return null;
     default: return unhandledType(rule.ruleType, null);
   }
@@ -517,7 +519,7 @@ export function draftFrom(rule: GovernanceRule): RuleDraft {
     ruleType: rule.ruleType, mode: rule.mode, response: typeResponse(rule.ruleType, rule.response), alsoNotify: !!rule.alsoNotify,
     appliesTo: rule.appliesTo === 'all' ? 'all' : [...rule.appliesTo],
     // Model routing: the editor holds, and Save sends, the model list alone.
-    params: (rule.ruleType === 'model_route' ? { ladder: JSON.parse(JSON.stringify((rule.params as ModelRouteParams).ladder ?? [])) } : JSON.parse(JSON.stringify(rule.params))) as GovernanceParams,
+    params: (rule.ruleType === 'model_route' ? { ladder: JSON.parse(JSON.stringify(ladderOf(rule.params as ModelRouteParams))) } : JSON.parse(JSON.stringify(rule.params))) as GovernanceParams,
     number: numberOf(rule),
     ...(rule.ruleType === 'trim_results' && { number2: number2Of(rule) }),
   };
@@ -609,7 +611,7 @@ export function draftChanges(d: RuleDraft, rule: GovernanceRule): {
   if (!same(d.appliesTo, rule.appliesTo)) out.appliesTo = d.appliesTo;
   // A list the engine hid (domainCount) is never written back: it would save an empty list over the real one.
   // Model routing is compared on what the editor holds, its model list, so a rule isn't "unsaved" the moment it opens.
-  const saved = routes(rule) ? { ladder: (rule.params as ModelRouteParams).ladder ?? [] } : rule.params;
+  const saved = routes(rule) ? { ladder: ladderOf(rule.params as ModelRouteParams) } : rule.params;
   if (!same(p.params, saved) && !domainsHidden(rule)) out.params = p.params;
   return Object.keys(out).length ? out : null;
 }
@@ -635,7 +637,8 @@ export function draftProblem(d: RuleDraft): string | null {
     // Turning it off needs no agents: a rule with none picked yet can still be switched off.
     if (d.appliesTo === 'all' || (d.appliesTo.length === 0 && d.mode !== 'off')) return 'Pick the agents this rule covers.';
     if (d.mode === 'enforce') return 'This rule runs in Watch for now.';
-    const models = (p.params as ModelRouteParams).ladder.length;
+    // The engine refuses a list of one model, or of more than five, in any mode: these hold for Off too.
+    const models = ladderOf(p.params as ModelRouteParams).length;
     if (models === 1) return 'Add a second model, cheaper than the first.';
     if (models > LADDER_MAX) return `A rule holds up to ${LADDER_MAX} models. Remove one to save.`;
   }
@@ -873,7 +876,7 @@ export function ruleCondition(rule: Pick<GovernanceRule, 'ruleType' | 'params'>)
     }
     case 'model_route': {
       const p = rule.params as ModelRouteParams;
-      return p.ladder.length ? { pre: 'Calls that could use a cheaper model, from ', val: ladderText(p), post: '' } : { pre: 'No models picked yet', val: '', post: '' };
+      return ladderOf(p).length ? { pre: 'Calls that could use a cheaper model, from ', val: ladderText(p), post: '' } : { pre: 'No models picked yet', val: '', post: '' };
     }
     default:
       return unhandledType(rule.ruleType, { pre: UNKNOWN_RULE, val: '', post: '' });
@@ -1168,7 +1171,7 @@ export function whenSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params'>):
     }
     case 'model_route': {
       const p = rule.params as ModelRouteParams;
-      return p.ladder.length ? { pre: 'Models, strongest first: ', val: ladderText(p), post: '' } : { pre: 'No models picked yet', val: '', post: '' };
+      return ladderOf(p).length ? { pre: 'Models, strongest first: ', val: ladderText(p), post: '' } : { pre: 'No models picked yet', val: '', post: '' };
     }
     default: return unhandledType(rule.ruleType, { pre: UNKNOWN_RULE, val: '', post: '' });
   }

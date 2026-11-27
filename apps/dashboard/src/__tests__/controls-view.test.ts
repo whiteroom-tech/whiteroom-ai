@@ -565,6 +565,15 @@ describe('Model routing', () => {
     expect(whatHappensLine(draft({ mode: 'enforce' }))).toBe('Enforce isn’t available for this rule yet. Set it to Watch or Off.');
   });
 
+  it('reads a rule that came in with no model list as one with none picked', () => {
+    const bare = route({ params: {} as GovernanceRule['params'] });
+    expect(ruleSentenceText(bare)).toBe('No models picked yet.');
+    expect(ruleConditionText(bare)).toBe('No models picked yet');
+    expect(rowCount(bare, { onlyOfItsType: true })).toEqual({ text: 'Does nothing until you add two models', tone: 'warn' });
+    expect(draftFrom(bare).params).toEqual({ ladder: [] });
+    expect(draftProblem(draftFrom(bare))).toBeNull();
+  });
+
   it('shows a deployment by its name', () => {
     expect(ruleConditionText(route({ params: { ladder: [{ id: 'team-large', is: 'gpt-5.5' }, 'team-small'] } }))).toBe('Calls that could use a cheaper model, from team-large → team-small');
   });

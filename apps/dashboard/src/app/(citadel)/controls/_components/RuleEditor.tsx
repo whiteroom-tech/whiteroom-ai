@@ -25,7 +25,7 @@ import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
 import {
   canAddSeen, COMMAND_TOOLS_MAX, DELETION_DOCS_URL, domainEntry, domainProblem, domainsHidden, domainTotal, FLOW_TOOLS_MAX, FLOW_WHEN, looksLikeCommandRunner, looksLikeReader, looksLikeSender, SEEN_RESERVED_TEXT, seenFullLine, seenNotOnList, SEND_DOMAINS_MAX, SEND_TOOLS_MAX, toolsFull, toolsWithNoDomain, trims,
 } from '@/lib/controls-view';
-import { AGENT_NOTE, isMarker, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, looksLikeDeleteOrChange, newMarker, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, ladderIds, modeChoices, responseChoices, routes, sendsAlert, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
+import { AGENT_NOTE, isMarker, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, looksLikeDeleteOrChange, newMarker, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, ladderIds, ladderOf, modeChoices, responseChoices, routes, sendsAlert, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
 import { Chip, field, GroupPicker, InlineSelect, MarkerChip, MODEL_GROUPS, NumberField, ScopeField, ToolPicker } from './pickers';
 import { ReplayEstimate } from './ReplayEstimate';
 
@@ -398,7 +398,7 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
           <>
             <span style={{ fontSize: 'var(--fs-md)' }}>Models, strongest first:</span>
             {/* The picker edits the names; an entry that also says which model a deployment runs keeps that, also when it is removed and added back. */}
-            <GroupPicker values={ladderIds(route)} onChange={(ids) => setParams({ ladder: ids.map((id) => [...route.ladder, ...(rule.params as ModelRouteParams).ladder].find((x) => typeof x !== 'string' && x.id === id) ?? id) })} groups={MODEL_GROUPS}
+            <GroupPicker values={ladderIds(route)} onChange={(ids) => setParams({ ladder: ids.map((id) => [...ladderOf(route), ...ladderOf(rule.params as ModelRouteParams)].find((x) => typeof x !== 'string' && x.id === id) ?? id) })} groups={MODEL_GROUPS}
               addLabel="+ Add model" ariaLabel="Add a model" otherLabel="Other (type deployment name or model ID)…" placeholder="deployment name or model ID" />
             <p style={help}>Add the strongest first, then each cheaper one. To change the order, remove a model and add it back.</p>
           </>
