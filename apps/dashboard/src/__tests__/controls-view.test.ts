@@ -560,6 +560,9 @@ describe('Model routing', () => {
     expect(ruleSentenceText(route({ params: { ladder: [] } }))).toBe('No models picked yet.');
     expect(agentGets(route())).toBe('Nothing: the call goes through unchanged.');
     expect(whatHappensLine(draft())).toBe('Watch: changes nothing and records the calls that could use a cheaper model on the list.');
+    expect(whatHappensLine(draft({ mode: 'off' }))).toBe('Off: does nothing and records nothing.');
+    // A rule that came in enforced never reads as watching.
+    expect(whatHappensLine(draft({ mode: 'enforce' }))).toBe('Enforce isn’t available for this rule yet. Set it to Watch or Off.');
   });
 
   it('shows a deployment by its name', () => {

@@ -1247,7 +1247,8 @@ const ENFORCE_LINE: Record<GovernanceResponse, string> = {
 /** The one plain line under What happens, for the pick. */
 export function whatHappensLine(d: Pick<RuleDraft, 'mode' | 'response' | 'alsoNotify'> & { ruleType?: GovernanceRuleType }): string {
   if (d.mode === 'off') return 'Off: does nothing and records nothing.';
-  if (routes(d)) return 'Watch: changes nothing and records the calls that could use a cheaper model on the list.';
+  // Enforce isn't offered for it; a rule that came in enforced says so, and Save asks for Watch.
+  if (routes(d)) return d.mode === 'enforce' ? 'Enforce isn’t available for this rule yet. Set it to Watch or Off.' : 'Watch: changes nothing and records the calls that could use a cheaper model on the list.';
   if (trims(d)) {
     return d.mode === 'watch' ? 'Watch: changes nothing and records what it would have removed.'
       : 'Enforce: edits what the agent sends to the model. It never blocks a call or alerts you.';
