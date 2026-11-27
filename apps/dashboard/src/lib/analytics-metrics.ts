@@ -49,7 +49,7 @@ export function cacheSavedTotal(days: Array<{ usdMicros: number; unpricedReadTok
   return { micros: days.reduce((n, d) => n + d.usdMicros, 0), unpricedReadTokens: days.reduce((n, d) => n + d.unpricedReadTokens, 0) };
 }
 
-/** A range's calls that could use a cheaper model, and what they cost at each (Watch: nothing was changed). */
+/** A count of calls and what the same usage costs on the model asked for (baseline) and on the cheaper one (cost). */
 export interface RouteTotals { calls: number; unpricedCalls: number; baselineMicros: number; costMicros: number }
 /** Model routing in a range: the calls that could use a cheaper model (Watch), and under `routed` the ones that went to one (Enforce). */
 export interface RouteWatch extends RouteTotals { routed?: RouteTotals }

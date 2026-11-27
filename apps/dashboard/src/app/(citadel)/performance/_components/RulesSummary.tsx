@@ -80,16 +80,16 @@ export function RulesSummary({ counts, byRuleId, rules, unknownRules, unavailabl
  * The dollars are the same usage at list prices, so neither row is a saving
  * and neither is added to one.
  */
-function RouteRow({ totals: watch, mode, rules }: { totals: RouteTotals; mode: 'watch' | 'enforce'; rules: GovernanceRule[] | null }) {
+function RouteRow({ totals, mode, rules }: { totals: RouteTotals; mode: 'watch' | 'enforce'; rules: GovernanceRule[] | null }) {
   const routed = mode === 'enforce';
   const own = (rules ?? []).filter((r) => r.ruleType === 'model_route');
   const inner = (
     <>
       <span className="wr-ctrl__name">{RULE_LABELS.model_route}</span>
       <span className="wr-cap">
-        <strong className="wr-strong">{fmtCount(watch.calls)}</strong> {plural(watch.calls, 'call')} {routed ? 'went to a cheaper model' : 'could use a cheaper model'}
-        {watch.calls > watch.unpricedCalls && <> · <strong className="wr-strong">{fmtCost(watch.baselineMicros)}</strong> {routed ? 'on the model asked for' : 'as sent'}, <strong className="wr-strong">{fmtCost(watch.costMicros)}</strong> on the cheaper model</>}
-        {watch.unpricedCalls > 0 && <> · {fmtCount(watch.unpricedCalls)} not priced</>}
+        <strong className="wr-strong">{fmtCount(totals.calls)}</strong> {plural(totals.calls, 'call')} {routed ? 'went to a cheaper model' : 'could use a cheaper model'}
+        {totals.calls > totals.unpricedCalls && <> · <strong className="wr-strong">{fmtCost(totals.baselineMicros)}</strong> {routed ? 'on the model asked for' : 'as sent'}, <strong className="wr-strong">{fmtCost(totals.costMicros)}</strong> on the cheaper model</>}
+        {totals.unpricedCalls > 0 && <> · {fmtCount(totals.unpricedCalls)} not priced</>}
       </span>
       <ModeTag mode={mode} />
     </>
