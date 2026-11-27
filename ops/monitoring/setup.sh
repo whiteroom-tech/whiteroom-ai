@@ -63,9 +63,12 @@ CHANNELS="$(jq -n --arg c "$CHANNEL" '[$c]')"
 # A second route (SOC 2 MON-01): a text message, so an alert still reaches
 # someone when email doesn't. Named by its last four digits only.
 if [ -n "$ALERT_SMS" ]; then
-  case "$ALERT_SMS" in +[0-9]*) ;; *) echo "ALERT_SMS must be E.164, like +15555550100" >&2; exit 1 ;; esac
+  if ! [[ "$ALERT_SMS" =~ ^\+[1-9][0-9]{7,14}$ ]]; then echo "ALERT_SMS must be E.164, like +15555550100" >&2; exit 1; fi
   SMS_NAME="SMS ...${ALERT_SMS: -4}"
-  SMS_CHANNEL="$(find_named notificationChannels notificationChannels "$SMS_NAME")"
+  # Matched on the full number, not the display name, so two numbers ending
+  # in the same four digits stay two channels.
+  SMS_CHANNEL="$(api GET "notificationChannels?pageSize=100" | jq -r --arg n "$ALERT_SMS" \
+    '.notificationChannels[]? | select(.type == "sms" and .labels.number == $n) | .name' | head -1)"
   if [ -z "$SMS_CHANNEL" ]; then
     SMS_CHANNEL="$(api POST notificationChannels "$(jq -n --arg n "$SMS_NAME" --arg num "$ALERT_SMS" \
       '{type: "sms", displayName: $n, labels: {number: $num}}')" | jq -r .name)"
@@ -118,9 +121,16 @@ policy() {
   local existing
   existing="$(find_named alertPolicies alertPolicies "$name")"
   if [ -n "$existing" ]; then
-    # Routes follow this file: an existing policy gets every channel above.
-    api PATCH "${existing#projects/*/}?updateMask=notificationChannels" \
-      "$(jq -n --argjson ch "$CHANNELS" '{notificationChannels: $ch}')" >/dev/null
+    # Add this file's channels to an existing policy, keeping any it already
+    # has (one added in the console stays). Only patched when something's new.
+    local have want
+    have="$(api GET "${existing#projects/*/}" | jq -c '.notificationChannels // []')"
+    want="$(jq -cn --argjson a "$have" --argjson b "$CHANNELS" '$a + $b | unique')"
+    if [ "$(jq -cn --argjson a "$have" '$a | unique')" != "$want" ]; then
+      api PATCH "${existing#projects/*/}?updateMask=notificationChannels" \
+        "$(jq -n --argjson ch "$want" '{notificationChannels: $ch}')" >/dev/null
+      echo "added channels to policy $name"
+    fi
     return
   fi
   api POST alertPolicies "$(jq -n --arg name "$name" --arg docs "$docs" --argjson ch "$CHANNELS" \
