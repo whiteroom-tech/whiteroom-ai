@@ -20,7 +20,7 @@ export const HELP = {
   whatStoodOut: 'The one thing worth knowing about this run: something unusual, a rule stepping in, or a person stopping it.',
   claimCheck: 'Compares what the agent said it did with what it actually did. For example, it said it saved a file: did a save really happen?',
   unusualBehaviour: 'Runs where an agent did something unusual, like repeating the same call or failing several calls in a row. These are flags: nothing is blocked because of them.',
-  ruleActions: 'Times one of your rules stepped in: it alerted you, blocked a call, or paused or stopped an agent.',
+  ruleActions: 'Times one of your rules stepped in: it alerted you, blocked a call, or paused or stopped an agent. Calls that went to a cheaper model are listed under it and not counted: nothing was wrong with them.',
   rulesThatApply: 'The rules from Controls that cover this agent, and what each one has done to it lately.',
   spend: "What the fleet's model calls cost in this time range.",
   failedCalls: 'The share of model calls that came back with an error.',
