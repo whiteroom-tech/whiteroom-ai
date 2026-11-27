@@ -318,7 +318,8 @@ export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 
     }
     case 'model_route': {
       const p = rule.params as ModelRouteParams;
-      const does = rule.mode === 'enforce' ? 'Send calls that can use a cheaper model to it.' : 'Record the calls that could use a cheaper model.';
+      // A rule that suspended itself changes no call: it reads as it acts.
+      const does = rule.mode === 'enforce' && p.suspended !== true ? 'Send calls that can use a cheaper model to it.' : 'Record the calls that could use a cheaper model.';
       return ladderOf(p).length ? { pre: `${does} Models, strongest first: `, val: ladderText(p), post: '.' } : { pre: 'No models picked yet.', val: '', post: '' };
     }
     default:
@@ -439,7 +440,7 @@ const REASON: Record<Exclude<GovernanceRuleType, 'block_streak' | 'trim_results'
 export function agentGets(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 'response'> & { mode?: GovernanceMode }): string {
   const response = rule.response ?? 'block';
   if (rule.ruleType === 'trim_results') return 'Nothing: the call goes through.\nOld tool results in it are replaced with a short note.';
-  if (rule.ruleType === 'model_route') return rule.mode === 'enforce' ? 'The reply, from a cheaper model on your list when the call can use one.\nNothing else changes.' : 'Nothing: the call goes through unchanged.';
+  if (rule.ruleType === 'model_route') return rule.mode === 'enforce' && (rule.params as ModelRouteParams).suspended !== true ? 'The reply, from a cheaper model on your list when the call can use one.\nNothing else changes.' : 'Nothing: the call goes through unchanged.';
   if (rule.ruleType === 'block_streak') {
     // The call that reaches the limit was blocked by another rule: that rule's 403 is what the agent gets.
     const then = response === 'notify' ? 'You get an alert; the agent doesn’t.' : `Then the agent is ${response === 'stop' ? 'stopped' : 'paused'} until someone resumes it.`;

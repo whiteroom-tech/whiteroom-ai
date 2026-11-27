@@ -2813,6 +2813,8 @@ describe('Controls: Repeated blocks and Old tool results', () => {
     expect(editor()).not.toContain('It changes no call.');
     expect(editor()).toContain('Enforce: a call that can use a cheaper model on the list is sent to it.');
     expect(m.text()).toContain('This rule suspended itself and is changing no calls.');
+    // While it is suspended the agent gets what it gets in Watch.
+    expect(editor()).not.toContain('The reply, from a cheaper model');
     await m.click(m.button('Turn back on'));
     expect(api.update).toHaveBeenCalledWith('f1', 'mr-enf', { mode: 'enforce', ifVersion: rule.version }, 'k');
     expect(m.text()).not.toContain('This rule suspended itself');

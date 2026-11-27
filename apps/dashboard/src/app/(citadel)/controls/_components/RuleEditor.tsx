@@ -584,7 +584,7 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
       <details className="gov-details">
         <summary>What the agent sees</summary>
         <pre style={{ margin: '10px 0 0', background: 'var(--sunk)', borderRadius: 7, padding: 12, fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', lineHeight: 1.6, color: 'var(--tx2)', overflowX: 'auto' }}>
-          {agentGets({ ruleType: rule.ruleType, params: asRule.params, response: draft.response, mode: draft.mode })}
+          {agentGets({ ruleType: rule.ruleType, params: asRule.params, response: draft.response, mode: suspended(rule) ? 'watch' : draft.mode })}
         </pre>
         {draft.response !== 'notify' && <p style={{ ...help, marginTop: 8 }}>{AGENT_NOTE[rule.ruleType]}</p>}
       </details>

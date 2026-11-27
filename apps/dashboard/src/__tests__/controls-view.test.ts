@@ -606,6 +606,9 @@ describe('Model routing', () => {
       // Only an enforcing rule is suspended: set to Watch or Off, it reads as that.
       expect(suspended(route({ mode: 'watch', params: { ladder: LADDER, suspended: true } }))).toBe(false);
       expect(suspended(enforcing())).toBe(false);
+      // It reads as it acts: nothing is sent anywhere.
+      expect(ruleSentenceText(stopped)).toBe('Record the calls that could use a cheaper model. Models, strongest first: claude-opus-5-5 → claude-sonnet-5-5.');
+      expect(agentGets(stopped)).toBe('Nothing: the call goes through unchanged.');
       // It changes no call, so the counts put it with Watch; one that is routing counts as Enforce, never as Alert only.
       expect(modeCount([stopped, enforcing()])).toBe('1 Enforce · 1 Watch');
       expect(leadCounts([stopped, enforcing()])).toMatchObject({ total: 2, enforce: 1, alert: 0, watch: 1 });
