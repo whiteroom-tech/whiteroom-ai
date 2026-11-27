@@ -197,7 +197,6 @@ export async function listen(a: ListenArgs): Promise<number> {
   // As practice tests pass it: Azure OpenAI under /openai; OpenAI SDKs want a base URL that ends in /v1.
   const sandboxBase = `${sandbox.origin}/${sandbox.key}${provider === "azure-openai" ? "/openai" : ""}`;
   const baseUrl = chatCompletions(provider) ? `${sandboxBase}/v1` : sandboxBase;
-  say(sandboxCopy.connected);
 
   // ── Listening: Ctrl+C (or a signal) disconnects; WhiteRoom can end the session ──
   const stop = new AbortController();
@@ -206,6 +205,9 @@ export async function listen(a: ListenArgs): Promise<number> {
   process.on("SIGINT", onStop);
   process.on("SIGTERM", onStop);
   process.on("SIGHUP", onStop);
+  // Said only once the handlers are in place: a Ctrl+C the moment this line shows must
+  // disconnect and exit 0, not kill the helper and leave the Sandbox page showing it connected.
+  say(sandboxCopy.connected);
   /** Results by task: a task handed out again gets its result (re)sent, not a second run. */
   const done = new Map<string, { n: number; result: { ok: boolean; summary: string }; sent: boolean }>();
   const taskMs = testMs("WHITEROOM_TEST_TASK_MS", TASK_MS);
