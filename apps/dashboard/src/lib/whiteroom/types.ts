@@ -762,7 +762,11 @@ export type LadderEntry = string | { id: string; is: string };
  * engine records which calls could use a cheaper one. It holds the notify
  * response but never alerts or blocks.
  */
-export interface ModelRouteParams { ladder: LadderEntry[] }
+export interface ModelRouteParams {
+  ladder: LadderEntry[];
+  /** The rule stopped changing calls on its own and acts as Watch, until it is set to Enforce again. Read only. */
+  suspended?: true;
+}
 export type GovernanceParams = SpendCapParams | LoopBreakerParams | ModelAllowlistParams | ToolListParams | CallRateParams | KeywordParams | SendLimitParams | OutsideThenSendParams | BlockStreakParams | TrimResultsParams | DataDeletionParams | ModelRouteParams;
 
 export interface GovernanceRule {
@@ -820,6 +824,8 @@ export interface GovernanceListResult {
   govV1?: boolean;
   /** The rule types this engine accepts (engine E1); absent from older engines, which take the first six. */
   ruleTypes?: string[];
+  /** Whether a Model routing rule can be set to Enforce on this fleet. Absent from older engines: read as no. */
+  routeEnforce?: boolean;
   /** Stored rules the engine isn't running because it is an older version than the one that added their type. */
   skippedRules?: Array<{ id: string; ruleType: string; mode: string }>;
 }
@@ -859,6 +865,8 @@ export interface RuleActionCounts {
   trimmed?: number;
   /** Calls a Model routing rule found could use a cheaper model (Watch). Never in wouldAct: nothing was caught. Absent from older engines: read as 0. */
   wouldRoute?: number;
+  /** Calls a Model routing rule sent to a cheaper model (Enforce). Never a block. Absent from older engines: read as 0. */
+  routed?: number;
 }
 export interface RuleActionsResult { fleetId: string; totals: RuleActionCounts; byAgent: Record<string, RuleActionCounts>; /** Per rule type, from the same rows as totals (newer engines). */ byRule?: Record<string, RuleActionCounts>; /** Per rule id (gr_…), from the same rows (engine E1a). */ byRuleId?: Record<string, RuleActionCounts> }
 export interface RunRuleAction {
@@ -873,7 +881,7 @@ export interface RunRuleAction {
 }
 
 /** A rule that acted, or would have, on one call (engine PR 298). */
-export interface CallRuleAction { ruleId: string; ruleType: string; ruleName?: string | null; mode: string; response: string; outcome: 'blocked' | 'paused' | 'stopped' | 'notified' | 'would_block' | 'would_route' | 'trimmed' | 'couldnt_check'; reason?: string | null }
+export interface CallRuleAction { ruleId: string; ruleType: string; ruleName?: string | null; mode: string; response: string; outcome: 'blocked' | 'paused' | 'stopped' | 'notified' | 'would_block' | 'would_route' | 'routed' | 'trimmed' | 'couldnt_check'; reason?: string | null }
 
 // -- Runs (engine list_runs / get_run_events; a run is one agent's shift) --
 

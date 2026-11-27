@@ -21,6 +21,10 @@ describe('handover health labels', () => {
     expect(route.said).toBe('made a call that could use a cheaper model');
     expect([route.code, route.tone, route.who]).toEqual(['RTE', 'idle', 'Lead-agent']);
     expect(at({ type: 'route_decided', reason: 'calm_watch', stepsAfter: 1 }).said).toBe('had its run checked by Model routing');
+    const routed = at({ type: 'governance_route', ruleType: 'model_route', reason: 'model_routed' });
+    expect([routed.said, routed.tone]).toEqual(['made a call that went to a cheaper model', 'idle']);
+    const stopped = at({ type: 'route_suspended', watches: 5, bad: 3 });
+    expect([stopped.said, stopped.tone]).toEqual(['had its Model routing rule suspend itself', 'wouldBlock']);
   });
 
   it('handover loop names the new limit from the payload', () => {

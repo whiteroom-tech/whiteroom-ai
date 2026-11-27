@@ -25,7 +25,7 @@ import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
 import {
   canAddSeen, COMMAND_TOOLS_MAX, DELETION_DOCS_URL, domainEntry, domainProblem, domainsHidden, domainTotal, FLOW_TOOLS_MAX, FLOW_WHEN, looksLikeCommandRunner, looksLikeReader, looksLikeSender, SEEN_RESERVED_TEXT, seenFullLine, seenNotOnList, SEND_DOMAINS_MAX, SEND_TOOLS_MAX, toolsFull, toolsWithNoDomain, trims,
 } from '@/lib/controls-view';
-import { AGENT_NOTE, isMarker, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, looksLikeDeleteOrChange, newMarker, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, ladderIds, ladderOf, modeChoices, responseChoices, routes, sendsAlert, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
+import { AGENT_NOTE, isMarker, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, looksLikeDeleteOrChange, newMarker, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, ladderIds, ladderOf, modeChoices, suspended, responseChoices, routes, sendsAlert, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
 import { Chip, field, GroupPicker, InlineSelect, MarkerChip, MODEL_GROUPS, NumberField, ScopeField, ToolPicker } from './pickers';
 import { ReplayEstimate } from './ReplayEstimate';
 
@@ -87,7 +87,7 @@ export function toolEstimateBlocker(p: ToolListParams & { targets?: unknown }): 
   return p.blockedTools.length === 0 ? 'Add a tool first.' : null;
 }
 
-export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fleetTools, onToolPicker, govV1, alertChannel, history, ruleHistory, actors, undoOf, onUndo, fleetDailySpend = null, agentSpend = [], status, startOpen = false, dirty, error, saving, onSave, onDiscard, onClose, onRemove, seen, onSeenRetry, onStaged }: {
+export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fleetTools, onToolPicker, govV1, routeEnforce = false, onResume, alertChannel, history, ruleHistory, actors, undoOf, onUndo, fleetDailySpend = null, agentSpend = [], status, startOpen = false, dirty, error, saving, onSave, onDiscard, onClose, onRemove, seen, onSeenRetry, onStaged }: {
   /** The fleet, for the Estimate under the rule's settings; without it there is none. */
   fleetId?: string;
   authKey?: string;
@@ -106,6 +106,10 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
   /** A tool picker is showing: read the fleet's tools, if not already. */
   onToolPicker: () => void;
   govV1: boolean;
+  /** Whether a Model routing rule can be set to Enforce on this fleet. */
+  routeEnforce?: boolean;
+  /** Turn a Model routing rule that suspended itself back on. */
+  onResume?: () => void;
   /** Whether the fleet has somewhere to send alerts (Slack or Teams); null while unknown. */
   alertChannel: boolean | null;
   /** This rule's own history, newest first. */
@@ -242,6 +246,13 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
       {/* Phone only: the header cuts the name short and has no room for the category. */}
       <p className="gov-edhead__full"><RuleCategory type={rule.ruleType} /><span aria-hidden="true">{RULE_LABELS[rule.ruleType]}</span></p>
       <p className="ctl-status">{status}</p>
+      {/* A rule that stopped itself: said where its status is, with the one way back. */}
+      {suspended(rule) && onResume && (
+        <p className="ctl-warnbox" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 12px' }}>
+          <span style={{ flex: '1 1 200px' }}>This rule suspended itself and is changing no calls. Check the agents it covers, then turn it back on.</span>
+          <button type="button" className="wr-btn wr-btn--secondary wr-btn--h28" disabled={saving || dirty} onClick={onResume}>Turn back on</button>
+        </p>
+      )}
       {rule.sourceRecommendationId && (
         <p style={{ margin: '-12px 0 0', fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>
           From a Diagnosis suggestion · <Link href={ROUTES.performance} style={{ color: 'var(--brand)', fontWeight: 600 }}>see it in Performance</Link>
@@ -521,7 +532,7 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
         <div className="gov-fill" style={{ alignSelf: 'flex-start', display: 'flex', maxWidth: '100%' }}>
           <SegmentedControl<GovernanceMode> label="What happens" value={draft.mode}
             onChange={(m) => onDraft(chooseMode(draft, m, rule, actions, (r) => !waitFor(r)))}
-            options={modeChoices(rule.ruleType).map((m) => ({ value: m, label: MODE_LABEL[m] }))} />
+            options={modeChoices(rule.ruleType, routeEnforce).map((m) => ({ value: m, label: MODE_LABEL[m] }))} />
         </div>
         {/* Outside content, then send data only alerts: fixed text, no choice (DLP spec 3.3). The same for Repeated blocks on a fleet without Pause and Stop. */}
         {draft.mode === 'enforce' && oneAction && (
@@ -548,7 +559,7 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
           </label>
         )}
         <p style={help}>{send && draft.mode === 'enforce' && draft.response === 'notify' ? 'You get an alert the first time a tool sends to a new domain. The call goes through.'
-          : flow && draft.mode === 'enforce' ? 'You get one alert per run. The agent keeps going.' : whatHappensLine(draft)}</p>
+          : flow && draft.mode === 'enforce' ? 'You get one alert per run. The agent keeps going.' : whatHappensLine(draft, routeEnforce)}</p>
         {send && draft.mode === 'enforce' && draft.response === 'block' && (
           <p style={help}>Streamed replies from agents with these tools arrive all at once. Replies on Bedrock can’t be checked yet.</p>
         )}
@@ -573,7 +584,7 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
       <details className="gov-details">
         <summary>What the agent sees</summary>
         <pre style={{ margin: '10px 0 0', background: 'var(--sunk)', borderRadius: 7, padding: 12, fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', lineHeight: 1.6, color: 'var(--tx2)', overflowX: 'auto' }}>
-          {agentGets({ ruleType: rule.ruleType, params: asRule.params, response: draft.response })}
+          {agentGets({ ruleType: rule.ruleType, params: asRule.params, response: draft.response, mode: draft.mode })}
         </pre>
         {draft.response !== 'notify' && <p style={{ ...help, marginTop: 8 }}>{AGENT_NOTE[rule.ruleType]}</p>}
       </details>

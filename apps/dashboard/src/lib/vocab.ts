@@ -26,7 +26,7 @@ export const ENFORCE_TAG: Record<GovernanceResponse, string> = { block: 'Enforce
 /** A rule's mode as its tag reads: Off, Watch, or what it enforces (ENFORCE_TAG). */
 export function modeTagText(rule: { mode: RuleMode; response?: GovernanceResponse; ruleType?: string }): string {
   // Old tool results holds the notify response but never alerts: its tag is plain Enforce.
-  // Nor does Model routing, which isn't offered Enforce at all: a rule that came in enforced never reads as Alert.
+  // Nor does Model routing: enforced, it changes the model and alerts no one.
   if (rule.mode === 'enforce' && (rule.ruleType === 'trim_results' || rule.ruleType === 'model_route')) return MODE_LABEL.enforce;
   return rule.mode === 'enforce' ? ENFORCE_TAG[rule.response ?? 'block'] : MODE_LABEL[rule.mode];
 }
