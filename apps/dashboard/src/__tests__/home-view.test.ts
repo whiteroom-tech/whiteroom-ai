@@ -90,6 +90,9 @@ describe("Home (mockup parity)", () => {
   it("words the week's rules", () => {
     expect(weekRules(tally(2, 0))).toBe("rules blocked 2 calls");
     expect(weekRules(tally(0, 0))).toBe("no rule activity");
+    // Calls that went to a cheaper model are activity, never "caught": said on their own, and left out beside a block.
+    expect(weekRules({ ...tally(0, 0), routed: 12 })).toBe("12 calls went to a cheaper model");
+    expect(weekRules({ ...tally(2, 0), routed: 12 })).toBe("rules blocked 2 calls");
     // Spend and rules are said each when known.
     expect(weekSentence({ ...WEEK, costUsd: null })).toBe("rules would have acted 120 times");
     expect(weekSentence({ ...WEEK, rules: null })).toBe("$3.17 spent");

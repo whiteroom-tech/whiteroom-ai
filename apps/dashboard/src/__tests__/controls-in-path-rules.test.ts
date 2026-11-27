@@ -278,14 +278,22 @@ describe('trimmed in the fleet’s rule-action counts', () => {
     expect(ruleOutcomes(t)).toBe('2 blocked · 1 alert · 40 trimmed · 5 would have acted');
   });
 
-  it('calls sent to a cheaper model are said in words, and never counted as caught', () => {
+  it('calls went to a cheaper model are said in words, and never counted as caught', () => {
     const t = tallyFromRuleActions(counts({ blocked: 2, wouldAct: 5, routed: 12 }));
     expect(t).toMatchObject({ blocks: 2, wouldBlocks: 5, routed: 12 });
     // Nothing was wrong with them: the total that reads as "caught" leaves them out.
     expect(tallyTotal(t)).toBe(7);
-    expect(tallyShort(t)).toBe('2 blocked · 12 sent to a cheaper model · 5 would have acted');
-    expect(tallyWords(t).map((w) => [w.text, w.tone])).toEqual([['2 blocked', 'bad'], ['12 sent to a cheaper model', 'tx2'], ['5 would have acted (Watch)', 'warn']]);
-    expect(ruleOutcomes(t)).toBe('2 blocked · 12 sent to a cheaper model · 5 would have acted');
+    expect(tallyShort(t)).toBe('2 blocked · 12 went to a cheaper model · 5 would have acted');
+    expect(tallyWords(t).map((w) => [w.text, w.tone])).toEqual([['2 blocked', 'bad'], ['12 went to a cheaper model', 'tx2'], ['5 would have acted (Watch)', 'warn']]);
+    expect(ruleOutcomes(t)).toBe('2 blocked · 12 went to a cheaper model · 5 would have acted');
+    // On their own: said, with nothing caught beside them, also where a zero is the answer.
+    const only = tallyFromRuleActions(counts({ routed: 12 }));
+    expect(tallyTotal(only)).toBe(0);
+    expect(ruleOutcomes(only)).toBe('12 went to a cheaper model');
+    expect(ruleOutcomes(only, true)).toBe('0 blocked · 12 went to a cheaper model · 0 would have acted');
+    // Through the counts Performance and Home read: in the fleet's total and each agent's.
+    const res = countsFromRuleActions({ fleetId: 'f', totals: counts({ routed: 12 }), byAgent: { 'lead-agent': counts({ routed: 12 }) } }, governanceCounts([]).byRule);
+    expect([res.routed, res.byAgent['lead-agent'].routed]).toEqual([12, 12]);
     // Calls that only could have used one changed nothing and are not in the tally at all.
     expect(tallyFromRuleActions(counts({ wouldRoute: 9 }))).not.toHaveProperty('routed');
     expect(ruleOutcomes(tallyFromRuleActions(counts({ wouldRoute: 9 })))).toBe('');

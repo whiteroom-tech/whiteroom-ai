@@ -313,8 +313,8 @@ export function countsFromRuleActions(res: RuleActionsResult, fallbackByRule: Go
   return { ...tallyFromRuleActions(res.totals), byRule, byAgent: Object.fromEntries(Object.entries(res.byAgent).map(([a, c]) => [a, tallyFromRuleActions(c)])) };
 }
 
-/** What a routed call is called after its count: "12 sent to a cheaper model". */
-export const ROUTED_WORDS = 'sent to a cheaper model';
+/** What a routed call is called after its count, as Runs and Performance say it: "12 went to a cheaper model". */
+export const ROUTED_WORDS = 'went to a cheaper model';
 
 /** Every action in a tally, in words, worst first: "3 blocked", "1 paused", "2 would have acted (Watch)". */
 export function tallyWords(t: GovernanceTally): { text: string; tone: 'bad' | 'warn' | 'tx2' }[] {

@@ -9,7 +9,7 @@ import type { AgentHold, AgentInfo, FleetHourlyResult, FleetReport } from '@/lib
 import { usePoll } from '@/hooks/usePoll';
 import { safeGet, safeSet } from '@/lib/safe-storage';
 import { HELP } from '@/lib/metric-definitions';
-import { tallyFromRuleActions, tallyTotal, type GovernanceTally } from '@/lib/governance';
+import { ROUTED_WORDS, tallyFromRuleActions, tallyTotal, type GovernanceTally } from '@/lib/governance';
 import { AGENT_SORTS, FIND_FROM, homeWeek, keepLastGood, loadWeekReads, weekFailures, shownAgents, TABLE_FROM, WEEK_POLL_MS, type AgentSort, type AgentWeek, type HomeWeek } from '@/lib/home-agents';
 import { CHANGE_TYPES, dayLabel, lastActiveDay, latestChanges, ruleOutcomes, type ChangeRow } from '@/lib/home-changes';
 import { auditLogByType } from '@/lib/batched-reads';
@@ -523,7 +523,9 @@ export function weekRules(t: GovernanceTally): string {
   if (t.wouldBlocks) bits.push(`would have acted ${fmtCount(t.wouldBlocks)} ${plural(t.wouldBlocks, 'time')}`);
   if (bits.length) return `rules ${bits.join(' and ')}`;
   const n = tallyTotal(t);
-  return n ? `rules acted ${fmtCount(n)} ${plural(n, 'time')}` : 'no rule activity';
+  if (n) return `rules acted ${fmtCount(n)} ${plural(n, 'time')}`;
+  // Nothing caught, but calls did go to a cheaper model: that is activity, and the table below says it too.
+  return t.routed ? `${calls(t.routed)} ${ROUTED_WORDS}` : 'no rule activity';
 }
 
 /** Skeleton blocks at the final sizes while the first load runs; no spinner. */
