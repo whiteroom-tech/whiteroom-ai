@@ -154,3 +154,20 @@ test("OpenAI paths map with the /v1 base", () => {
 test("failOpen without providerBaseUrl is refused at setup", () => {
   assert.throws(() => whiteroomFetch({ failOpen: true }), /providerBaseUrl/);
 });
+
+test("the timeout stops once WhiteRoom answers: a slow streamed reply isn't cut off", async () => {
+  const f = (url, init = {}) => {
+    const stream = new ReadableStream({
+      async start(ctrl) {
+        ctrl.enqueue(new TextEncoder().encode("part1 "));
+        await new Promise((r) => setTimeout(r, 60)); // longer than the timeout below
+        if (init.signal?.aborted) return ctrl.error(init.signal.reason);
+        ctrl.enqueue(new TextEncoder().encode("part2"));
+        ctrl.close();
+      },
+    });
+    return Promise.resolve(new Response(stream, { status: 200 }));
+  };
+  const res = await send(whiteroomFetch({ fetch: f, failOpen: true, providerBaseUrl: ANTHROPIC, whiteroomTimeoutMs: 20 }));
+  assert.equal(await res.text(), "part1 part2");
+});

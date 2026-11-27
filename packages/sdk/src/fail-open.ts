@@ -48,7 +48,6 @@ export interface WhiteRoomFetchOptions {
   fetch?: typeof fetch;
 }
 
-
 /** True when a reply came from the WhiteRoom engine (its error bodies carry a `whiteroom` field). */
 async function fromWhiteRoom(res: Response): Promise<boolean> {
   try {
@@ -121,8 +120,12 @@ export function whiteroomFetch(options: WhiteRoomFetchOptions = {}): typeof fetc
       return base(direct, { ...init, method, body, signal: signal ?? undefined, headers: withoutWhiteRoomHeaders(headers) });
     };
 
-    const timeout = options.whiteroomTimeoutMs ? AbortSignal.timeout(options.whiteroomTimeoutMs) : null;
-    const wrSignal = timeout && signal ? anySignal(signal, timeout) : (timeout ?? signal ?? undefined);
+    // The timeout covers only the wait for WhiteRoom to start answering. It's
+    // cleared once headers arrive, so a long streamed reply isn't cut off.
+    const timeoutMs = options.whiteroomTimeoutMs;
+    const timer = timeoutMs ? new AbortController() : null;
+    const timerId = timer ? setTimeout(() => timer.abort(new DOMException("WhiteRoom didn't answer in time", "TimeoutError")), timeoutMs) : undefined;
+    const wrSignal = timer && signal ? anySignal(signal, timer.signal) : (timer?.signal ?? signal ?? undefined);
 
     let res: Response;
     try {
@@ -130,7 +133,9 @@ export function whiteroomFetch(options: WhiteRoomFetchOptions = {}): typeof fetc
     } catch (err) {
       // The caller cancelled: don't turn that into a provider call.
       if (signal?.aborted) throw err;
-      return sendDirect(timeout?.aborted ? "timeout" : "unreachable");
+      return sendDirect(timer?.signal.aborted ? "timeout" : "unreachable");
+    } finally {
+      clearTimeout(timerId);
     }
     if (res.status === 503 && !(await fromWhiteRoom(res))) {
       await res.body?.cancel().catch(() => {});
