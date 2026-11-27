@@ -57,6 +57,13 @@ describe('routeWatchTotal', () => {
       day({ applied: true, calls: 100, baselineMicros: 50_000_000, costMicros: 25_000_000 }),
     ])).toEqual({ calls: 41, unpricedCalls: 3, baselineMicros: 12_400_000, costMicros: 6_200_000, routed: { calls: 100, unpricedCalls: 0, baselineMicros: 50_000_000, costMicros: 25_000_000 } });
   });
+  it('carries the measured comparison when the engine sends one', () => {
+    const net = { routed: { periods: 40, calls: 400, costMicros: 28_000_000 }, control: { periods: 30, calls: 300, costMicros: 30_000_000 }, unpricedPeriods: 0, savedMicros: 12_000_000 };
+    expect(routeWatchTotal([], net)?.net).toEqual(net);
+    expect(routeWatchTotal([])).not.toHaveProperty('net');
+    // The per-day rows weren't read: the comparison still shows, with no calls beside it.
+    expect(routeWatchTotal(undefined, net)).toEqual({ calls: 0, unpricedCalls: 0, baselineMicros: 0, costMicros: 0, net });
+  });
   it('is nothing routed for an empty list, and unknown when the engine sent none', () => {
     expect(routeWatchTotal([])).toEqual({ calls: 0, unpricedCalls: 0, baselineMicros: 0, costMicros: 0, routed: { calls: 0, unpricedCalls: 0, baselineMicros: 0, costMicros: 0 } });
     expect(routeWatchTotal(undefined)).toBeNull();

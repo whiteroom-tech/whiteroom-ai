@@ -2,7 +2,7 @@
 // tests guard the real implementation instead of a hand-mirrored copy that
 // can silently drift out of sync with the dashboard.
 
-import type { CacheSummary, SavingsTotals } from './whiteroom/types';
+import type { RouteNet, CacheSummary, SavingsTotals } from './whiteroom/types';
 import { addDays, dayKey } from './zone-time';
 
 /** The viewer's last `days` calendar days ending today, oldest first (calendar days, so DST can't skip one). */
@@ -51,19 +51,23 @@ export function cacheSavedTotal(days: Array<{ usdMicros: number; unpricedReadTok
 
 /** A count of calls and what the same usage costs on the model asked for (baseline) and on the cheaper one (cost). */
 export interface RouteTotals { calls: number; unpricedCalls: number; baselineMicros: number; costMicros: number }
-/** Model routing in a range: the calls that could use a cheaper model (Watch), and under `routed` the ones that went to one (Enforce). */
-export interface RouteWatch extends RouteTotals { routed?: RouteTotals }
+/**
+ * Model routing in a range: the calls that could use a cheaper model (Watch), under `routed` the ones that went
+ * to one (Enforce), and under `net` what that saved, measured against runs left on the model asked for.
+ */
+export interface RouteWatch extends RouteTotals { routed?: RouteTotals; net?: RouteNet }
 
-/** The range's figures summed from the engine's per-day rows, Watch and routed apart; null when the engine sends none or its read failed. */
-export function routeWatchTotal(days: Array<{ applied: boolean; calls: number; unpricedCalls: number; baselineMicros: number; costMicros: number }> | undefined): RouteWatch | null {
-  if (!days) return null;
+/** The range's figures summed from the engine's per-day rows, Watch and routed apart, with the measured comparison when there is one; null when the engine sends neither. */
+export function routeWatchTotal(days: Array<{ applied: boolean; calls: number; unpricedCalls: number; baselineMicros: number; costMicros: number }> | undefined, net?: RouteNet): RouteWatch | null {
   const zero = (): RouteTotals => ({ calls: 0, unpricedCalls: 0, baselineMicros: 0, costMicros: 0 });
+  // The two are read apart: the measured comparison still shows when the per-day rows couldn't be read.
+  if (!days) return net ? { ...zero(), net } : null;
   const watch = zero(), routed = zero();
   for (const d of days) {
     const to = d.applied ? routed : watch;
     to.calls += d.calls; to.unpricedCalls += d.unpricedCalls; to.baselineMicros += d.baselineMicros; to.costMicros += d.costMicros;
   }
-  return { ...watch, routed };
+  return { ...watch, routed, ...(net && { net }) };
 }
 
 /** Prompt-cache figures for the Performance page. */

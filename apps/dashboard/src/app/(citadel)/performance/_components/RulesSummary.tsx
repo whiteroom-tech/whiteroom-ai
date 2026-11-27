@@ -6,7 +6,7 @@
  * activity is on Home's agents table.
  */
 import Link from 'next/link';
-import type { GovernanceRule, RuleActionCounts, UnknownGovernanceRule } from '@/lib/whiteroom/types';
+import type { GovernanceRule, RouteNet, RuleActionCounts, UnknownGovernanceRule } from '@/lib/whiteroom/types';
 import { RULE_LABELS, type GovernanceCounts } from '@/lib/governance';
 import type { RouteTotals, RouteWatch } from '@/lib/analytics-metrics';
 import { topCaught } from '@/lib/performance-overview';
@@ -69,6 +69,31 @@ export function RulesSummary({ counts, byRuleId, rules, unknownRules, unavailabl
       )}
       {routeWatch && routeWatch.calls > 0 && <RouteRow totals={routeWatch} mode="watch" rules={rules} />}
       {routeWatch?.routed && routeWatch.routed.calls > 0 && <RouteRow totals={routeWatch.routed} mode="enforce" rules={rules} />}
+      {routeWatch?.net && routeWatch.net.routed.periods + routeWatch.net.control.periods + routeWatch.net.unpricedPeriods > 0 && <RouteNetRow net={routeWatch.net} />}
+    </div>
+  );
+}
+
+/**
+ * Model routing, measured: what the runs it routed cost against the runs it
+ * left on the model asked for. Signed: a loss is said as a loss. Until there
+ * are enough runs of each kind there is no figure, only the counts.
+ */
+function RouteNetRow({ net }: { net: RouteNet }) {
+  const { routed, control, savedMicros, unpricedPeriods } = net;
+  const runs = <>{fmtCount(routed.periods)} routed {plural(routed.periods, 'run')}, {fmtCount(control.periods)} left on the model asked for</>;
+  return (
+    <div className="wr-rules-route">
+      <div className="wr-ctrl__row">
+        <span className="wr-ctrl__name">{RULE_LABELS.model_route} · measured</span>
+        <span className="wr-cap">
+          {savedMicros === null
+            ? <>Not enough runs to measure yet · {runs} · more of each needed</>
+            : <><strong className="wr-strong">{fmtCost(Math.abs(savedMicros))}</strong> {savedMicros >= 0 ? 'saved' : 'more spent'} · {runs}</>}
+          {unpricedPeriods > 0 && <> · {fmtCount(unpricedPeriods)} not priced</>}
+        </span>
+      </div>
+      <p className="wr-cap" style={{ margin: 0, padding: '0 0 10px' }}>What routed runs cost against runs left on the model asked for.{savedMicros !== null && ' It isn’t counted in what WhiteRoom saved.'}</p>
     </div>
   );
 }

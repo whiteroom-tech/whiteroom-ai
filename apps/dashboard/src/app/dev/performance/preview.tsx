@@ -271,7 +271,7 @@ export function PerformancePreview() {
             <section aria-labelledby="pv-control">
               <SectionHeader id="pv-control" title="Rules" sub="What your rules caught." meta={<>{label} · <a href="#" className="wr-link">See in Runs →</a> · <a href="#" className="wr-link">Manage in Controls →</a></>} />
               <RulesSummary counts={COUNTS} byRuleId={sample === 'quiet' ? BY_RULE_ID : undefined} rules={RULES} unknownRules={UNKNOWN_RULES} unavailable={false}
-                routeWatch={{ calls: 41, unpricedCalls: 2, baselineMicros: 12_400_000, costMicros: 6_200_000, routed: { calls: 12, unpricedCalls: 0, baselineMicros: 8_000_000, costMicros: 3_000_000 } }} />
+                routeWatch={{ calls: 41, unpricedCalls: 2, baselineMicros: 12_400_000, costMicros: 6_200_000, routed: { calls: 12, unpricedCalls: 0, baselineMicros: 8_000_000, costMicros: 3_000_000 }, net: { routed: { periods: 40, calls: 400, costMicros: 28_000_000 }, control: { periods: 30, calls: 300, costMicros: 30_000_000 }, unpricedPeriods: 0, savedMicros: 12_000_000 } }} />
             </section>
           </>
         )}

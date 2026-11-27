@@ -190,7 +190,7 @@ export function PerformancePage({ retentionDays }: {
         weekHourly: weekHourlyFrom(holdsWeek, hourlyShown, weekHourlyRead ? weekHourlyOwn : cachedWeek),
         usdByDay: week?.savingsByDay ? savedByDay(week.savingsByDay, week.cacheByDay) : null,
         cacheSaved: cacheSavedTotal(audit?.cacheByDay),
-        routeWatch: routeWatchTotal(audit?.routeByDay),
+        routeWatch: routeWatchTotal(audit?.routeByDay, audit?.routeNet),
       };
       const snapshot = {
         indexData: idx,

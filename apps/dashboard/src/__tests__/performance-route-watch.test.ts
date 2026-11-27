@@ -57,6 +57,43 @@ describe('Model routing on Performance', () => {
     expect(both).toContain('3 blocked · 141 would have acted');
   });
 
+  describe('the measured line', () => {
+    const none = { calls: 0, unpricedCalls: 0, baselineMicros: 0, costMicros: 0 };
+    const net = (routed: number, control: number, savedMicros: number | null, unpricedPeriods = 0) => ({ ...none, net: { routed: { periods: routed, calls: routed * 10, costMicros: 1 }, control: { periods: control, calls: control * 10, costMicros: 1 }, unpricedPeriods, savedMicros } });
+
+    it('says what routing saved against the runs it left alone, and that it isn’t counted in savings', () => {
+      const t = text(render(net(40, 30, 12_400_000)));
+      expect(t).toContain('Model routing · measured $12.40 saved · 40 routed runs, 30 left on the model asked for');
+      expect(t).toContain('What routed runs cost against runs left on the model asked for. It isn’t counted in what WhiteRoom saved.');
+    });
+
+    it('says a loss as a loss', () => {
+      expect(text(render(net(30, 30, -6_000_000)))).toContain('$6.00 more spent · 30 routed runs, 30 left on the model asked for');
+    });
+
+    it('gives the counts and no figure until there are enough runs of each kind', () => {
+      const t = text(render(net(12, 1, null)));
+      expect(t).toContain('Not enough runs to measure yet · 12 routed runs, 1 left on the model asked for · more of each needed');
+      // No figure, so nothing is said about savings.
+      expect(t).not.toContain('counted in what WhiteRoom saved');
+      expect(t).not.toContain('$');
+    });
+
+    it('says how many runs had a call with no price, also when that is all of them', () => {
+      expect(text(render(net(40, 30, 12_400_000, 3)))).toContain('$12.40 saved · 40 routed runs, 30 left on the model asked for · 3 not priced');
+      expect(text(render(net(0, 0, null, 5)))).toContain('Not enough runs to measure yet · 0 routed runs, 0 left on the model asked for · more of each needed · 5 not priced');
+    });
+
+    it('says nothing saved as that', () => {
+      expect(text(render(net(30, 30, 0)))).toContain('$0.00 saved · 30 routed runs');
+    });
+
+    it('shows nothing with no runs of either kind, or from an engine that sends none', () => {
+      expect(text(render(net(0, 0, null)))).not.toContain('measured');
+      expect(text(render(none))).not.toContain('measured');
+    });
+  });
+
   it('shows nothing when no call could, the engine sent none, or its read failed', () => {
     for (const none of [{ calls: 0, unpricedCalls: 0, baselineMicros: 0, costMicros: 0 }, null, undefined]) {
       expect(text(render(none))).not.toContain('cheaper model');
