@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement as h } from 'react';
 import { createRoot } from 'react-dom/client';
-import { GroupPicker, InlineSelect, MarkerChip, ScopeField, TOOL_GROUPS, ToolPicker, toolGroups, type PickGroup } from '@/app/(citadel)/controls/_components/pickers';
+import { GroupPicker, InlineSelect, MarkerChip, ScopeField, TOOL_GROUPS, ToolPicker, toolGroups, typedEntries, type PickGroup } from '@/app/(citadel)/controls/_components/pickers';
 import { looksLikeDeleteOrChange } from '@/lib/controls-view';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -244,5 +244,19 @@ describe('MarkerChip', () => {
     expect(el.textContent).toContain('wrmk3f9a…d8a6');
     root.unmount();
     vi.useRealTimers();
+  });
+});
+
+describe('typedEntries: which names on a model list could be a deployment', () => {
+  it('leaves out menu models and anything that reads as a maker\u2019s model ID, whatever its case', () => {
+    const ids = ['gpt-4.1', 'gpt-4o', 'gpt-4o-mini-2024-07-18', 'gpt-6.1-sol', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'Claude-Haiku-4-5', 'gpt-5.4-nano', 'o3', 'o3-mini', 'o4-mini-2025-04-16', 'gemini-2.5-pro', 'azure/gpt-4o', 'us.anthropic.claude-haiku-4-5-20251001-v1:0', 'eu.amazon.nova-pro-v1:0', 'apac.anthropic.claude-sonnet-4-6', 'global.anthropic.claude-sonnet-4-6', 'anthropic.claude-sonnet-4-6', 'amazon.nova-lite-v1:0', 'meta.llama3-70b', 'mistral.mistral-large'];
+    expect(typedEntries(ids)).toEqual([]);
+  });
+  it('keeps names an owner made up, also ones that only look a little like a model ID, and any entry that says what it runs', () => {
+    const names = ['prod-chat', 'my-gpt-4', 'opus', 'o-series', 'team-claude', 'usa.prod', 'gpt-4-prod', 'gpt-prod', 'o3-team', 'o3mini-east', 'claude-prod', 'claude-sonnet-team', 'gpt-4.1-mini-eastus', 'azure/prod-chat', 'gemini-team', 'gemini-2-prod', 'anthropic.prod.chat', 'us.team.claude', 'anthropic.prod', 'amazon.team-chat', 'us.anthropic.prod-v1', 'mistral.prod'];
+    expect(typedEntries(names)).toEqual(names);
+    expect(typedEntries([{ id: 'gpt-4.1', is: 'gpt-4.1' }, { id: 'prod', is: 'gpt-4.1-mini' }])).toHaveLength(2);
+    // A real ID in a shape the pattern doesn't know gets a row too: its owner can leave it at "Not a deployment".
+    expect(typedEntries(['gpt-4-turbo', 'chatgpt-4o-latest'])).toHaveLength(2);
   });
 });

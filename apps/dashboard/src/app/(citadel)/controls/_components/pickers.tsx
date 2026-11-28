@@ -224,8 +224,23 @@ function FieldSelect({ label, value, onChange, style, children }: { label: strin
 const RUNS_GROUPS = MODEL_GROUPS.filter((g) => g.label === 'Anthropic' || g.label === 'OpenAI');
 const LISTED_MODELS = new Set(MODEL_GROUPS.flatMap((g) => g.options.map((o) => o.id)));
 
-/** The entries of a model list that could be a deployment: typed names, and any that already say what they run. */
-export const typedEntries = (ladder: LadderEntry[]): LadderEntry[] => ladder.filter((e) => typeof e !== 'string' || !LISTED_MODELS.has(e));
+/**
+ * A typed name that reads as a maker's own model ID, which needs no model
+ * picked for it. The whole name has to fit: "gpt-4.1-mini" and "o3" do,
+ * "gpt-4-prod" and "o3-team" are names an owner made up.
+ */
+const DATED = '(-\\d{4}-\\d{2}-\\d{2}|-\\d{8})?';
+const OPENAI_ID = `gpt-\\d+(\\.\\d+)?[a-z]?(-(mini|nano|sol|luna|terra|astra))?${DATED}|o\\d(-(mini|pro))?${DATED}`;
+const MODEL_ID = new RegExp([
+  `^(azure/)?(${OPENAI_ID})$`,
+  `^claude-(opus|sonnet|haiku|fable)(-\\d+){1,3}$`,
+  '^gemini-\\d+(\\.\\d+)?-(pro|flash)(-lite)?$',
+  // A Bedrock ID: a geography or none, the maker and its model family, and the version.
+  '^((us|eu|apac|global)\\.)?(anthropic\\.claude-|amazon\\.nova-|meta\\.llama|mistral\\.mistral-)[a-z0-9-]+(-v\\d+(:\\d+)?)?$',
+].join('|'), 'i');
+
+/** The entries of a model list that could be a deployment: names that aren't a model ID, and any that already say what they run. */
+export const typedEntries = (ladder: LadderEntry[]): LadderEntry[] => ladder.filter((e) => typeof e !== 'string' || !(LISTED_MODELS.has(e) || MODEL_ID.test(e)));
 
 /**
  * For each typed name on a model list, the model it runs. A deployment is
