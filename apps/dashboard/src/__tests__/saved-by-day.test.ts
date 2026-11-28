@@ -34,14 +34,24 @@ describe('Performance › Saved by WhiteRoom', async () => {
     summary: { totalCalls: 1, totalCost: 0, avgLatencyMs: null, errorRate: 0, models: [], cache: { freshInputTokens: 0, readTokens: 0, writeTokens: 0, readSavedMicros: 900_000, writePremiumMicros: 0, unpricedReadTokens: 0 } },
     recommendations: [], priceInfo: { version: '1', ageDays: 1, stale: false, expired: false },
   };
-  const saved = (cacheSaved: object | null) => renderToStaticMarkup(h(IndexView, {
+  const saved = (cacheSaved: object | null, more: object = {}) => renderToStaticMarkup(h(IndexView, {
     data, hourlyData: { hourly: [] }, auditFailed: false, govSavings: { tokensSaved: 10, costSaved: 1, partial: false }, govCounts: null,
-    savingsDays: null, agentIds: null, rangeLabel: 'last 24 h', fleetId: 'f1', authKey: 'k', cacheSaved,
+    savingsDays: null, agentIds: null, rangeLabel: 'last 24 h', fleetId: 'f1', authKey: 'k', cacheSaved, ...more,
     onSelectAgent: () => {}, onSelectEvidence: () => {}, onFeedback: async () => 'done', feedbackLoading: null, feedbackError: null,
   } as never)).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 
   it('adds the per-day cache figures (what billing sums), not the range\'s own', () => {
     expect(saved({ micros: 500_000, unpricedReadTokens: 0 })).toMatch(/Saved by WhiteRoom \$1\.50/);
+  });
+  it('with routed calls, Saved in total adds Model routing to the same figure the card shows; without them the row is absent', () => {
+    const routeWatch = { calls: 0, unpricedCalls: 0, baselineMicros: 0, costMicros: 0, routed: { calls: 10, unpricedCalls: 0, baselineMicros: 9_000_000, costMicros: 3_000_000 } };
+    const page = saved({ micros: 500_000, unpricedReadTokens: 0 }, { routeWatch });
+    expect(page).toMatch(/Saved by WhiteRoom \$1\.50/);
+    expect(page).toContain('Saved in total $7.50 · $1.50 from less input sent and caching · $6.00 from Model routing (estimate)');
+    expect(saved({ micros: 500_000, unpricedReadTokens: 0 })).not.toContain('Saved in total');
+    // (The Rules rows name the total in their captions; the row itself is the one with a figure.)
+    // The figures couldn't be read: no total made from half of them.
+    expect(saved({ micros: 500_000, unpricedReadTokens: 0 }, { routeWatch, auditFailed: true })).not.toMatch(/Saved in total [−$]/);
   });
   it('falls back to the range\'s cache figure on an engine without the split', () => {
     expect(saved(null)).toMatch(/Saved by WhiteRoom \$1\.90/);

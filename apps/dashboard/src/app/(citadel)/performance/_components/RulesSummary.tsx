@@ -68,7 +68,7 @@ export function RulesSummary({ counts, byRuleId, rules, unknownRules, unavailabl
         </div>
       )}
       {routeWatch && routeWatch.calls > 0 && <RouteRow totals={routeWatch} mode="watch" rules={rules} />}
-      {routeWatch?.routed && routeWatch.routed.calls + (routeWatch.routed.failedCalls ?? 0) + (routeWatch.routed.refusedCalls ?? 0) > 0 && <RouteRow totals={routeWatch.routed} mode="enforce" rules={rules} />}
+      {routeWatch?.routed && routeWatch.routed.calls + (routeWatch.routed.failedCalls ?? 0) + (routeWatch.routed.refusedCalls ?? 0) > 0 && <RouteRow totals={routeWatch.routed} mode="enforce" rules={rules} measured={typeof routeWatch.net?.savedMicros === 'number'} />}
       {routeWatch?.net && routeWatch.net.routed.periods + routeWatch.net.control.periods + routeWatch.net.unpricedPeriods > 0 && <RouteNetRow net={routeWatch.net} />}
     </div>
   );
@@ -93,7 +93,7 @@ function RouteNetRow({ net }: { net: RouteNet }) {
           {unpricedPeriods > 0 && <> · {fmtCount(unpricedPeriods)} not priced</>}
         </span>
       </div>
-      <p className="wr-cap" style={{ margin: 0, padding: '0 0 10px' }}>What routed runs cost against runs left on the model asked for.{savedMicros !== null && ' It isn’t counted in what WhiteRoom saved.'}</p>
+      <p className="wr-cap" style={{ margin: 0, padding: '0 0 10px' }}>What routed runs cost against runs left on the model asked for.{savedMicros !== null && ' It is in Saved in total, under Cost, and not in Saved by WhiteRoom.'}</p>
     </div>
   );
 }
@@ -105,7 +105,7 @@ function RouteNetRow({ net }: { net: RouteNet }) {
  * The dollars are the same usage at list prices, so neither row is a saving
  * and neither is added to one.
  */
-function RouteRow({ totals, mode, rules }: { totals: RouteTotals; mode: 'watch' | 'enforce'; rules: GovernanceRule[] | null }) {
+function RouteRow({ totals, mode, rules, measured = false }: { totals: RouteTotals; mode: 'watch' | 'enforce'; rules: GovernanceRule[] | null; /** The measured row is showing: the total uses that figure, not this row's difference. */ measured?: boolean }) {
   const routed = mode === 'enforce';
   // At least one call with a price: the dollars and the note about them show together or not at all.
   const hasDollars = totals.calls > totals.unpricedCalls;
@@ -131,7 +131,7 @@ function RouteRow({ totals, mode, rules }: { totals: RouteTotals; mode: 'watch' 
         ? <Link href={`${ROUTES.controls}?rule=${encodeURIComponent(own[0].id)}`} className="wr-ctrl__row">{inner}</Link>
         : <div className="wr-ctrl__row">{inner}</div>}
       {/* A note on the dollars: only where the row has some. */}
-      {hasDollars && <p className="wr-cap" style={{ margin: 0, padding: '0 0 10px' }}>{routed ? 'The same usage at list prices. It isn’t counted in what WhiteRoom saved.' : 'The same usage at list prices. Nothing was changed, so this isn’t a saving.'}</p>}
+      {hasDollars && <p className="wr-cap" style={{ margin: 0, padding: '0 0 10px' }}>{routed ? `The same usage at list prices.${measured ? '' : ' Until enough runs are measured, the difference is the estimate in Saved in total, under Cost.'}` : 'The same usage at list prices. Nothing was changed, so this isn’t a saving.'}</p>}
     </div>
   );
 }

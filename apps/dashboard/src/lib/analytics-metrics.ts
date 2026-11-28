@@ -77,6 +77,30 @@ export function routeWatchTotal(days: Array<{ applied: boolean; calls: number; u
   return { ...watch, routed, ...(net && { net }) };
 }
 
+/** What Model routing saved in a range, for the total beside Saved by WhiteRoom. */
+export interface RouteSaved {
+  /** Signed: negative when the routed runs cost more. */
+  micros: number;
+  /** Measured against runs left on the model asked for. False: an estimate, the same calls at the two models' list prices. */
+  measured: boolean;
+  /** An estimate with some routed calls left out for having no price: a lower bound. Never set on a measured figure, where an unpriced run is left out of both sides. */
+  partial: boolean;
+}
+
+/**
+ * The routing figure to show: the measured one once there are enough runs of
+ * each kind, and until then the price difference of the calls that went to a
+ * cheaper model, as an estimate. Null when no call was routed and nothing was
+ * measured: there is nothing to add.
+ */
+export function routeSaved(route: RouteWatch | null | undefined): RouteSaved | null {
+  const measured = route?.net?.savedMicros;
+  if (typeof measured === 'number') return { micros: measured, measured: true, partial: false };
+  const routed = route?.routed;
+  if (!routed || routed.calls <= routed.unpricedCalls) return null;
+  return { micros: routed.baselineMicros - routed.costMicros, measured: false, partial: routed.unpricedCalls > 0 };
+}
+
 /** Prompt-cache figures for the Performance page. */
 export interface CacheFigures {
   /** Read savings less the write premium, never below zero (micro-dollars): caching WhiteRoom added only. */
