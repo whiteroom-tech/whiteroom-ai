@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement as h } from 'react';
 import { createRoot } from 'react-dom/client';
-import { GroupPicker, InlineSelect, MarkerChip, ScopeField, TOOL_GROUPS, ToolPicker, toolGroups, type PickGroup } from '@/app/(citadel)/controls/_components/pickers';
+import { GroupPicker, InlineSelect, MarkerChip, ScopeField, TOOL_GROUPS, ToolPicker, toolGroups, typedEntries, type PickGroup } from '@/app/(citadel)/controls/_components/pickers';
 import { looksLikeDeleteOrChange } from '@/lib/controls-view';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -244,5 +244,17 @@ describe('MarkerChip', () => {
     expect(el.textContent).toContain('wrmk3f9a…d8a6');
     root.unmount();
     vi.useRealTimers();
+  });
+});
+
+describe('typedEntries: which names on a model list could be a deployment', () => {
+  it('leaves out menu models and anything that reads as a maker\u2019s model ID, whatever its case', () => {
+    const ids = ['gpt-4.1', 'claude-sonnet-4-6', 'Claude-Haiku-4-5', 'gpt-5.4-nano', 'o3-mini', 'gemini-2.5-pro', 'azure/gpt-4o', 'us.anthropic.claude-haiku-4-5-20251001-v1:0', 'eu.amazon.nova-pro-v1:0', 'apac.anthropic.claude-sonnet-4-6', 'global.anthropic.claude-sonnet-4-6', 'anthropic.claude-sonnet-4-6', 'amazon.nova-lite-v1:0', 'meta.llama3-70b', 'mistral.mistral-large'];
+    expect(typedEntries(ids)).toEqual([]);
+  });
+  it('keeps names an owner made up, also ones that only look a little like a model ID, and any entry that says what it runs', () => {
+    const names = ['prod-chat', 'my-gpt-4', 'opus', 'o-series', 'team-claude', 'usa.prod'];
+    expect(typedEntries(names)).toEqual(names);
+    expect(typedEntries([{ id: 'gpt-4.1', is: 'gpt-4.1' }, { id: 'prod', is: 'gpt-4.1-mini' }])).toHaveLength(2);
   });
 });
