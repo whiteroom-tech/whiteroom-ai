@@ -29,9 +29,9 @@ export function SavedInTotal({ whiteRoomMicros, partial, route }: { whiteRoomMic
       <div className="wr-ctrl__row" style={{ borderBottom: 0, padding: 0 }}>
         <span className="wr-ctrl__name">Saved in total</span>
         <span className="wr-cap">
-          <strong className="wr-strong" style={{ color: total > 0 ? 'var(--ok)' : undefined }}>{total < 0 && '−'}{fmtCost(Math.abs(total))}{partialMark(partial)}</strong>
+          <strong className="wr-strong" style={{ color: total > 0 ? 'var(--ok)' : undefined }}>{total < 0 && '−'}{fmtCost(Math.abs(total))}{partialMark(partial || route.partial)}</strong>
           {' '}· {fmtCost(whiteRoomMicros)} from less input sent and caching
-          {' '}· {fmtCost(Math.abs(route.micros))} {route.micros < 0 ? 'more spent by' : 'from'} Model routing{!route.measured && ' (estimate)'}
+          {' '}· {fmtCost(Math.abs(route.micros))} {route.micros < 0 ? 'more spent by' : 'from'} Model routing{partialMark(route.partial)}{!route.measured && ' (estimate)'}
         </span>
       </div>
       <p className="wr-cap" style={{ margin: '6px 0 0' }}>

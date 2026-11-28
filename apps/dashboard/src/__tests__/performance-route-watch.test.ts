@@ -133,11 +133,11 @@ describe('Saved in total: Saved by WhiteRoom with what Model routing saved', () 
 
   it('picks the measured figure once there is one, and until then the price difference of the calls that were routed', () => {
     const routed = { calls: 10, unpricedCalls: 0, baselineMicros: 9_000_000, costMicros: 3_000_000 };
-    expect(routeSaved(watch({ routed, net: { routed: arm(40), control: arm(30), unpricedPeriods: 0, savedMicros: 4_000_000 } }))).toEqual({ micros: 4_000_000, measured: true });
-    expect(routeSaved(watch({ routed, net: { routed: arm(4), control: arm(3), unpricedPeriods: 0, savedMicros: null } }))).toEqual({ micros: 6_000_000, measured: false });
-    expect(routeSaved(watch({ routed }))).toEqual({ micros: 6_000_000, measured: false });
+    expect(routeSaved(watch({ routed, net: { routed: arm(40), control: arm(30), unpricedPeriods: 0, savedMicros: 4_000_000 } }))).toEqual({ micros: 4_000_000, measured: true, partial: false });
+    expect(routeSaved(watch({ routed, net: { routed: arm(4), control: arm(3), unpricedPeriods: 0, savedMicros: null } }))).toEqual({ micros: 6_000_000, measured: false, partial: false });
+    expect(routeSaved(watch({ routed }))).toEqual({ micros: 6_000_000, measured: false, partial: false });
     // A measured zero is a figure; it is not "nothing measured".
-    expect(routeSaved(watch({ routed, net: { routed: arm(40), control: arm(30), unpricedPeriods: 0, savedMicros: 0 } }))).toEqual({ micros: 0, measured: true });
+    expect(routeSaved(watch({ routed, net: { routed: arm(40), control: arm(30), unpricedPeriods: 0, savedMicros: 0 } }))).toEqual({ micros: 0, measured: true, partial: false });
   });
 
   it('has no figure in Watch, with nothing routed, or when no routed call has a price', () => {
@@ -153,6 +153,13 @@ describe('Saved in total: Saved by WhiteRoom with what Model routing saved', () 
     const t = row(5_000_000, watch({ routed: { calls: 10, unpricedCalls: 0, baselineMicros: 9_000_000, costMicros: 3_000_000 } }));
     expect(t).toContain('Saved in total $11.00 · $5.00 from less input sent and caching · $6.00 from Model routing (estimate)');
     expect(t).toContain('Model routing is an estimate until enough runs are measured: the same calls at the two models’ list prices. It isn’t part of your bill.');
+  });
+
+  it('marks the figure as a lower bound when some routed calls or runs had no price', () => {
+    const some = watch({ routed: { calls: 10, unpricedCalls: 2, baselineMicros: 9_000_000, costMicros: 3_000_000 } });
+    expect(routeSaved(some)).toMatchObject({ partial: true });
+    expect(row(5_000_000, some)).toContain('Saved in total $11.00+ · $5.00 from less input sent and caching · $6.00 from Model routing+ (estimate)');
+    expect(routeSaved(watch({ net: { routed: arm(40), control: arm(30), unpricedPeriods: 3, savedMicros: 1 } }))).toMatchObject({ measured: true, partial: true });
   });
 
   it('a measured loss comes off the total, and a total below zero is said as one', () => {
