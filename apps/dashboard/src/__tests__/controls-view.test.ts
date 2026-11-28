@@ -651,12 +651,41 @@ describe('Model routing', () => {
         .toEqual({ ladder: LADDER, carefulTools: ['issue_refund'] });
     });
 
+    it('a change to the models alone sends no list to an engine that takes none, and the list unchanged to one that does', () => {
+      const plain = route({ mode: 'watch' });
+      const OTHER = ['claude-opus-5-5', 'claude-haiku-5-5'];
+      const fewer = { ...draftFrom(plain), params: { ladder: OTHER } };
+      expect(draftChanges(fewer, plain)!.params).toEqual({ ladder: OTHER });
+      expect(draftChanges(fewer, plain)!.params).not.toHaveProperty('carefulTools');
+      const listed = withList(['issue_refund'], { mode: 'watch' });
+      const held = draftFrom(listed);
+      expect(draftChanges({ ...held, params: { ...held.params, ladder: OTHER } }, listed)).toEqual({ params: { ladder: OTHER, carefulTools: ['issue_refund'] } });
+      // A suspended rule with a list opens clean too.
+      const stopped = withList(['issue_refund'], { mode: 'enforce', params: { ladder: LADDER, carefulTools: ['issue_refund'], suspended: true } });
+      expect(isDirty(draftFrom(stopped), stopped)).toBe(false);
+    });
+
+    it('a rule that lists such tools never reads the same as one that lists none', () => {
+      const one = withList(['issue_refund']);
+      const two = withList(['issue_refund', 'payments_*']);
+      expect(ruleSentenceText(one)).toBe(`${ruleSentenceText(route()).slice(0, -1)}. 1 tool always uses the model asked for.`);
+      expect(ruleSentenceText(two)).toBe(`${ruleSentenceText(route()).slice(0, -1)}. 2 tools always use the model asked for.`);
+      expect(ruleConditionText(two)).toBe(`${ruleConditionText(route())} · 2 tools always use the model asked for`);
+      // An empty list, and an engine that takes none, read exactly as before.
+      expect(ruleSentenceText(withList([]))).toBe(ruleSentenceText(route()));
+      expect(ruleConditionText(withList([]))).toBe(ruleConditionText(route()));
+    });
+
     it("says why a list can't be saved", () => {
       const draft = (carefulTools: string[]) => ({ ...draftFrom(withList([], { mode: 'watch' })), params: { ladder: LADDER, carefulTools } });
       expect(draftProblem(draft(['issue_refund', 'payments_*']))).toBeNull();
       expect(draftProblem(draft(Array.from({ length: CAREFUL_TOOLS_MAX }, (_, i) => `tool_${i}`)))).toBeNull();
       expect(draftProblem(draft(Array.from({ length: CAREFUL_TOOLS_MAX + 1 }, (_, i) => `tool_${i}`)))).toBe('A rule holds up to 50 tools. Remove one to save.');
-      expect(draftProblem(draft(['issue refund']))).toBe('"issue refund" can\'t be saved. A tool name has no spaces, and * only ends one.');
+      expect(draftProblem(draft(['issue refund']))).toBe('"issue refund" can\'t be saved. A tool name has no spaces or hidden characters, and * goes only at the end of one.');
+      // The engine keeps one of two names that differ only in case: said before Save, not found out after.
+      expect(draftProblem(draft(['Issue_Refund', 'lookup', 'issue_refund']))).toBe('"issue_refund" is listed twice. Capital letters don\'t make it a different tool here.');
+      expect(draftProblem(draft(['x'.repeat(128)]))).toBeNull();
+      expect(draftProblem(draft(['x'.repeat(129)]))).toBe('A tool name holds up to 128 characters. Remove the long one to save.');
       for (const bad of ['*', 'pay*ments', 'refund\u200b', 'a\tb']) expect(carefulEntryBad(bad)).toBe(true);
       for (const fine of ['issue_refund', 'payments_*', 'mcp__billing__*', 'Issue.Refund-v2']) expect(carefulEntryBad(fine)).toBe(false);
     });

@@ -256,7 +256,10 @@ export const suspended = (r: Pick<GovernanceRule, 'ruleType' | 'params' | 'mode'
 export const ladderOf = (p: ModelRouteParams): LadderEntry[] => p.ladder ?? [];
 /** Whether the engine takes a careful list for this rule: it sends one, empty or not, when it does. */
 export const takesCareful = (p: ModelRouteParams): boolean => Array.isArray(p.carefulTools);
+/** The rule's tools that always use the model asked for; none where the engine takes no such list. */
 export const carefulOf = (p: ModelRouteParams): string[] => p.carefulTools ?? [];
+/** How a rule's sentence says it has such tools, so a rule that lists some never reads the same as one that lists none. */
+const carefulCount = (p: ModelRouteParams): string => { const n = carefulOf(p).length; return n ? `${n} tool${n === 1 ? ' always uses' : 's always use'} the model asked for` : ''; };
 /** What the editor holds and Save sends for Model routing: the model list, and the careful list where the engine takes one. */
 const routeHeld = (p: ModelRouteParams): ModelRouteParams => ({ ladder: ladderOf(p), ...(takesCareful(p) && { carefulTools: carefulOf(p) }) });
 export const CAREFUL_TOOLS_MAX = 50;
@@ -340,7 +343,7 @@ export function ruleSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params' | 
       const p = rule.params as ModelRouteParams;
       // A rule that suspended itself changes no call: it reads as it acts.
       const does = rule.mode === 'enforce' && p.suspended !== true ? 'Send calls that can use a cheaper model to it.' : 'Record the calls that could use a cheaper model.';
-      return ladderOf(p).length ? { pre: `${does} Models, strongest first: `, val: ladderText(p), post: '.' } : { pre: 'No models picked yet.', val: '', post: '' };
+      return ladderOf(p).length ? { pre: `${does} Models, strongest first: `, val: ladderText(p), post: carefulCount(p) ? `. ${carefulCount(p)}.` : '.' } : { pre: 'No models picked yet.', val: '', post: '' };
     }
     default:
       return unhandledType(rule.ruleType, { pre: UNKNOWN_RULE, val: '', post: '' });
@@ -671,7 +674,12 @@ export function draftProblem(d: RuleDraft, opts: { /** Whether the engine takes 
     const careful = carefulOf(p.params as ModelRouteParams);
     if (careful.length > CAREFUL_TOOLS_MAX) return toolsFull(CAREFUL_TOOLS_MAX);
     const bad = careful.find(carefulEntryBad);
-    if (bad !== undefined) return `"${bad}" can't be saved. A tool name has no spaces, and * only ends one.`;
+    if (bad !== undefined) return `"${bad}" can't be saved. A tool name has no spaces or hidden characters, and * goes only at the end of one.`;
+    // The engine keeps one of two names that differ only in case, so the other would vanish on Save with no word why.
+    const twice = careful.find((t, i) => careful.findIndex((u) => u.toLowerCase() === t.toLowerCase()) !== i);
+    if (twice !== undefined) return `"${twice}" is listed twice. Capital letters don't make it a different tool here.`;
+    // The picker stops at this length; a longer one can only have come with the rule.
+    if (careful.some((t) => t.length > CAREFUL_TOOL_MAX_CHARS)) return `A tool name holds up to ${CAREFUL_TOOL_MAX_CHARS} characters. Remove the long one to save.`;
   }
   if (d.appliesTo !== 'all' && d.appliesTo.length === 0 && !routes(d)) return 'Pick at least one agent, or choose All agents.';
   if (d.mode !== 'enforce') return null;
@@ -907,7 +915,7 @@ export function ruleCondition(rule: Pick<GovernanceRule, 'ruleType' | 'params'>)
     }
     case 'model_route': {
       const p = rule.params as ModelRouteParams;
-      return ladderOf(p).length ? { pre: 'Calls that could use a cheaper model, from ', val: ladderText(p), post: '' } : { pre: 'No models picked yet', val: '', post: '' };
+      return ladderOf(p).length ? { pre: 'Calls that could use a cheaper model, from ', val: ladderText(p), post: carefulCount(p) ? ` · ${carefulCount(p)}` : '' } : { pre: 'No models picked yet', val: '', post: '' };
     }
     default:
       return unhandledType(rule.ruleType, { pre: UNKNOWN_RULE, val: '', post: '' });
@@ -1214,7 +1222,7 @@ export function whenSentence(rule: Pick<GovernanceRule, 'ruleType' | 'params'>):
     }
     case 'model_route': {
       const p = rule.params as ModelRouteParams;
-      return ladderOf(p).length ? { pre: 'Models, strongest first: ', val: ladderText(p), post: '' } : { pre: 'No models picked yet', val: '', post: '' };
+      return ladderOf(p).length ? { pre: 'Models, strongest first: ', val: ladderText(p), post: carefulCount(p) ? ` · ${carefulCount(p)}` : '' } : { pre: 'No models picked yet', val: '', post: '' };
     }
     default: return unhandledType(rule.ruleType, { pre: UNKNOWN_RULE, val: '', post: '' });
   }

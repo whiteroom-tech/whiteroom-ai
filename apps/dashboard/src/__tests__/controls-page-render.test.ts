@@ -2806,7 +2806,15 @@ describe('Controls: Repeated blocks and Old tool results', () => {
     expect(editor()).toContain('A call that offers one of these tools is never sent to a cheaper model.');
     // With a tool listed it says what that can mean for an agent that offers it every time.
     expect(editor()).toContain('won’t use a cheaper model at all');
-    expect(m.el.querySelector('[aria-label="Add a tool that always uses the model asked for"]')).not.toBeNull();
+    const picker = m.el.querySelector('select[aria-label="Add a tool that always uses the model asked for"]') as HTMLSelectElement;
+    expect(picker).not.toBeNull();
+    // Adding a tool and saving sends the models and the whole list, and nothing else.
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...rule, ...ch, id, version: rule.version + 1 } }));
+    await choose(picker, '__other__');
+    await type(m.el.querySelector('input[aria-label="Other (type tool name, or the start of one and *)…"]') as HTMLInputElement, 'payments_*');
+    await m.click(m.button('Add'));
+    await m.click(m.button('Save'));
+    expect(api.update).toHaveBeenLastCalledWith('f1', 'mr-careful', { params: { ladder: ['claude-opus-5-5', 'claude-sonnet-5-5'], carefulTools: ['issue_refund', 'payments_*'] }, ifVersion: rule.version }, 'k');
     m.root.unmount();
   });
 

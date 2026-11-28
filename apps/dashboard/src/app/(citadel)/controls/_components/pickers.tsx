@@ -56,7 +56,7 @@ export function toolGroups(fleetTools: readonly string[], first?: (tool: string)
 
 export function Chip({ label, onRemove, removeLabel = `Remove ${label}` }: { label: string; onRemove: () => void; removeLabel?: string }) {
   return (
-    <span className="gov-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, minHeight: '1.625rem', padding: '0 2px 0 9px', borderRadius: 6, border: '1px solid var(--line2)', background: 'var(--sunk)', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx)' }}>
+    <span className="gov-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, maxWidth: '100%', overflowWrap: 'anywhere', minHeight: '1.625rem', padding: '0 2px 0 9px', borderRadius: 6, border: '1px solid var(--line2)', background: 'var(--sunk)', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx)' }}>
       {label}
       <button type="button" onClick={onRemove} aria-label={removeLabel} style={{ background: 'none', border: 0, color: 'var(--tx2)', width: 24, height: 24, cursor: 'pointer', fontSize: 'var(--fs-md)' }}>&times;</button>
     </span>
@@ -152,6 +152,7 @@ export function ToolPicker({ values, onChange, fleetTools, onShow, first, ariaLa
   ariaLabel?: string;
   /** The longest name it takes, where a list takes longer ones than the default. */
   maxLength?: number;
+  /** The "Other…" line, where a list takes more than a whole name. */
   otherLabel?: string;
 }) {
   useEffect(() => { onShow(); }, [onShow]);
