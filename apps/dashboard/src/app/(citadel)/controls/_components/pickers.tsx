@@ -6,7 +6,7 @@
 
 import { useEffect, useState } from 'react';
 import { FONT_MONO, Icon } from '@whiteroom/ui';
-import type { GovernanceScope } from '@/lib/whiteroom/types';
+import type { GovernanceScope, LadderEntry } from '@/lib/whiteroom/types';
 import { useCopy } from '@/components/citadel/CopyChip';
 import { markerShort } from '@/lib/controls-view';
 
@@ -25,6 +25,9 @@ export const MODEL_GROUPS: PickGroup[] = [
     { id: 'claude-opus-4-20250514', label: 'Claude Opus 4' },
   ] },
   { label: 'OpenAI', options: [
+    { id: 'gpt-6.1-sol', label: 'GPT-6.1 Sol' }, { id: 'gpt-6.1-terra', label: 'GPT-6.1 Terra' }, { id: 'gpt-6-sol', label: 'GPT-6 Sol' }, { id: 'gpt-6-luna', label: 'GPT-6 Luna' },
+    { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' }, { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra' }, { id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna' },
+    { id: 'gpt-5.4', label: 'GPT-5.4' }, { id: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' }, { id: 'gpt-5.2', label: 'GPT-5.2' },
     { id: 'gpt-4.1', label: 'GPT-4.1' }, { id: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' }, { id: 'gpt-4.1-nano', label: 'GPT-4.1 Nano' },
     { id: 'gpt-4o', label: 'GPT-4o' }, { id: 'gpt-4o-mini', label: 'GPT-4o Mini' }, { id: 'o3', label: 'o3' }, { id: 'o4-mini', label: 'o4-mini' },
   ] },
@@ -214,6 +217,44 @@ function FieldSelect({ label, value, onChange, style, children }: { label: strin
       <select className="gov-field" aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}>{children}</select>
       <Icon name="chevronDown" size={10} strokeWidth={2.5} />
     </span>
+  );
+}
+
+/** What a deployment can be said to run: the makers' own model IDs. */
+const RUNS_GROUPS = MODEL_GROUPS.filter((g) => g.label === 'Anthropic' || g.label === 'OpenAI');
+const LISTED_MODELS = new Set(MODEL_GROUPS.flatMap((g) => g.options.map((o) => o.id)));
+
+/** The entries of a model list that could be a deployment: typed names, and any that already say what they run. */
+export const typedEntries = (ladder: LadderEntry[]): LadderEntry[] => ladder.filter((e) => typeof e !== 'string' || !LISTED_MODELS.has(e));
+
+/**
+ * For each typed name on a model list, the model it runs. A deployment is
+ * named by its owner, so the name alone doesn't say. Shows nothing for a
+ * list picked from the menu.
+ */
+export function DeploymentModels({ ladder, onChange }: { ladder: LadderEntry[]; onChange: (next: LadderEntry[]) => void }) {
+  const typed = typedEntries(ladder);
+  if (!typed.length) return null;
+  const setRuns = (id: string, is: string) => onChange(ladder.map((e) => ((typeof e === 'string' ? e : e.id) === id ? (is ? { id, is } : id) : e)));
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {typed.map((e) => {
+        const id = typeof e === 'string' ? e : e.id, is = typeof e === 'string' ? '' : e.is;
+        return (
+          <div key={id} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, fontSize: 'var(--fs-md)' }}>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', overflowWrap: 'anywhere' }}>{id}</span>
+            runs
+            <FieldSelect label={`Model that ${id} runs`} value={is} onChange={(v) => setRuns(id, v)}>
+              <option value="">Not a deployment</option>
+              {/* One saved from elsewhere that the menu doesn't list stays as it is. */}
+              {is && !RUNS_GROUPS.some((g) => g.options.some((o) => o.id === is)) && <option value={is}>{is}</option>}
+              {RUNS_GROUPS.map((g) => <optgroup key={g.label} label={g.label}>{g.options.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</optgroup>)}
+            </FieldSelect>
+          </div>
+        );
+      })}
+      <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>If a name is your own deployment, pick the model it runs. A deployment with none picked keeps the model its calls asked for.</p>
+    </div>
   );
 }
 
