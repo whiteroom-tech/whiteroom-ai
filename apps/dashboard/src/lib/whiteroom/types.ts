@@ -876,7 +876,11 @@ export interface RuleActionCounts {
 }
 /** One side of Model routing's measured comparison: how many runs, their calls and what they cost. */
 export interface RouteNetArm { periods: number; calls: number; costMicros: number }
-export interface RouteNet { routed: RouteNetArm; control: RouteNetArm; unpricedPeriods: number; savedMicros: number | null }
+export interface RouteNet {
+  routed: RouteNetArm; control: RouteNetArm; unpricedPeriods: number; savedMicros: number | null;
+  /** Newer engines measure each agent under each rule on its own: how many of those are in the figure, and how many still need more runs. */
+  groups?: { measured: number; waiting: number };
+}
 export interface RuleActionsResult { fleetId: string; totals: RuleActionCounts; byAgent: Record<string, RuleActionCounts>; /** Per rule type, from the same rows as totals (newer engines). */ byRule?: Record<string, RuleActionCounts>; /** Per rule id (gr_…), from the same rows (engine E1a). */ byRuleId?: Record<string, RuleActionCounts> }
 export interface RunRuleAction {
   /** `trim` is an Old tool results rule's own: it isn't a response a rule can be set to. */

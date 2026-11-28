@@ -84,6 +84,17 @@ describe('Model routing on Performance', () => {
       expect(t).toContain('What routed runs cost against runs left on the model asked for. It is in Saved in total, under Cost, and not in Saved by WhiteRoom.');
     });
 
+    it('says when the figure covers only part of the fleet: agents still short of runs are counted beside it', () => {
+      const some = { ...net(40, 30, 12_400_000), net: { ...net(40, 30, 12_400_000).net, groups: { measured: 1, waiting: 2 } } };
+      expect(text(render(some))).toContain('$12.40 saved · 40 routed runs, 30 left on the model asked for · 2 more agents not measured yet');
+      const all = { ...net(40, 30, 12_400_000), net: { ...net(40, 30, 12_400_000).net, groups: { measured: 3, waiting: 0 } } };
+      expect(text(render(all))).not.toContain('not measured yet');
+      // With no figure at all the row already says more runs are needed.
+      const none = { ...net(4, 3, null), net: { ...net(4, 3, null).net, groups: { measured: 0, waiting: 2 } } };
+      expect(text(render(none))).not.toContain('not measured yet');
+      expect(text(render(none))).toContain('Not enough runs to measure yet');
+    });
+
     it('says a loss as a loss', () => {
       expect(text(render(net(30, 30, -6_000_000)))).toContain('$6.00 more spent · 30 routed runs, 30 left on the model asked for');
     });
