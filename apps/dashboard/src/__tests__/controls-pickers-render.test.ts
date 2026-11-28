@@ -253,8 +253,10 @@ describe('typedEntries: which names on a model list could be a deployment', () =
     expect(typedEntries(ids)).toEqual([]);
   });
   it('keeps names an owner made up, also ones that only look a little like a model ID, and any entry that says what it runs', () => {
-    const names = ['prod-chat', 'my-gpt-4', 'opus', 'o-series', 'team-claude', 'usa.prod', 'gpt-4-prod', 'gpt-prod', 'o3-team', 'o3mini-east', 'claude-prod', 'claude-sonnet-team', 'gpt-4.1-mini-eastus', 'azure/prod-chat', 'gemini-team', 'gemini-2-prod', 'anthropic.prod.chat', 'us.team.claude'];
+    const names = ['prod-chat', 'my-gpt-4', 'opus', 'o-series', 'team-claude', 'usa.prod', 'gpt-4-prod', 'gpt-prod', 'o3-team', 'o3mini-east', 'claude-prod', 'claude-sonnet-team', 'gpt-4.1-mini-eastus', 'azure/prod-chat', 'gemini-team', 'gemini-2-prod', 'anthropic.prod.chat', 'us.team.claude', 'anthropic.prod', 'amazon.team-chat', 'us.anthropic.prod-v1', 'mistral.prod'];
     expect(typedEntries(names)).toEqual(names);
     expect(typedEntries([{ id: 'gpt-4.1', is: 'gpt-4.1' }, { id: 'prod', is: 'gpt-4.1-mini' }])).toHaveLength(2);
+    // A real ID in a shape the pattern doesn't know gets a row too: its owner can leave it at "Not a deployment".
+    expect(typedEntries(['gpt-4-turbo', 'chatgpt-4o-latest'])).toHaveLength(2);
   });
 });

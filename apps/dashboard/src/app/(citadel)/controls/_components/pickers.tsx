@@ -235,8 +235,8 @@ const MODEL_ID = new RegExp([
   `^(azure/)?(${OPENAI_ID})$`,
   `^claude-(opus|sonnet|haiku|fable)(-\\d+){1,3}$`,
   '^gemini-\\d+(\\.\\d+)?-(pro|flash)(-lite)?$',
-  // A Bedrock ID: a geography or none, the maker, the model, and its version.
-  '^((us|eu|apac|global)\\.)?(anthropic|amazon|meta|mistral)\\.[a-z0-9-]+(-v\\d+(:\\d+)?)?$',
+  // A Bedrock ID: a geography or none, the maker and its model family, and the version.
+  '^((us|eu|apac|global)\\.)?(anthropic\\.claude-|amazon\\.nova-|meta\\.llama|mistral\\.mistral-)[a-z0-9-]+(-v\\d+(:\\d+)?)?$',
 ].join('|'), 'i');
 
 /** The entries of a model list that could be a deployment: names that aren't a model ID, and any that already say what they run. */
