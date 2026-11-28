@@ -65,6 +65,13 @@ function agentName(id: unknown): string {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : 'An agent';
 }
 
+/** Why a call kept its model, where Model routing gives a reason an owner can act on. */
+function keptWhy(reason: unknown): string {
+  if (reason === 'careful_tool') return ': it offers a tool you listed to always use that model';
+  if (reason === 'careful_tool_unknown') return ": its tools couldn't be read, and you list tools that always use that model";
+  return '';
+}
+
 const EVENT_COPY: Record<string, EventCopy> = {
   task_complete: { icon: '✅', tone: 'task', code: 'TSK', say: (e) => `finished "${e.taskName || 'a task'}"` },
   watch_start: { icon: '▶', tone: 'start', code: 'ON', say: () => 'started a run' },
@@ -85,7 +92,7 @@ const EVENT_COPY: Record<string, EventCopy> = {
   governance_would_route: { icon: '↘', tone: 'idle', code: 'RTE', say: () => 'made a call that could use a cheaper model' },
   governance_route: { icon: '↘', tone: 'idle', code: 'RTE', say: () => 'made a call that went to a cheaper model' },
   route_decided: { icon: '↘', tone: 'idle', code: 'RTE', say: () => 'had its run checked by Model routing' },
-  route_skipped: { icon: '↘', tone: 'idle', code: 'RTE', say: () => 'made a call that kept the model it asked for' },
+  route_skipped: { icon: '↘', tone: 'idle', code: 'RTE', say: (e) => `made a call that kept the model it asked for${keptWhy(e.reason)}` },
   route_target_unavailable: { icon: '↘', tone: 'wouldBlock', code: 'RTE', say: () => 'had a cheaper model refuse a call, which its own model then took' },
   route_suspended: { icon: '↘', tone: 'wouldBlock', code: 'RTE', say: () => 'had its Model routing rule suspend itself' },
   governance_rule_changed: { icon: '⚙', tone: 'idle', code: 'GOV', who: 'Controls', say: (e) => String(e.message ?? `${ruleLabel(e.ruleType)} changed`) },

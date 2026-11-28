@@ -2787,6 +2787,26 @@ describe('Controls: Repeated blocks and Old tool results', () => {
     expect(modes).toEqual(['Off', 'Watch']);
     // It can't cover all agents, so that choice isn't offered: only the agents to pick.
     expect(m.el.querySelector('[aria-label="Which agents this rule applies to"]')).toBeNull();
+    // This engine sent no careful list with the rule, so it takes none: the field isn't offered.
+    expect(m.text()).not.toContain('Tools that always use the model the agent asked for');
+    m.root.unmount();
+  });
+
+  it('where the engine takes a careful list, the Model routing editor shows it under the models and Save sends it with them', async () => {
+    const rule = { ...base, id: 'mr-careful', ruleType: 'model_route' as const, mode: 'watch' as const, response: 'notify' as const, appliesTo: ['lead-agent'], params: { ladder: ['claude-opus-5-5', 'claude-sonnet-5-5'], carefulTools: ['issue_refund'] } };
+    api.created.push(rule);
+    const m = await mount();
+    const row = [...m.el.querySelectorAll('button.ctl-row')].find((r) => r.querySelector('.ctl-row__main .ctl-cap')?.textContent === 'Model routing')!;
+    await m.click(row);
+    const editor = () => m.el.querySelector('[aria-label="Edit rule"]')!.textContent ?? '';
+    // It sits with the models, under When.
+    await m.click(m.button('Change'));
+    expect(editor()).toContain('Tools that always use the model the agent asked for:');
+    expect(editor()).toContain('issue_refund');
+    expect(editor()).toContain('A call that offers one of these tools is never sent to a cheaper model.');
+    // With a tool listed it says what that can mean for an agent that offers it every time.
+    expect(editor()).toContain('won’t use a cheaper model at all');
+    expect(m.el.querySelector('[aria-label="Add a tool that always uses the model asked for"]')).not.toBeNull();
     m.root.unmount();
   });
 

@@ -764,6 +764,12 @@ export type LadderEntry = string | { id: string; is: string };
  */
 export interface ModelRouteParams {
   ladder: LadderEntry[];
+  /**
+   * Tools whose calls always use the model the agent asked for: a tool's name,
+   * or the start of one ending in "*". An engine that takes the list always
+   * sends it, empty when none is set. Absent: this engine doesn't take one.
+   */
+  carefulTools?: string[];
   /** The rule stopped changing calls on its own and acts as Watch, until it is set to Enforce again. Read only. */
   suspended?: true;
 }
