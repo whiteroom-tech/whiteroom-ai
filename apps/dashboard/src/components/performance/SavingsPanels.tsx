@@ -36,7 +36,7 @@ export function SavedInTotal({ whiteRoomMicros, partial, route }: { whiteRoomMic
       </div>
       <p className="wr-cap" style={{ margin: '6px 0 0' }}>
         {route.measured
-          ? 'Model routing is measured against runs left on the model asked for, over whole days, so it can cover a little more than the range shown.'
+          ? `Model routing is measured against runs left on the model asked for, over whole days, so it can cover a little more than the range shown.${route.partOfFleet ? ' It covers part of your fleet so far: the rest needs more runs.' : ''}`
           : 'Model routing is an estimate until enough runs are measured: the same calls at the two models’ list prices.'}
         {' '}WhiteRoom doesn’t charge for it.
       </p>

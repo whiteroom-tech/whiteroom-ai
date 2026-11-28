@@ -878,7 +878,7 @@ export interface RuleActionCounts {
 export interface RouteNetArm { periods: number; calls: number; costMicros: number }
 export interface RouteNet {
   routed: RouteNetArm; control: RouteNetArm; unpricedPeriods: number; savedMicros: number | null;
-  /** Newer engines measure each agent under each rule on its own: how many of those are in the figure, and how many still need more runs. */
+  /** From newer engines: how many parts of the fleet are in the figure, and how many still need more runs before they are. */
   groups?: { measured: number; waiting: number };
 }
 export interface RuleActionsResult { fleetId: string; totals: RuleActionCounts; byAgent: Record<string, RuleActionCounts>; /** Per rule type, from the same rows as totals (newer engines). */ byRule?: Record<string, RuleActionCounts>; /** Per rule id (gr_…), from the same rows (engine E1a). */ byRuleId?: Record<string, RuleActionCounts> }
