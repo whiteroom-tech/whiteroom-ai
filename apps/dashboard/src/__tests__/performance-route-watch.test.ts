@@ -152,14 +152,15 @@ describe('Saved in total: Saved by WhiteRoom with what Model routing saved', () 
   it('adds the two and shows each part, the estimate said as one', () => {
     const t = row(5_000_000, watch({ routed: { calls: 10, unpricedCalls: 0, baselineMicros: 9_000_000, costMicros: 3_000_000 } }));
     expect(t).toContain('Saved in total $11.00 · $5.00 from less input sent and caching · $6.00 from Model routing (estimate)');
-    expect(t).toContain('Model routing is an estimate until enough runs are measured: the same calls at the two models’ list prices. It isn’t part of your bill.');
+    expect(t).toContain('Model routing is an estimate until enough runs are measured: the same calls at the two models’ list prices. WhiteRoom doesn’t charge for it.');
   });
 
   it('marks the figure as a lower bound when some routed calls or runs had no price', () => {
     const some = watch({ routed: { calls: 10, unpricedCalls: 2, baselineMicros: 9_000_000, costMicros: 3_000_000 } });
     expect(routeSaved(some)).toMatchObject({ partial: true });
     expect(row(5_000_000, some)).toContain('Saved in total $11.00+ · $5.00 from less input sent and caching · $6.00 from Model routing+ (estimate)');
-    expect(routeSaved(watch({ net: { routed: arm(40), control: arm(30), unpricedPeriods: 3, savedMicros: 1 } }))).toMatchObject({ measured: true, partial: true });
+    // A measured figure leaves an unpriced run out of both sides: it is not a lower bound, and a loss is never shown with a "+".
+    expect(routeSaved(watch({ net: { routed: arm(40), control: arm(30), unpricedPeriods: 3, savedMicros: -3_000_000 } }))).toEqual({ micros: -3_000_000, measured: true, partial: false });
   });
 
   it('a measured loss comes off the total, and a total below zero is said as one', () => {
@@ -167,7 +168,20 @@ describe('Saved in total: Saved by WhiteRoom with what Model routing saved', () 
     const t = row(5_000_000, net(-2_000_000));
     expect(t).toContain('Saved in total $3.00 · $5.00 from less input sent and caching · $2.00 more spent by Model routing');
     expect(t).not.toContain('(estimate)');
-    expect(t).toContain('Model routing is measured against runs left on the model asked for. It isn’t part of your bill.');
+    expect(t).toContain('Model routing is measured against runs left on the model asked for, over whole days, so it can cover a little more than the range shown. WhiteRoom doesn’t charge for it.');
     expect(row(1_000_000, net(-4_000_000))).toContain('Saved in total −$3.00 ·');
+  });
+});
+
+describe('the routed row, once the measured figure is showing', () => {
+  it('no longer points to an estimate in the total: the total uses the measured figure', () => {
+    const routed = { calls: 10, unpricedCalls: 0, baselineMicros: 9_000_000, costMicros: 3_000_000 };
+    const arm = (periods: number) => ({ periods, calls: periods * 10, costMicros: 1, failedCalls: 0, refusedCalls: 0 });
+    const base = { calls: 0, unpricedCalls: 0, baselineMicros: 0, costMicros: 0, routed };
+    expect(text(render(base))).toContain('Until enough runs are measured, the difference is the estimate in Saved in total');
+    expect(text(render({ ...base, net: { routed: arm(4), control: arm(3), unpricedPeriods: 0, savedMicros: null } }))).toContain('Until enough runs are measured');
+    const measured = text(render({ ...base, net: { routed: arm(40), control: arm(30), unpricedPeriods: 0, savedMicros: 4_000_000 } }));
+    expect(measured).not.toContain('Until enough runs are measured');
+    expect(measured).toContain('The same usage at list prices.');
   });
 });

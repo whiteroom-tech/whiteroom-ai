@@ -83,7 +83,7 @@ export interface RouteSaved {
   micros: number;
   /** Measured against runs left on the model asked for. False: an estimate, the same calls at the two models' list prices. */
   measured: boolean;
-  /** Some routed calls or runs had no price and are left out, so the figure is a lower bound. */
+  /** An estimate with some routed calls left out for having no price: a lower bound. Never set on a measured figure, where an unpriced run is left out of both sides. */
   partial: boolean;
 }
 
@@ -95,7 +95,7 @@ export interface RouteSaved {
  */
 export function routeSaved(route: RouteWatch | null | undefined): RouteSaved | null {
   const measured = route?.net?.savedMicros;
-  if (typeof measured === 'number') return { micros: measured, measured: true, partial: (route?.net?.unpricedPeriods ?? 0) > 0 };
+  if (typeof measured === 'number') return { micros: measured, measured: true, partial: false };
   const routed = route?.routed;
   if (!routed || routed.calls <= routed.unpricedCalls) return null;
   return { micros: routed.baselineMicros - routed.costMicros, measured: false, partial: routed.unpricedCalls > 0 };
