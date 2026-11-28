@@ -224,8 +224,20 @@ function FieldSelect({ label, value, onChange, style, children }: { label: strin
 const RUNS_GROUPS = MODEL_GROUPS.filter((g) => g.label === 'Anthropic' || g.label === 'OpenAI');
 const LISTED_MODELS = new Set(MODEL_GROUPS.flatMap((g) => g.options.map((o) => o.id)));
 
-/** A typed name that reads as a maker's own model ID, which needs no model picked for it. */
-const MODEL_ID = /^(claude-|gpt-|o\d|gemini-|azure\/|(us|eu|apac|global)\.|anthropic\.|amazon\.|meta\.|mistral\.)/i;
+/**
+ * A typed name that reads as a maker's own model ID, which needs no model
+ * picked for it. The whole name has to fit: "gpt-4.1-mini" and "o3" do,
+ * "gpt-4-prod" and "o3-team" are names an owner made up.
+ */
+const DATED = '(-\\d{4}-\\d{2}-\\d{2}|-\\d{8})?';
+const MODEL_ID = new RegExp([
+  `^gpt-\\d+(\\.\\d+)?[a-z]?(-(mini|nano|sol|luna|terra|astra))?${DATED}$`,
+  `^o\\d(-(mini|pro))?${DATED}$`,
+  `^claude-(opus|sonnet|haiku|fable)(-\\d+){1,3}$`,
+  '^gemini-\\d',
+  '^azure/',
+  '^((us|eu|apac|global)\\.)?(anthropic|amazon|meta|mistral)\\.',
+].join('|'), 'i');
 
 /** The entries of a model list that could be a deployment: names that aren't a model ID, and any that already say what they run. */
 export const typedEntries = (ladder: LadderEntry[]): LadderEntry[] => ladder.filter((e) => typeof e !== 'string' || !(LISTED_MODELS.has(e) || MODEL_ID.test(e)));
