@@ -27,7 +27,7 @@ import {
   CAREFUL_TOOL_MAX_CHARS, carefulOf, takesCareful,
 } from '@/lib/controls-view';
 import { AGENT_NOTE, isMarker, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, looksLikeDeleteOrChange, newMarker, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, ladderIds, ladderOf, modeChoices, suspended, SUSPENDED_TAG, responseChoices, routes, sendsAlert, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
-import { Chip, field, GroupPicker, InlineSelect, MarkerChip, MODEL_GROUPS, NumberField, ScopeField, ToolPicker } from './pickers';
+import { Chip, DeploymentModels, field, GroupPicker, typedEntries, InlineSelect, MarkerChip, MODEL_GROUPS, NumberField, ScopeField, ToolPicker } from './pickers';
 import { ReplayEstimate } from './ReplayEstimate';
 
 /** How a rule judged on the reply meets a streamed call and a Bedrock one. */
@@ -413,6 +413,8 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
             <GroupPicker values={ladderIds(route)} onChange={(ids) => setParams({ ladder: ids.map((id) => [...ladderOf(route), ...ladderOf(rule.params as ModelRouteParams)].find((x) => typeof x !== 'string' && x.id === id) ?? id) })} groups={MODEL_GROUPS}
               addLabel="+ Add model" ariaLabel="Add a model" otherLabel="Other (type deployment name or model ID)…" placeholder="deployment name or model ID" />
             <p style={help}>Add the strongest first, then each cheaper one. To change the order, remove a model and add it back.</p>
+            <DeploymentModels ladder={ladderOf(route)} onChange={(ladder) => setParams({ ladder })} />
+            {typedEntries(ladderOf(route)).length > 0 && <p style={help}>For a deployment you named yourself, pick the model it runs. Without one, calls to it keep the model they asked for.</p>}
             {/* Only where the engine takes the list: it sends one, empty or not, when it does. */}
             {takesCareful(route) && (
               <>

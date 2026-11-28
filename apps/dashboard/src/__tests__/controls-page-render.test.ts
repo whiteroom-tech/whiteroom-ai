@@ -2818,6 +2818,41 @@ describe('Controls: Repeated blocks and Old tool results', () => {
     m.root.unmount();
   });
 
+  it('a typed name on the Model routing list can be given the model it runs, and Save sends the pair; a list picked from the menu shows no such row', async () => {
+    const rule = { ...base, id: 'mr-dep', ruleType: 'model_route' as const, mode: 'watch' as const, response: 'notify' as const, appliesTo: ['lead-agent'], params: { ladder: ['prod-chat', { id: 'prod-small', is: 'gpt-4.1-mini' }, 'gpt-4.1-nano'] } };
+    api.created.push(rule);
+    const m = await mount();
+    const row = [...m.el.querySelectorAll('button.ctl-row')].find((r) => r.querySelector('.ctl-row__main .ctl-cap')?.textContent === 'Model routing')!;
+    await m.click(row);
+    await m.click(m.button('Change'));
+    const editor = () => m.el.querySelector('[aria-label="Edit rule"]')!.textContent ?? '';
+    expect(editor()).toContain('For a deployment you named yourself, pick the model it runs.');
+    const runs = (id: string) => m.el.querySelector(`select[aria-label="Model that ${id} runs"]`) as HTMLSelectElement | null;
+    // The typed name has none yet; the saved pair shows its model; a model from the menu has no row.
+    expect(runs('prod-chat')!.value).toBe('');
+    expect(runs('prod-small')!.value).toBe('gpt-4.1-mini');
+    expect(runs('gpt-4.1-nano')).toBeNull();
+    api.update.mockImplementation(async (_f: string, id: string, ch: Partial<GovernanceRule>) => ({ rule: { ...rule, ...ch, id, version: rule.version + 1 } }));
+    await choose(runs('prod-chat')!, 'gpt-4.1');
+    // Back to "Not a deployment" makes the other a plain name again.
+    await choose(runs('prod-small')!, '');
+    await m.click(m.button('Save'));
+    expect(api.update).toHaveBeenLastCalledWith('f1', 'mr-dep', { params: { ladder: [{ id: 'prod-chat', is: 'gpt-4.1' }, 'prod-small', 'gpt-4.1-nano'] }, ifVersion: rule.version }, 'k');
+    m.root.unmount();
+  });
+
+  it('a model picked from the menu shows no deployment row, and one saved with a model the menu doesn\u2019t list keeps it', async () => {
+    const rule = { ...base, id: 'mr-dep2', ruleType: 'model_route' as const, mode: 'watch' as const, response: 'notify' as const, appliesTo: ['lead-agent'], params: { ladder: ['claude-opus-5-5', { id: 'my-small', is: 'gpt-9-test' }] } };
+    api.created.push(rule);
+    const m = await mount();
+    const row = [...m.el.querySelectorAll('button.ctl-row')].find((r) => r.querySelector('.ctl-row__main .ctl-cap')?.textContent === 'Model routing')!;
+    await m.click(row);
+    await m.click(m.button('Change'));
+    expect(m.el.querySelectorAll('select[aria-label^="Model that "]').length).toBe(1);
+    expect((m.el.querySelector('select[aria-label="Model that my-small runs"]') as HTMLSelectElement).value).toBe('gpt-9-test');
+    m.root.unmount();
+  });
+
   it('where the engine offers it, Model routing can be set to Enforce, with no action to pick; a suspended rule is turned back on with one button', async () => {
     api.routeEnforce = true;
     const rule = { ...base, id: 'mr-enf', ruleType: 'model_route' as const, mode: 'enforce' as const, response: 'notify' as const, appliesTo: ['lead-agent'], params: { ladder: ['claude-opus-5-5', 'claude-sonnet-5-5'], suspended: true as const } };
