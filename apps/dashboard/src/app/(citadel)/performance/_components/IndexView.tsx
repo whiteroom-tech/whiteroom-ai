@@ -8,8 +8,8 @@ import { useFlaggedRuns } from '@/components/performance/UnusualBehaviour';
 import { AgentHealthHeader, HealthByAgent, HealthChecks } from '@/components/performance/AgentHealth';
 import { downloadHealthReport } from '@/components/performance/HealthReport';
 import { DEFAULT_REC_STATUS, showRecAgentFilter } from '@/lib/performance-insights';
-import { cacheFigures, type DaySavings, type GovSavings, type RouteWatch } from '@/lib/analytics-metrics';
-import { TokensCompare } from '@/components/performance/SavingsPanels';
+import { cacheFigures, routeSaved, type DaySavings, type GovSavings, type RouteWatch } from '@/lib/analytics-metrics';
+import { SavedInTotal, TokensCompare } from '@/components/performance/SavingsPanels';
 import { fmtCost, fmtCount, partialMark } from '@/lib/format';
 import { spendSummary } from '@/lib/spend-completeness';
 import { HELP } from '@/lib/metric-definitions';
@@ -310,6 +310,8 @@ export function IndexView({ data, hourlyData, weekHourly = null, auditFailed, go
         <SectionHeader id="perf-cost" title="Cost" sub="What your agents spent, and what WhiteRoom saved." meta={rangeLabel} />
         {/* The proof behind Saved, always on show; then Spend by model and Cost prediction, each folded, its closed row a summary. */}
         <TokensCompare days={inputDays} usdByDay={usdByDay} range={rangeTokens} unavailable={auditFailed || !rangeTokens} />
+        {/* Saved by WhiteRoom with what Model routing saved, where routing has a figure. */}
+        {!auditFailed && <SavedInTotal whiteRoomMicros={savings.totalMicros} partial={savings.partial} route={routeSaved(routeWatch)} />}
         {s.models.length > 0 && (
           <SpendByModel
             models={s.models}

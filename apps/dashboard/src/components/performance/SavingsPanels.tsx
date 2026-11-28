@@ -1,8 +1,8 @@
 'use client';
 
 import { useId, useState } from 'react';
-import type { DaySavings } from '@/lib/analytics-metrics';
-import { fmtCost, fmtEnergy, fmtTokens } from '@/lib/format';
+import type { DaySavings, RouteSaved } from '@/lib/analytics-metrics';
+import { fmtCost, fmtEnergy, fmtTokens, partialMark } from '@/lib/format';
 import { formatDayKey } from '@/lib/zone-time';
 import { fewerTokens, inRange, tokenTotals } from '@/lib/performance-overview';
 import { Disclosure } from '@/app/(citadel)/performance/_components/primitives';
@@ -14,6 +14,34 @@ function weekday(day: string): string {
 }
 function weekdayLong(day: string): string {
   return formatDayKey(day, { weekday: 'long' });
+}
+
+/**
+ * Saved by WhiteRoom and Model routing as one total, with both parts on
+ * show. Only where routing has a figure: without one there is nothing to add
+ * and the card above already says it all. Routing's part is signed.
+ */
+export function SavedInTotal({ whiteRoomMicros, partial, route }: { whiteRoomMicros: number; partial: boolean; route: RouteSaved | null }) {
+  if (!route) return null;
+  const total = whiteRoomMicros + route.micros;
+  return (
+    <div className="wr-pcard" style={{ marginBottom: 16, padding: '14px 20px' }}>
+      <div className="wr-ctrl__row" style={{ borderBottom: 0, padding: 0 }}>
+        <span className="wr-ctrl__name">Saved in total</span>
+        <span className="wr-cap">
+          <strong className="wr-strong" style={{ color: total > 0 ? 'var(--ok)' : undefined }}>{total < 0 && '−'}{fmtCost(Math.abs(total))}{partialMark(partial)}</strong>
+          {' '}· {fmtCost(whiteRoomMicros)} from less input sent and caching
+          {' '}· {fmtCost(Math.abs(route.micros))} {route.micros < 0 ? 'more spent by' : 'from'} Model routing{!route.measured && ' (estimate)'}
+        </span>
+      </div>
+      <p className="wr-cap" style={{ margin: '6px 0 0' }}>
+        {route.measured
+          ? 'Model routing is measured against runs left on the model asked for.'
+          : 'Model routing is an estimate until enough runs are measured: the same calls at the two models’ list prices.'}
+        {' '}It isn’t part of your bill.
+      </p>
+    </div>
+  );
 }
 
 /**

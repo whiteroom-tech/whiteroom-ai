@@ -93,7 +93,7 @@ function RouteNetRow({ net }: { net: RouteNet }) {
           {unpricedPeriods > 0 && <> · {fmtCount(unpricedPeriods)} not priced</>}
         </span>
       </div>
-      <p className="wr-cap" style={{ margin: 0, padding: '0 0 10px' }}>What routed runs cost against runs left on the model asked for.{savedMicros !== null && ' It isn’t counted in what WhiteRoom saved.'}</p>
+      <p className="wr-cap" style={{ margin: 0, padding: '0 0 10px' }}>What routed runs cost against runs left on the model asked for.{savedMicros !== null && ' It is in Saved in total, under Cost, and not in Saved by WhiteRoom.'}</p>
     </div>
   );
 }
@@ -131,7 +131,7 @@ function RouteRow({ totals, mode, rules }: { totals: RouteTotals; mode: 'watch' 
         ? <Link href={`${ROUTES.controls}?rule=${encodeURIComponent(own[0].id)}`} className="wr-ctrl__row">{inner}</Link>
         : <div className="wr-ctrl__row">{inner}</div>}
       {/* A note on the dollars: only where the row has some. */}
-      {hasDollars && <p className="wr-cap" style={{ margin: 0, padding: '0 0 10px' }}>{routed ? 'The same usage at list prices. It isn’t counted in what WhiteRoom saved.' : 'The same usage at list prices. Nothing was changed, so this isn’t a saving.'}</p>}
+      {hasDollars && <p className="wr-cap" style={{ margin: 0, padding: '0 0 10px' }}>{routed ? 'The same usage at list prices. Until enough runs are measured, the difference is the estimate in Saved in total, under Cost.' : 'The same usage at list prices. Nothing was changed, so this isn’t a saving.'}</p>}
     </div>
   );
 }

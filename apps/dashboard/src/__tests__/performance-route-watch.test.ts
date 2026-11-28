@@ -5,6 +5,8 @@ import { describe, it, expect } from 'vitest';
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { RulesSummary } from '@/app/(citadel)/performance/_components/RulesSummary';
+import { SavedInTotal } from '@/components/performance/SavingsPanels';
+import { routeSaved, type RouteWatch } from '@/lib/analytics-metrics';
 import { governanceCounts } from '@/lib/governance';
 import type { GovernanceRule } from '@/lib/whiteroom/types';
 
@@ -41,7 +43,7 @@ describe('Model routing on Performance', () => {
     const none = { calls: 0, unpricedCalls: 0, baselineMicros: 0, costMicros: 0 };
     const routed = text(render({ ...none, routed: { calls: 12, unpricedCalls: 1, baselineMicros: 8_000_000, costMicros: 3_000_000 } }));
     expect(routed).toContain('Model routing 12 calls went to a cheaper model · $8.00 on the model asked for, $3.00 on the cheaper model · 1 not priced Enforce');
-    expect(routed).toContain('The same usage at list prices. It isn’t counted in what WhiteRoom saved.');
+    expect(routed).toContain('The same usage at list prices. Until enough runs are measured, the difference is the estimate in Saved in total, under Cost.');
     expect(routed).not.toContain('could use a cheaper model');
     // The one rule opens from this row too.
     expect(render({ ...none, routed: { calls: 12, unpricedCalls: 0, baselineMicros: 8_000_000, costMicros: 3_000_000 } })).toContain('href="/controls?rule=gr_route"');
@@ -76,10 +78,10 @@ describe('Model routing on Performance', () => {
     const none = { calls: 0, unpricedCalls: 0, baselineMicros: 0, costMicros: 0 };
     const net = (routed: number, control: number, savedMicros: number | null, unpricedPeriods = 0) => ({ ...none, net: { routed: { periods: routed, calls: routed * 10, costMicros: 1 }, control: { periods: control, calls: control * 10, costMicros: 1 }, unpricedPeriods, savedMicros } });
 
-    it('says what routing saved against the runs it left alone, and that it isn’t counted in savings', () => {
+    it('says what routing saved against the runs it left alone, and where that figure is counted', () => {
       const t = text(render(net(40, 30, 12_400_000)));
       expect(t).toContain('Model routing · measured $12.40 saved · 40 routed runs, 30 left on the model asked for');
-      expect(t).toContain('What routed runs cost against runs left on the model asked for. It isn’t counted in what WhiteRoom saved.');
+      expect(t).toContain('What routed runs cost against runs left on the model asked for. It is in Saved in total, under Cost, and not in Saved by WhiteRoom.');
     });
 
     it('says a loss as a loss', () => {
@@ -119,5 +121,46 @@ describe('Model routing on Performance', () => {
     const watch = { calls: 3, unpricedCalls: 0, baselineMicros: 900_000, costMicros: 450_000 };
     expect(render(watch, [route('a'), route('b')])).not.toContain('?rule=');
     expect(render(watch, [])).not.toContain('?rule=');
+  });
+});
+
+describe('Saved in total: Saved by WhiteRoom with what Model routing saved', () => {
+  const none = { calls: 0, unpricedCalls: 0, baselineMicros: 0, costMicros: 0 };
+  const arm = (periods: number) => ({ periods, calls: periods * 10, costMicros: 1, failedCalls: 0, refusedCalls: 0 });
+  const watch = (over: Partial<RouteWatch>): RouteWatch => ({ ...none, ...over });
+  const row = (whiteRoomMicros: number, route: RouteWatch | null, partial = false) =>
+    text(renderToStaticMarkup(h(SavedInTotal, { whiteRoomMicros, partial, route: routeSaved(route) })));
+
+  it('picks the measured figure once there is one, and until then the price difference of the calls that were routed', () => {
+    const routed = { calls: 10, unpricedCalls: 0, baselineMicros: 9_000_000, costMicros: 3_000_000 };
+    expect(routeSaved(watch({ routed, net: { routed: arm(40), control: arm(30), unpricedPeriods: 0, savedMicros: 4_000_000 } }))).toEqual({ micros: 4_000_000, measured: true });
+    expect(routeSaved(watch({ routed, net: { routed: arm(4), control: arm(3), unpricedPeriods: 0, savedMicros: null } }))).toEqual({ micros: 6_000_000, measured: false });
+    expect(routeSaved(watch({ routed }))).toEqual({ micros: 6_000_000, measured: false });
+    // A measured zero is a figure; it is not "nothing measured".
+    expect(routeSaved(watch({ routed, net: { routed: arm(40), control: arm(30), unpricedPeriods: 0, savedMicros: 0 } }))).toEqual({ micros: 0, measured: true });
+  });
+
+  it('has no figure in Watch, with nothing routed, or when no routed call has a price', () => {
+    expect(routeSaved(null)).toBeNull();
+    expect(routeSaved(watch({ calls: 41, baselineMicros: 12_400_000, costMicros: 6_200_000 }))).toBeNull();
+    expect(routeSaved(watch({ routed: none }))).toBeNull();
+    expect(routeSaved(watch({ routed: { calls: 3, unpricedCalls: 3, baselineMicros: 0, costMicros: 0 } }))).toBeNull();
+    // With none there is no row: the page is as it was.
+    expect(row(5_000_000, null)).toBe('');
+  });
+
+  it('adds the two and shows each part, the estimate said as one', () => {
+    const t = row(5_000_000, watch({ routed: { calls: 10, unpricedCalls: 0, baselineMicros: 9_000_000, costMicros: 3_000_000 } }));
+    expect(t).toContain('Saved in total $11.00 · $5.00 from less input sent and caching · $6.00 from Model routing (estimate)');
+    expect(t).toContain('Model routing is an estimate until enough runs are measured: the same calls at the two models’ list prices. It isn’t part of your bill.');
+  });
+
+  it('a measured loss comes off the total, and a total below zero is said as one', () => {
+    const net = (savedMicros: number) => watch({ net: { routed: arm(40), control: arm(30), unpricedPeriods: 0, savedMicros } });
+    const t = row(5_000_000, net(-2_000_000));
+    expect(t).toContain('Saved in total $3.00 · $5.00 from less input sent and caching · $2.00 more spent by Model routing');
+    expect(t).not.toContain('(estimate)');
+    expect(t).toContain('Model routing is measured against runs left on the model asked for. It isn’t part of your bill.');
+    expect(row(1_000_000, net(-4_000_000))).toContain('Saved in total −$3.00 ·');
   });
 });
