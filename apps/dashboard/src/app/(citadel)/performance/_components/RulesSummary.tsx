@@ -80,7 +80,9 @@ export function RulesSummary({ counts, byRuleId, rules, unknownRules, unavailabl
  * are enough runs of each kind there is no figure, only the counts.
  */
 function RouteNetRow({ net }: { net: RouteNet }) {
-  const { routed, control, savedMicros, unpricedPeriods } = net;
+  const { routed, control, savedMicros, unpricedPeriods, groups } = net;
+  // The figure can cover part of the fleet: the rest still needs more runs.
+  const waiting = savedMicros !== null ? groups?.waiting ?? 0 : 0;
   const runs = <>{fmtCount(routed.periods)} routed {plural(routed.periods, 'run')}, {fmtCount(control.periods)} left on the model asked for</>;
   return (
     <div className="wr-rules-route">
@@ -90,6 +92,7 @@ function RouteNetRow({ net }: { net: RouteNet }) {
           {savedMicros === null
             ? <>Not enough runs to measure yet · {runs} · more of each needed</>
             : <><strong className="wr-strong">{fmtCost(Math.abs(savedMicros))}</strong> {savedMicros >= 0 ? 'saved' : 'more spent'} · {runs}</>}
+          {waiting > 0 && <> · covers part of your fleet so far</>}
           {unpricedPeriods > 0 && <> · {fmtCount(unpricedPeriods)} not priced</>}
         </span>
       </div>

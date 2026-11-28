@@ -84,6 +84,20 @@ describe('Model routing on Performance', () => {
       expect(t).toContain('What routed runs cost against runs left on the model asked for. It is in Saved in total, under Cost, and not in Saved by WhiteRoom.');
     });
 
+    it('says when the figure covers only part of the fleet: what is still short of runs is counted beside it', () => {
+      const some = { ...net(40, 30, 12_400_000), net: { ...net(40, 30, 12_400_000).net, groups: { measured: 1, waiting: 2 } } };
+      expect(text(render(some))).toContain('$12.40 saved · 40 routed runs, 30 left on the model asked for · covers part of your fleet so far');
+      const all = { ...net(40, 30, 12_400_000), net: { ...net(40, 30, 12_400_000).net, groups: { measured: 3, waiting: 0 } } };
+      expect(text(render(all))).not.toContain('covers part of your fleet');
+      // A loss over part of the fleet says both, and the unpriced count comes after.
+      const loss = { ...net(40, 30, -2_000_000, 3), net: { ...net(40, 30, -2_000_000, 3).net, groups: { measured: 1, waiting: 1 } } };
+      expect(text(render(loss))).toContain('$2.00 more spent · 40 routed runs, 30 left on the model asked for · covers part of your fleet so far · 3 not priced');
+      // With no figure at all the row already says more runs are needed.
+      const none = { ...net(4, 3, null), net: { ...net(4, 3, null).net, groups: { measured: 0, waiting: 2 } } };
+      expect(text(render(none))).not.toContain('covers part of your fleet');
+      expect(text(render(none))).toContain('Not enough runs to measure yet');
+    });
+
     it('says a loss as a loss', () => {
       expect(text(render(net(30, 30, -6_000_000)))).toContain('$6.00 more spent · 30 routed runs, 30 left on the model asked for');
     });
@@ -133,11 +147,11 @@ describe('Saved in total: Saved by WhiteRoom with what Model routing saved', () 
 
   it('picks the measured figure once there is one, and until then the price difference of the calls that were routed', () => {
     const routed = { calls: 10, unpricedCalls: 0, baselineMicros: 9_000_000, costMicros: 3_000_000 };
-    expect(routeSaved(watch({ routed, net: { routed: arm(40), control: arm(30), unpricedPeriods: 0, savedMicros: 4_000_000 } }))).toEqual({ micros: 4_000_000, measured: true, partial: false });
-    expect(routeSaved(watch({ routed, net: { routed: arm(4), control: arm(3), unpricedPeriods: 0, savedMicros: null } }))).toEqual({ micros: 6_000_000, measured: false, partial: false });
-    expect(routeSaved(watch({ routed }))).toEqual({ micros: 6_000_000, measured: false, partial: false });
+    expect(routeSaved(watch({ routed, net: { routed: arm(40), control: arm(30), unpricedPeriods: 0, savedMicros: 4_000_000 } }))).toEqual({ micros: 4_000_000, measured: true, partial: false, partOfFleet: false });
+    expect(routeSaved(watch({ routed, net: { routed: arm(4), control: arm(3), unpricedPeriods: 0, savedMicros: null } }))).toEqual({ micros: 6_000_000, measured: false, partial: false, partOfFleet: false });
+    expect(routeSaved(watch({ routed }))).toEqual({ micros: 6_000_000, measured: false, partial: false, partOfFleet: false });
     // A measured zero is a figure; it is not "nothing measured".
-    expect(routeSaved(watch({ routed, net: { routed: arm(40), control: arm(30), unpricedPeriods: 0, savedMicros: 0 } }))).toEqual({ micros: 0, measured: true, partial: false });
+    expect(routeSaved(watch({ routed, net: { routed: arm(40), control: arm(30), unpricedPeriods: 0, savedMicros: 0 } }))).toEqual({ micros: 0, measured: true, partial: false, partOfFleet: false });
   });
 
   it('has no figure in Watch, with nothing routed, or when no routed call has a price', () => {
@@ -160,7 +174,15 @@ describe('Saved in total: Saved by WhiteRoom with what Model routing saved', () 
     expect(routeSaved(some)).toMatchObject({ partial: true });
     expect(row(5_000_000, some)).toContain('Saved in total $11.00+ · $5.00 from less input sent and caching · $6.00 from Model routing+ (estimate)');
     // A measured figure leaves an unpriced run out of both sides: it is not a lower bound, and a loss is never shown with a "+".
-    expect(routeSaved(watch({ net: { routed: arm(40), control: arm(30), unpricedPeriods: 3, savedMicros: -3_000_000 } }))).toEqual({ micros: -3_000_000, measured: true, partial: false });
+    expect(routeSaved(watch({ net: { routed: arm(40), control: arm(30), unpricedPeriods: 3, savedMicros: -3_000_000 } }))).toEqual({ micros: -3_000_000, measured: true, partial: false, partOfFleet: false });
+  });
+
+  it('says so when the measured figure covers only part of the fleet', () => {
+    const part = watch({ net: { routed: arm(40), control: arm(30), unpricedPeriods: 0, savedMicros: 4_000_000, groups: { measured: 1, waiting: 2 } } });
+    expect(routeSaved(part)).toMatchObject({ measured: true, partOfFleet: true });
+    expect(row(5_000_000, part)).toContain('It covers part of your fleet so far: the rest needs more runs. WhiteRoom doesn’t charge for it.');
+    const whole = watch({ net: { routed: arm(40), control: arm(30), unpricedPeriods: 0, savedMicros: 4_000_000, groups: { measured: 3, waiting: 0 } } });
+    expect(row(5_000_000, whole)).not.toContain('part of your fleet');
   });
 
   it('a measured loss comes off the total, and a total below zero is said as one', () => {

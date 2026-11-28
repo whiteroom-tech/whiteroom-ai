@@ -85,6 +85,8 @@ export interface RouteSaved {
   measured: boolean;
   /** An estimate with some routed calls left out for having no price: a lower bound. Never set on a measured figure, where an unpriced run is left out of both sides. */
   partial: boolean;
+  /** A measured figure that covers only part of the fleet so far: the rest still needs more runs. */
+  partOfFleet: boolean;
 }
 
 /**
@@ -95,10 +97,10 @@ export interface RouteSaved {
  */
 export function routeSaved(route: RouteWatch | null | undefined): RouteSaved | null {
   const measured = route?.net?.savedMicros;
-  if (typeof measured === 'number') return { micros: measured, measured: true, partial: false };
+  if (typeof measured === 'number') return { micros: measured, measured: true, partial: false, partOfFleet: (route?.net?.groups?.waiting ?? 0) > 0 };
   const routed = route?.routed;
   if (!routed || routed.calls <= routed.unpricedCalls) return null;
-  return { micros: routed.baselineMicros - routed.costMicros, measured: false, partial: routed.unpricedCalls > 0 };
+  return { micros: routed.baselineMicros - routed.costMicros, measured: false, partial: routed.unpricedCalls > 0, partOfFleet: false };
 }
 
 /** Prompt-cache figures for the Performance page. */
