@@ -230,13 +230,13 @@ const LISTED_MODELS = new Set(MODEL_GROUPS.flatMap((g) => g.options.map((o) => o
  * "gpt-4-prod" and "o3-team" are names an owner made up.
  */
 const DATED = '(-\\d{4}-\\d{2}-\\d{2}|-\\d{8})?';
+const OPENAI_ID = `gpt-\\d+(\\.\\d+)?[a-z]?(-(mini|nano|sol|luna|terra|astra))?${DATED}|o\\d(-(mini|pro))?${DATED}`;
 const MODEL_ID = new RegExp([
-  `^gpt-\\d+(\\.\\d+)?[a-z]?(-(mini|nano|sol|luna|terra|astra))?${DATED}$`,
-  `^o\\d(-(mini|pro))?${DATED}$`,
+  `^(azure/)?(${OPENAI_ID})$`,
   `^claude-(opus|sonnet|haiku|fable)(-\\d+){1,3}$`,
-  '^gemini-\\d',
-  '^azure/',
-  '^((us|eu|apac|global)\\.)?(anthropic|amazon|meta|mistral)\\.',
+  '^gemini-\\d+(\\.\\d+)?-(pro|flash)(-lite)?$',
+  // A Bedrock ID: a geography or none, the maker, the model, and its version.
+  '^((us|eu|apac|global)\\.)?(anthropic|amazon|meta|mistral)\\.[a-z0-9-]+(-v\\d+(:\\d+)?)?$',
 ].join('|'), 'i');
 
 /** The entries of a model list that could be a deployment: names that aren't a model ID, and any that already say what they run. */
