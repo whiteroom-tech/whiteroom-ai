@@ -81,7 +81,7 @@ export function RulesSummary({ counts, byRuleId, rules, unknownRules, unavailabl
  */
 function RouteNetRow({ net }: { net: RouteNet }) {
   const { routed, control, savedMicros, unpricedPeriods, groups } = net;
-  // Part of the fleet is measured and part isn't yet: the figure is only the measured part's.
+  // Each agent is measured on its own under each rule. Some are in the figure and some still need runs: the figure is only the measured ones'.
   const waiting = savedMicros !== null ? groups?.waiting ?? 0 : 0;
   const runs = <>{fmtCount(routed.periods)} routed {plural(routed.periods, 'run')}, {fmtCount(control.periods)} left on the model asked for</>;
   return (
@@ -93,7 +93,7 @@ function RouteNetRow({ net }: { net: RouteNet }) {
             ? <>Not enough runs to measure yet · {runs} · more of each needed</>
             : <><strong className="wr-strong">{fmtCost(Math.abs(savedMicros))}</strong> {savedMicros >= 0 ? 'saved' : 'more spent'} · {runs}</>}
           {unpricedPeriods > 0 && <> · {fmtCount(unpricedPeriods)} not priced</>}
-          {waiting > 0 && <> · {fmtCount(waiting)} more {plural(waiting, 'agent')} not measured yet</>}
+          {waiting > 0 && <> · {fmtCount(waiting)} more still short of runs, not in this figure</>}
         </span>
       </div>
       <p className="wr-cap" style={{ margin: 0, padding: '0 0 10px' }}>What routed runs cost against runs left on the model asked for.{savedMicros !== null && ' It is in Saved in total, under Cost, and not in Saved by WhiteRoom.'}</p>
