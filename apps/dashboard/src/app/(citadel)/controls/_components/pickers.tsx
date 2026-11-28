@@ -25,6 +25,9 @@ export const MODEL_GROUPS: PickGroup[] = [
     { id: 'claude-opus-4-20250514', label: 'Claude Opus 4' },
   ] },
   { label: 'OpenAI', options: [
+    { id: 'gpt-6.1-sol', label: 'GPT-6.1 Sol' }, { id: 'gpt-6.1-terra', label: 'GPT-6.1 Terra' }, { id: 'gpt-6-sol', label: 'GPT-6 Sol' }, { id: 'gpt-6-luna', label: 'GPT-6 Luna' },
+    { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' }, { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra' }, { id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna' },
+    { id: 'gpt-5.4', label: 'GPT-5.4' }, { id: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' }, { id: 'gpt-5.2', label: 'GPT-5.2' },
     { id: 'gpt-4.1', label: 'GPT-4.1' }, { id: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' }, { id: 'gpt-4.1-nano', label: 'GPT-4.1 Nano' },
     { id: 'gpt-4o', label: 'GPT-4o' }, { id: 'gpt-4o-mini', label: 'GPT-4o Mini' }, { id: 'o3', label: 'o3' }, { id: 'o4-mini', label: 'o4-mini' },
   ] },
@@ -250,6 +253,7 @@ export function DeploymentModels({ ladder, onChange }: { ladder: LadderEntry[]; 
           </div>
         );
       })}
+      <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--tx2)' }}>If a name is your own deployment, pick the model it runs. A deployment with none picked keeps the model its calls asked for.</p>
     </div>
   );
 }

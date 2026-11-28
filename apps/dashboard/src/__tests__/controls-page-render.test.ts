@@ -2826,7 +2826,7 @@ describe('Controls: Repeated blocks and Old tool results', () => {
     await m.click(row);
     await m.click(m.button('Change'));
     const editor = () => m.el.querySelector('[aria-label="Edit rule"]')!.textContent ?? '';
-    expect(editor()).toContain('For a deployment you named yourself, pick the model it runs.');
+    expect(editor()).toContain('If a name is your own deployment, pick the model it runs.');
     const runs = (id: string) => m.el.querySelector(`select[aria-label="Model that ${id} runs"]`) as HTMLSelectElement | null;
     // The typed name has none yet; the saved pair shows its model; a model from the menu has no row.
     expect(runs('prod-chat')!.value).toBe('');
@@ -2836,12 +2836,16 @@ describe('Controls: Repeated blocks and Old tool results', () => {
     await choose(runs('prod-chat')!, 'gpt-4.1');
     // Back to "Not a deployment" makes the other a plain name again.
     await choose(runs('prod-small')!, '');
+    // Changing the list afterwards doesn't bring the cleared model back from the saved rule.
+    await choose(m.el.querySelector('select[aria-label="Add a model"]') as HTMLSelectElement, 'gpt-4o-mini');
+    await m.click(m.el.querySelector('button[aria-label="Remove GPT-4o Mini"]')!);
+    expect(runs('prod-small')!.value).toBe('');
     await m.click(m.button('Save'));
     expect(api.update).toHaveBeenLastCalledWith('f1', 'mr-dep', { params: { ladder: [{ id: 'prod-chat', is: 'gpt-4.1' }, 'prod-small', 'gpt-4.1-nano'] }, ifVersion: rule.version }, 'k');
     m.root.unmount();
   });
 
-  it('a model picked from the menu shows no deployment row, and one saved with a model the menu doesn\u2019t list keeps it', async () => {
+  it('a deployment saved with a model the menu doesn\u2019t list keeps it, and one removed and added back gets its saved model again', async () => {
     const rule = { ...base, id: 'mr-dep2', ruleType: 'model_route' as const, mode: 'watch' as const, response: 'notify' as const, appliesTo: ['lead-agent'], params: { ladder: ['claude-opus-5-5', { id: 'my-small', is: 'gpt-9-test' }] } };
     api.created.push(rule);
     const m = await mount();
@@ -2849,6 +2853,12 @@ describe('Controls: Repeated blocks and Old tool results', () => {
     await m.click(row);
     await m.click(m.button('Change'));
     expect(m.el.querySelectorAll('select[aria-label^="Model that "]').length).toBe(1);
+    expect((m.el.querySelector('select[aria-label="Model that my-small runs"]') as HTMLSelectElement).value).toBe('gpt-9-test');
+    await m.click(m.el.querySelector('button[aria-label="Remove my-small"]')!);
+    expect(m.el.querySelector('select[aria-label^="Model that "]')).toBeNull();
+    await choose(m.el.querySelector('select[aria-label="Add a model"]') as HTMLSelectElement, '__other__');
+    await type(m.el.querySelector('input[aria-label="Other (type deployment name or model ID)…"]') as HTMLInputElement, 'my-small');
+    await m.click(m.button('Add'));
     expect((m.el.querySelector('select[aria-label="Model that my-small runs"]') as HTMLSelectElement).value).toBe('gpt-9-test');
     m.root.unmount();
   });

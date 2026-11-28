@@ -9,7 +9,7 @@ import { RuleCategory } from './RuleCategory';
 import type { Undo } from '@/lib/rule-history';
 import { MODE_LABEL, modeTagText } from '@/lib/vocab';
 import { useEffect, useState } from 'react';
-import type { GovernanceMode, GovernanceResponse } from '@/lib/whiteroom/types';
+import type { GovernanceMode, GovernanceResponse, LadderEntry } from '@/lib/whiteroom/types';
 import Link from 'next/link';
 import { Banner, Button, FONT_MONO, Hint, SegmentedControl } from '@whiteroom/ui';
 import type {
@@ -27,7 +27,7 @@ import {
   CAREFUL_TOOL_MAX_CHARS, carefulOf, takesCareful,
 } from '@/lib/controls-view';
 import { AGENT_NOTE, isMarker, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, looksLikeDeleteOrChange, newMarker, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, ladderIds, ladderOf, modeChoices, suspended, SUSPENDED_TAG, responseChoices, routes, sendsAlert, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
-import { Chip, DeploymentModels, field, GroupPicker, typedEntries, InlineSelect, MarkerChip, MODEL_GROUPS, NumberField, ScopeField, ToolPicker } from './pickers';
+import { Chip, DeploymentModels, field, GroupPicker, InlineSelect, MarkerChip, MODEL_GROUPS, NumberField, ScopeField, ToolPicker } from './pickers';
 import { ReplayEstimate } from './ReplayEstimate';
 
 /** How a rule judged on the reply meets a streamed call and a Bedrock one. */
@@ -77,6 +77,8 @@ const REPLY_NOTE = 'To block a streamed reply, it’s checked whole first, so it
 const hiddenDomains = (p: SendLimitParams) => { const n = domainTotal(p); return n === 0 ? 'No domains are on the list.' : n === 1 ? '1 domain is hidden here.' : `${n} domains are hidden here.`; };
 const help = { margin: 0, fontSize: 'var(--fs-sm)', lineHeight: 1.5, color: 'var(--tx2)' } as const;
 const usd = (n: number) => `$${n < 10 ? n.toFixed(2) : Math.round(n).toLocaleString('en-US')}`;
+/** The entry of a model list with this name, as it stands there: a plain name, or a deployment with the model it runs. */
+const entryFor = (id: string, ladder: LadderEntry[]): LadderEntry | undefined => ladder.find((e) => (typeof e === 'string' ? e : e.id) === id);
 const sentenceRow = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, fontSize: 'var(--fs-md)' } as const;
 
 /** Shown on an empty Data deletion list when none of the fleet's tools has a command-like name. */
@@ -409,12 +411,11 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
         {route && (
           <>
             <span style={{ fontSize: 'var(--fs-md)' }}>Models, strongest first:</span>
-            {/* The picker edits the names; an entry that also says which model a deployment runs keeps that, also when it is removed and added back. */}
-            <GroupPicker values={ladderIds(route)} onChange={(ids) => setParams({ ladder: ids.map((id) => [...ladderOf(route), ...ladderOf(rule.params as ModelRouteParams)].find((x) => typeof x !== 'string' && x.id === id) ?? id) })} groups={MODEL_GROUPS}
+            {/* The picker edits the names. An entry keeps what the form holds for it; one removed and added back gets the model the saved rule gave it. */}
+            <GroupPicker values={ladderIds(route)} onChange={(ids) => setParams({ ladder: ids.map((id) => entryFor(id, ladderOf(route)) ?? entryFor(id, ladderOf(rule.params as ModelRouteParams)) ?? id) })} groups={MODEL_GROUPS}
               addLabel="+ Add model" ariaLabel="Add a model" otherLabel="Other (type deployment name or model ID)…" placeholder="deployment name or model ID" />
             <p style={help}>Add the strongest first, then each cheaper one. To change the order, remove a model and add it back.</p>
             <DeploymentModels ladder={ladderOf(route)} onChange={(ladder) => setParams({ ladder })} />
-            {typedEntries(ladderOf(route)).length > 0 && <p style={help}>For a deployment you named yourself, pick the model it runs. Without one, calls to it keep the model they asked for.</p>}
             {/* Only where the engine takes the list: it sends one, empty or not, when it does. */}
             {takesCareful(route) && (
               <>
