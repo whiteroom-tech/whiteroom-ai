@@ -2846,12 +2846,13 @@ describe('Controls: Repeated blocks and Old tool results', () => {
   });
 
   it('a deployment saved with a model the menu doesn\u2019t list keeps it, and one removed and added back gets its saved model again', async () => {
-    const rule = { ...base, id: 'mr-dep2', ruleType: 'model_route' as const, mode: 'watch' as const, response: 'notify' as const, appliesTo: ['lead-agent'], params: { ladder: ['claude-opus-5-5', { id: 'my-small', is: 'gpt-9-test' }] } };
+    const rule = { ...base, id: 'mr-dep2', ruleType: 'model_route' as const, mode: 'watch' as const, response: 'notify' as const, appliesTo: ['lead-agent'], params: { ladder: ['claude-sonnet-4-6', { id: 'my-small', is: 'gpt-9-test' }] } };
     api.created.push(rule);
     const m = await mount();
     const row = [...m.el.querySelectorAll('button.ctl-row')].find((r) => r.querySelector('.ctl-row__main .ctl-cap')?.textContent === 'Model routing')!;
     await m.click(row);
     await m.click(m.button('Change'));
+    // claude-sonnet-4-6 isn't on the menu, but it reads as a model ID: no row for it.
     expect(m.el.querySelectorAll('select[aria-label^="Model that "]').length).toBe(1);
     expect((m.el.querySelector('select[aria-label="Model that my-small runs"]') as HTMLSelectElement).value).toBe('gpt-9-test');
     await m.click(m.el.querySelector('button[aria-label="Remove my-small"]')!);

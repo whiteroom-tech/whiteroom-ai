@@ -224,8 +224,11 @@ function FieldSelect({ label, value, onChange, style, children }: { label: strin
 const RUNS_GROUPS = MODEL_GROUPS.filter((g) => g.label === 'Anthropic' || g.label === 'OpenAI');
 const LISTED_MODELS = new Set(MODEL_GROUPS.flatMap((g) => g.options.map((o) => o.id)));
 
-/** The entries of a model list that could be a deployment: typed names, and any that already say what they run. */
-export const typedEntries = (ladder: LadderEntry[]): LadderEntry[] => ladder.filter((e) => typeof e !== 'string' || !LISTED_MODELS.has(e));
+/** A typed name that reads as a maker's own model ID, which needs no model picked for it. */
+const MODEL_ID = /^(claude-|gpt-|o\d|gemini-|azure\/|(us|eu|apac|global)\.|anthropic\.|amazon\.|meta\.|mistral\.)/i;
+
+/** The entries of a model list that could be a deployment: names that aren't a model ID, and any that already say what they run. */
+export const typedEntries = (ladder: LadderEntry[]): LadderEntry[] => ladder.filter((e) => typeof e !== 'string' || !(LISTED_MODELS.has(e) || MODEL_ID.test(e)));
 
 /**
  * For each typed name on a model list, the model it runs. A deployment is
