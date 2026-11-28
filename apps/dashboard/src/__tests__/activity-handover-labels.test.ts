@@ -24,6 +24,14 @@ describe('handover health labels', () => {
     const routed = at({ type: 'governance_route', ruleType: 'model_route', reason: 'model_routed' });
     expect([routed.said, routed.tone]).toEqual(['made a call that went to a cheaper model', 'idle']);
     expect(at({ type: 'route_skipped' }).said).toBe('made a call that kept the model it asked for');
+    // Where the reason is one an owner set up, it says so in their terms; any other reason stays plain.
+    expect(at({ type: 'route_skipped', reason: 'careful_tool' }).said).toBe("made a call that kept the model it asked for: it offers a tool on this rule's list");
+    expect(at({ type: 'route_skipped', reason: 'careful_tool_unknown' }).said).toBe("made a call that kept the model it asked for: its tools couldn't be read, so it stayed on that model");
+    // The same is said when it happens: the count of such calls comes later, and not at all if the agent stops.
+    expect(at({ type: 'route_decided', reason: 'skip_careful_tool' }).said).toBe("kept the model it asked for: it offers a tool on this rule's list");
+    expect(at({ type: 'route_decided', reason: 'skip_careful_tool_unknown' }).said).toBe("kept the model it asked for: its tools couldn't be read, so it stayed on that model");
+    expect(at({ type: 'route_decided', reason: 'skip_model_tied' }).said).toBe('had its run checked by Model routing');
+    expect(at({ type: 'route_skipped', reason: 'model_tied' }).said).toBe('made a call that kept the model it asked for');
     expect(at({ type: 'route_target_unavailable' }).said).toBe('had a cheaper model refuse a call, which its own model then took');
     const stopped = at({ type: 'route_suspended' });
     expect([stopped.said, stopped.tone]).toEqual(['had its Model routing rule suspend itself', 'wouldBlock']);

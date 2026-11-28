@@ -24,6 +24,7 @@ import { ROUTES } from '@/lib/routes';
 import { UNNAMED_CALLS_ENFORCE } from '@/lib/setup';
 import {
   canAddSeen, COMMAND_TOOLS_MAX, DELETION_DOCS_URL, domainEntry, domainProblem, domainsHidden, domainTotal, FLOW_TOOLS_MAX, FLOW_WHEN, looksLikeCommandRunner, looksLikeReader, looksLikeSender, SEEN_RESERVED_TEXT, seenFullLine, seenNotOnList, SEND_DOMAINS_MAX, SEND_TOOLS_MAX, toolsFull, toolsWithNoDomain, trims,
+  CAREFUL_TOOL_MAX_CHARS, carefulOf, takesCareful,
 } from '@/lib/controls-view';
 import { AGENT_NOTE, isMarker, KEYWORD_MAX, KEYWORD_MAX_CHARS, KEYWORD_WHERE, keywordFits, looksLikeDeleteOrChange, newMarker, agentGets, loopActs, changeUnit, chooseAction, chooseMode, draftParams, emptyPick, ladderIds, ladderOf, modeChoices, suspended, SUSPENDED_TAG, responseChoices, routes, sendsAlert, whatHappensLine, whenSentence, type RuleDraft } from '@/lib/controls-view';
 import { Chip, field, GroupPicker, InlineSelect, MarkerChip, MODEL_GROUPS, NumberField, ScopeField, ToolPicker } from './pickers';
@@ -412,6 +413,16 @@ export function RuleEditor({ fleetId, authKey, rule, draft, onDraft, agents, fle
             <GroupPicker values={ladderIds(route)} onChange={(ids) => setParams({ ladder: ids.map((id) => [...ladderOf(route), ...ladderOf(rule.params as ModelRouteParams)].find((x) => typeof x !== 'string' && x.id === id) ?? id) })} groups={MODEL_GROUPS}
               addLabel="+ Add model" ariaLabel="Add a model" otherLabel="Other (type deployment name or model ID)…" placeholder="deployment name or model ID" />
             <p style={help}>Add the strongest first, then each cheaper one. To change the order, remove a model and add it back.</p>
+            {/* Only where the engine takes the list: it sends one, empty or not, when it does. */}
+            {takesCareful(route) && (
+              <>
+                <span style={{ fontSize: 'var(--fs-md)' }}>Tools that always use the model the agent asked for:</span>
+                <ToolPicker values={carefulOf(route)} onChange={(carefulTools) => setParams({ carefulTools })} fleetTools={fleetTools} onShow={onToolPicker}
+                  ariaLabel="Add a tool that always uses the model asked for" maxLength={CAREFUL_TOOL_MAX_CHARS} otherLabel="Other (type tool name, or the start of one and *)…" />
+                <p style={help}>A call that offers one of these tools is never sent to a cheaper model. End a name with * to cover every tool that starts with it.</p>
+                {carefulOf(route).length > 0 && <p style={help}>An agent that offers one of them on every call won&rsquo;t use a cheaper model at all.</p>}
+              </>
+            )}
           </>
         )}
         {flow && (

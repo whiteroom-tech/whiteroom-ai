@@ -160,6 +160,26 @@ describe('ToolPicker: the fleet’s own tools (tools_seen)', () => {
     return html;
   };
 
+  it('takes a longer name where its list does, under its own label; everywhere else the limit is unchanged', async () => {
+    const add = async (el: HTMLElement, label: string, text: string) => {
+      await choose(el.querySelector('select[aria-label="Add a tool"]')!, '__other__');
+      await type(el.querySelector(`input[aria-label="${label}"]`) as HTMLInputElement, text);
+      await act(async () => { ([...el.querySelectorAll('button')].find((b) => b.textContent === 'Add') as HTMLButtonElement).click(); });
+    };
+    const long = vi.fn();
+    const a = await mount(h(ToolPicker, { values: [], onChange: long, fleetTools: [], onShow: () => {}, maxLength: 128, otherLabel: 'Other (type tool name, or the start of one and *)…' }));
+    await add(a.el, 'Other (type tool name, or the start of one and *)…', `mcp__billing__${'x'.repeat(100)}`);
+    expect(long).toHaveBeenLastCalledWith([`mcp__billing__${'x'.repeat(100)}`]);
+    await add(a.el, 'Other (type tool name, or the start of one and *)…', 'y'.repeat(200));
+    expect(long).toHaveBeenLastCalledWith(['y'.repeat(128)]);
+    a.root.unmount();
+    const plain = vi.fn();
+    const b = await mount(h(ToolPicker, { values: [], onChange: plain, fleetTools: [], onShow: () => {} }));
+    await add(b.el, 'Other (type tool name)…', 'z'.repeat(200));
+    expect(plain).toHaveBeenLastCalledWith(['z'.repeat(64)]);
+    b.root.unmount();
+  });
+
   it('with no fleet tools is exactly today’s picker, and asks for them once shown', async () => {
     expect(toolGroups([])).toBe(TOOL_GROUPS);
     const onShow = vi.fn();

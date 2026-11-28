@@ -56,7 +56,7 @@ export function toolGroups(fleetTools: readonly string[], first?: (tool: string)
 
 export function Chip({ label, onRemove, removeLabel = `Remove ${label}` }: { label: string; onRemove: () => void; removeLabel?: string }) {
   return (
-    <span className="gov-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, minHeight: '1.625rem', padding: '0 2px 0 9px', borderRadius: 6, border: '1px solid var(--line2)', background: 'var(--sunk)', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx)' }}>
+    <span className="gov-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, maxWidth: '100%', overflowWrap: 'anywhere', minHeight: '1.625rem', padding: '0 2px 0 9px', borderRadius: 6, border: '1px solid var(--line2)', background: 'var(--sunk)', fontFamily: FONT_MONO, fontSize: 'var(--fs-sm)', color: 'var(--tx)' }}>
       {label}
       <button type="button" onClick={onRemove} aria-label={removeLabel} style={{ background: 'none', border: 0, color: 'var(--tx2)', width: 24, height: 24, cursor: 'pointer', fontSize: 'var(--fs-md)' }}>&times;</button>
     </span>
@@ -79,7 +79,7 @@ export function MarkerChip({ code, onRemove }: { code: string; onRemove: () => v
 }
 
 /** Chosen values as chips, a grouped menu to add more, and "Other…" for one that isn't listed. */
-export function GroupPicker({ values, onChange, groups, addLabel, otherLabel, placeholder, ariaLabel = addLabel, chooseLabel = addLabel }: {
+export function GroupPicker({ values, onChange, groups, addLabel, otherLabel, placeholder, ariaLabel = addLabel, chooseLabel = addLabel, maxLength = 64 }: {
   values: string[];
   onChange: (next: string[]) => void;
   groups: PickGroup[];
@@ -90,10 +90,12 @@ export function GroupPicker({ values, onChange, groups, addLabel, otherLabel, pl
   ariaLabel?: string;
   /** The menu's first line, where it opens: never an option, so opening it adds nothing. */
   chooseLabel?: string;
+  /** The longest name it takes. */
+  maxLength?: number;
 }) {
   const [other, setOther] = useState<string | null>(null);
   const labelOf = (id: string) => groups.flatMap((g) => g.options).find((o) => o.id === id)?.label ?? id;
-  const add = (v: string) => { const t = v.trim().slice(0, 64); if (t && !values.includes(t)) onChange([...values, t]); };
+  const add = (v: string) => { const t = v.trim().slice(0, maxLength); if (t && !values.includes(t)) onChange([...values, t]); };
   const addOther = () => { if (other !== null) add(other); setOther(null); };
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -124,7 +126,7 @@ export function GroupPicker({ values, onChange, groups, addLabel, otherLabel, pl
             aria-label={otherLabel}
             placeholder={placeholder}
             value={other}
-            onChange={(e) => setOther(e.target.value.slice(0, 64))}
+            onChange={(e) => setOther(e.target.value.slice(0, maxLength))}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addOther(); } if (e.key === 'Escape') setOther(null); }}
             style={{ ...field, padding: '0 10px', flex: '1 1 160px', minWidth: 0, fontFamily: FONT_MONO }}
           />
@@ -140,7 +142,7 @@ export function GroupPicker({ values, onChange, groups, addLabel, otherLabel, pl
  * (`onShow`); once known they're a first group and the menu opens on "Choose a
  * tool…". Until then, and without them, it's the plain tool picker.
  */
-export function ToolPicker({ values, onChange, fleetTools, onShow, first, ariaLabel = 'Add a tool' }: {
+export function ToolPicker({ values, onChange, fleetTools, onShow, first, ariaLabel = 'Add a tool', maxLength, otherLabel = 'Other (type tool name)…' }: {
   values: string[];
   onChange: (next: string[]) => void;
   fleetTools: readonly string[];
@@ -148,11 +150,15 @@ export function ToolPicker({ values, onChange, fleetTools, onShow, first, ariaLa
   first?: (tool: string) => boolean;
   /** Its name for a screen reader, when an editor has two pickers. */
   ariaLabel?: string;
+  /** The longest name it takes, where a list takes longer ones than the default. */
+  maxLength?: number;
+  /** The "Other…" line, where a list takes more than a whole name. */
+  otherLabel?: string;
 }) {
   useEffect(() => { onShow(); }, [onShow]);
   return (
     <GroupPicker values={values} onChange={onChange} groups={toolGroups(fleetTools, first)} chooseLabel={fleetTools.length ? 'Choose a tool…' : undefined}
-      addLabel="+ Add tool" ariaLabel={ariaLabel} otherLabel="Other (type tool name)…" placeholder="tool name" />
+      addLabel="+ Add tool" ariaLabel={ariaLabel} otherLabel={otherLabel} placeholder="tool name" maxLength={maxLength} />
   );
 }
 
